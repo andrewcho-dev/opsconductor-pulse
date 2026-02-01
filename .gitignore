@@ -1,0 +1,22 @@
+# secrets
+.env
+.env.*
+*.secret
+*.key
+*.pem
+
+# runtime volumes / data
+data/
+**/data/
+**/log/
+**/logs/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# editor/OS
+.DS_Store
+.vscode/
+.idea/

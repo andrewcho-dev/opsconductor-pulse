@@ -1,0 +1,256 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>IoT Cloud Sim Dashboard</title>
+  <meta http-equiv="refresh" content="{{ refresh }}">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; min-width: 240px; }
+    h2 { margin: 18px 0 8px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }
+    th { background: #f6f6f6; text-align: left; }
+    .ONLINE { background: #eaffea; }
+    .STALE { background: #fff1d6; }
+    .empty { color: #777; font-style: italic; }
+    .small { font-size: 12px; color: #555; }
+    .barwrap { display:flex; align-items:flex-end; gap:2px; height:80px; padding:6px; border:1px solid #ddd; border-radius:10px; }
+    .bar { width: 6px; background:#6aa7ff; }
+    .bar-rl { width: 6px; background:#e53935; }
+    .legend { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; background:#fafafa; }
+    .pill-prod { background:#ffecec; border-color:#ffb3b3; }
+    .pill-dev  { background:#eef6ff; border-color:#b3d5ff; }
+    .pill-hot  { background:#ffe2e2; border-color:#ff9a9a; }
+    .banner { border:1px solid #ff9a9a; background:#fff0f0; padding:10px 12px; border-radius:10px; margin: 10px 0 14px; }
+    .toggles { display:flex; gap:12px; align-items:center; flex-wrap: wrap; margin: 8px 0 16px; }
+    .btn { padding:6px 10px; border:1px solid #ddd; border-radius:8px; background:#fafafa; cursor:pointer; }
+    a { color: #0b66c3; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .disabled { opacity: 0.6; }
+    .reason-rate { color:#b00020; font-weight:700; }
+    .panel { border:1px solid #ddd; border-radius:10px; padding:12px; margin: 12px 0 16px; }
+    input, select { padding:6px; margin: 4px; }
+    pre { background:#f7f7f7; padding:10px; border-radius:10px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h1>IoT Cloud Sim Dashboard</h1>
+  <div class="small">Auto-refresh: {{ refresh }}s</div>
+
+  <div class="toggles">
+    <form method="post" action="/settings">
+      {% if mode == "PROD" %}
+        <span class="pill pill-prod">MODE: <b>PROD</b> (debug storage locked off)</span>
+      {% else %}
+        <span class="pill pill-dev">MODE: <b>DEV</b> (debug allowed)</span>
+      {% endif %}
+
+      <span class="pill">STORE_REJECTS: <b>{{ store_rejects }}</b></span>
+      <span class="pill">MIRROR_REJECTS_TO_RAW: <b>{{ mirror_rejects }}</b></span>
+
+      <span style="margin-left:10px;"></span>
+
+      <label>
+        <b>Mode:</b>
+        <select name="mode">
+          <option value="PROD" {% if mode == "PROD" %}selected{% endif %}>PROD</option>
+          <option value="DEV" {% if mode == "DEV" %}selected{% endif %}>DEV</option>
+        </select>
+      </label>
+
+      <label class="{% if mode == 'PROD' %}disabled{% endif %}">
+        <input type="checkbox" name="store_rejects" value="1" {% if store_rejects == "1" %}checked{% endif %} {% if mode == "PROD" %}disabled{% endif %}>
+        Store rejected payloads
+      </label>
+
+      <label class="{% if mode == 'PROD' %}disabled{% endif %}">
+        <input type="checkbox" name="mirror_rejects" value="1" {% if mirror_rejects == "1" %}checked{% endif %} {% if mode == "PROD" %}disabled{% endif %}>
+        Mirror rejects into raw_events (accepted=false)
+      </label>
+
+      <button class="btn" type="submit">Apply</button>
+    </form>
+
+    <span class="small">Ingest polls settings every 5s.</span>
+  </div>
+
+  {% if rate_limited_5m > 0 %}
+  <div class="banner">
+    <b>⚠ Rate limiting active</b> — Incoming traffic exceeded policy and is being safely dropped.<br>
+    RATE_LIMITED last 5m: <b>{{ rate_limited_5m }}</b> (RPS {{ rate_rps }}, burst {{ rate_burst }}, max payload {{ max_payload_bytes }} bytes)
+  </div>
+  {% endif %}
+
+  {% if mode == "DEV" %}
+  <div class="panel">
+    <h2>Provisioning (DEV)</h2>
+    <div class="small">Creates device + activation code (admin). Activate returns a one-time provision_token.</div>
+
+    <h3>Create Device</h3>
+    <form method="post" action="/admin/create-device">
+      <input name="tenant_id" value="enabled" placeholder="tenant_id" required>
+      <input name="device_id" placeholder="device_id (e.g. dev-9999)" required>
+      <input name="site_id" value="lab-1" placeholder="site_id" required>
+      <input name="fw_version" value="0.1.0" placeholder="fw_version">
+      <button class="btn" type="submit">Create</button>
+    </form>
+    {% if last_create %}
+      <div class="small"><b>Last create response:</b></div>
+      <pre>{{ last_create }}</pre>
+    {% endif %}
+
+    <h3>Activate Device</h3>
+    <form method="post" action="/admin/activate-device">
+      <input name="tenant_id" value="enabled" placeholder="tenant_id" required>
+      <input name="device_id" placeholder="device_id" required>
+      <input name="activation_code" placeholder="activation_code" required>
+      <button class="btn" type="submit">Activate</button>
+    </form>
+    {% if last_activate %}
+      <div class="small"><b>Last activate response:</b> (token is shown once)</div>
+      <pre>{{ last_activate }}</pre>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card">
+      <div><b>Devices</b></div>
+      <div>Total: {{ counts.devices_total }}</div>
+      <div>Online: {{ counts.devices_online }}</div>
+      <div>Stale: {{ counts.devices_stale }}</div>
+    </div>
+
+    <div class="card">
+      <div><b>Alerts</b></div>
+      <div>Open: {{ counts.alerts_open }}</div>
+    </div>
+
+    <div class="card">
+      <div><b>Quarantine</b></div>
+      <div>Last 10m (stored): {{ counts.quarantined_10m }}</div>
+      <div>Rate-limited (10m): <span class="{% if rate_limited_10m > 0 %}pill pill-hot{% else %}pill{% endif %}"><b>{{ rate_limited_10m }}</b></span></div>
+      <div class="small">RPS: {{ rate_rps }} &nbsp; Burst: {{ rate_burst }} &nbsp; MaxPayload: {{ max_payload_bytes }} bytes</div>
+    </div>
+  </div>
+
+  <h2>Quarantine Rate (last 60 minutes)</h2>
+  <div class="legend small">
+    <span class="pill">Max/min: {{ rate_max }}</span>
+    <span class="pill">Blue = rejects, Red = includes RATE_LIMITED</span>
+  </div>
+  <div class="barwrap" title="Each bar is 1 minute">
+    {% for p in rate_series %}
+      {% set h = 0 %}
+      {% if rate_max > 0 %}
+        {% set h = (p.cnt / rate_max) * 80 %}
+      {% endif %}
+      {% if p.rl > 0 %}
+        <div class="bar-rl" style="height: {{ h }}px" title="{{ p.t }} total={{ p.cnt }} rate_limited={{ p.rl }}"></div>
+      {% else %}
+        <div class="bar" style="height: {{ h }}px" title="{{ p.t }} total={{ p.cnt }} rate_limited={{ p.rl }}"></div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <h2>Quarantine Reasons (last 10 minutes)</h2>
+  {% if reason_counts_10m|length == 0 %}
+    <div class="empty">No reject counters in last 10 minutes.</div>
+  {% else %}
+  <table>
+    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for r in reason_counts_10m %}
+      <tr>
+        <td class="{% if r.reason == 'RATE_LIMITED' %}reason-rate{% endif %}"><b>{{ r.reason }}</b></td>
+        <td class="{% if r.reason == 'RATE_LIMITED' %}reason-rate{% endif %}">{{ r.cnt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2>Devices</h2>
+  {% if devices|length == 0 %}
+    <div class="empty">No device_state rows yet.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Tenant</th><th>Site</th><th>Device</th><th>Status</th><th>Last Seen</th>
+        <th>Battery%</th><th>Temp C</th><th>RSSI</th><th>SNR</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in devices %}
+      <tr class="{{ d.status }}">
+        <td>{{ d.tenant_id }}</td>
+        <td>{{ d.site_id }}</td>
+        <td><a href="/device/{{ d.device_id }}">{{ d.device_id }}</a></td>
+        <td><b>{{ d.status }}</b></td>
+        <td>{{ d.last_seen_at }}</td>
+        <td>{{ d.battery_pct }}</td>
+        <td>{{ d.temp_c }}</td>
+        <td>{{ d.rssi_dbm }}</td>
+        <td>{{ d.snr_db }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2>Open Alerts</h2>
+  {% if open_alerts|length == 0 %}
+    <div class="empty">No open alerts.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Created</th><th>Tenant</th><th>Site</th><th>Device</th><th>Type</th>
+        <th>Severity</th><th>Confidence</th><th>Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in open_alerts %}
+      <tr>
+        <td>{{ a.created_at }}</td>
+        <td>{{ a.tenant_id }}</td>
+        <td>{{ a.site_id }}</td>
+        <td>{{ a.device_id }}</td>
+        <td>{{ a.alert_type }}</td>
+        <td>{{ a.severity }}</td>
+        <td>{{ "%.2f"|format(a.confidence) }}</td>
+        <td>{{ a.summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2>Recent Quarantine (last 50 stored)</h2>
+  {% if quarantine|length == 0 %}
+    <div class="empty">No quarantined messages.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr><th>Ingested</th><th>Tenant</th><th>Site</th><th>Device</th><th>Msg Type</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+      {% for q in quarantine %}
+      <tr>
+        <td>{{ q.ingested_at }}</td>
+        <td>{{ q.tenant_id }}</td>
+        <td>{{ q.site_id }}</td>
+        <td>{{ q.device_id }}</td>
+        <td>{{ q.msg_type }}</td>
+        <td><b>{{ q.reason }}</b></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</body>
+</html>

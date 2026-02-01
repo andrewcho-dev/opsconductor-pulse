@@ -1,0 +1,134 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: iot-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ../data/mosquitto/config:/mosquitto/config
+      - ../data/mosquitto/data:/mosquitto/data
+      - ../data/mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: iot-postgres
+    environment:
+      POSTGRES_DB: iotcloud
+      POSTGRES_USER: iot
+      POSTGRES_PASSWORD: iot_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iot -d iotcloud -h 127.0.0.1 -p 5432"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+
+  ingest:
+    build: ../services/ingest_iot
+    container_name: iot-ingest
+    environment:
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: "tenant/+/device/+/+"
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      AUTO_PROVISION: "0"
+      REQUIRE_TOKEN: "1"
+      COUNTERS_ENABLED: "1"
+      SETTINGS_POLL_SECONDS: "5"
+      LOG_STATS_EVERY_SECONDS: "30"
+    depends_on:
+      mqtt:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  evaluator:
+    build: ../services/evaluator_iot
+    container_name: iot-evaluator
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      POLL_SECONDS: "5"
+      HEARTBEAT_STALE_SECONDS: "30"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  device_sim:
+    build: ../simulator/device_sim_iot
+    container_name: iot-device-sim
+    environment:
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      TENANT_ID: enabled
+      SITE_ID: lab-1
+      DEVICE_COUNT: "25"
+      HEARTBEAT_SECONDS: "5"
+      TELEMETRY_SECONDS: "10"
+      UPLINK_DROP_PERIOD: "60"
+      UPLINK_DROP_DURATION: "20"
+      BATTERY_FLOOR: "10"
+      DRAIN_PER_TELEM_MEAN: "0.02"
+      DRAIN_PER_TELEM_JITTER: "0.02"
+      RECHARGE_CHANCE_PER_TELEM: "0.002"
+      RECHARGE_BOOST_MIN: "5"
+      RECHARGE_BOOST_MAX: "15"
+    depends_on:
+      mqtt:
+        condition: service_started
+    restart: unless-stopped
+
+  ui:
+    build: ../services/ui_iot
+    container_name: iot-ui
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      UI_REFRESH_SECONDS: "5"
+      PROVISION_API_URL: "http://iot-api:8081"
+      PROVISION_ADMIN_KEY: "change-me-now"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  api:
+    build: ../services/provision_api
+    container_name: iot-api
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      ADMIN_KEY: "change-me-now"
+      ACTIVATION_TTL_MINUTES: "60"
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
