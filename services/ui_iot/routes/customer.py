@@ -1,10 +1,13 @@
 import os
 import logging
 import re
+import datetime
+import time
 from uuid import UUID
 from urllib.parse import urlparse
 
 import asyncpg
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -14,6 +17,7 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from db.queries import (
+    check_and_increment_rate_limit,
     create_integration,
     create_integration_route,
     delete_integration,
@@ -194,6 +198,24 @@ def _normalize_list(values: list[str] | None, allowed: set[str], field_name: str
     if not cleaned:
         raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
     return cleaned
+
+
+def generate_test_payload(tenant_id: str, integration_name: str) -> dict:
+    now = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return {
+        "_test": True,
+        "_generated_at": now,
+        "alert_id": "test-00000000-0000-0000-0000-000000000000",
+        "tenant_id": tenant_id,
+        "device_id": "TEST-DEVICE-001",
+        "site_id": "TEST-SITE",
+        "alert_type": "STALE_DEVICE",
+        "severity": "WARNING",
+        "summary": "Test alert from OpsConductor Pulse",
+        "message": "This is a test delivery to verify your webhook integration is working correctly.",
+        "integration_name": integration_name,
+        "created_at": now,
+    }
 
 
 router = APIRouter(
@@ -463,6 +485,84 @@ async def delete_integration_route(integration_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Integration not found")
     return Response(status_code=204)
+
+
+@router.post("/integrations/{integration_id}/test", dependencies=[Depends(require_customer_admin)])
+async def test_integration_delivery(integration_id: str):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            allowed, _ = await check_and_increment_rate_limit(
+                conn,
+                tenant_id=tenant_id,
+                action="test_delivery",
+                limit=5,
+                window_seconds=60,
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Maximum 5 test deliveries per minute.",
+                )
+
+            integration = await fetch_integration(conn, tenant_id, integration_id)
+            if not integration:
+                raise HTTPException(status_code=404, detail="Integration not found")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch integration for test")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    webhook_url = integration.get("url")
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="Integration webhook URL missing")
+    payload = generate_test_payload(tenant_id, integration.get("name", "Webhook"))
+
+    start = time.monotonic()
+    success = False
+    http_status = None
+    error = None
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook_url, json=payload, headers={"Content-Type": "application/json"})
+            http_status = resp.status_code
+            if 200 <= resp.status_code < 300:
+                success = True
+            else:
+                error = f"Server returned HTTP {resp.status_code}"
+    except httpx.TimeoutException:
+        error = "Connection timeout after 10 seconds"
+    except httpx.ConnectError as exc:
+        msg = str(exc).lower()
+        if "name or service not known" in msg or "nodename nor servname" in msg:
+            error = "Could not resolve hostname"
+        else:
+            error = "Connection refused by server"
+    except httpx.RequestError:
+        error = "Connection refused by server"
+
+    latency_ms = int((time.monotonic() - start) * 1000)
+    result = {
+        "success": success,
+        "http_status": http_status,
+        "latency_ms": latency_ms,
+        "error": error,
+        "payload_sent": payload,
+    }
+
+    logger.info(
+        "Test delivery",
+        extra={
+            "tenant_id": tenant_id,
+            "integration_id": integration_id,
+            "success": success,
+            "latency_ms": latency_ms,
+        },
+    )
+    return result
 
 
 @router.get("/integration-routes")

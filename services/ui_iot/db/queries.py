@@ -434,6 +434,47 @@ async def delete_integration_route(
     return result.split(" ")[-1] != "0"
 
 
+async def check_and_increment_rate_limit(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    action: str,
+    limit: int,
+    window_seconds: int,
+) -> tuple[bool, int]:
+    _require_tenant(tenant_id)
+    await conn.execute(
+        """
+        DELETE FROM rate_limits
+        WHERE tenant_id = $1 AND action = $2
+          AND created_at < now() - ($3::int * interval '1 second')
+        """,
+        tenant_id,
+        action,
+        window_seconds,
+    )
+    count = await conn.fetchval(
+        """
+        SELECT COUNT(*) FROM rate_limits
+        WHERE tenant_id = $1 AND action = $2
+          AND created_at > now() - ($3::int * interval '1 second')
+        """,
+        tenant_id,
+        action,
+        window_seconds,
+    )
+    if count >= limit:
+        return False, int(count)
+    await conn.execute(
+        """
+        INSERT INTO rate_limits (tenant_id, action, created_at)
+        VALUES ($1, $2, now())
+        """,
+        tenant_id,
+        action,
+    )
+    return True, int(count) + 1
+
+
 
 
 async def fetch_all_devices(
