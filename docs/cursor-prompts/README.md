@@ -136,25 +136,30 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase4-snmp-outputs/`
 
-**Status**: NOT STARTED
+**Status**: COMPLETE
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-snmp-schema.md` | Extend integrations table for SNMP type, add snmp_config column | `[ ]` | Phase 3.5 |
-| 2 | `002-snmp-sender.md` | SNMP trap sender (pysnmp), v2c and v3 support | `[ ]` | #1 |
-| 3 | `003-snmp-customer-routes.md` | Customer CRUD for SNMP integrations | `[ ]` | #1, #2 |
-| 4 | `004-snmp-address-validation.md` | Validate SNMP destinations (no internal IPs) | `[ ]` | #3 |
-| 5 | `005-dispatcher-update.md` | Update alert dispatcher to handle SNMP outputs | `[ ]` | #2, #3 |
-| 6 | `006-snmp-test-delivery.md` | Dry-run SNMP trap endpoint | `[ ]` | #3, #5 |
-| 7 | `007-snmp-ui.md` | Customer UI for SNMP configuration | `[ ]` | #3, #6 |
+| 1 | `001-snmp-schema.md` | Extend integrations table for SNMP type, add snmp_config column | `[x]` | Phase 3.5 |
+| 2 | `002-snmp-sender.md` | SNMP trap sender (pysnmp), v2c and v3 support | `[x]` | #1 |
+| 3 | `003-snmp-customer-routes.md` | Customer CRUD for SNMP integrations | `[x]` | #1, #2 |
+| 4 | `004-snmp-address-validation.md` | Validate SNMP destinations (no internal IPs) | `[x]` | #3 |
+| 5 | `005-dispatcher-update.md` | Update alert dispatcher to handle SNMP outputs | `[x]` | #2, #3 |
+| 6 | `006-snmp-test-delivery.md` | Dry-run SNMP trap endpoint | `[x]` | #3, #5 |
+| 7 | `007-snmp-ui.md` | Customer UI for SNMP configuration | `[x]` | #3, #6 |
 
 **Exit Criteria**:
-- [ ] Customer can create SNMP integrations (v2c and v3)
-- [ ] SNMP destinations validated (no internal IPs)
-- [ ] Alerts dispatch to SNMP alongside webhooks
-- [ ] Test delivery sends real SNMP trap
-- [ ] Customer UI for SNMP management
-- [ ] Same tenant isolation as webhooks
+- [x] Customer can create SNMP integrations (v2c and v3)
+- [x] SNMP destinations validated (no internal IPs)
+- [x] Alerts dispatch to SNMP alongside webhooks
+- [x] Test delivery sends real SNMP trap
+- [x] Customer UI for SNMP management
+- [x] Same tenant isolation as webhooks
+
+**Notes**:
+- Task specs had gaps (referenced non-existent helpers/files); Cursor adapted to actual codebase
+- `012_delivery_log.sql` migration needs to be run on deployment
+- pysnmp-lextudio deprecation warning; may need to switch to pysnmp in future
 
 ---
 
