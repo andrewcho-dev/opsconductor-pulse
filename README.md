@@ -1,5 +1,8 @@
 # OpsConductor-Pulse
 
+![Tests](https://github.com/OWNER/REPO/workflows/Tests/badge.svg)
+![Coverage](https://codecov.io/gh/OWNER/REPO/branch/main/graph/badge.svg)
+
 OpsConductor-Pulse is an edge telemetry, health, and signaling platform for managed IoT devices. Provides secure multi-tenant device ingestion, real-time state evaluation, alert generation, and operational dashboards.
 
 ## Quick Start
