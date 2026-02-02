@@ -18,12 +18,13 @@ async def tenant_connection(pool: asyncpg.Pool, tenant_id: str) -> AsyncGenerato
         raise ValueError("tenant_id is required for tenant_connection")
 
     async with pool.acquire() as conn:
-        # Set role to pulse_app (subject to RLS)
-        await conn.execute("SET LOCAL ROLE pulse_app")
-        # Set tenant context for RLS policies
-        await conn.execute("SET LOCAL app.tenant_id = $1", tenant_id)
-        yield conn
-        # Connection returned to pool; SET LOCAL resets automatically
+        async with conn.transaction():
+            # Set role to pulse_app (subject to RLS)
+            await conn.execute("SET LOCAL ROLE pulse_app")
+            # Set tenant context for RLS policies
+            await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
+            yield conn
+            # Connection returned to pool; SET LOCAL resets automatically
 
 
 @asynccontextmanager
@@ -40,6 +41,7 @@ async def operator_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Conn
             # Returns ALL rows, no RLS filtering
     """
     async with pool.acquire() as conn:
-        # Set role to pulse_operator (BYPASSRLS)
-        await conn.execute("SET LOCAL ROLE pulse_operator")
-        yield conn
+        async with conn.transaction():
+            # Set role to pulse_operator (BYPASSRLS)
+            await conn.execute("SET LOCAL ROLE pulse_operator")
+            yield conn
