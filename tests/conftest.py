@@ -5,10 +5,17 @@ from typing import AsyncGenerator
 
 import asyncpg
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "services", "ui_iot"))
 from app import app
+from tests.helpers.auth import (
+    get_customer1_token,
+    get_customer2_token,
+    get_operator_token,
+    get_operator_admin_token,
+)
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -116,31 +123,31 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
         yield client
 
 
-@pytest.fixture
-def customer_a_token():
-    """Get valid JWT for customer in tenant-a."""
-    return "customer_a_token_placeholder"
+@pytest_asyncio.fixture(scope="session")
+async def customer_a_token() -> str:
+    """Get valid JWT for customer1 (tenant-a, customer_admin)."""
+    return await get_customer1_token()
 
 
-@pytest.fixture
-def customer_b_token():
-    """Get valid JWT for customer in tenant-b."""
-    return "customer_b_token_placeholder"
+@pytest_asyncio.fixture(scope="session")
+async def customer_b_token() -> str:
+    """Get valid JWT for customer2 (tenant-b, customer_viewer)."""
+    return await get_customer2_token()
 
 
-@pytest.fixture
-def operator_token():
-    """Get valid JWT for operator."""
-    return "operator_token_placeholder"
+@pytest_asyncio.fixture(scope="session")
+async def customer_viewer_token() -> str:
+    """Alias for customer2 (customer_viewer role)."""
+    return await get_customer2_token()
 
 
-@pytest.fixture
-def operator_admin_token():
-    """Get valid JWT for operator admin."""
-    return "operator_admin_token_placeholder"
+@pytest_asyncio.fixture(scope="session")
+async def operator_token() -> str:
+    """Get valid JWT for operator1."""
+    return await get_operator_token()
 
 
-@pytest.fixture
-def customer_viewer_token():
-    """Get valid JWT for customer viewer in tenant-a."""
-    return "customer_viewer_token_placeholder"
+@pytest_asyncio.fixture(scope="session")
+async def operator_admin_token() -> str:
+    """Get valid JWT for operator_admin."""
+    return await get_operator_admin_token()
