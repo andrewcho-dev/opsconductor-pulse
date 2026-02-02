@@ -3,6 +3,8 @@ import logging
 import re
 import datetime
 import time
+import json
+import uuid
 from uuid import UUID
 from urllib.parse import urlparse
 
@@ -18,6 +20,11 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from utils.url_validator import validate_webhook_url
+from schemas.snmp import (
+    SNMPIntegrationCreate,
+    SNMPIntegrationUpdate,
+    SNMPIntegrationResponse,
+)
 from db.pool import tenant_connection
 from db.queries import (
     check_and_increment_rate_limit,
@@ -391,6 +398,253 @@ async def list_integrations():
         integrations.append(item)
 
     return {"tenant_id": tenant_id, "integrations": integrations}
+
+
+@router.get("/integrations/snmp", response_model=list[SNMPIntegrationResponse])
+async def list_snmp_integrations():
+    """List all SNMP integrations for this tenant."""
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT integration_id, tenant_id, name, snmp_host, snmp_port, snmp_config,
+                       snmp_oid_prefix, enabled, created_at, updated_at
+                FROM integrations
+                WHERE tenant_id = $1 AND type = 'snmp'
+                ORDER BY created_at DESC
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch SNMP integrations")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return [
+        SNMPIntegrationResponse(
+            id=row["integration_id"],
+            tenant_id=row["tenant_id"],
+            name=row["name"],
+            snmp_host=row["snmp_host"],
+            snmp_port=row["snmp_port"],
+            snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
+            snmp_oid_prefix=row["snmp_oid_prefix"],
+            enabled=row["enabled"],
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/integrations/snmp/{integration_id}", response_model=SNMPIntegrationResponse)
+async def get_snmp_integration(integration_id: str):
+    """Get a specific SNMP integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, snmp_host, snmp_port, snmp_config,
+                       snmp_oid_prefix, enabled, created_at, updated_at
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'snmp'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch SNMP integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return SNMPIntegrationResponse(
+        id=row["integration_id"],
+        tenant_id=row["tenant_id"],
+        name=row["name"],
+        snmp_host=row["snmp_host"],
+        snmp_port=row["snmp_port"],
+        snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
+        snmp_oid_prefix=row["snmp_oid_prefix"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.post(
+    "/integrations/snmp",
+    response_model=SNMPIntegrationResponse,
+    status_code=201,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def create_snmp_integration(data: SNMPIntegrationCreate):
+    """Create a new SNMP integration."""
+    tenant_id = get_tenant_id()
+    name = _validate_name(data.name)
+    integration_id = str(uuid.uuid4())
+    now = datetime.datetime.utcnow()
+    snmp_config = data.snmp_config.model_dump()
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO integrations (
+                    integration_id, tenant_id, name, type, snmp_host, snmp_port,
+                    snmp_config, snmp_oid_prefix, enabled, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, 'snmp', $4, $5, $6, $7, $8, $9, $10)
+                RETURNING integration_id, tenant_id, name, snmp_host, snmp_port, snmp_config,
+                          snmp_oid_prefix, enabled, created_at, updated_at
+                """,
+                integration_id,
+                tenant_id,
+                name,
+                data.snmp_host,
+                data.snmp_port,
+                json.dumps(snmp_config),
+                data.snmp_oid_prefix,
+                data.enabled,
+                now,
+                now,
+            )
+    except Exception:
+        logger.exception("Failed to create SNMP integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return SNMPIntegrationResponse(
+        id=row["integration_id"],
+        tenant_id=row["tenant_id"],
+        name=row["name"],
+        snmp_host=row["snmp_host"],
+        snmp_port=row["snmp_port"],
+        snmp_version=snmp_config.get("version", "2c"),
+        snmp_oid_prefix=row["snmp_oid_prefix"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.patch(
+    "/integrations/snmp/{integration_id}",
+    response_model=SNMPIntegrationResponse,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpdate):
+    """Update an SNMP integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+
+    updates = []
+    values = []
+    param_idx = 1
+
+    if "name" in update_data and update_data["name"] is not None:
+        update_data["name"] = _validate_name(update_data["name"])
+
+    for field in ["name", "snmp_host", "snmp_port", "snmp_oid_prefix", "enabled"]:
+        if field in update_data and update_data[field] is not None:
+            updates.append(f"{field} = ${param_idx}")
+            values.append(update_data[field])
+            param_idx += 1
+
+    if "snmp_config" in update_data and update_data["snmp_config"] is not None:
+        updates.append(f"snmp_config = ${param_idx}")
+        values.append(json.dumps(data.snmp_config.model_dump()))
+        param_idx += 1
+
+    updates.append(f"updated_at = ${param_idx}")
+    values.append(datetime.datetime.utcnow())
+    param_idx += 1
+
+    values.extend([integration_id, tenant_id])
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE integrations
+                SET {", ".join(updates)}
+                WHERE integration_id = ${param_idx} AND tenant_id = ${param_idx + 1} AND type = 'snmp'
+                RETURNING integration_id, tenant_id, name, snmp_host, snmp_port, snmp_config,
+                          snmp_oid_prefix, enabled, created_at, updated_at
+                """,
+                *values,
+            )
+    except Exception:
+        logger.exception("Failed to update SNMP integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return SNMPIntegrationResponse(
+        id=row["integration_id"],
+        tenant_id=row["tenant_id"],
+        name=row["name"],
+        snmp_host=row["snmp_host"],
+        snmp_port=row["snmp_port"],
+        snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
+        snmp_oid_prefix=row["snmp_oid_prefix"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.delete(
+    "/integrations/snmp/{integration_id}",
+    status_code=204,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def delete_snmp_integration(integration_id: str):
+    """Delete an SNMP integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'snmp'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to delete SNMP integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return Response(status_code=204)
 
 
 @router.post("/integrations", dependencies=[Depends(require_customer_admin)])
