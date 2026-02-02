@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}OpsConductor Pulse{% endblock %}</title>
+    <style>
+        body { font-family: monospace; margin: 20px; background: #1a1a2e; color: #eee; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .tenant-badge { background: #4a4a6a; padding: 4px 12px; border-radius: 4px; }
+        .user-info { font-size: 0.9em; color: #aaa; margin-left: 8px; }
+        .nav { margin: 16px 0; display: flex; gap: 12px; flex-wrap: wrap; }
+        .nav-link { color: #8ab4f8; text-decoration: none; }
+        .nav-link:hover { text-decoration: underline; }
+        .logout-btn { background: #4a4a6a; color: #fff; padding: 8px 16px;
+                      text-decoration: none; border-radius: 4px; margin-left: 8px; }
+        .card { background: #2a2a4e; padding: 16px; border-radius: 8px; }
+        .hidden { display: none; }
+        button { cursor: pointer; }
+        input, select { background: #111; color: #eee; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>OpsConductor Pulse</h1>
+        <div>
+            {% if tenant_id %}
+            <span class="tenant-badge">Tenant: {{ tenant_id }}</span>
+            {% endif %}
+            {% if user and user.email %}
+            <span class="user-info">{{ user.email }}</span>
+            {% endif %}
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </div>
+    <div class="nav">
+        <a href="/customer/dashboard" class="nav-link">Dashboard</a>
+        <a href="/customer/devices" class="nav-link">Devices</a>
+        <a href="/customer/alerts" class="nav-link">Alerts</a>
+        <a href="/customer/integrations" class="nav-link">Webhook Integrations</a>
+        <a href="/customer/snmp-integrations" class="nav-link">SNMP Integrations</a>
+    </div>
+    {% block content %}{% endblock %}
+    <script src="/static/js/auth.js"></script>
+</body>
+</html>

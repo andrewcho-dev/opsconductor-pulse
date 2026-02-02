@@ -1,0 +1,72 @@
+{% extends "customer/base.html" %}
+
+{% block title %}SNMP Integrations{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>SNMP Integrations</h2>
+        <button id="btn-add-snmp">Add SNMP Integration</button>
+    </div>
+    <div id="snmp-list" style="margin-top: 12px;">
+        <div>Loading...</div>
+    </div>
+</div>
+
+<div id="snmp-modal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center;">
+    <div class="card" style="width: 420px;">
+        <h3 id="modal-title">Add SNMP Integration</h3>
+        <form id="snmp-form">
+            <input type="hidden" id="integration-id" value="">
+            <div style="margin: 10px 0;">
+                <label>Name</label>
+                <input type="text" id="snmp-name" required style="width: 100%;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>Host</label>
+                <input type="text" id="snmp-host" required style="width: 100%;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>Port</label>
+                <input type="number" id="snmp-port" value="162" style="width: 100%;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>SNMP Version</label>
+                <select id="snmp-version" style="width: 100%;">
+                    <option value="2c">SNMPv2c</option>
+                    <option value="3">SNMPv3</option>
+                </select>
+            </div>
+            <div id="v2c-config">
+                <div style="margin: 10px 0;">
+                    <label>Community String</label>
+                    <input type="text" id="snmp-community" value="public" style="width: 100%;">
+                </div>
+            </div>
+            <div id="v3-config" class="hidden">
+                <div style="margin: 10px 0;">
+                    <label>Username</label>
+                    <input type="text" id="snmp-username" style="width: 100%;">
+                </div>
+                <div style="margin: 10px 0;">
+                    <label>Auth Password</label>
+                    <input type="password" id="snmp-auth-password" style="width: 100%;">
+                </div>
+            </div>
+            <div style="margin: 10px 0;">
+                <label>
+                    <input type="checkbox" id="snmp-enabled" checked>
+                    Enabled
+                </label>
+            </div>
+            <div id="form-error" class="hidden" style="margin: 10px 0; color: #f88;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" id="btn-cancel">Cancel</button>
+                <button type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/static/js/snmp_integrations.js"></script>
+{% endblock %}
