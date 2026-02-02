@@ -1,16 +1,19 @@
 import os
+import base64
+import hashlib
+import logging
+import secrets
 import asyncpg
 import httpx
 from urllib.parse import urlparse
-from fastapi import FastAPI, Form, Query
+from fastapi import FastAPI, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from routes.customer import router as customer_router
 from routes.operator import router as operator_router
-from middleware.auth import JWTBearer, validate_token
-from middleware.tenant import get_user, is_operator
+from middleware.auth import validate_token
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -30,6 +33,28 @@ app.include_router(customer_router)
 app.include_router(operator_router)
 
 pool: asyncpg.Pool | None = None
+
+logger = logging.getLogger(__name__)
+
+
+def _secure_cookies_enabled() -> bool:
+    return os.getenv("SECURE_COOKIES", "false").lower() == "true"
+
+
+def get_ui_base_url() -> str:
+    return os.getenv("UI_BASE_URL", "http://localhost:8080").rstrip("/")
+
+
+def generate_pkce_pair() -> tuple[str, str]:
+    verifier = secrets.token_urlsafe(32)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def generate_state() -> str:
+    return secrets.token_urlsafe(32)
 
 def to_float(v):
     try:
@@ -185,51 +210,164 @@ async def admin_activate_device(
         )
     return RedirectResponse(url="/", status_code=303)
 
-def get_login_url():
+def get_callback_url() -> str:
+    return f"{get_ui_base_url()}/callback"
+
+
+def build_authorization_url(state: str, code_challenge: str) -> str:
     keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     client_id = "pulse-ui"
-    redirect_uri = "http://localhost:8080/callback"
+    redirect_uri = get_callback_url()
     return (
         f"{keycloak_url}/realms/{realm}/protocol/openid-connect/auth"
         f"?client_id={client_id}"
         f"&response_type=code"
         f"&redirect_uri={redirect_uri}"
         f"&scope=openid"
+        f"&state={state}"
+        f"&code_challenge={code_challenge}"
+        f"&code_challenge_method=S256"
     )
+
+
+@app.get("/login")
+async def login():
+    verifier, challenge = generate_pkce_pair()
+    state = generate_state()
+
+    response = RedirectResponse(url=build_authorization_url(state, challenge), status_code=302)
+    response.set_cookie(
+        "oauth_state",
+        state,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=600,
+        path="/",
+    )
+    response.set_cookie(
+        "oauth_verifier",
+        verifier,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=600,
+        path="/",
+    )
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    auth_header = request.headers.get("Authorization", "")
-
-    if not auth_header.startswith("Bearer "):
-        return RedirectResponse(url=get_login_url(), status_code=302)
+    session_token = request.cookies.get("pulse_session")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=302)
 
     try:
-        token = auth_header[7:]
-        payload = await validate_token(token)
+        payload = await validate_token(session_token)
         role = payload.get("role", "")
-
         if role in ("operator", "operator_admin"):
             return RedirectResponse(url="/operator/dashboard", status_code=302)
         if role in ("customer_admin", "customer_viewer"):
             return RedirectResponse(url="/customer/dashboard", status_code=302)
-        return RedirectResponse(url=get_login_url(), status_code=302)
+        return RedirectResponse(url="/login", status_code=302)
     except Exception:
-        return RedirectResponse(url=get_login_url(), status_code=302)
+        return RedirectResponse(url="/login", status_code=302)
 
 
 @app.get("/callback")
-async def oauth_callback(code: str = Query(...)):
-    return RedirectResponse(url=f"/?code={code}", status_code=302)
+async def oauth_callback(request: Request, code: str | None = Query(None), state: str | None = Query(None)):
+    if not code:
+        return RedirectResponse(url="/?error=missing_code", status_code=302)
+
+    stored_state = request.cookies.get("oauth_state")
+    if not stored_state or not state:
+        return RedirectResponse(url="/?error=missing_state", status_code=302)
+    if state != stored_state:
+        return RedirectResponse(url="/?error=state_mismatch", status_code=302)
+
+    verifier = request.cookies.get("oauth_verifier")
+    if not verifier:
+        return RedirectResponse(url="/?error=missing_verifier", status_code=302)
+
+    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    realm = os.getenv("KEYCLOAK_REALM", "pulse")
+    token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                token_url,
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": "pulse-ui",
+                    "code": code,
+                    "redirect_uri": get_callback_url(),
+                    "code_verifier": verifier,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except httpx.RequestError:
+        logger.exception("OAuth token exchange failed")
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+    if 500 <= response.status_code < 600:
+        logger.error("OAuth token exchange server error: %s", response.text)
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
+    if response.status_code >= 400:
+        logger.warning("OAuth token exchange rejected: %s", response.text)
+        return RedirectResponse(url="/?error=invalid_code", status_code=302)
+
+    token_payload = response.json()
+    access_token = token_payload.get("access_token")
+    refresh_token = token_payload.get("refresh_token")
+    expires_in = token_payload.get("expires_in", 0)
+    if not access_token or not refresh_token:
+        return RedirectResponse(url="/?error=invalid_code", status_code=302)
+
+    try:
+        validated = await validate_token(access_token)
+    except Exception:
+        return RedirectResponse(url="/?error=invalid_token", status_code=302)
+
+    role = validated.get("role", "")
+    if role in ("operator", "operator_admin"):
+        redirect_url = "/operator/dashboard"
+    elif role in ("customer_admin", "customer_viewer"):
+        redirect_url = "/customer/dashboard"
+    else:
+        redirect_url = "/?error=unknown_role"
+
+    redirect = RedirectResponse(url=redirect_url, status_code=302)
+    redirect.delete_cookie("oauth_state", path="/")
+    redirect.delete_cookie("oauth_verifier", path="/")
+    redirect.set_cookie(
+        "pulse_session",
+        access_token,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=int(expires_in),
+        path="/",
+    )
+    redirect.set_cookie(
+        "pulse_refresh",
+        refresh_token,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=1800,
+        path="/",
+    )
+    return redirect
 
 
 @app.get("/logout")
 async def logout():
     keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
-    redirect_uri = "http://localhost:8080/"
+    redirect_uri = f"{get_ui_base_url()}/"
     return RedirectResponse(
         url=f"{keycloak_url}/realms/{realm}/protocol/openid-connect/logout?redirect_uri={redirect_uri}",
         status_code=302,
