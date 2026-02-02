@@ -98,10 +98,16 @@ class JWTBearer(HTTPBearer):
         super().__init__(auto_error=True)
 
     async def __call__(self, request: Request) -> HTTPAuthorizationCredentials:
-        credentials = await super().__call__(request)
-        if not credentials:
+        token = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        else:
+            token = request.cookies.get("pulse_session")
+
+        if not token:
             raise HTTPException(status_code=401, detail="Missing authorization")
 
-        payload = await validate_token(credentials.credentials)
+        payload = await validate_token(token)
         request.state.user = payload
-        return credentials
+        return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
