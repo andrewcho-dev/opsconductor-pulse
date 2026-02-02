@@ -8,7 +8,9 @@ COPY app.py /app/app.py
 COPY middleware /app/middleware
 COPY db /app/db
 COPY routes /app/routes
+COPY utils /app/utils
 COPY templates /app/templates
+COPY static /app/static
 
 EXPOSE 8080
 ENV PYTHONUNBUFFERED=1

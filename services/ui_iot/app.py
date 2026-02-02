@@ -3,12 +3,14 @@ import base64
 import hashlib
 import logging
 import secrets
+import time
 import asyncpg
 import httpx
 from urllib.parse import urlparse
 from fastapi import FastAPI, Form, Query, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
 from routes.customer import router as customer_router
@@ -28,6 +30,7 @@ PROVISION_ADMIN_KEY = os.getenv("PROVISION_ADMIN_KEY", "change-me-now")
 
 app = FastAPI()
 templates = Jinja2Templates(directory="/app/templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(customer_router)
 app.include_router(operator_router)
@@ -368,10 +371,104 @@ async def logout():
     keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     redirect_uri = f"{get_ui_base_url()}/"
-    return RedirectResponse(
+    response = RedirectResponse(
         url=f"{keycloak_url}/realms/{realm}/protocol/openid-connect/logout?redirect_uri={redirect_uri}",
         status_code=302,
     )
+    response.delete_cookie("pulse_session", path="/")
+    response.delete_cookie("pulse_refresh", path="/")
+    return response
+
+
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    session_token = request.cookies.get("pulse_session")
+    if not session_token:
+        return {"authenticated": False}
+
+    try:
+        payload = await validate_token(session_token)
+    except Exception:
+        return {"authenticated": False}
+
+    exp = payload.get("exp")
+    expires_in = 0
+    if exp:
+        expires_in = max(0, int(exp - time.time()))
+
+    return {
+        "authenticated": True,
+        "user": {
+            "email": payload.get("email"),
+            "role": payload.get("role"),
+            "tenant_id": payload.get("tenant_id"),
+        },
+        "expires_in": expires_in,
+    }
+
+
+@app.post("/api/auth/refresh")
+async def auth_refresh(request: Request):
+    refresh_token = request.cookies.get("pulse_refresh")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    realm = os.getenv("KEYCLOAK_REALM", "pulse")
+    token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                token_url,
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": "pulse-ui",
+                    "refresh_token": refresh_token,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except httpx.RequestError:
+        logger.exception("Token refresh failed")
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+    if response.status_code >= 400:
+        cleared = JSONResponse({"success": False}, status_code=401)
+        cleared.delete_cookie("pulse_session", path="/")
+        cleared.delete_cookie("pulse_refresh", path="/")
+        return cleared
+
+    token_payload = response.json()
+    access_token = token_payload.get("access_token")
+    new_refresh_token = token_payload.get("refresh_token")
+    expires_in = token_payload.get("expires_in", 300)
+    refresh_expires_in = token_payload.get("refresh_expires_in", 1800)
+    if not access_token or not new_refresh_token:
+        cleared = JSONResponse({"success": False}, status_code=401)
+        cleared.delete_cookie("pulse_session", path="/")
+        cleared.delete_cookie("pulse_refresh", path="/")
+        return cleared
+
+    refreshed = JSONResponse({"success": True, "expires_in": expires_in})
+    refreshed.set_cookie(
+        "pulse_session",
+        access_token,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=int(expires_in),
+        path="/",
+    )
+    refreshed.set_cookie(
+        "pulse_refresh",
+        new_refresh_token,
+        httponly=True,
+        secure=_secure_cookies_enabled(),
+        samesite="lax",
+        max_age=int(refresh_expires_in),
+        path="/",
+    )
+    return refreshed
 
 
 @app.get("/device/{device_id}", response_class=HTMLResponse)
