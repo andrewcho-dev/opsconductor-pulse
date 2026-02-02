@@ -2,14 +2,12 @@ import os
 import logging
 import re
 import datetime
-import time
 import json
 import uuid
 from uuid import UUID
 from urllib.parse import urlparse
 
 import asyncpg
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -47,6 +45,7 @@ from db.queries import (
     update_integration,
     update_integration_route,
 )
+from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 
 logger = logging.getLogger(__name__)
 
@@ -748,8 +747,12 @@ async def delete_integration_route(integration_id: str):
     return Response(status_code=204)
 
 
-@router.post("/integrations/{integration_id}/test", dependencies=[Depends(require_customer_admin)])
-async def test_integration_delivery(integration_id: str):
+@router.post(
+    "/integrations/snmp/{integration_id}/test",
+    dependencies=[Depends(require_customer_admin)],
+)
+async def test_snmp_integration(integration_id: str):
+    """Send a test SNMP trap."""
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
@@ -767,66 +770,127 @@ async def test_integration_delivery(integration_id: str):
                     detail="Rate limit exceeded. Maximum 5 test deliveries per minute.",
                 )
 
-            integration = await fetch_integration(conn, tenant_id, integration_id)
-            if not integration:
-                raise HTTPException(status_code=404, detail="Integration not found")
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, type, snmp_host, snmp_port,
+                       snmp_config, snmp_oid_prefix, enabled
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'snmp'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch SNMP integration for test")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    test_alert = AlertPayload(
+        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
+        device_id="test-device",
+        tenant_id=tenant_id,
+        severity="info",
+        message="Test trap from OpsConductor Pulse",
+        timestamp=datetime.datetime.utcnow(),
+    )
+
+    integration = {
+        "integration_id": row["integration_id"],
+        "name": row["name"],
+        "type": row["type"],
+        "snmp_host": row["snmp_host"],
+        "snmp_port": row["snmp_port"],
+        "snmp_config": row["snmp_config"],
+        "snmp_oid_prefix": row["snmp_oid_prefix"],
+        "enabled": True,
+    }
+
+    result = await dispatch_to_integration(test_alert, integration)
+
+    return {
+        "success": result.success,
+        "integration_id": integration_id,
+        "integration_name": row["name"],
+        "destination": f"{row['snmp_host']}:{row['snmp_port']}",
+        "error": result.error,
+        "duration_ms": result.duration_ms,
+    }
+
+
+@router.post("/integrations/{integration_id}/test", dependencies=[Depends(require_customer_admin)])
+async def test_integration_delivery(integration_id: str):
+    """Send a test delivery to any integration type."""
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            allowed, _ = await check_and_increment_rate_limit(
+                conn,
+                tenant_id=tenant_id,
+                action="test_delivery",
+                limit=5,
+                window_seconds=60,
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Maximum 5 test deliveries per minute.",
+                )
+
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, type,
+                       config_json->>'url' AS webhook_url,
+                       snmp_host, snmp_port, snmp_config, snmp_oid_prefix, enabled
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2
+                """,
+                integration_id,
+                tenant_id,
+            )
     except HTTPException:
         raise
     except Exception:
         logger.exception("Failed to fetch integration for test")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    webhook_url = integration.get("url")
-    if not webhook_url:
-        raise HTTPException(status_code=400, detail="Integration webhook URL missing")
-    valid, error = await validate_webhook_url(webhook_url)
-    if not valid:
-        raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
-    payload = generate_test_payload(tenant_id, integration.get("name", "Webhook"))
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
 
-    start = time.monotonic()
-    success = False
-    http_status = None
-    error = None
+    test_alert = AlertPayload(
+        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
+        device_id="test-device",
+        tenant_id=tenant_id,
+        severity="info",
+        message="Test delivery from OpsConductor Pulse",
+        timestamp=datetime.datetime.utcnow(),
+    )
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(webhook_url, json=payload, headers={"Content-Type": "application/json"})
-            http_status = resp.status_code
-            if 200 <= resp.status_code < 300:
-                success = True
-            else:
-                error = f"Server returned HTTP {resp.status_code}"
-    except httpx.TimeoutException:
-        error = "Connection timeout after 10 seconds"
-    except httpx.ConnectError as exc:
-        msg = str(exc).lower()
-        if "name or service not known" in msg or "nodename nor servname" in msg:
-            error = "Could not resolve hostname"
-        else:
-            error = "Connection refused by server"
-    except httpx.RequestError:
-        error = "Connection refused by server"
+    integration = dict(row)
+    integration["enabled"] = True
+    integration["webhook_url"] = row["webhook_url"]
 
-    latency_ms = int((time.monotonic() - start) * 1000)
-    result = {
-        "success": success,
-        "http_status": http_status,
-        "latency_ms": latency_ms,
-        "error": error,
-        "payload_sent": payload,
+    result = await dispatch_to_integration(test_alert, integration)
+
+    response = {
+        "success": result.success,
+        "integration_id": integration_id,
+        "integration_name": row["name"],
+        "integration_type": row["type"],
+        "error": result.error,
+        "duration_ms": result.duration_ms,
     }
 
-    logger.info(
-        "Test delivery",
-        extra={
-            "tenant_id": tenant_id,
-            "integration_id": integration_id,
-            "success": success,
-            "latency_ms": latency_ms,
-        },
-    )
-    return result
+    if row["type"] == "webhook":
+        response["destination"] = row["webhook_url"]
+    elif row["type"] == "snmp":
+        response["destination"] = f"{row['snmp_host']}:{row['snmp_port']}"
+
+    return response
 
 
 @router.get("/integration-routes")
