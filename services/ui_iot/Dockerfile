@@ -5,6 +5,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py /app/app.py
+COPY middleware /app/middleware
+COPY db /app/db
+COPY routes /app/routes
 COPY templates /app/templates
 
 EXPOSE 8080
