@@ -1,0 +1,31 @@
+[run]
+source = services/ui_iot
+omit =
+    */tests/*
+    */__pycache__/*
+    */migrations/*
+    */.venv/*
+branch = True
+parallel = True
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    def __str__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+show_missing = True
+precision = 2
+fail_under = 70
+
+[html]
+directory = htmlcov
+title = OpsConductor Pulse Coverage Report
+
+[xml]
+output = coverage.xml

@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest
+        entry: pytest -m unit --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

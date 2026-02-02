@@ -1,3 +1,11 @@
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
+.pytest_cache/
+test-results/
 # secrets
 .env
 .env.*
