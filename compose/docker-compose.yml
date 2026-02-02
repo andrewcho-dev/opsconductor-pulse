@@ -181,3 +181,25 @@ services:
     ports:
       - "9999:9999"
     restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: pulse-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_dev
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://iot-postgres:5432/iotcloud
+      KC_DB_USERNAME: iot
+      KC_DB_PASSWORD: iot_dev
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
