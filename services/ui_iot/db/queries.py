@@ -306,6 +306,134 @@ async def delete_integration(
     return result.split(" ")[-1] != "0"
 
 
+async def fetch_integration_routes(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    _require_tenant(tenant_id)
+    rows = await conn.fetch(
+        """
+        SELECT r.tenant_id, r.route_id, r.integration_id, i.name AS integration_name,
+               r.alert_types, r.severities, r.enabled, r.created_at
+        FROM integration_routes r
+        JOIN integrations i
+          ON r.integration_id = i.integration_id AND r.tenant_id = i.tenant_id
+        WHERE r.tenant_id = $1
+        ORDER BY r.created_at DESC
+        LIMIT $2
+        """,
+        tenant_id,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_integration_route(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    route_id: str,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+    row = await conn.fetchrow(
+        """
+        SELECT r.tenant_id, r.route_id, r.integration_id, i.name AS integration_name,
+               r.alert_types, r.severities, r.enabled, r.created_at
+        FROM integration_routes r
+        JOIN integrations i
+          ON r.integration_id = i.integration_id AND r.tenant_id = i.tenant_id
+        WHERE r.tenant_id = $1 AND r.route_id = $2
+        """,
+        tenant_id,
+        route_id,
+    )
+    return dict(row) if row else None
+
+
+async def create_integration_route(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    integration_id: str,
+    alert_types: List[str],
+    severities: List[str],
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    _require_tenant(tenant_id)
+    route_id = str(uuid.uuid4())
+    row = await conn.fetchrow(
+        """
+        INSERT INTO integration_routes
+            (tenant_id, route_id, integration_id, alert_types, severities, enabled, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+        RETURNING tenant_id, route_id, integration_id, alert_types, severities, enabled, created_at
+        """,
+        tenant_id,
+        route_id,
+        integration_id,
+        alert_types,
+        severities,
+        enabled,
+    )
+    return dict(row)
+
+
+async def update_integration_route(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    route_id: str,
+    alert_types: List[str] | None = None,
+    severities: List[str] | None = None,
+    enabled: bool | None = None,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+
+    sets: list[str] = []
+    params: list[Any] = [tenant_id, route_id]
+    idx = 3
+
+    if alert_types is not None:
+        sets.append(f"alert_types = ${idx}")
+        params.append(alert_types)
+        idx += 1
+    if severities is not None:
+        sets.append(f"severities = ${idx}")
+        params.append(severities)
+        idx += 1
+    if enabled is not None:
+        sets.append(f"enabled = ${idx}")
+        params.append(enabled)
+        idx += 1
+
+    if not sets:
+        return None
+
+    query = (
+        "UPDATE integration_routes SET "
+        + ", ".join(sets)
+        + " WHERE tenant_id = $1 AND route_id = $2 "
+        + "RETURNING tenant_id, route_id, integration_id, alert_types, severities, enabled, created_at"
+    )
+    row = await conn.fetchrow(query, *params)
+    return dict(row) if row else None
+
+
+async def delete_integration_route(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    route_id: str,
+) -> bool:
+    _require_tenant(tenant_id)
+    result = await conn.execute(
+        """
+        DELETE FROM integration_routes
+        WHERE tenant_id = $1 AND route_id = $2
+        """,
+        tenant_id,
+        route_id,
+    )
+    return result.split(" ")[-1] != "0"
+
+
 
 
 async def fetch_all_devices(

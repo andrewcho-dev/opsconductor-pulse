@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+from uuid import UUID
 from urllib.parse import urlparse
 
 import asyncpg
@@ -14,7 +15,9 @@ from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from db.queries import (
     create_integration,
+    create_integration_route,
     delete_integration,
+    delete_integration_route,
     fetch_alerts,
     fetch_delivery_attempts,
     fetch_device,
@@ -23,8 +26,11 @@ from db.queries import (
     fetch_device_telemetry,
     fetch_devices,
     fetch_integration,
+    fetch_integration_route,
+    fetch_integration_routes,
     fetch_integrations,
     update_integration,
+    update_integration_route,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +131,19 @@ class IntegrationUpdate(BaseModel):
     webhook_url: str | None = None
     enabled: bool | None = None
 
+
+class RouteCreate(BaseModel):
+    integration_id: UUID
+    alert_types: list[str]
+    severities: list[str]
+    enabled: bool = True
+
+
+class RouteUpdate(BaseModel):
+    alert_types: list[str] | None = None
+    severities: list[str] | None = None
+    enabled: bool | None = None
+
 async def require_customer_admin(request: Request):
     user = get_user()
     if user.get("role") != "customer_admin":
@@ -149,6 +168,32 @@ def _validate_basic_url(value: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid URL format")
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs are allowed")
+
+
+ALERT_TYPES = {"STALE_DEVICE", "LOW_BATTERY", "TEMPERATURE_ALERT", "CONNECTIVITY_ISSUE", "DEVICE_OFFLINE"}
+SEVERITIES = {"CRITICAL", "WARNING", "INFO"}
+
+
+def _normalize_list(values: list[str] | None, allowed: set[str], field_name: str) -> list[str] | None:
+    if values is None:
+        return None
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if item is None:
+            continue
+        trimmed = item.strip()
+        if not trimmed:
+            continue
+        if trimmed not in allowed:
+            raise HTTPException(status_code=400, detail=f"Invalid {field_name} value: {trimmed}")
+        if trimmed in seen:
+            continue
+        seen.add(trimmed)
+        cleaned.append(trimmed)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
+    return cleaned
 
 
 router = APIRouter(
@@ -417,6 +462,126 @@ async def delete_integration_route(integration_id: str):
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Integration not found")
+    return Response(status_code=204)
+
+
+@router.get("/integration-routes")
+async def list_integration_routes(limit: int = Query(100, ge=1, le=500)):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            routes = await fetch_integration_routes(conn, tenant_id, limit=limit)
+    except Exception:
+        logger.exception("Failed to fetch integration routes")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"tenant_id": tenant_id, "routes": routes}
+
+
+@router.get("/integration-routes/{route_id}")
+async def get_integration_route(route_id: str):
+    try:
+        UUID(route_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            route = await fetch_integration_route(conn, tenant_id, route_id)
+    except Exception:
+        logger.exception("Failed to fetch integration route")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not route:
+        raise HTTPException(status_code=404, detail="Integration route not found")
+    return route
+
+
+@router.post("/integration-routes", dependencies=[Depends(require_customer_admin)])
+async def create_integration_route_endpoint(body: RouteCreate):
+    tenant_id = get_tenant_id()
+    alert_types = _normalize_list(body.alert_types, ALERT_TYPES, "alert_types")
+    severities = _normalize_list(body.severities, SEVERITIES, "severities")
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            integration = await fetch_integration(conn, tenant_id, str(body.integration_id))
+            if not integration:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Integration not found or belongs to different tenant",
+                )
+            route = await create_integration_route(
+                conn,
+                tenant_id=tenant_id,
+                integration_id=str(body.integration_id),
+                alert_types=alert_types,
+                severities=severities,
+                enabled=body.enabled,
+            )
+            route["integration_name"] = integration.get("name")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create integration route")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return route
+
+
+@router.patch("/integration-routes/{route_id}", dependencies=[Depends(require_customer_admin)])
+async def patch_integration_route(route_id: str, body: RouteUpdate):
+    try:
+        UUID(route_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
+
+    if body.alert_types is None and body.severities is None and body.enabled is None:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    alert_types = _normalize_list(body.alert_types, ALERT_TYPES, "alert_types") if body.alert_types is not None else None
+    severities = _normalize_list(body.severities, SEVERITIES, "severities") if body.severities is not None else None
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            route = await update_integration_route(
+                conn,
+                tenant_id=tenant_id,
+                route_id=route_id,
+                alert_types=alert_types,
+                severities=severities,
+                enabled=body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to update integration route")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not route:
+        raise HTTPException(status_code=404, detail="Integration route not found")
+    return route
+
+
+@router.delete("/integration-routes/{route_id}", dependencies=[Depends(require_customer_admin)])
+async def delete_integration_route_endpoint(route_id: str):
+    try:
+        UUID(route_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            deleted = await delete_integration_route(conn, tenant_id, route_id)
+    except Exception:
+        logger.exception("Failed to delete integration route")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Integration route not found")
     return Response(status_code=204)
 
 
