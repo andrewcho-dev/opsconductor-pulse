@@ -190,3 +190,98 @@ async def fetch_integrations(
         limit,
     )
     return [dict(r) for r in rows]
+
+
+async def fetch_all_devices(
+    conn: asyncpg.Connection,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT tenant_id, device_id, site_id, status, last_seen_at,
+               state->>'battery_pct' AS battery_pct,
+               state->>'temp_c' AS temp_c,
+               state->>'rssi_dbm' AS rssi_dbm,
+               state->>'snr_db' AS snr_db
+        FROM device_state
+        ORDER BY tenant_id, site_id, device_id
+        LIMIT $1 OFFSET $2
+        """,
+        limit,
+        offset,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_all_alerts(
+    conn: asyncpg.Connection,
+    status: str = "OPEN",
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT alert_id, tenant_id, device_id, site_id, alert_type,
+               severity, confidence, summary, status, created_at
+        FROM fleet_alert
+        WHERE status = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        """,
+        status,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_all_integrations(
+    conn: asyncpg.Connection,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT tenant_id, integration_id, name, enabled,
+               config_json->>'url' AS url, created_at
+        FROM integrations
+        ORDER BY created_at DESC
+        LIMIT $1
+        """,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_all_delivery_attempts(
+    conn: asyncpg.Connection,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT tenant_id, job_id, attempt_no, ok, http_status,
+               latency_ms, error, finished_at
+        FROM delivery_attempts
+        ORDER BY finished_at DESC
+        LIMIT $1
+        """,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_quarantine_events(
+    conn: asyncpg.Connection,
+    minutes: int = 60,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT ingested_at, tenant_id, site_id, device_id, msg_type, reason
+        FROM quarantine_events
+        WHERE ingested_at > (now() - ($1::text || ' minutes')::interval)
+        ORDER BY ingested_at DESC
+        LIMIT $2
+        """,
+        minutes,
+        limit,
+    )
+    return [dict(r) for r in rows]
