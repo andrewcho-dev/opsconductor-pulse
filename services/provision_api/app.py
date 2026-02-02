@@ -2,6 +2,7 @@ import os
 import json
 import hashlib
 import secrets
+from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
 import asyncpg
@@ -26,6 +27,25 @@ def now_utc() -> datetime:
 
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def normalize_config_json(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 async def get_pool() -> asyncpg.Pool:
     global pool
@@ -129,6 +149,48 @@ class AdminRotateTokenResponse(BaseModel):
     tenant_id: str
     device_id: str
     new_provision_token: str
+
+class AdminCreateIntegration(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    headers: dict = Field(default_factory=dict)
+    enabled: bool = True
+
+class AdminIntegrationResponse(BaseModel):
+    tenant_id: str
+    integration_id: str
+    name: str
+    type: str
+    enabled: bool
+    url: str
+    created_at: str
+
+class AdminCreateRoute(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    integration_id: UUID
+    name: str = Field(min_length=1)
+    enabled: bool = True
+    min_severity: int | None = None
+    alert_types: list[str] | None = None
+    site_ids: list[str] | None = None
+    device_prefixes: list[str] | None = None
+    deliver_on: list[str] | None = None
+    priority: int = 100
+
+class AdminRouteResponse(BaseModel):
+    tenant_id: str
+    route_id: str
+    integration_id: str
+    name: str
+    enabled: bool
+    min_severity: int | None
+    alert_types: list[str] | None
+    site_ids: list[str] | None
+    device_prefixes: list[str] | None
+    deliver_on: list[str]
+    priority: int
+    created_at: str
 
 # -------------------------
 # Admin endpoints
@@ -266,6 +328,195 @@ async def admin_rotate_token(tenant_id: str, device_id: str, x_admin_key: str | 
         )
 
     return AdminRotateTokenResponse(tenant_id=tenant_id, device_id=device_id, new_provision_token=new_token)
+
+@app.post("/api/admin/integrations", response_model=AdminIntegrationResponse)
+async def admin_create_integration(payload: AdminCreateIntegration, x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+
+    url = payload.url.strip()
+    headers = payload.headers or {}
+    config = {"url": url, "headers": headers}
+
+    p = await get_pool()
+    async with p.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO integrations (tenant_id, name, type, enabled, config_json)
+            VALUES ($1,$2,'webhook',$3,$4::jsonb)
+            RETURNING tenant_id, integration_id, name, type, enabled, config_json, created_at
+            """,
+            payload.tenant_id,
+            payload.name,
+            payload.enabled,
+            json.dumps(config)
+        )
+
+    cfg = normalize_config_json(row["config_json"])
+    return AdminIntegrationResponse(
+        tenant_id=row["tenant_id"],
+        integration_id=str(row["integration_id"]),
+        name=row["name"],
+        type=row["type"],
+        enabled=row["enabled"],
+        url=cfg.get("url", ""),
+        created_at=row["created_at"].isoformat()
+    )
+
+@app.get("/api/admin/integrations")
+async def admin_list_integrations(
+    x_admin_key: str | None = Header(default=None),
+    tenant_id: str | None = Query(default=None),
+    enabled: bool | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    require_admin(x_admin_key)
+
+    clauses = []
+    args = []
+    if tenant_id:
+        clauses.append(f"tenant_id=${len(args)+1}")
+        args.append(tenant_id)
+    if enabled is not None:
+        clauses.append(f"enabled=${len(args)+1}")
+        args.append(enabled)
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    q = f"""
+    SELECT tenant_id, integration_id, name, type, enabled, config_json, created_at
+    FROM integrations
+    {where}
+    ORDER BY created_at DESC
+    LIMIT {limit}
+    """
+
+    p = await get_pool()
+    async with p.acquire() as conn:
+        rows = await conn.fetch(q, *args)
+
+    output = []
+    for row in rows:
+        cfg = normalize_config_json(row["config_json"])
+        output.append(
+            {
+                "tenant_id": row["tenant_id"],
+                "integration_id": str(row["integration_id"]),
+                "name": row["name"],
+                "type": row["type"],
+                "enabled": row["enabled"],
+                "url": cfg.get("url", ""),
+                "created_at": row["created_at"].isoformat(),
+            }
+        )
+
+    return output
+
+@app.post("/api/admin/integration-routes", response_model=AdminRouteResponse)
+async def admin_create_route(payload: AdminCreateRoute, x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+
+    deliver_on = payload.deliver_on or ["OPEN"]
+    deliver_on = [d.upper() for d in deliver_on if isinstance(d, str)]
+    deliver_on = [d for d in deliver_on if d == "OPEN"]
+    if not deliver_on:
+        deliver_on = ["OPEN"]
+
+    p = await get_pool()
+    async with p.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO integration_routes (
+              tenant_id, integration_id, name, enabled, min_severity, alert_types,
+              site_ids, device_prefixes, deliver_on, priority
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            RETURNING tenant_id, route_id, integration_id, name, enabled, min_severity,
+                      alert_types, site_ids, device_prefixes, deliver_on, priority, created_at
+            """,
+            payload.tenant_id,
+            payload.integration_id,
+            payload.name,
+            payload.enabled,
+            payload.min_severity,
+            payload.alert_types,
+            payload.site_ids,
+            payload.device_prefixes,
+            deliver_on,
+            payload.priority,
+        )
+
+    return AdminRouteResponse(
+        tenant_id=row["tenant_id"],
+        route_id=str(row["route_id"]),
+        integration_id=str(row["integration_id"]),
+        name=row["name"],
+        enabled=row["enabled"],
+        min_severity=row["min_severity"],
+        alert_types=row["alert_types"],
+        site_ids=row["site_ids"],
+        device_prefixes=row["device_prefixes"],
+        deliver_on=row["deliver_on"],
+        priority=row["priority"],
+        created_at=row["created_at"].isoformat(),
+    )
+
+@app.get("/api/admin/integration-routes")
+async def admin_list_routes(
+    x_admin_key: str | None = Header(default=None),
+    tenant_id: str | None = Query(default=None),
+    integration_id: UUID | None = Query(default=None),
+    enabled: bool | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    require_admin(x_admin_key)
+
+    clauses = []
+    args = []
+    if tenant_id:
+        clauses.append(f"tenant_id=${len(args)+1}")
+        args.append(tenant_id)
+    if integration_id:
+        clauses.append(f"integration_id=${len(args)+1}")
+        args.append(integration_id)
+    if enabled is not None:
+        clauses.append(f"enabled=${len(args)+1}")
+        args.append(enabled)
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    q = f"""
+    SELECT tenant_id, route_id, integration_id, name, enabled, min_severity,
+           alert_types, site_ids, device_prefixes, deliver_on, priority, created_at
+    FROM integration_routes
+    {where}
+    ORDER BY priority ASC, created_at DESC
+    LIMIT {limit}
+    """
+
+    p = await get_pool()
+    async with p.acquire() as conn:
+        rows = await conn.fetch(q, *args)
+
+    output = []
+    for row in rows:
+        output.append(
+            {
+                "tenant_id": row["tenant_id"],
+                "route_id": str(row["route_id"]),
+                "integration_id": str(row["integration_id"]),
+                "name": row["name"],
+                "enabled": row["enabled"],
+                "min_severity": row["min_severity"],
+                "alert_types": row["alert_types"],
+                "site_ids": row["site_ids"],
+                "device_prefixes": row["device_prefixes"],
+                "deliver_on": row["deliver_on"],
+                "priority": row["priority"],
+                "created_at": row["created_at"].isoformat(),
+            }
+        )
+
+    return output
 
 # -------------------------
 # Device-facing endpoint

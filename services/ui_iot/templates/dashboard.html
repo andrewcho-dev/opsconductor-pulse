@@ -230,6 +230,57 @@
   </table>
   {% endif %}
 
+  <h2>Webhook Integrations</h2>
+  {% if integrations|length == 0 %}
+    <div class="empty">No integrations configured.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Tenant</th><th>Name</th><th>Enabled</th><th>URL (redacted)</th><th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in integrations %}
+      <tr>
+        <td>{{ i.tenant_id }}</td>
+        <td>{{ i.name }}</td>
+        <td>{{ i.enabled }}</td>
+        <td>{{ i.url }}</td>
+        <td>{{ i.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h2>Recent Delivery Attempts (last 20)</h2>
+  {% if delivery_attempts|length == 0 %}
+    <div class="empty">No delivery attempts.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Finished</th><th>Tenant</th><th>Job</th><th>Attempt</th><th>OK</th><th>HTTP</th><th>Latency</th><th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in delivery_attempts %}
+      <tr>
+        <td>{{ a.finished_at }}</td>
+        <td>{{ a.tenant_id }}</td>
+        <td>{{ a.job_id }}</td>
+        <td>{{ a.attempt_no }}</td>
+        <td>{{ a.ok }}</td>
+        <td>{{ a.http_status }}</td>
+        <td>{{ a.latency_ms }}ms</td>
+        <td>{{ a.error }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
   <h2>Recent Quarantine (last 50 stored)</h2>
   {% if quarantine|length == 0 %}
     <div class="empty">No quarantined messages.</div>

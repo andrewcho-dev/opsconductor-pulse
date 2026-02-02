@@ -1,6 +1,7 @@
 import os
 import asyncpg
 import httpx
+from urllib.parse import urlparse
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -59,6 +60,19 @@ def sparkline_points(values, width=520, height=60, pad=4):
         y = pad + (height - 2 * pad) * (1.0 - ((v - vmin) / (vmax - vmin)))
         pts.append(f"{x(i):.1f},{y:.1f}")
     return " ".join(pts)
+
+def redact_url(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        return ""
+    if not parsed.hostname:
+        return ""
+    scheme = parsed.scheme or "http"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{scheme}://{parsed.hostname}{port}"
 
 async def get_pool():
     global pool
@@ -233,6 +247,48 @@ async def dashboard(request: Request):
             """
         )
 
+        integrations_rows = await conn.fetch(
+            """
+            SELECT tenant_id, integration_id, name, enabled, config_json->>'url' AS url, created_at
+            FROM integrations
+            ORDER BY created_at DESC
+            LIMIT 200
+            """
+        )
+        integrations = [
+            {
+                "tenant_id": r["tenant_id"],
+                "integration_id": str(r["integration_id"]),
+                "name": r["name"],
+                "enabled": r["enabled"],
+                "url": redact_url(r["url"]),
+                "created_at": r["created_at"],
+            }
+            for r in integrations_rows
+        ]
+
+        delivery_attempt_rows = await conn.fetch(
+            """
+            SELECT tenant_id, job_id, attempt_no, ok, http_status, latency_ms, error, finished_at
+            FROM delivery_attempts
+            ORDER BY finished_at DESC
+            LIMIT 20
+            """
+        )
+        delivery_attempts = [
+            {
+                "tenant_id": r["tenant_id"],
+                "job_id": r["job_id"],
+                "attempt_no": r["attempt_no"],
+                "ok": r["ok"],
+                "http_status": r["http_status"],
+                "latency_ms": r["latency_ms"],
+                "error": r["error"],
+                "finished_at": r["finished_at"],
+            }
+            for r in delivery_attempt_rows
+        ]
+
         quarantine = await conn.fetch(
             """
             SELECT ingested_at, tenant_id, site_id, device_id, msg_type, reason
@@ -311,6 +367,8 @@ async def dashboard(request: Request):
             "counts": counts,
             "devices": devices,
             "open_alerts": open_alerts,
+            "integrations": integrations,
+            "delivery_attempts": delivery_attempts,
             "quarantine": quarantine,
             "reason_counts_10m": reason_counts_10m,
             "rate_series": series,

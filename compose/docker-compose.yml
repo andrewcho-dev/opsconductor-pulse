@@ -70,6 +70,46 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  dispatcher:
+    build: ../services/dispatcher
+    container_name: iot-dispatcher
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      DISPATCH_POLL_SECONDS: "5"
+      ALERT_LOOKBACK_MINUTES: "30"
+      ALERT_LIMIT: "200"
+      ROUTE_LIMIT: "500"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  delivery_worker:
+    build: ../services/delivery_worker
+    container_name: iot-delivery-worker
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      MODE: "DEV"
+      WORKER_POLL_SECONDS: "2"
+      WORKER_BATCH_SIZE: "10"
+      WORKER_TIMEOUT_SECONDS: "30"
+      WORKER_MAX_ATTEMPTS: "5"
+      WORKER_BACKOFF_BASE_SECONDS: "30"
+      WORKER_BACKOFF_MAX_SECONDS: "7200"
+      STUCK_JOB_MINUTES: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   device_sim:
     build: ../simulator/device_sim_iot
     container_name: iot-device-sim
@@ -131,4 +171,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  webhook_receiver:
+    build: ../services/webhook_receiver
+    container_name: iot-webhook-receiver
+    environment:
+      PORT: "9999"
+    ports:
+      - "9999:9999"
     restart: unless-stopped
