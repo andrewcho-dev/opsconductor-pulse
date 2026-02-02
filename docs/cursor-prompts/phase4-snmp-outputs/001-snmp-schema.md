@@ -2,23 +2,24 @@
 
 > **CURSOR: EXECUTE THIS TASK**
 >
-> This is an implementation task. Read the instructions below and implement them.
-> Modify the files listed in "Files to Create/Modify" section.
-> Follow the acceptance criteria to verify your work.
-> Commit with the message in the "Commit" section when done.
+> Read the instructions below and implement them exactly.
+> Modify only the files listed in "Files to Create/Modify".
+> Verify your work against the acceptance criteria.
+> Commit with the exact message in the "Commit" section when done.
 
 ---
 
 ## Context
 
-We need to extend the integrations system to support SNMP trap destinations alongside webhooks. Customers should be able to configure SNMP integrations with the same tenant isolation as webhooks.
+We need to extend the integrations system to support SNMP trap destinations alongside webhooks. Customers will configure SNMP integrations with the same tenant isolation as webhooks.
 
 **Read first**:
 - `db/migrations/` (existing schema)
 - `services/ui_iot/models/` (existing models)
-- Current `integrations` table structure
 
 **Depends on**: Phase 3.5 complete
+
+---
 
 ## Task
 
@@ -63,7 +64,6 @@ ADD CONSTRAINT integration_type_config_check CHECK (
 CREATE INDEX IF NOT EXISTS idx_integrations_type ON integrations(type);
 
 -- Add SNMP-specific OID configuration
--- Default OIDs for alert traps
 ALTER TABLE integrations
 ADD COLUMN IF NOT EXISTS snmp_oid_prefix VARCHAR(128) DEFAULT '1.3.6.1.4.1.99999';
 
@@ -92,17 +92,11 @@ class SNMPVersion(str, Enum):
 class SNMPAuthProtocol(str, Enum):
     MD5 = "MD5"
     SHA = "SHA"
-    SHA224 = "SHA224"
-    SHA256 = "SHA256"
-    SHA384 = "SHA384"
-    SHA512 = "SHA512"
 
 
 class SNMPPrivProtocol(str, Enum):
     DES = "DES"
     AES = "AES"
-    AES192 = "AES192"
-    AES256 = "AES256"
 
 
 class SNMPv2cConfig(BaseModel):
@@ -156,12 +150,11 @@ class SNMPIntegrationResponse(BaseModel):
     type: Literal["snmp"] = "snmp"
     snmp_host: str
     snmp_port: int
-    snmp_version: str  # "2c" or "3"
+    snmp_version: str
     snmp_oid_prefix: str
     enabled: bool
     created_at: str
     updated_at: str
-    # Note: snmp_config credentials are NOT returned
 ```
 
 ### 1.3 Update integration model
@@ -184,19 +177,18 @@ class Integration(BaseModel):
     tenant_id: str
     name: str
     type: IntegrationType = IntegrationType.WEBHOOK
-    # Webhook fields
     webhook_url: Optional[str] = None
     webhook_secret: Optional[str] = None
-    # SNMP fields
     snmp_host: Optional[str] = None
     snmp_port: Optional[int] = 162
     snmp_config: Optional[dict] = None
     snmp_oid_prefix: Optional[str] = None
-    # Common fields
     enabled: bool = True
     created_at: str
     updated_at: str
 ```
+
+---
 
 ## Files to Create/Modify
 
@@ -206,23 +198,24 @@ class Integration(BaseModel):
 | CREATE | `services/ui_iot/schemas/snmp.py` |
 | MODIFY | `services/ui_iot/models/integration.py` |
 
+---
+
 ## Acceptance Criteria
 
 - [ ] Migration creates type column with enum
-- [ ] Migration adds SNMP-specific columns
+- [ ] Migration adds SNMP-specific columns (snmp_host, snmp_port, snmp_config, snmp_oid_prefix)
 - [ ] Constraint ensures correct config per type
 - [ ] Pydantic schemas validate SNMPv2c config
 - [ ] Pydantic schemas validate SNMPv3 config
 - [ ] Existing webhook integrations unaffected (default type)
 
-**Test migration**:
+**Test**:
 ```bash
-# Run migration
 PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud -f db/migrations/011_snmp_integrations.sql
-
-# Verify columns exist
 PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud -c "\d integrations"
 ```
+
+---
 
 ## Commit
 
@@ -233,7 +226,6 @@ Add SNMP integration schema support
 - SNMP columns: host, port, config, oid_prefix
 - Pydantic schemas for SNMPv2c and SNMPv3 config
 - Updated integration model with type field
-- Constraint ensures correct config per type
 
 Part of Phase 4: SNMP and Alternative Outputs
 ```
