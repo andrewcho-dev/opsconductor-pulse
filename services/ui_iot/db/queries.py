@@ -1,4 +1,6 @@
 from typing import Any, Dict, List
+import json
+import uuid
 
 import asyncpg
 
@@ -11,6 +13,11 @@ def _require_tenant(tenant_id: str) -> None:
 def _require_device(device_id: str) -> None:
     if not device_id or not device_id.strip():
         raise ValueError("device_id is required")
+
+
+def _require_integration(integration_id: str) -> None:
+    if not integration_id or not integration_id.strip():
+        raise ValueError("integration_id is required")
 
 
 async def fetch_devices(
@@ -190,6 +197,115 @@ async def fetch_integrations(
         limit,
     )
     return [dict(r) for r in rows]
+
+
+async def fetch_integration(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    integration_id: str,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+    _require_integration(integration_id)
+    row = await conn.fetchrow(
+        """
+        SELECT tenant_id, integration_id, name, enabled,
+               config_json->>'url' AS url, created_at
+        FROM integrations
+        WHERE tenant_id = $1 AND integration_id = $2
+        """,
+        tenant_id,
+        integration_id,
+    )
+    return dict(row) if row else None
+
+
+async def create_integration(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    name: str,
+    webhook_url: str,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    _require_tenant(tenant_id)
+    integration_id = str(uuid.uuid4())
+    row = await conn.fetchrow(
+        """
+        INSERT INTO integrations (tenant_id, integration_id, name, enabled, config_json, created_at)
+        VALUES ($1, $2, $3, $4, $5::jsonb, now())
+        RETURNING tenant_id, integration_id, name, enabled,
+                  config_json->>'url' AS url, created_at
+        """,
+        tenant_id,
+        integration_id,
+        name,
+        enabled,
+        json.dumps({"url": webhook_url}),
+    )
+    return dict(row)
+
+
+async def update_integration(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    integration_id: str,
+    name: str | None = None,
+    webhook_url: str | None = None,
+    enabled: bool | None = None,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+    _require_integration(integration_id)
+
+    sets: list[str] = []
+    params: list[Any] = [tenant_id, integration_id]
+    idx = 3
+
+    if name is not None:
+        sets.append(f"name = ${idx}")
+        params.append(name)
+        idx += 1
+    if enabled is not None:
+        sets.append(f"enabled = ${idx}")
+        params.append(enabled)
+        idx += 1
+    if webhook_url is not None:
+        sets.append(
+            f"config_json = jsonb_set(config_json, '{{url}}', to_jsonb(${idx}::text), true)"
+        )
+        params.append(webhook_url)
+        idx += 1
+
+    if not sets:
+        return None
+
+    query = (
+        "UPDATE integrations SET "
+        + ", ".join(sets)
+        + " WHERE tenant_id = $1 AND integration_id = $2 "
+        + "RETURNING tenant_id, integration_id, name, enabled, "
+        + "config_json->>'url' AS url, created_at"
+    )
+    row = await conn.fetchrow(query, *params)
+    return dict(row) if row else None
+
+
+async def delete_integration(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    integration_id: str,
+) -> bool:
+    _require_tenant(tenant_id)
+    _require_integration(integration_id)
+    result = await conn.execute(
+        """
+        DELETE FROM integrations
+        WHERE tenant_id = $1 AND integration_id = $2
+        """,
+        tenant_id,
+        integration_id,
+    )
+    return result.split(" ")[-1] != "0"
+
+
 
 
 async def fetch_all_devices(

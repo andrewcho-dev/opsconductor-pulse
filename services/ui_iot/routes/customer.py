@@ -1,16 +1,20 @@
 import os
 import logging
+import re
 from urllib.parse import urlparse
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from middleware.auth import JWTBearer
-from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer
+from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from db.queries import (
+    create_integration,
+    delete_integration,
     fetch_alerts,
     fetch_delivery_attempts,
     fetch_device,
@@ -18,7 +22,9 @@ from db.queries import (
     fetch_device_events,
     fetch_device_telemetry,
     fetch_devices,
+    fetch_integration,
     fetch_integrations,
+    update_integration,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,6 +109,46 @@ def redact_url(value: str | None) -> str:
     scheme = parsed.scheme or "http"
     port = f":{parsed.port}" if parsed.port else ""
     return f"{scheme}://{parsed.hostname}{port}"
+
+
+NAME_PATTERN = re.compile(r"^[A-Za-z0-9 _-]+$")
+
+
+class IntegrationCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    webhook_url: str = Field(..., min_length=1)
+    enabled: bool = True
+
+
+class IntegrationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    webhook_url: str | None = None
+    enabled: bool | None = None
+
+async def require_customer_admin(request: Request):
+    user = get_user()
+    if user.get("role") != "customer_admin":
+        raise HTTPException(status_code=403, detail="Customer admin role required")
+
+
+def _validate_name(name: str) -> str:
+    cleaned = name.strip()
+    if not cleaned or len(cleaned) > 100:
+        raise HTTPException(status_code=400, detail="Invalid name length")
+    if not NAME_PATTERN.match(cleaned):
+        raise HTTPException(status_code=400, detail="Invalid name format")
+    return cleaned
+
+
+def _validate_basic_url(value: str) -> None:
+    try:
+        parsed = urlparse(value)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs are allowed")
 
 
 router = APIRouter(
@@ -285,6 +331,93 @@ async def list_integrations():
         integrations.append(item)
 
     return {"tenant_id": tenant_id, "integrations": integrations}
+
+
+@router.post("/integrations", dependencies=[Depends(require_customer_admin)])
+async def create_integration_route(body: IntegrationCreate):
+    tenant_id = get_tenant_id()
+    name = _validate_name(body.name)
+    _validate_basic_url(body.webhook_url)
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            integration = await create_integration(
+                conn,
+                tenant_id=tenant_id,
+                name=name,
+                webhook_url=body.webhook_url,
+                enabled=body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to create integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    integration["url"] = redact_url(integration.get("url"))
+    return integration
+
+
+@router.get("/integrations/{integration_id}")
+async def get_integration(integration_id: str):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            integration = await fetch_integration(conn, tenant_id, integration_id)
+    except Exception:
+        logger.exception("Failed to fetch integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    integration["url"] = redact_url(integration.get("url"))
+    return integration
+
+
+@router.patch("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
+async def patch_integration(integration_id: str, body: IntegrationUpdate):
+    tenant_id = get_tenant_id()
+    if body.name is None and body.webhook_url is None and body.enabled is None:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    name = _validate_name(body.name) if body.name is not None else None
+    if body.webhook_url is not None:
+        _validate_basic_url(body.webhook_url)
+
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            integration = await update_integration(
+                conn,
+                tenant_id=tenant_id,
+                integration_id=integration_id,
+                name=name,
+                webhook_url=body.webhook_url,
+                enabled=body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to update integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    integration["url"] = redact_url(integration.get("url"))
+    return integration
+
+
+@router.delete("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
+async def delete_integration_route(integration_id: str):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            deleted = await delete_integration(conn, tenant_id, integration_id)
+    except Exception:
+        logger.exception("Failed to delete integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    return Response(status_code=204)
 
 
 @router.get("/delivery-status")
