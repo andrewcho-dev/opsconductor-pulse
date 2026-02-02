@@ -2,54 +2,50 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Device {{ device_id }} - IoT Cloud Sim</title>
+  <title>Device {{ device_id }} - OpsConductor Pulse</title>
   <meta http-equiv="refresh" content="{{ refresh }}">
   <style>
-    body { font-family: Arial, sans-serif; margin: 16px; }
-    a { color: #0b66c3; text-decoration: none; }
+    body { font-family: monospace; margin: 20px; background: #1a1a2e; color: #eee; }
+    a { color: #8ab4f8; text-decoration: none; }
     a:hover { text-decoration: underline; }
     .header { display: flex; justify-content: space-between; align-items: center; }
-    .operator-badge {
-      background: #ff9800;
-      color: #000;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.7em;
-      vertical-align: middle;
-      margin-left: 8px;
-    }
-    .user-info { font-size: 12px; color: #555; margin-right: 8px; }
-    .logout-btn { padding: 6px 10px; border:1px solid #ddd; border-radius:8px; background:#fafafa; }
-    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; background:#fafafa; margin-right:6px; margin-bottom:6px; }
-    .ONLINE { background: #eaffea; }
-    .STALE { background: #fff1d6; }
+    .tenant-badge { background: #4a4a6a; padding: 4px 12px; border-radius: 4px; }
+    .user-info { font-size: 0.9em; color: #aaa; margin-left: 8px; }
+    .logout-btn { background: #4a4a6a; color: #fff; padding: 8px 16px;
+                  text-decoration: none; border-radius: 4px; margin-left: 8px; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #444; border-radius:999px; font-size:12px; background:#2a2a4e; margin-right:6px; margin-bottom:6px; }
+    .ONLINE { background: #1f3d2b; }
+    .STALE { background: #4a3b1e; }
     h2 { margin: 18px 0 8px; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }
-    th { background: #f6f6f6; text-align: left; }
-    .small { font-size:12px; color:#555; }
-    .chartbox { border:1px solid #ddd; border-radius:10px; padding:10px; margin:10px 0; }
+    th, td { border: 1px solid #333; padding: 6px 8px; font-size: 13px; }
+    th { background: #2a2a4e; text-align: left; }
+    .small { font-size:12px; color:#aaa; }
+    .chartbox { border:1px solid #333; border-radius:10px; padding:10px; margin:10px 0; }
+    .breadcrumb { margin: 10px 0 16px; color: #aaa; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Device {{ device_id }} <span class="operator-badge">OPERATOR VIEW</span></h1>
+    <h1>Device {{ device_id }}</h1>
     <div>
-      {% if user %}
-      <span class="user-info">{{ user.email }} ({{ user.role }})</span>
+      <span class="tenant-badge">Tenant: {{ tenant_id }}</span>
+      {% if user and user.email %}
+      <span class="user-info">{{ user.email }}</span>
       {% endif %}
       <a href="/logout" class="logout-btn">Logout</a>
     </div>
   </div>
-  <div class="small">
-    <a href="/operator/dashboard">Operator Dashboard</a> →
-    <a href="/operator/tenants/{{ tenant_id }}/devices">Tenant Devices</a> →
+
+  <div class="breadcrumb">
+    <a href="/customer/dashboard">Dashboard</a> &gt;
+    <a href="/customer/devices">Devices</a> &gt;
     {{ device_id }}
   </div>
+
   <div class="small">Auto-refresh: {{ refresh }}s</div>
 
   {% if dev %}
-    <div class="pill">Tenant: <b>{{ dev.tenant_id }}</b></div>
     <div class="pill">Site: <b>{{ dev.site_id }}</b></div>
     <div class="pill {{ dev.status }}">Status: <b>{{ dev.status }}</b></div>
     <div class="pill">Last Seen: <b>{{ dev.last_seen_at }}</b></div>
@@ -66,7 +62,7 @@
   <div class="chartbox">
     <div class="small"><b>Battery%</b></div>
     <svg width="540" height="70">
-      <polyline fill="none" stroke="#0b66c3" stroke-width="2" points="{{ charts.battery_pts }}"></polyline>
+      <polyline fill="none" stroke="#8ab4f8" stroke-width="2" points="{{ charts.battery_pts }}"></polyline>
     </svg>
   </div>
 
@@ -84,7 +80,7 @@
     </svg>
   </div>
 
-  <h2>Last 200 Events (accepted + mirrored rejects)</h2>
+  <h2>Last 50 Events</h2>
   {% if events|length == 0 %}
     <div class="small">No events found.</div>
   {% else %}
@@ -93,11 +89,9 @@
       <tr>
         <th>Ingested</th>
         <th>Accepted</th>
-        <th>Tenant</th>
         <th>Site</th>
         <th>Type</th>
         <th>Reject Reason</th>
-        <th>Token</th>
       </tr>
     </thead>
     <tbody>
@@ -105,11 +99,9 @@
       <tr>
         <td>{{ e.ingested_at }}</td>
         <td><b>{{ e.accepted }}</b></td>
-        <td>{{ e.tenant_id }}</td>
         <td>{{ e.site_id }}</td>
         <td>{{ e.msg_type }}</td>
         <td>{{ e.reject_reason }}</td>
-        <td>{{ e.token }}</td>
       </tr>
       {% endfor %}
     </tbody>

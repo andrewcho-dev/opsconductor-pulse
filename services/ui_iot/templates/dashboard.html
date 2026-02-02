@@ -6,6 +6,18 @@
   <meta http-equiv="refresh" content="{{ refresh }}">
   <style>
     body { font-family: Arial, sans-serif; margin: 16px; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .operator-badge {
+      background: #ff9800;
+      color: #000;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7em;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+    .user-info { font-size: 12px; color: #555; margin-right: 8px; }
+    .logout-btn { padding: 6px 10px; border:1px solid #ddd; border-radius:8px; background:#fafafa; }
     .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
     .card { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; min-width: 240px; }
     h2 { margin: 18px 0 8px; }
@@ -37,11 +49,20 @@
   </style>
 </head>
 <body>
-  <h1>IoT Cloud Sim Dashboard</h1>
+  <div class="header">
+    <h1>OpsConductor Pulse <span class="operator-badge">OPERATOR VIEW</span></h1>
+    <div>
+      {% if user %}
+      <span class="user-info">{{ user.email }} ({{ user.role }})</span>
+      {% endif %}
+      <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+  </div>
   <div class="small">Auto-refresh: {{ refresh }}s</div>
 
+  {% if user and user.role == 'operator_admin' %}
   <div class="toggles">
-    <form method="post" action="/settings">
+    <form method="post" action="/operator/settings">
       {% if mode == "PROD" %}
         <span class="pill pill-prod">MODE: <b>PROD</b> (debug storage locked off)</span>
       {% else %}
@@ -76,6 +97,7 @@
 
     <span class="small">Ingest polls settings every 5s.</span>
   </div>
+  {% endif %}
 
   {% if rate_limited_5m > 0 %}
   <div class="banner">
@@ -84,7 +106,7 @@
   </div>
   {% endif %}
 
-  {% if mode == "DEV" %}
+  {% if user and user.role == 'operator_admin' and mode == "DEV" %}
   <div class="panel">
     <h2>Provisioning (DEV)</h2>
     <div class="small">Creates device + activation code (admin). Activate returns a one-time provision_token.</div>
@@ -189,7 +211,7 @@
       <tr class="{{ d.status }}">
         <td>{{ d.tenant_id }}</td>
         <td>{{ d.site_id }}</td>
-        <td><a href="/device/{{ d.device_id }}">{{ d.device_id }}</a></td>
+        <td><a href="/operator/tenants/{{ d.tenant_id }}/devices/{{ d.device_id }}">{{ d.device_id }}</a></td>
         <td><b>{{ d.status }}</b></td>
         <td>{{ d.last_seen_at }}</td>
         <td>{{ d.battery_pct }}</td>

@@ -271,6 +271,7 @@ async def operator_dashboard(request: Request):
         {
             "request": request,
             "refresh": UI_REFRESH_SECONDS,
+            "user": user,
             "operator": True,
             **context,
         },
@@ -398,9 +399,11 @@ async def view_device(
             "request": request,
             "refresh": UI_REFRESH_SECONDS,
             "device_id": device_id,
+            "tenant_id": tenant_id,
             "dev": device,
             "events": events,
             "charts": charts,
+            "user": user,
             "operator": True,
         },
     )
@@ -517,6 +520,7 @@ async def settings(request: Request, _: None = Depends(require_operator_admin)):
         {
             "request": request,
             "refresh": UI_REFRESH_SECONDS,
+            "user": user,
             "operator": True,
             **context,
         },
