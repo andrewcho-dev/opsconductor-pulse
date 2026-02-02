@@ -53,24 +53,26 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase2-integration-management/`
 
-**Status**: IN PROGRESS
+**Status**: COMPLETE
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-oauth-callback.md` | Complete OAuth code exchange, set HTTP-only cookie | `[ ]` | Phase 1 |
-| 2 | `002-frontend-auth.md` | JS auth handling, token attachment, refresh | `[ ]` | #1 |
-| 3 | `003-integration-crud-routes.md` | POST/PATCH/DELETE /customer/integrations | `[ ]` | #1, #2 |
-| 4 | `004-integration-routes-management.md` | Customer alert routing rules | `[ ]` | #3 |
-| 5 | `005-test-delivery-endpoint.md` | Dry-run webhook delivery | `[ ]` | #3, #4 |
-| 6 | `006-url-validation.md` | SSRF prevention for customer URLs | `[ ]` | #3 |
+| 1 | `001-oauth-callback.md` | Complete OAuth code exchange, set HTTP-only cookie | `[x]` | Phase 1 |
+| 2 | `002-frontend-auth.md` | JS auth handling, token attachment, refresh | `[x]` | #1 |
+| 3 | `003-integration-crud-routes.md` | POST/PATCH/DELETE /customer/integrations | `[x]` | #1, #2 |
+| 4 | `004-integration-routes-management.md` | Customer alert routing rules | `[x]` | #3 |
+| 5 | `005-test-delivery-endpoint.md` | Dry-run webhook delivery | `[x]` | #3, #4 |
+| 6 | `006-url-validation.md` | SSRF prevention for customer URLs | `[x]` | #3 |
 
 **Exit Criteria**:
-- [ ] User can login via browser and maintain session (cookies)
-- [ ] Token refresh works without re-login
-- [ ] Customer can create integrations scoped to their tenant
-- [ ] Customer can define routing rules for their alerts
-- [ ] Test delivery works without affecting production
-- [ ] SSRF blocked for private/internal URLs
+- [x] User can login via browser and maintain session (cookies)
+- [x] Token refresh works without re-login
+- [x] Customer can create integrations scoped to their tenant
+- [x] Customer can define routing rules for their alerts
+- [x] Test delivery works without affecting production
+- [x] SSRF blocked for private/internal URLs
+
+**Additional fix**: Cookie fallback added to JWT auth (bearer OR cookie)
 
 ---
 
@@ -78,9 +80,24 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Goal**: Add database-level tenant isolation as defense-in-depth.
 
-**Directory**: `phase3-rls-enforcement/` (not yet created)
+**Directory**: `phase3-rls-enforcement/`
 
-**Status**: Pending Phase 2 completion
+**Status**: IN PROGRESS
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-rls-migration.md` | Enable RLS on tables, create policies, create roles | `[ ]` | Phase 2 |
+| 2 | `002-connection-wrapper.md` | SET LOCAL tenant context before queries | `[ ]` | #1 |
+| 3 | `003-operator-bypass.md` | Operator BYPASSRLS with audit logging | `[ ]` | #1, #2 |
+| 4 | `004-fail-closed-tests.md` | Verify missing context returns zero rows | `[ ]` | #1, #2, #3 |
+
+**Exit Criteria**:
+- [ ] RLS enabled on all tenant-scoped tables
+- [ ] Queries without app.tenant_id return zero rows (fail-closed)
+- [ ] Customer routes use tenant_connection wrapper
+- [ ] Operator routes use operator_connection (BYPASSRLS)
+- [ ] All operator access audited before query
+- [ ] All RLS tests pass
 
 ---
 
