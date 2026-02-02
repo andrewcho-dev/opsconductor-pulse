@@ -132,11 +132,29 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ## Phase 4: SNMP and Alternative Outputs
 
-**Goal**: Support SNMP trap delivery alongside webhooks.
+**Goal**: Customers can configure SNMP trap destinations alongside webhooks, with the same tenant isolation and routing rules.
 
-**Directory**: `phase4-snmp-outputs/` (not yet created)
+**Directory**: `phase4-snmp-outputs/`
 
-**Status**: Pending Phase 3.5 completion
+**Status**: NOT STARTED
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-snmp-schema.md` | Extend integrations table for SNMP type, add snmp_config column | `[ ]` | Phase 3.5 |
+| 2 | `002-snmp-sender.md` | SNMP trap sender (pysnmp), v2c and v3 support | `[ ]` | #1 |
+| 3 | `003-snmp-customer-routes.md` | Customer CRUD for SNMP integrations | `[ ]` | #1, #2 |
+| 4 | `004-snmp-address-validation.md` | Validate SNMP destinations (no internal IPs) | `[ ]` | #3 |
+| 5 | `005-dispatcher-update.md` | Update alert dispatcher to handle SNMP outputs | `[ ]` | #2, #3 |
+| 6 | `006-snmp-test-delivery.md` | Dry-run SNMP trap endpoint | `[ ]` | #3, #5 |
+| 7 | `007-snmp-ui.md` | Customer UI for SNMP configuration | `[ ]` | #3, #6 |
+
+**Exit Criteria**:
+- [ ] Customer can create SNMP integrations (v2c and v3)
+- [ ] SNMP destinations validated (no internal IPs)
+- [ ] Alerts dispatch to SNMP alongside webhooks
+- [ ] Test delivery sends real SNMP trap
+- [ ] Customer UI for SNMP management
+- [ ] Same tenant isolation as webhooks
 
 ---
 
