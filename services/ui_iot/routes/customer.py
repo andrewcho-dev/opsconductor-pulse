@@ -20,6 +20,7 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from utils.url_validator import validate_webhook_url
+from utils.snmp_validator import validate_snmp_host
 from schemas.snmp import (
     SNMPIntegrationCreate,
     SNMPIntegrationUpdate,
@@ -491,6 +492,9 @@ async def create_snmp_integration(data: SNMPIntegrationCreate):
     """Create a new SNMP integration."""
     tenant_id = get_tenant_id()
     name = _validate_name(data.name)
+    validation = validate_snmp_host(data.snmp_host, data.snmp_port)
+    if not validation.valid:
+        raise HTTPException(status_code=400, detail=f"Invalid SNMP destination: {validation.error}")
     integration_id = str(uuid.uuid4())
     now = datetime.datetime.utcnow()
     snmp_config = data.snmp_config.model_dump()
@@ -553,6 +557,12 @@ async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpda
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    if data.snmp_host is not None:
+        port = data.snmp_port if data.snmp_port is not None else 162
+        validation = validate_snmp_host(data.snmp_host, port)
+        if not validation.valid:
+            raise HTTPException(status_code=400, detail=f"Invalid SNMP destination: {validation.error}")
 
 
     updates = []
