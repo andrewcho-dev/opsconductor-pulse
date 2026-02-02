@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Form
@@ -30,7 +31,7 @@ from db.queries import (
     fetch_integrations,
     fetch_quarantine_events,
 )
-from db.audit import log_operator_access
+from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
 
 logger = logging.getLogger(__name__)
@@ -252,7 +253,7 @@ async def operator_dashboard(request: Request):
 
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -260,8 +261,9 @@ async def operator_dashboard(request: Request):
                 tenant_filter=tenant_hint,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
-
+        async with operator_connection(p) as conn:
             context = await _load_dashboard_context(conn)
     except Exception:
         logger.exception("Failed to load operator dashboard")
@@ -290,16 +292,17 @@ async def list_devices(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
-                action="list_devices",
+                action="list_all_devices",
                 tenant_filter=tenant_filter,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
-
+        async with operator_connection(p) as conn:
             if tenant_filter:
                 devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
             else:
@@ -322,7 +325,7 @@ async def list_tenant_devices(request: Request, tenant_id: str):
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -330,7 +333,9 @@ async def list_tenant_devices(request: Request, tenant_id: str):
                 tenant_filter=tenant_id,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
+        async with operator_connection(p) as conn:
             devices = await fetch_devices(conn, tenant_id, limit=100, offset=0)
     except Exception:
         logger.exception("Failed to fetch operator tenant devices")
@@ -350,7 +355,7 @@ async def view_device(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -360,8 +365,9 @@ async def view_device(
                 resource_id=device_id,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
-
+        async with operator_connection(p) as conn:
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
@@ -421,16 +427,17 @@ async def list_alerts(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
-                action="list_alerts",
+                action="list_all_alerts",
                 tenant_filter=tenant_filter,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
-
+        async with operator_connection(p) as conn:
             if tenant_filter:
                 alerts = await fetch_alerts(conn, tenant_filter, status=status, limit=limit)
             else:
@@ -452,14 +459,16 @@ async def list_quarantine(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
                 action="view_quarantine",
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
+        async with operator_connection(p) as conn:
             events = await fetch_quarantine_events(conn, minutes=minutes, limit=limit)
     except Exception:
         logger.exception("Failed to fetch operator quarantine events")
@@ -477,15 +486,17 @@ async def list_integrations(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
-                action="list_integrations",
+                action="list_all_integrations",
                 tenant_filter=tenant_filter,
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
+        async with operator_connection(p) as conn:
             if tenant_filter:
                 integrations = await fetch_integrations(conn, tenant_filter, limit=50)
             else:
@@ -497,20 +508,72 @@ async def list_integrations(
     return {"integrations": integrations, "tenant_filter": tenant_filter}
 
 
+@router.get("/audit-log", dependencies=[Depends(require_operator_admin)])
+async def get_audit_log(
+    request: Request,
+    user_id: str | None = None,
+    action: str | None = None,
+    since: str | None = None,
+    limit: int = Query(default=100, le=1000),
+):
+    """View operator audit log (operator_admin only)."""
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid since value; use ISO 8601")
+
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            await log_operator_access(
+                conn,
+                user_id=user["sub"],
+                action="view_audit_log",
+                ip_address=ip,
+                user_agent=user_agent,
+                rls_bypassed=True,
+            )
+        async with operator_connection(p) as conn:
+            entries = await fetch_operator_audit_log(
+                conn,
+                user_id=user_id,
+                action=action,
+                since=since_dt,
+                limit=limit,
+            )
+    except Exception:
+        logger.exception("Failed to fetch operator audit log")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {
+        "entries": entries,
+        "limit": limit,
+        "user_id": user_id,
+        "action": action,
+        "since": since,
+    }
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings(request: Request, _: None = Depends(require_operator_admin)):
     user = get_user()
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
                 action="view_settings",
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
+        async with operator_connection(p) as conn:
             context = await _load_dashboard_context(conn)
     except Exception:
         logger.exception("Failed to load operator settings")
@@ -548,14 +611,16 @@ async def update_settings(
 
     try:
         p = await get_pool()
-        async with operator_connection(p) as conn:
+        async with p.acquire() as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
                 action="update_settings",
                 ip_address=ip,
                 user_agent=user_agent,
+                rls_bypassed=True,
             )
+        async with operator_connection(p) as conn:
             await conn.execute(
                 """
                 INSERT INTO app_settings (key, value, updated_at)
