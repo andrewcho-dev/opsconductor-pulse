@@ -138,3 +138,9 @@ def operator_token():
 def operator_admin_token():
     """Get valid JWT for operator admin."""
     return "operator_admin_token_placeholder"
+
+
+@pytest.fixture
+def customer_viewer_token():
+    """Get valid JWT for customer viewer in tenant-a."""
+    return "customer_viewer_token_placeholder"
