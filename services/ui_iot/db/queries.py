@@ -92,7 +92,7 @@ async def fetch_alerts(
     _require_tenant(tenant_id)
     rows = await conn.fetch(
         """
-        SELECT alert_id, tenant_id, device_id, site_id, alert_type,
+        SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
                severity, confidence, summary, status, created_at
         FROM fleet_alert
         WHERE tenant_id = $1 AND status = $2
@@ -506,7 +506,7 @@ async def fetch_all_alerts(
 ) -> List[Dict[str, Any]]:
     rows = await conn.fetch(
         """
-        SELECT alert_id, tenant_id, device_id, site_id, alert_type,
+        SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
                severity, confidence, summary, status, created_at
         FROM fleet_alert
         WHERE status = $1

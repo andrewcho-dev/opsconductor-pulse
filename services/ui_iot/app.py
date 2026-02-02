@@ -6,7 +6,7 @@ import secrets
 import time
 import asyncpg
 import httpx
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 from fastapi import FastAPI, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -371,8 +371,14 @@ async def logout():
     keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     redirect_uri = f"{get_ui_base_url()}/"
+    query = urlencode(
+        {
+            "client_id": "pulse-ui",
+            "post_logout_redirect_uri": redirect_uri,
+        }
+    )
     response = RedirectResponse(
-        url=f"{keycloak_url}/realms/{realm}/protocol/openid-connect/logout?redirect_uri={redirect_uri}",
+        url=f"{keycloak_url}/realms/{realm}/protocol/openid-connect/logout?{query}",
         status_code=302,
     )
     response.delete_cookie("pulse_session", path="/")
