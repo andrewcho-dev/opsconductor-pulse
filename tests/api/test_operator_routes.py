@@ -90,7 +90,9 @@ class TestOperatorAudit:
         )
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert isinstance(data, dict)
+        assert "entries" in data
+        assert isinstance(data["entries"], list)
 
 
 class TestOperatorSettings:

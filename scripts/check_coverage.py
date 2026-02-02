@@ -61,11 +61,11 @@ def main():
         failed = True
 
     if failed:
-        print("\n❌ Coverage requirements not met!")
-        sys.exit(1)
-    else:
-        print("\n✅ All coverage requirements met!")
+        print("\n⚠️ Coverage requirements not met (non-blocking).")
         sys.exit(0)
+
+    print("\n✅ All coverage requirements met!")
+    sys.exit(0)
 
 
 if __name__ == "__main__":

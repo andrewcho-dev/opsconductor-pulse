@@ -42,7 +42,7 @@ class TestCustomerDevices:
     ):
         """Get single device by ID."""
         response = await client.get(
-            "/customer/devices/test-device-a1",
+            "/customer/devices/test-device-a1?format=json",
             headers={"Authorization": f"Bearer {customer_a_token}"},
         )
         assert response.status_code == 200
@@ -116,7 +116,7 @@ class TestCustomerIntegrations:
                 "enabled": True,
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Test Integration"
         assert "integration_id" in data

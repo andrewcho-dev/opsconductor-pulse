@@ -8,29 +8,42 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "services", "ui_iot"))
-from app import app
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql://iot:iot_dev@localhost:5432/iotcloud_test",
+)
+
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://192.168.10.53:8180")
+os.environ.setdefault("KEYCLOAK_URL", KEYCLOAK_URL)
+os.environ.setdefault("KEYCLOAK_REALM", "pulse")
+os.environ.setdefault("PG_HOST", "localhost")
+os.environ.setdefault("PG_PORT", "5432")
+os.environ.setdefault("PG_DB", "iotcloud_test")
+os.environ.setdefault("PG_USER", "iot")
+os.environ.setdefault("PG_PASS", "iot_dev")
+
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ui_root = os.path.join(repo_root, "services", "ui_iot")
+sys.path.insert(0, repo_root)
+sys.path.insert(0, ui_root)
+
+from routes import customer as customer_routes
+from routes import operator as operator_routes
+_orig_cwd = os.getcwd()
+os.chdir(ui_root)
+try:
+    from app import app
+finally:
+    os.chdir(_orig_cwd)
+templates_path = os.path.join(ui_root, "templates")
+customer_routes.templates.env.loader.searchpath = [templates_path]
+operator_routes.templates.env.loader.searchpath = [templates_path]
 from tests.helpers.auth import (
     get_customer1_token,
     get_customer2_token,
     get_operator_token,
     get_operator_admin_token,
 )
-
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql://iot:iot_dev@localhost:5432/iotcloud_test",
-)
-
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="session")
@@ -55,18 +68,18 @@ async def db_connection(db_pool) -> AsyncGenerator[asyncpg.Connection, None]:
 async def clean_db(db_pool):
     """Clean test data before and after test."""
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM device_state WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM fleet_alert WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM integrations WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM integration_routes WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM rate_limits WHERE tenant_id LIKE 'test-%'")
+        await conn.execute("DELETE FROM device_state WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM fleet_alert WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM integrations WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM integration_routes WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM rate_limits WHERE tenant_id IN ('tenant-a', 'tenant-b')")
     yield
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM device_state WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM fleet_alert WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM integrations WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM integration_routes WHERE tenant_id LIKE 'test-%'")
-        await conn.execute("DELETE FROM rate_limits WHERE tenant_id LIKE 'test-%'")
+        await conn.execute("DELETE FROM device_state WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM fleet_alert WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM integrations WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM integration_routes WHERE tenant_id IN ('tenant-a', 'tenant-b')")
+        await conn.execute("DELETE FROM rate_limits WHERE tenant_id IN ('tenant-a', 'tenant-b')")
 
 
 @pytest.fixture
@@ -77,8 +90,8 @@ async def test_tenants(db_pool, clean_db):
             """
             INSERT INTO device_state (tenant_id, device_id, site_id, status, last_seen_at)
             VALUES
-                ('test-tenant-a', 'test-device-a1', 'test-site-a', 'ONLINE', now()),
-                ('test-tenant-a', 'test-device-a2', 'test-site-a', 'STALE', now() - interval '1 hour')
+                ('tenant-a', 'test-device-a1', 'test-site-a', 'ONLINE', now()),
+                ('tenant-a', 'test-device-a2', 'test-site-a', 'STALE', now() - interval '1 hour')
             ON CONFLICT (tenant_id, device_id) DO NOTHING
             """
         )
@@ -86,32 +99,36 @@ async def test_tenants(db_pool, clean_db):
             """
             INSERT INTO device_state (tenant_id, device_id, site_id, status, last_seen_at)
             VALUES
-                ('test-tenant-b', 'test-device-b1', 'test-site-b', 'ONLINE', now())
+                ('tenant-b', 'test-device-b1', 'test-site-b', 'ONLINE', now())
             ON CONFLICT (tenant_id, device_id) DO NOTHING
             """
         )
     yield {
-        "tenant_a": "test-tenant-a",
-        "tenant_b": "test-tenant-b",
+        "tenant_a": "tenant-a",
+        "tenant_b": "tenant-b",
     }
 
 
 @pytest.fixture
 async def test_integrations(db_pool, test_tenants):
     """Create test integrations."""
+    integration_a = "00000000-0000-0000-0000-0000000000a1"
+    integration_b = "00000000-0000-0000-0000-0000000000b1"
     async with db_pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO integrations (tenant_id, integration_id, name, enabled, config_json)
             VALUES
-                ('test-tenant-a', 'int-a1', 'Test Webhook A', true, '{"url": "https://example.com/hook-a"}'),
-                ('test-tenant-b', 'int-b1', 'Test Webhook B', true, '{"url": "https://example.com/hook-b"}')
+                ('tenant-a', $1::uuid, 'Test Webhook A', true, '{"url": "https://example.com/hook-a"}'),
+                ('tenant-b', $2::uuid, 'Test Webhook B', true, '{"url": "https://example.com/hook-b"}')
             ON CONFLICT DO NOTHING
-            """
+            """,
+            integration_a,
+            integration_b,
         )
     yield {
-        "integration_a": "int-a1",
-        "integration_b": "int-b1",
+        "integration_a": integration_a,
+        "integration_b": integration_b,
     }
 
 

@@ -18,6 +18,6 @@ VALUES
     ('test-tenant-b', 'test-device-b1', 'test-site-b', 'ONLINE', now(), '{"battery_pct": 90, "temp_c": 21.0}');
 
 -- Test alerts
-INSERT INTO fleet_alert (tenant_id, device_id, site_id, alert_type, severity, summary, status, created_at)
+INSERT INTO fleet_alert (tenant_id, device_id, site_id, alert_type, fingerprint, severity, confidence, summary, status, created_at)
 VALUES
-    ('test-tenant-a', 'test-device-a2', 'test-site-a', 'LOW_BATTERY', 'WARNING', 'Battery below 25%', 'OPEN', now());
+    ('tenant-a', 'test-device-a2', 'test-site-a', 'LOW_BATTERY', 'test-device-a2-low-battery', 2, 0.8, 'Battery below 25%', 'OPEN', now());

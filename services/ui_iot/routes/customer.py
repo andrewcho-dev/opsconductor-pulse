@@ -9,7 +9,8 @@ from urllib.parse import urlparse
 import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from starlette.requests import Request
@@ -294,12 +295,13 @@ async def get_device_detail(
         raise HTTPException(status_code=500, detail="Internal server error")
 
     if format == "json":
-        return {
+        payload = {
             "tenant_id": tenant_id,
             "device": device,
             "events": events,
             "telemetry": telemetry,
         }
+        return JSONResponse(jsonable_encoder(payload))
 
     series = list(reversed(telemetry))
     bat = [to_float(r["battery_pct"]) for r in series]

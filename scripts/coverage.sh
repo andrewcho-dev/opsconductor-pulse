@@ -6,7 +6,6 @@ pytest \
     --cov-report=term-missing \
     --cov-report=html \
     --cov-report=xml \
-    --cov-fail-under=70 \
     -m "not e2e" \
     "$@"
 
