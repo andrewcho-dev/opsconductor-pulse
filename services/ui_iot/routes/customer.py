@@ -16,6 +16,7 @@ from starlette.requests import Request
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
+from utils.url_validator import validate_webhook_url
 from db.queries import (
     check_and_increment_rate_limit,
     create_integration,
@@ -161,17 +162,6 @@ def _validate_name(name: str) -> str:
     if not NAME_PATTERN.match(cleaned):
         raise HTTPException(status_code=400, detail="Invalid name format")
     return cleaned
-
-
-def _validate_basic_url(value: str) -> None:
-    try:
-        parsed = urlparse(value)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid URL format")
-    if not parsed.scheme or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="Invalid URL format")
-    if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs are allowed")
 
 
 ALERT_TYPES = {"STALE_DEVICE", "LOW_BATTERY", "TEMPERATURE_ALERT", "CONNECTIVITY_ISSUE", "DEVICE_OFFLINE"}
@@ -404,7 +394,9 @@ async def list_integrations():
 async def create_integration_route(body: IntegrationCreate):
     tenant_id = get_tenant_id()
     name = _validate_name(body.name)
-    _validate_basic_url(body.webhook_url)
+    valid, error = await validate_webhook_url(body.webhook_url)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
     try:
         p = await get_pool()
         async with p.acquire() as conn:
@@ -448,7 +440,9 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate):
 
     name = _validate_name(body.name) if body.name is not None else None
     if body.webhook_url is not None:
-        _validate_basic_url(body.webhook_url)
+        valid, error = await validate_webhook_url(body.webhook_url)
+        if not valid:
+            raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
 
     try:
         p = await get_pool()
@@ -518,6 +512,9 @@ async def test_integration_delivery(integration_id: str):
     webhook_url = integration.get("url")
     if not webhook_url:
         raise HTTPException(status_code=400, detail="Integration webhook URL missing")
+    valid, error = await validate_webhook_url(webhook_url)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
     payload = generate_test_payload(tenant_id, integration.get("name", "Webhook"))
 
     start = time.monotonic()
