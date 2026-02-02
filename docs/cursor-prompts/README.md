@@ -82,22 +82,49 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase3-rls-enforcement/`
 
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-rls-migration.md` | Enable RLS on tables, create policies, create roles | `[x]` | Phase 2 |
+| 2 | `002-connection-wrapper.md` | SET LOCAL tenant context before queries | `[x]` | #1 |
+| 3 | `003-operator-bypass.md` | Operator BYPASSRLS with audit logging | `[x]` | #1, #2 |
+| 4 | `004-fail-closed-tests.md` | Verify missing context returns zero rows | `[x]` | #1, #2, #3 |
+
+**Exit Criteria**:
+- [x] RLS enabled on all tenant-scoped tables
+- [x] Queries without app.tenant_id return zero rows (fail-closed)
+- [x] Customer routes use tenant_connection wrapper
+- [x] Operator routes use operator_connection (BYPASSRLS)
+- [x] All operator access audited before query
+- [x] All RLS tests pass (8/8)
+
+---
+
+## Phase 3.5: Testing Infrastructure
+
+**Goal**: Comprehensive testing strategy with unit, integration, and E2E tests.
+
+**Directory**: `phase3.5-testing-infrastructure/`
+
 **Status**: IN PROGRESS
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-rls-migration.md` | Enable RLS on tables, create policies, create roles | `[ ]` | Phase 2 |
-| 2 | `002-connection-wrapper.md` | SET LOCAL tenant context before queries | `[ ]` | #1 |
-| 3 | `003-operator-bypass.md` | Operator BYPASSRLS with audit logging | `[ ]` | #1, #2 |
-| 4 | `004-fail-closed-tests.md` | Verify missing context returns zero rows | `[ ]` | #1, #2, #3 |
+| 1 | `001-test-configuration.md` | pytest.ini, conftest.py, test database setup | `[ ]` | Phase 3 |
+| 2 | `002-api-integration-tests.md` | FastAPI TestClient tests for all endpoints | `[ ]` | #1 |
+| 3 | `003-auth-flow-tests.md` | OAuth, tokens, cookies, refresh, logout | `[ ]` | #1, #2 |
+| 4 | `004-frontend-e2e-tests.md` | Playwright setup, login flow, dashboard, CRUD | `[ ]` | #1, #2, #3 |
+| 5 | `005-ci-pipeline.md` | GitHub Actions workflow, run on push/PR | `[ ]` | #1-#4 |
+| 6 | `006-coverage-reporting.md` | pytest-cov, coverage thresholds, badges | `[ ]` | #1-#5 |
 
 **Exit Criteria**:
-- [ ] RLS enabled on all tenant-scoped tables
-- [ ] Queries without app.tenant_id return zero rows (fail-closed)
-- [ ] Customer routes use tenant_connection wrapper
-- [ ] Operator routes use operator_connection (BYPASSRLS)
-- [ ] All operator access audited before query
-- [ ] All RLS tests pass
+- [ ] All API endpoints have integration tests
+- [ ] OAuth flow tested end-to-end
+- [ ] Frontend critical paths tested with Playwright
+- [ ] CI runs tests on every push/PR
+- [ ] Coverage > 70% on backend
+- [ ] Failing tests block merge
 
 ---
 
@@ -107,7 +134,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase4-snmp-outputs/` (not yet created)
 
-**Status**: Pending Phase 3 completion
+**Status**: Pending Phase 3.5 completion
 
 ---
 
