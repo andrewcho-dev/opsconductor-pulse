@@ -31,6 +31,7 @@ from db.queries import (
     fetch_quarantine_events,
 )
 from db.audit import log_operator_access
+from db.pool import operator_connection
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ async def operator_dashboard(request: Request):
 
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -289,7 +290,7 @@ async def list_devices(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -321,7 +322,7 @@ async def list_tenant_devices(request: Request, tenant_id: str):
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -349,7 +350,7 @@ async def view_device(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -420,7 +421,7 @@ async def list_alerts(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -451,7 +452,7 @@ async def list_quarantine(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -476,7 +477,7 @@ async def list_integrations(
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -502,7 +503,7 @@ async def settings(request: Request, _: None = Depends(require_operator_admin)):
     ip, user_agent = get_request_metadata(request)
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],
@@ -547,7 +548,7 @@ async def update_settings(
 
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with operator_connection(p) as conn:
             await log_operator_access(
                 conn,
                 user_id=user["sub"],

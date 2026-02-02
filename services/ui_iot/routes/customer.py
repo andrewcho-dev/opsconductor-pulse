@@ -17,6 +17,7 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from utils.url_validator import validate_webhook_url
+from db.pool import tenant_connection
 from db.queries import (
     check_and_increment_rate_limit,
     create_integration,
@@ -224,7 +225,7 @@ async def customer_dashboard(request: Request):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             device_counts = await fetch_device_count(conn, tenant_id)
             devices = await fetch_devices(conn, tenant_id, limit=50, offset=0)
             alerts = await fetch_alerts(conn, tenant_id, limit=20)
@@ -256,7 +257,7 @@ async def list_devices(
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             devices = await fetch_devices(conn, tenant_id, limit=limit, offset=offset)
     except Exception:
         logger.exception("Failed to fetch tenant devices")
@@ -279,7 +280,7 @@ async def get_device_detail(
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
@@ -335,7 +336,7 @@ async def list_alerts(
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             alerts = await fetch_alerts(conn, tenant_id, status=status, limit=limit)
     except Exception:
         logger.exception("Failed to fetch tenant alerts")
@@ -349,7 +350,7 @@ async def get_alert(alert_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
                 SELECT alert_id, tenant_id, device_id, site_id, alert_type,
@@ -375,7 +376,7 @@ async def list_integrations():
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             rows = await fetch_integrations(conn, tenant_id, limit=50)
     except Exception:
         logger.exception("Failed to fetch tenant integrations")
@@ -399,7 +400,7 @@ async def create_integration_route(body: IntegrationCreate):
         raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             integration = await create_integration(
                 conn,
                 tenant_id=tenant_id,
@@ -420,7 +421,7 @@ async def get_integration(integration_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             integration = await fetch_integration(conn, tenant_id, integration_id)
     except Exception:
         logger.exception("Failed to fetch integration")
@@ -446,7 +447,7 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate):
 
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             integration = await update_integration(
                 conn,
                 tenant_id=tenant_id,
@@ -470,7 +471,7 @@ async def delete_integration_route(integration_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             deleted = await delete_integration(conn, tenant_id, integration_id)
     except Exception:
         logger.exception("Failed to delete integration")
@@ -486,7 +487,7 @@ async def test_integration_delivery(integration_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
                 tenant_id=tenant_id,
@@ -567,7 +568,7 @@ async def list_integration_routes(limit: int = Query(100, ge=1, le=500)):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             routes = await fetch_integration_routes(conn, tenant_id, limit=limit)
     except Exception:
         logger.exception("Failed to fetch integration routes")
@@ -585,7 +586,7 @@ async def get_integration_route(route_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             route = await fetch_integration_route(conn, tenant_id, route_id)
     except Exception:
         logger.exception("Failed to fetch integration route")
@@ -602,7 +603,7 @@ async def create_integration_route_endpoint(body: RouteCreate):
     severities = _normalize_list(body.severities, SEVERITIES, "severities")
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             integration = await fetch_integration(conn, tenant_id, str(body.integration_id))
             if not integration:
                 raise HTTPException(
@@ -643,7 +644,7 @@ async def patch_integration_route(route_id: str, body: RouteUpdate):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             route = await update_integration_route(
                 conn,
                 tenant_id=tenant_id,
@@ -671,7 +672,7 @@ async def delete_integration_route_endpoint(route_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             deleted = await delete_integration_route(conn, tenant_id, route_id)
     except Exception:
         logger.exception("Failed to delete integration route")
@@ -689,7 +690,7 @@ async def delivery_status(
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
+        async with tenant_connection(p, tenant_id) as conn:
             attempts = await fetch_delivery_attempts(conn, tenant_id, limit=limit)
     except Exception:
         logger.exception("Failed to fetch tenant delivery attempts")
