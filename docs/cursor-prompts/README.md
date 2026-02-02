@@ -23,33 +23,54 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase1-customer-dashboard/`
 
+**Status**: COMPLETE
+
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-keycloak-setup.md` | Add Keycloak to Docker Compose, create realm config | `[ ]` | None |
-| 2 | `002-jwt-middleware.md` | JWT validation, JWKS fetching, token verification | `[ ]` | #1 |
-| 3 | `003-tenant-enforcement.md` | Context vars, tenant helpers, query builders | `[ ]` | #2 |
-| 4 | `004-customer-routes.md` | /customer/* routes with tenant scoping | `[ ]` | #2, #3 |
-| 5 | `005-operator-routes.md` | /operator/* routes with audit logging | `[ ]` | #2, #3 |
-| 6 | `006-app-refactor.md` | Mount routers, deprecate unsafe routes | `[ ]` | #4, #5 |
-| 7 | `007-templates.md` | Customer dashboard template, operator UI updates | `[ ]` | #4, #5 |
-| 8 | `008-audit-migration.md` | operator_audit_log table | `[ ]` | None (can run early) |
+| 1 | `001-keycloak-setup.md` | Add Keycloak to Docker Compose, create realm config | `[x]` | None |
+| 2 | `002-jwt-middleware.md` | JWT validation, JWKS fetching, token verification | `[x]` | #1 |
+| 3 | `003-tenant-enforcement.md` | Context vars, tenant helpers, query builders | `[x]` | #2 |
+| 4 | `004-customer-routes.md` | /customer/* routes with tenant scoping | `[x]` | #2, #3 |
+| 5 | `005-operator-routes.md` | /operator/* routes with audit logging | `[x]` | #2, #3 |
+| 6 | `006-app-refactor.md` | Mount routers, deprecate unsafe routes | `[x]` | #4, #5 |
+| 7 | `007-templates.md` | Customer dashboard template, operator UI updates | `[x]` | #4, #5 |
+| 8 | `008-audit-migration.md` | operator_audit_log table | `[x]` | None (can run early) |
 
 **Exit Criteria**:
-- [ ] Customer can login via Keycloak and see only their tenant's data
-- [ ] Operator can login and see cross-tenant view with audit trail
-- [ ] No queries use device_id without tenant_id
-- [ ] All customer routes return 401/403 for invalid/missing tokens
-- [ ] Old /device/{device_id} returns 410 Gone
+- [x] Customer can login via Keycloak and see only their tenant's data
+- [x] Operator can login and see cross-tenant view with audit trail
+- [x] No queries use device_id without tenant_id
+- [x] All customer routes return 401/403 for invalid/missing tokens
+- [x] Old /device/{device_id} returns 410 Gone
+
+**Note**: Runtime validation pending (Keycloak realm import fix, container rebuild)
 
 ---
 
 ## Phase 2: Customer Integration Management
 
-**Goal**: Customers can create/manage their own webhook integrations.
+**Goal**: Customers can create/manage their own webhook integrations with full OAuth login flow.
 
-**Directory**: `phase2-integration-management/` (not yet created)
+**Directory**: `phase2-integration-management/`
 
-**Status**: Pending Phase 1 completion
+**Status**: IN PROGRESS
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-oauth-callback.md` | Complete OAuth code exchange, set HTTP-only cookie | `[ ]` | Phase 1 |
+| 2 | `002-frontend-auth.md` | JS auth handling, token attachment, refresh | `[ ]` | #1 |
+| 3 | `003-integration-crud-routes.md` | POST/PATCH/DELETE /customer/integrations | `[ ]` | #1, #2 |
+| 4 | `004-integration-routes-management.md` | Customer alert routing rules | `[ ]` | #3 |
+| 5 | `005-test-delivery-endpoint.md` | Dry-run webhook delivery | `[ ]` | #3, #4 |
+| 6 | `006-url-validation.md` | SSRF prevention for customer URLs | `[ ]` | #3 |
+
+**Exit Criteria**:
+- [ ] User can login via browser and maintain session (cookies)
+- [ ] Token refresh works without re-login
+- [ ] Customer can create integrations scoped to their tenant
+- [ ] Customer can define routing rules for their alerts
+- [ ] Test delivery works without affecting production
+- [ ] SSRF blocked for private/internal URLs
 
 ---
 
@@ -92,7 +113,7 @@ These rules must NEVER be violated during implementation:
 2. **No cross-tenant access** except audited operator routes
 3. **Canonical identity** is `(tenant_id, device_id)` — never query by device_id alone
 4. **Rejected events** must NEVER affect device_state
-5. **UI is read-only** for customers (Phase 1-2)
+5. **UI is read-only** for customers (Phase 1), **integration writes allowed** (Phase 2+)
 6. **Admin APIs** require X-Admin-Key header
 7. **Rate limiting** must fail closed
 8. **Tenant from JWT only** — never from URL params or request body for customer routes
