@@ -2,10 +2,15 @@ import os
 import asyncpg
 import httpx
 from urllib.parse import urlparse
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
+
+from routes.customer import router as customer_router
+from routes.operator import router as operator_router
+from middleware.auth import JWTBearer, validate_token
+from middleware.tenant import get_user, is_operator
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -20,6 +25,9 @@ PROVISION_ADMIN_KEY = os.getenv("PROVISION_ADMIN_KEY", "change-me-now")
 
 app = FastAPI()
 templates = Jinja2Templates(directory="/app/templates")
+
+app.include_router(customer_router)
+app.include_router(operator_router)
 
 pool: asyncpg.Pool | None = None
 
@@ -114,47 +122,8 @@ async def get_settings(conn):
     return mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes
 
 @app.post("/settings")
-async def update_settings(
-    mode: str = Form("PROD"),
-    store_rejects: str = Form("0"),
-    mirror_rejects: str = Form("0"),
-):
-    mode = (mode or "PROD").upper()
-    if mode not in ("PROD", "DEV"):
-        mode = "PROD"
-
-    if mode == "PROD":
-        store_rejects = "0"
-        mirror_rejects = "0"
-
-    p = await get_pool()
-    async with p.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('MODE', $1, now())
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
-            """,
-            mode
-        )
-        await conn.execute(
-            """
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('STORE_REJECTS', $1, now())
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
-            """,
-            "1" if store_rejects == "1" else "0"
-        )
-        await conn.execute(
-            """
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('MIRROR_REJECTS_TO_RAW', $1, now())
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
-            """,
-            "1" if mirror_rejects == "1" else "0"
-        )
-
-    return RedirectResponse(url="/", status_code=303)
+async def settings_redirect():
+    return RedirectResponse(url="/operator/settings", status_code=307)
 
 @app.post("/admin/create-device")
 async def admin_create_device(
@@ -216,234 +185,74 @@ async def admin_activate_device(
         )
     return RedirectResponse(url="/", status_code=303)
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    p = await get_pool()
-    async with p.acquire() as conn:
-        mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes = await get_settings(conn)
-
-        last_create = await conn.fetchval("SELECT value FROM app_settings WHERE key='LAST_ADMIN_CREATE'") or ""
-        last_activate = await conn.fetchval("SELECT value FROM app_settings WHERE key='LAST_DEVICE_ACTIVATE'") or ""
-
-        devices = await conn.fetch(
-            """
-            SELECT tenant_id, site_id, device_id, status, last_seen_at,
-                   state->>'battery_pct' AS battery_pct,
-                   state->>'temp_c' AS temp_c,
-                   state->>'rssi_dbm' AS rssi_dbm,
-                   state->>'snr_db' AS snr_db
-            FROM device_state
-            ORDER BY tenant_id, site_id, device_id
-            """
-        )
-
-        open_alerts = await conn.fetch(
-            """
-            SELECT created_at, tenant_id, site_id, device_id, alert_type, severity, confidence, summary
-            FROM fleet_alert
-            WHERE status='OPEN'
-            ORDER BY created_at DESC
-            LIMIT 200
-            """
-        )
-
-        integrations_rows = await conn.fetch(
-            """
-            SELECT tenant_id, integration_id, name, enabled, config_json->>'url' AS url, created_at
-            FROM integrations
-            ORDER BY created_at DESC
-            LIMIT 200
-            """
-        )
-        integrations = [
-            {
-                "tenant_id": r["tenant_id"],
-                "integration_id": str(r["integration_id"]),
-                "name": r["name"],
-                "enabled": r["enabled"],
-                "url": redact_url(r["url"]),
-                "created_at": r["created_at"],
-            }
-            for r in integrations_rows
-        ]
-
-        delivery_attempt_rows = await conn.fetch(
-            """
-            SELECT tenant_id, job_id, attempt_no, ok, http_status, latency_ms, error, finished_at
-            FROM delivery_attempts
-            ORDER BY finished_at DESC
-            LIMIT 20
-            """
-        )
-        delivery_attempts = [
-            {
-                "tenant_id": r["tenant_id"],
-                "job_id": r["job_id"],
-                "attempt_no": r["attempt_no"],
-                "ok": r["ok"],
-                "http_status": r["http_status"],
-                "latency_ms": r["latency_ms"],
-                "error": r["error"],
-                "finished_at": r["finished_at"],
-            }
-            for r in delivery_attempt_rows
-        ]
-
-        quarantine = await conn.fetch(
-            """
-            SELECT ingested_at, tenant_id, site_id, device_id, msg_type, reason
-            FROM quarantine_events
-            ORDER BY ingested_at DESC
-            LIMIT 50
-            """
-        )
-
-        counts = await conn.fetchrow(
-            """
-            SELECT
-              (SELECT COUNT(*) FROM device_state) AS devices_total,
-              (SELECT COUNT(*) FROM device_state WHERE status='ONLINE') AS devices_online,
-              (SELECT COUNT(*) FROM device_state WHERE status='STALE') AS devices_stale,
-              (SELECT COUNT(*) FROM fleet_alert WHERE status='OPEN') AS alerts_open,
-              (SELECT COUNT(*) FROM quarantine_events WHERE ingested_at > (now() - interval '10 minutes')) AS quarantined_10m
-            """
-        )
-
-        rate_limited_10m = await conn.fetchval(
-            """
-            SELECT COALESCE(SUM(cnt),0)
-            FROM quarantine_counters_minute
-            WHERE reason='RATE_LIMITED'
-              AND bucket_minute > (date_trunc('minute', now()) - interval '10 minutes')
-            """
-        )
-
-        rate_limited_5m = await conn.fetchval(
-            """
-            SELECT COALESCE(SUM(cnt),0)
-            FROM quarantine_counters_minute
-            WHERE reason='RATE_LIMITED'
-              AND bucket_minute > (date_trunc('minute', now()) - interval '5 minutes')
-            """
-        )
-
-        reason_counts_10m = await conn.fetch(
-            """
-            SELECT reason, SUM(cnt) AS cnt
-            FROM quarantine_counters_minute
-            WHERE bucket_minute > (date_trunc('minute', now()) - interval '10 minutes')
-            GROUP BY reason
-            ORDER BY cnt DESC, reason ASC
-            LIMIT 20
-            """
-        )
-
-        rate_series = await conn.fetch(
-            """
-            SELECT bucket_minute, SUM(cnt) AS total_cnt,
-                   COALESCE(SUM(cnt) FILTER (WHERE reason='RATE_LIMITED'),0) AS rate_limited_cnt
-            FROM quarantine_counters_minute
-            WHERE bucket_minute > (date_trunc('minute', now()) - interval '60 minutes')
-            GROUP BY bucket_minute
-            ORDER BY bucket_minute ASC
-            """
-        )
-        series = [{"t": str(r["bucket_minute"]), "cnt": int(r["total_cnt"]), "rl": int(r["rate_limited_cnt"])} for r in rate_series]
-        max_cnt = max([x["cnt"] for x in series], default=0)
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "mode": mode,
-            "store_rejects": store_rejects,
-            "mirror_rejects": mirror_rejects,
-            "rate_rps": rate_rps,
-            "rate_burst": rate_burst,
-            "max_payload_bytes": max_payload_bytes,
-            "rate_limited_10m": int(rate_limited_10m or 0),
-            "rate_limited_5m": int(rate_limited_5m or 0),
-            "counts": counts,
-            "devices": devices,
-            "open_alerts": open_alerts,
-            "integrations": integrations,
-            "delivery_attempts": delivery_attempts,
-            "quarantine": quarantine,
-            "reason_counts_10m": reason_counts_10m,
-            "rate_series": series,
-            "rate_max": max_cnt,
-            "last_create": last_create,
-            "last_activate": last_activate,
-        }
+def get_login_url():
+    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    realm = os.getenv("KEYCLOAK_REALM", "pulse")
+    client_id = "pulse-ui"
+    redirect_uri = "http://localhost:8080/callback"
+    return (
+        f"{keycloak_url}/realms/{realm}/protocol/openid-connect/auth"
+        f"?client_id={client_id}"
+        f"&response_type=code"
+        f"&redirect_uri={redirect_uri}"
+        f"&scope=openid"
     )
 
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    auth_header = request.headers.get("Authorization", "")
+
+    if not auth_header.startswith("Bearer "):
+        return RedirectResponse(url=get_login_url(), status_code=302)
+
+    try:
+        token = auth_header[7:]
+        payload = await validate_token(token)
+        role = payload.get("role", "")
+
+        if role in ("operator", "operator_admin"):
+            return RedirectResponse(url="/operator/dashboard", status_code=302)
+        if role in ("customer_admin", "customer_viewer"):
+            return RedirectResponse(url="/customer/dashboard", status_code=302)
+        return RedirectResponse(url=get_login_url(), status_code=302)
+    except Exception:
+        return RedirectResponse(url=get_login_url(), status_code=302)
+
+
+@app.get("/callback")
+async def oauth_callback(code: str = Query(...)):
+    return RedirectResponse(url=f"/?code={code}", status_code=302)
+
+
+@app.get("/logout")
+async def logout():
+    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    realm = os.getenv("KEYCLOAK_REALM", "pulse")
+    redirect_uri = "http://localhost:8080/"
+    return RedirectResponse(
+        url=f"{keycloak_url}/realms/{realm}/protocol/openid-connect/logout?redirect_uri={redirect_uri}",
+        status_code=302,
+    )
+
+
 @app.get("/device/{device_id}", response_class=HTMLResponse)
-async def device_detail(request: Request, device_id: str):
-    p = await get_pool()
-    async with p.acquire() as conn:
-        dev = await conn.fetchrow(
-            """
-            SELECT tenant_id, site_id, device_id, status, last_seen_at,
-                   state->>'battery_pct' AS battery_pct,
-                   state->>'temp_c' AS temp_c,
-                   state->>'rssi_dbm' AS rssi_dbm,
-                   state->>'snr_db' AS snr_db
-            FROM device_state
-            WHERE device_id=$1
-            ORDER BY tenant_id
-            LIMIT 1
-            """,
-            device_id
-        )
-
-        events = await conn.fetch(
-            """
-            SELECT ingested_at, accepted, tenant_id, site_id, msg_type,
-                   payload->>'_reject_reason' AS reject_reason,
-                   payload->>'provision_token' AS token
-            FROM raw_events
-            WHERE device_id=$1
-            ORDER BY ingested_at DESC
-            LIMIT 200
-            """,
-            device_id
-        )
-
-        series = await conn.fetch(
-            """
-            SELECT ingested_at,
-                   (payload->'metrics'->>'battery_pct')::float AS battery_pct,
-                   (payload->'metrics'->>'temp_c')::float AS temp_c,
-                   (payload->'metrics'->>'rssi_dbm')::int   AS rssi_dbm
-            FROM raw_events
-            WHERE device_id=$1 AND msg_type='telemetry' AND accepted=true
-            ORDER BY ingested_at DESC
-            LIMIT 120
-            """,
-            device_id
-        )
-
-    series = list(reversed(series))
-    bat = [to_float(r["battery_pct"]) for r in series]
-    tmp = [to_float(r["temp_c"]) for r in series]
-    rssi = [to_int(r["rssi_dbm"]) for r in series]
-    rssi_f = [float(x) if x is not None else None for x in rssi]
-
-    charts = {
-        "battery_pts": sparkline_points(bat),
-        "temp_pts": sparkline_points(tmp),
-        "rssi_pts": sparkline_points(rssi_f),
-    }
-
-    return templates.TemplateResponse(
-        "device.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "device_id": device_id,
-            "dev": dev,
-            "events": events,
-            "charts": charts,
-        }
+async def device_detail_deprecated(request: Request, device_id: str):
+    return HTMLResponse(
+        content="""
+        <html>
+        <head><title>410 Gone</title></head>
+        <body>
+        <h1>410 Gone</h1>
+        <p>This endpoint is deprecated.</p>
+        <p>Use one of:</p>
+        <ul>
+            <li><code>/customer/devices/{device_id}</code> — for customers (requires login)</li>
+            <li><code>/operator/tenants/{tenant_id}/devices/{device_id}</code> — for operators</li>
+        </ul>
+        <p><a href="/">Go to login</a></p>
+        </body>
+        </html>
+        """,
+        status_code=410,
     )
