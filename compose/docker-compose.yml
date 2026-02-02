@@ -146,6 +146,8 @@ services:
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
       PROVISION_ADMIN_KEY: "change-me-now"
+      KEYCLOAK_URL: "http://192.168.10.53:8180"
+      UI_BASE_URL: "http://192.168.10.53:8080"
     ports:
       - "8080:8080"
     depends_on:
@@ -192,7 +194,8 @@ services:
       KC_DB_URL: jdbc:postgresql://iot-postgres:5432/iotcloud
       KC_DB_USERNAME: iot
       KC_DB_PASSWORD: iot_dev
-      KC_HOSTNAME_URL: http://pulse-keycloak:8080
+      KC_HOSTNAME_URL: http://192.168.10.53:8180
+      KC_HOSTNAME_ADMIN_URL: http://192.168.10.53:8180
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
     command: start-dev --import-realm
