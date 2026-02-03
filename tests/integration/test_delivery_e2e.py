@@ -399,6 +399,200 @@ class TestRouteMatching:
             assert job is None
 
 
+class TestEmailDeliveryE2E:
+    """Test email delivery end-to-end."""
+
+    async def test_email_integration_creates_job(self, db_pool, test_tenant):
+        """Verify email integration creates delivery job."""
+        async with db_pool.acquire() as conn:
+            # Create email integration
+            integration_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (
+                    tenant_id, name, type, email_config, email_recipients, enabled
+                )
+                VALUES ($1, 'Test Email', 'email',
+                    '{"smtp_host": "smtp.example.com", "smtp_port": 587, "from_address": "a@b.com"}',
+                    '{"to": ["admin@example.com"]}',
+                    true)
+                RETURNING integration_id
+                """,
+                test_tenant,
+            )
+
+            # Create route
+            await conn.execute(
+                """
+                INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
+                VALUES ($1, $2, 'Email Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
+                """,
+                test_tenant,
+                integration_id,
+            )
+
+            # Create alert
+            alert_id = await conn.fetchval(
+                """
+                INSERT INTO fleet_alert (tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, status)
+                VALUES ($1, 'site-1', 'device-email', 'NO_HEARTBEAT', 'fp-email-1', 4, 0.9, 'Email test alert', 'OPEN')
+                RETURNING id
+                """,
+                test_tenant,
+            )
+
+            # Run dispatcher
+            from services.dispatcher.dispatcher import dispatch_once
+            await dispatch_once(conn)
+
+            # Verify job created
+            job = await conn.fetchrow(
+                "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
+                test_tenant,
+                alert_id,
+            )
+
+            assert job is not None
+            assert job["integration_id"] == integration_id
+
+    async def test_email_delivery_calls_sender(self, db_pool, test_tenant):
+        """Verify email delivery calls email sender."""
+        async with db_pool.acquire() as conn:
+            integration_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (
+                    tenant_id, name, type, email_config, email_recipients, email_template, enabled
+                )
+                VALUES ($1, 'Test Email', 'email',
+                    '{"smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_tls": true, "from_address": "alerts@example.com", "from_name": "Alerts"}',
+                    '{"to": ["admin@example.com"]}',
+                    '{"subject_template": "[{severity}] {alert_type}", "format": "html"}',
+                    true)
+                RETURNING integration_id
+                """,
+                test_tenant,
+            )
+
+            route_id = await conn.fetchval(
+                """
+                INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
+                VALUES ($1, $2, 'Email Delivery Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
+                RETURNING route_id
+                """,
+                test_tenant,
+                integration_id,
+            )
+
+            job_id = await conn.fetchval(
+                """
+                INSERT INTO delivery_jobs (tenant_id, alert_id, integration_id, route_id, deliver_on_event, status, payload_json)
+                VALUES ($1, 100, $2, $3, 'OPEN', 'PENDING',
+                    '{"alert_id": 100, "severity": "critical", "alert_type": "NO_HEARTBEAT", "device_id": "dev-1", "summary": "Test"}')
+                RETURNING job_id
+                """,
+                test_tenant,
+                integration_id,
+                route_id,
+            )
+
+            # Mock email sender
+            with patch("services.delivery_worker.worker.send_alert_email", new=AsyncMock()) as mock_email, patch(
+                "services.delivery_worker.worker.AIOSMTPLIB_AVAILABLE", True
+            ):
+                mock_email.return_value = MagicMock(
+                    success=True,
+                    error=None,
+                    recipients_count=1,
+                )
+
+                from services.delivery_worker.worker import process_job
+
+                job = await conn.fetchrow("SELECT * FROM delivery_jobs WHERE job_id = $1", job_id)
+                await process_job(conn, job)
+
+                # Verify email sender was called
+                mock_email.assert_called_once()
+                call_kwargs = mock_email.call_args.kwargs
+                assert call_kwargs["smtp_host"] == "smtp.example.com"
+                assert "admin@example.com" in call_kwargs["recipients"]["to"]
+
+            # Verify job completed
+            job = await conn.fetchrow("SELECT * FROM delivery_jobs WHERE job_id = $1", job_id)
+            assert job["status"] == "COMPLETED"
+
+
+class TestMultiTypeDelivery:
+    """Test delivery to multiple integration types."""
+
+    async def test_alert_dispatches_to_all_types(self, db_pool, test_tenant):
+        """Verify alert creates jobs for webhook, SNMP, and email."""
+        async with db_pool.acquire() as conn:
+            # Create one of each type
+            webhook_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (tenant_id, name, type, config_json, enabled)
+                VALUES ($1, 'Webhook', 'webhook', '{"url": "https://example.com"}', true)
+                RETURNING integration_id
+                """,
+                test_tenant,
+            )
+
+            snmp_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (tenant_id, name, type, snmp_host, snmp_port, snmp_config, enabled)
+                VALUES ($1, 'SNMP', 'snmp', '192.0.2.100', 162, '{"version": "2c", "community": "public"}', true)
+                RETURNING integration_id
+                """,
+                test_tenant,
+            )
+
+            email_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (tenant_id, name, type, email_config, email_recipients, enabled)
+                VALUES ($1, 'Email', 'email', '{"smtp_host": "smtp.example.com", "from_address": "a@b.com"}', '{"to": ["x@y.com"]}', true)
+                RETURNING integration_id
+                """,
+                test_tenant,
+            )
+
+            # Create routes for each
+            for int_id in [webhook_id, snmp_id, email_id]:
+                await conn.execute(
+                    """
+                    INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
+                    VALUES ($1, $2, 'Multi Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
+                    """,
+                    test_tenant,
+                    int_id,
+                )
+
+            # Create alert
+            alert_id = await conn.fetchval(
+                """
+                INSERT INTO fleet_alert (tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, status)
+                VALUES ($1, 'site-1', 'multi-device', 'NO_HEARTBEAT', 'fp-multi-1', 4, 0.9, 'Multi-type test', 'OPEN')
+                RETURNING id
+                """,
+                test_tenant,
+            )
+
+            # Run dispatcher
+            from services.dispatcher.dispatcher import dispatch_once
+            created = await dispatch_once(conn)
+
+            # Verify 3 jobs created
+            jobs = await conn.fetch(
+                "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
+                test_tenant,
+                alert_id,
+            )
+
+            assert len(jobs) == 3
+            integration_ids = {j["integration_id"] for j in jobs}
+            assert webhook_id in integration_ids
+            assert snmp_id in integration_ids
+            assert email_id in integration_ids
+
+
 @pytest.fixture(scope="session")
 async def db_pool():
     """Create database connection pool for tests."""

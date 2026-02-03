@@ -66,6 +66,7 @@ async def setup_delivery_tables(db_pool):
             "db/migrations/001_webhook_delivery_v1.sql",
             "db/migrations/011_snmp_integrations.sql",
             "db/migrations/012_delivery_log.sql",
+            "db/migrations/013_email_integrations.sql",
         ]
         for migration in migrations:
             try:
@@ -201,3 +202,15 @@ async def operator_token() -> str:
 async def operator_admin_token() -> str:
     """Get valid JWT for operator_admin."""
     return await get_operator_admin_token()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def auth_headers(customer_a_token):
+    """Mock auth headers for customer admin."""
+    return {"Authorization": f"Bearer {customer_a_token}"}
+
+
+@pytest_asyncio.fixture(scope="session")
+async def other_tenant_headers(customer_b_token):
+    """Auth headers for a different tenant (for isolation tests)."""
+    return {"Authorization": f"Bearer {customer_b_token}"}
