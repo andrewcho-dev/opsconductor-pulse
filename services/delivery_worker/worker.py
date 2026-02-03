@@ -11,6 +11,7 @@ import asyncpg
 import httpx
 
 from snmp_sender import send_alert_trap, SNMPTrapResult, PYSNMP_AVAILABLE
+from email_sender import send_alert_email, EmailResult, AIOSMTPLIB_AVAILABLE
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -64,6 +65,26 @@ def normalize_config_json(value) -> dict:
 
 def normalize_snmp_config(value) -> dict:
     """Normalize snmp_config from various storage formats."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def normalize_email_config(value) -> dict:
+    """Normalize email_config from various storage formats."""
     if value is None:
         return {}
     if isinstance(value, dict):
@@ -181,7 +202,9 @@ async def fetch_jobs(conn: asyncpg.Connection) -> list[asyncpg.Record]:
 async def fetch_integration(conn: asyncpg.Connection, tenant_id: str, integration_id) -> dict | None:
     row = await conn.fetchrow(
         """
-        SELECT type, enabled, config_json, snmp_host, snmp_port, snmp_config, snmp_oid_prefix
+        SELECT type, enabled, config_json,
+               snmp_host, snmp_port, snmp_config, snmp_oid_prefix,
+               email_config, email_recipients, email_template
         FROM integrations
         WHERE tenant_id=$1 AND integration_id=$2
         """,
@@ -285,6 +308,8 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
 
         if integration_type == "snmp":
             ok, error = await deliver_snmp(integration, job)
+        elif integration_type == "email":
+            ok, error = await deliver_email(integration, job)
         else:
             ok, http_status, error = await deliver_webhook(integration, job)
 
@@ -395,16 +420,75 @@ async def deliver_snmp(integration: dict, job: asyncpg.Record) -> tuple[bool, st
     return result.success, result.error
 
 
+async def deliver_email(integration: dict, job: asyncpg.Record) -> tuple[bool, str | None]:
+    """Deliver via email. Returns (ok, error)."""
+    if not AIOSMTPLIB_AVAILABLE:
+        return False, "email_not_available"
+
+    email_config = normalize_email_config(integration.get("email_config"))
+    email_recipients = normalize_email_config(integration.get("email_recipients"))
+    email_template = normalize_email_config(integration.get("email_template"))
+
+    smtp_host = email_config.get("smtp_host")
+    if not smtp_host:
+        return False, "missing_smtp_host"
+
+    if not email_recipients.get("to"):
+        return False, "missing_recipients"
+
+    payload = job["payload_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    alert_id = str(payload.get("alert_id", "unknown"))
+    device_id = payload.get("device_id", "unknown")
+    tenant_id = job["tenant_id"]
+    severity = str(payload.get("severity", "info"))
+    message = payload.get("summary") or payload.get("message") or "Alert"
+    alert_type = payload.get("alert_type", "ALERT")
+
+    ts_str = payload.get("created_at")
+    if ts_str:
+        try:
+            timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            timestamp = now_utc()
+    else:
+        timestamp = now_utc()
+
+    result = await send_alert_email(
+        smtp_host=smtp_host,
+        smtp_port=email_config.get("smtp_port", 587),
+        smtp_user=email_config.get("smtp_user"),
+        smtp_password=email_config.get("smtp_password"),
+        smtp_tls=email_config.get("smtp_tls", True),
+        from_address=email_config.get("from_address", "alerts@example.com"),
+        from_name=email_config.get("from_name", "OpsConductor Alerts"),
+        recipients=email_recipients,
+        alert_id=alert_id,
+        device_id=device_id,
+        tenant_id=tenant_id,
+        severity=severity,
+        message=message,
+        alert_type=alert_type,
+        timestamp=timestamp,
+        subject_template=email_template.get("subject_template"),
+        body_template=email_template.get("body_template"),
+        body_format=email_template.get("format", "html"),
+    )
+
+    return result.success, result.error
+
+
 async def run_worker() -> None:
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
     print(
-        "[worker] startup mode={} ssrf_strict={} timeout_seconds={} max_attempts={} snmp_available={}".format(
+        "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={}".format(
             MODE,
             ssrf_strict,
-            WORKER_TIMEOUT_SECONDS,
-            WORKER_MAX_ATTEMPTS,
             PYSNMP_AVAILABLE,
+            AIOSMTPLIB_AVAILABLE,
         )
     )
 
