@@ -12,3 +12,4 @@ respx>=0.20.0
 playwright>=1.40.0
 pytest-playwright>=0.4.0
 pysnmp-lextudio>=5.0.0
+aiosmtplib>=3.0.0
