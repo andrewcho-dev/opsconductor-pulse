@@ -300,7 +300,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 |---|------|-------------|--------|--------------|
 | 0 | `000-fix-broken-ui.md` | Fix broken nav links, inconsistent styling, XSS in JS | `[x]` | Phase 8 |
 | 1 | `001-test-infrastructure.md` | Fix markers, coverage enforcement, test directory structure | `[x]` | #0 |
-| 2 | `002-unit-tests-core.md` | Unit tests for OAuth flow, auth middleware, tenant middleware | `[ ]` | #1 |
+| 2 | `002-unit-tests-core.md` | Unit tests for OAuth flow, auth middleware, tenant middleware | `[x]` | #1 |
 | 3 | `003-unit-tests-delivery.md` | Unit tests for delivery worker, dispatcher, senders | `[ ]` | #1 |
 | 4 | `004-unit-tests-routes-utils.md` | Unit tests for routes, validators, query builders | `[ ]` | #1 |
 | 5 | `005-e2e-navigation-crud.md` | E2E tests for nav links, page rendering, integration CRUD | `[ ]` | #0, #1 |
