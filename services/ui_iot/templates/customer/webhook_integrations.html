@@ -1,0 +1,45 @@
+{% extends "customer/base.html" %}
+
+{% block title %}Webhook Integrations{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Webhook Integrations</h2>
+        <button id="btn-add-webhook">Add Webhook</button>
+    </div>
+    <div id="webhook-list" style="margin-top: 12px;">
+        <div>Loading...</div>
+    </div>
+</div>
+
+<div id="webhook-modal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center;">
+    <div class="card" style="width: 420px;">
+        <h3 id="modal-title">Add Webhook Integration</h3>
+        <form id="webhook-form">
+            <input type="hidden" id="integration-id" value="">
+            <div style="margin: 10px 0;">
+                <label>Name</label>
+                <input type="text" id="webhook-name" required style="width: 100%;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>Webhook URL</label>
+                <input type="text" id="webhook-url" required style="width: 100%;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>
+                    <input type="checkbox" id="webhook-enabled" checked>
+                    Enabled
+                </label>
+            </div>
+            <div id="form-error" class="hidden" style="margin: 10px 0; color: #f88;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" id="btn-cancel">Cancel</button>
+                <button type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/static/js/webhook_integrations.js"></script>
+{% endblock %}
