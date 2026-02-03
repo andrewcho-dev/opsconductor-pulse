@@ -274,6 +274,16 @@ async def snmp_integrations_page(request: Request):
     )
 
 
+@router.get("/email-integrations", include_in_schema=False)
+async def email_integrations_page(request: Request):
+    """Render email integrations page."""
+    tenant_id = get_tenant_id()
+    return templates.TemplateResponse(
+        "customer/email_integrations.html",
+        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
+    )
+
+
 @router.get("/devices")
 async def list_devices(
     limit: int = Query(100, ge=1, le=500),
