@@ -49,9 +49,10 @@ Admin and device provisioning APIs. Handles device registration, activation code
 Alert-to-delivery job dispatcher. Polls fleet_alert for open alerts, matches them against integration_routes, and creates delivery_jobs for the worker.
 
 ### services/delivery_worker
-Alert delivery via webhook and SNMP. Processes delivery_jobs with retry logic and exponential backoff. Supports:
+Alert delivery via webhook, SNMP, and email. Processes delivery_jobs with retry logic and exponential backoff. Supports:
 - **Webhooks**: HTTP POST with JSON payload
 - **SNMP**: v2c and v3 trap delivery
+- **Email**: SMTP with HTML/text templates
 
 ### simulator/device_sim_iot
 Simulation only. Generates realistic device telemetry and heartbeat messages for testing and development. Never referenced in production logic.
@@ -122,9 +123,9 @@ Device → MQTT → ingest_iot → validation → accepted=true → raw_events
 fleet_alert → dispatcher → route match → delivery_job
                                               ↓
                                       delivery_worker
-                                         ↓      ↓
-                              webhook POST    SNMP trap
-                                         ↓      ↓
+                                       ↓     ↓     ↓
+                            webhook  SNMP   email
+                                       ↓     ↓     ↓
                               delivery_attempts (logged)
 ```
 

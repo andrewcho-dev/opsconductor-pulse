@@ -32,6 +32,7 @@ PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud -f db/verify_migrations.
 | 005 | audit_rls_bypass.sql | Operator RLS bypass |
 | 011 | snmp_integrations.sql | SNMP support columns |
 | 012 | delivery_log.sql | Delivery logging table |
+| 013 | email_integrations.sql | Email support columns |
 
 ## Notes
 

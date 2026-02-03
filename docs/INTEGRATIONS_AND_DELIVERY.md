@@ -27,8 +27,16 @@ SNMP trap delivery to network management systems.
 - Custom OID prefix support
 - Address validation (blocks internal networks)
 
-### Email (Future)
-SMTP delivery is documented as a future enhancement and is not currently implemented.
+### Email (Implemented)
+SMTP email delivery to customer-specified addresses.
+
+**Features**:
+- TLS/STARTTLS support
+- Authentication (username/password)
+- Multiple recipients (to, cc, bcc)
+- HTML and plain text formats
+- Customizable subject and body templates
+- Template variables: {severity}, {alert_type}, {device_id}, {message}, {timestamp}
 
 ## Database Schema
 
@@ -40,7 +48,7 @@ CREATE TABLE integrations (
     integration_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id VARCHAR(64) NOT NULL,
     name VARCHAR(128) NOT NULL,
-    type VARCHAR(16) NOT NULL DEFAULT 'webhook',  -- 'webhook' or 'snmp'
+    type VARCHAR(16) NOT NULL DEFAULT 'webhook',  -- 'webhook', 'snmp', or 'email'
     enabled BOOLEAN NOT NULL DEFAULT true,
 
     -- Webhook fields
@@ -51,6 +59,11 @@ CREATE TABLE integrations (
     snmp_port INTEGER DEFAULT 162,
     snmp_config JSONB,  -- {"version": "2c", "community": "..."} or v3 config
     snmp_oid_prefix VARCHAR(128) DEFAULT '1.3.6.1.4.1.99999',
+
+    -- Email fields
+    email_config JSONB,
+    email_recipients JSONB,
+    email_template JSONB,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -211,6 +224,37 @@ OID prefix is configurable (default: `1.3.6.1.4.1.99999`).
 
 Trap OID: `{prefix}.0.1`
 
+### Email Configuration (email_config)
+```json
+{
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_user": "user@example.com",
+  "smtp_password": "...",
+  "smtp_tls": true,
+  "from_address": "alerts@example.com",
+  "from_name": "OpsConductor Alerts"
+}
+```
+
+### Email Recipients (email_recipients)
+```json
+{
+  "to": ["admin@example.com", "oncall@example.com"],
+  "cc": ["manager@example.com"],
+  "bcc": []
+}
+```
+
+### Email Template (email_template)
+```json
+{
+  "subject_template": "[{severity}] {alert_type}: {device_id}",
+  "body_template": "Custom HTML or text...",
+  "format": "html"
+}
+```
+
 ## Security
 
 ### Tenant Isolation
@@ -273,6 +317,14 @@ Customers manage integrations via the `/customer/*` API endpoints:
 - `DELETE /customer/integrations/snmp/{id}` - Delete SNMP integration
 - `POST /customer/integrations/snmp/{id}/test` - Send test trap
 
+### Email Integrations
+- `GET /customer/integrations/email` - List email integrations
+- `POST /customer/integrations/email` - Create email integration
+- `GET /customer/integrations/email/{id}` - Get email integration
+- `PATCH /customer/integrations/email/{id}` - Update email integration
+- `DELETE /customer/integrations/email/{id}` - Delete email integration
+- `POST /customer/integrations/email/{id}/test` - Send test email
+
 ### Integration Routes
 - `GET /customer/integration-routes` - List routes
 - `POST /customer/integration-routes` - Create route
@@ -281,7 +333,7 @@ Customers manage integrations via the `/customer/*` API endpoints:
 
 ## Future Enhancements
 
-- **Email delivery**: SMTP support for critical alerts
 - **Custom protocol adapters**: Plugin system for new output types
 - **External secret management**: HashiCorp Vault integration
 - **Delivery analytics**: Dashboard for delivery metrics and trends
+- **SMS delivery**: Text message alerts for critical issues

@@ -13,6 +13,7 @@ OpsConductor-Pulse is an edge telemetry, health, and signaling platform for mana
 - **Customer self-service** - Customers manage their own integrations and alert routing
 - **Webhook delivery** - HTTP POST to customer endpoints with retry logic
 - **SNMP trap delivery** - SNMPv2c and SNMPv3 trap support for network management systems
+- **Email delivery** - SMTP email alerts with HTML/text templates
 - **Operator dashboards** - Cross-tenant visibility with full audit trail
 
 ## Quick Start
@@ -61,7 +62,7 @@ OpsConductor-Pulse uses **Keycloak** for authentication. Users must login via Ke
 
 ## Alert Delivery
 
-Customers can configure two types of integrations to receive alerts:
+Customers can configure three types of integrations to receive alerts:
 
 ### Webhooks
 - HTTP POST with JSON payload
@@ -72,6 +73,12 @@ Customers can configure two types of integrations to receive alerts:
 - SNMPv2c (community string) and SNMPv3 (auth/priv)
 - Custom OID prefix support
 - Address validation (blocks internal networks)
+
+### Email
+- SMTP delivery with TLS support
+- HTML and plain text templates
+- Multiple recipients (to, cc, bcc)
+- Customizable subject and body templates
 
 ## Security Notes
 
@@ -150,6 +157,9 @@ PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud -f db/migrations/001_web
 | POST | /customer/integrations | Create webhook integration |
 | GET | /customer/integrations/snmp | List SNMP integrations |
 | POST | /customer/integrations/snmp | Create SNMP integration |
+| GET | /customer/integrations/email | List email integrations |
+| POST | /customer/integrations/email | Create email integration |
+| POST | /customer/integrations/email/{id}/test | Test email delivery |
 | POST | /customer/integrations/{id}/test | Test delivery |
 
 ### Operator Endpoints (Operator role required)
