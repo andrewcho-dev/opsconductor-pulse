@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import AsyncGenerator
 
 import asyncpg
@@ -26,6 +27,9 @@ repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ui_root = os.path.join(repo_root, "services", "ui_iot")
 sys.path.insert(0, repo_root)
 sys.path.insert(0, ui_root)
+services_path = Path(repo_root) / "services"
+sys.path.insert(0, str(services_path / "dispatcher"))
+sys.path.insert(0, str(services_path / "delivery_worker"))
 
 from routes import customer as customer_routes
 from routes import operator as operator_routes
@@ -52,6 +56,35 @@ async def db_pool() -> AsyncGenerator[asyncpg.Pool, None]:
     pool = await asyncpg.create_pool(TEST_DATABASE_URL, min_size=2, max_size=10)
     yield pool
     await pool.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def setup_delivery_tables(db_pool):
+    """Ensure delivery tables exist in test database."""
+    async with db_pool.acquire() as conn:
+        migrations = [
+            "db/migrations/001_webhook_delivery_v1.sql",
+            "db/migrations/011_snmp_integrations.sql",
+            "db/migrations/012_delivery_log.sql",
+        ]
+        for migration in migrations:
+            try:
+                with open(migration) as f:
+                    await conn.execute(f.read())
+            except Exception as e:
+                print(f"Migration {migration}: {e}")
+
+        try:
+            await conn.execute(
+                "ALTER TABLE integration_routes ADD COLUMN IF NOT EXISTS severities TEXT[]"
+            )
+        except Exception as e:
+            print(f"Migration integration_routes.severities: {e}")
+
+        try:
+            await conn.execute("ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_type_check")
+        except Exception as e:
+            print(f"Migration integrations.type_check: {e}")
 
 
 @pytest.fixture
