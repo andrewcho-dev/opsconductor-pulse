@@ -63,8 +63,8 @@ BEGIN
     ) THEN
         ALTER TABLE integrations
         ADD CONSTRAINT integration_type_config_check CHECK (
-            (type = 'webhook' AND (config_json->>'url') IS NOT NULL) OR
-            (type = 'snmp' AND snmp_host IS NOT NULL AND snmp_config IS NOT NULL)
+            (type::text = 'webhook' AND (config_json->>'url') IS NOT NULL) OR
+            (type::text = 'snmp' AND snmp_host IS NOT NULL AND snmp_config IS NOT NULL)
         );
     END IF;
 END$$;

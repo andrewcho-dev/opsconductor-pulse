@@ -14,8 +14,9 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql://iot:iot_dev@localhost:5432/iotcloud_test",
 )
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://192.168.10.53:8180")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
 os.environ.setdefault("KEYCLOAK_URL", KEYCLOAK_URL)
+os.environ.setdefault("KEYCLOAK_PUBLIC_URL", KEYCLOAK_URL)
 os.environ.setdefault("KEYCLOAK_REALM", "pulse")
 os.environ.setdefault("PG_HOST", "localhost")
 os.environ.setdefault("PG_PORT", "5432")
@@ -62,8 +63,24 @@ async def db_pool() -> AsyncGenerator[asyncpg.Pool, None]:
 async def setup_delivery_tables(db_pool):
     """Ensure delivery tables exist in test database."""
     async with db_pool.acquire() as conn:
+        # Clean up potentially broken constraints from previous runs
+        await conn.execute(
+            "ALTER TABLE IF EXISTS integrations DROP CONSTRAINT IF EXISTS integration_type_config_check"
+        )
+        await conn.execute(
+            "ALTER TABLE IF EXISTS integrations DROP CONSTRAINT IF EXISTS integrations_type_check"
+        )
+        try:
+            with open("tests/fixtures/schema_minimal.sql") as f:
+                await conn.execute(f.read())
+        except Exception as e:
+            print(f"Migration tests/fixtures/schema_minimal.sql: {e}")
         migrations = [
+            "db/migrations/002_operator_audit_log.sql",
+            "db/migrations/005_audit_rls_bypass.sql",
             "db/migrations/001_webhook_delivery_v1.sql",
+            "db/migrations/003_rate_limits.sql",
+            "db/migrations/004_enable_rls.sql",
             "db/migrations/011_snmp_integrations.sql",
             "db/migrations/012_delivery_log.sql",
             "db/migrations/013_email_integrations.sql",
@@ -144,7 +161,7 @@ async def test_tenants(db_pool, clean_db):
 
 
 @pytest.fixture
-async def test_integrations(db_pool, test_tenants):
+async def test_integrations(db_pool, test_tenants, clean_db):
     """Create test integrations."""
     integration_a = "00000000-0000-0000-0000-0000000000a1"
     integration_b = "00000000-0000-0000-0000-0000000000b1"
