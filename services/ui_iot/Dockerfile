@@ -8,6 +8,8 @@ COPY app.py /app/app.py
 COPY middleware /app/middleware
 COPY db /app/db
 COPY routes /app/routes
+COPY schemas /app/schemas
+COPY services /app/services
 COPY utils /app/utils
 COPY templates /app/templates
 COPY static /app/static
