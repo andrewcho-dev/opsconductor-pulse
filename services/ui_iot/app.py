@@ -124,6 +124,24 @@ async def get_pool():
 async def startup():
     await get_pool()
 
+    # Log URL configuration for debugging OAuth issues
+    keycloak_public = _get_keycloak_public_url()
+    keycloak_internal = _get_keycloak_internal_url()
+    ui_base = get_ui_base_url()
+    logger.info("OAuth config: KEYCLOAK_PUBLIC_URL=%s KEYCLOAK_INTERNAL_URL=%s UI_BASE_URL=%s",
+                keycloak_public, keycloak_internal, ui_base)
+
+    # Warn if public URLs use different hostnames (common misconfiguration)
+    kc_host = urlparse(keycloak_public).hostname
+    ui_host = urlparse(ui_base).hostname
+    if kc_host != ui_host:
+        logger.warning(
+            "HOSTNAME MISMATCH: Keycloak public hostname (%s) != UI hostname (%s). "
+            "OAuth login will fail because cookies are domain-scoped. "
+            "Set KEYCLOAK_URL and UI_BASE_URL to use the same hostname.",
+            kc_host, ui_host,
+        )
+
 async def get_settings(conn):
     rows = await conn.fetch(
         "SELECT key, value FROM app_settings WHERE key IN "
@@ -217,8 +235,16 @@ def get_callback_url() -> str:
     return f"{get_ui_base_url()}/callback"
 
 
+def _get_keycloak_public_url() -> str:
+    return (os.getenv("KEYCLOAK_PUBLIC_URL") or os.getenv("KEYCLOAK_URL", "http://localhost:8180")).rstrip("/")
+
+
+def _get_keycloak_internal_url() -> str:
+    return (os.getenv("KEYCLOAK_INTERNAL_URL") or os.getenv("KEYCLOAK_URL", "http://localhost:8180")).rstrip("/")
+
+
 def build_authorization_url(state: str, code_challenge: str) -> str:
-    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    keycloak_url = _get_keycloak_public_url()
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     client_id = "pulse-ui"
     redirect_uri = get_callback_url()
@@ -294,7 +320,7 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
     if not verifier:
         return RedirectResponse(url="/?error=missing_verifier", status_code=302)
 
-    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    keycloak_url = _get_keycloak_internal_url()
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
 
@@ -368,7 +394,7 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
 
 @app.get("/logout")
 async def logout():
-    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    keycloak_url = _get_keycloak_public_url()
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     redirect_uri = f"{get_ui_base_url()}/"
     query = urlencode(
@@ -419,7 +445,7 @@ async def auth_refresh(request: Request):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
-    keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+    keycloak_url = _get_keycloak_internal_url()
     realm = os.getenv("KEYCLOAK_REALM", "pulse")
     token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
 

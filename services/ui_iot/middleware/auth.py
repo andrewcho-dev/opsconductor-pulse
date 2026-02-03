@@ -11,7 +11,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger(__name__)
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://pulse-keycloak:8080").rstrip("/")
+KEYCLOAK_PUBLIC_URL = (
+    os.getenv("KEYCLOAK_PUBLIC_URL")
+    or os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+).rstrip("/")
+KEYCLOAK_INTERNAL_URL = (
+    os.getenv("KEYCLOAK_INTERNAL_URL") or KEYCLOAK_PUBLIC_URL
+).rstrip("/")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
 JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "pulse-ui")
 
@@ -22,7 +28,7 @@ _jwks_lock = asyncio.Lock()
 
 
 async def fetch_jwks() -> dict:
-    jwks_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+    jwks_url = f"{KEYCLOAK_INTERNAL_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(jwks_url)
@@ -71,7 +77,7 @@ def get_signing_key(token: str, jwks: dict) -> dict:
 async def validate_token(token: str) -> dict:
     jwks = await get_jwks()
     signing_key = get_signing_key(token, jwks)
-    issuer = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}"
+    issuer = f"{KEYCLOAK_PUBLIC_URL}/realms/{KEYCLOAK_REALM}"
 
     try:
         key = jwk.construct(signing_key)
