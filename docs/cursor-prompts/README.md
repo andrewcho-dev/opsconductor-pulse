@@ -267,7 +267,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase8-customer-ui-fix/`
 
-**Status**: NOT STARTED
+**Status**: COMPLETE
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
@@ -285,6 +285,43 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 - [x] All tests pass including E2E
 
 **Root Cause**: `customer_dashboard.html` was a standalone template created in Phase 1 before the nav system existed. When SNMP (Phase 4) and Email (Phase 6) added `customer/base.html` with a nav bar, nobody went back and converted the dashboard to use it. Webhook integrations had API routes but no UI template was ever created.
+
+---
+
+## Phase 9: Testing Overhaul
+
+**Goal**: Fix broken UI, restructure test suite into disciplined layers, achieve measurable coverage, add visual regression detection, establish performance baselines, and enforce everything in CI.
+
+**Directory**: `phase9-testing-overhaul/`
+
+**Status**: IN PROGRESS
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 0 | `000-fix-broken-ui.md` | Fix broken nav links, inconsistent styling, XSS in JS | `[x]` | Phase 8 |
+| 1 | `001-test-infrastructure.md` | Fix markers, coverage enforcement, test directory structure | `[ ]` | #0 |
+| 2 | `002-unit-tests-core.md` | Unit tests for OAuth flow, auth middleware, tenant middleware | `[ ]` | #1 |
+| 3 | `003-unit-tests-delivery.md` | Unit tests for delivery worker, dispatcher, senders | `[ ]` | #1 |
+| 4 | `004-unit-tests-routes-utils.md` | Unit tests for routes, validators, query builders | `[ ]` | #1 |
+| 5 | `005-e2e-navigation-crud.md` | E2E tests for nav links, page rendering, integration CRUD | `[ ]` | #0, #1 |
+| 6 | `006-e2e-visual-regression.md` | Playwright screenshot baselines for visual regression | `[ ]` | #0, #5 |
+| 7 | `007-performance-baselines.md` | API, query, and page load performance benchmarks | `[ ]` | #1 |
+| 8 | `008-ci-enforcement.md` | CI pipeline hardening, coverage gates, benchmark tracking | `[ ]` | #1-#7 |
+| 9 | `009-full-validation.md` | Full validation of all Phase 9 deliverables | `[ ]` | #0-#8 |
+
+**Exit Criteria**:
+- [x] Every customer nav link renders an HTML page (not JSON)
+- [x] All integration pages use the same design theme
+- [x] XSS prevention (escapeHtml) in all JS files
+- [ ] 80+ unit tests, all passing in < 15 seconds
+- [ ] 50+ integration tests with coverage enforcement
+- [ ] 50+ E2E tests covering navigation, CRUD, and visual regression
+- [ ] Performance baselines established for API, queries, and page loads
+- [ ] Overall coverage >= 60%, critical modules >= 85%
+- [ ] CI enforces coverage, strict markers, and collects artifacts
+- [ ] No test without a category marker (unit/integration/e2e/benchmark)
+
+**Root Cause**: Testing grew organically alongside features without a structured approach. Unit tests were skipped in favor of integration tests that require infrastructure. No visual regression detection existed. Coverage was tracked but never enforced. Performance was never measured.
 
 ---
 
