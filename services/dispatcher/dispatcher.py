@@ -16,6 +16,12 @@ ALERT_LOOKBACK_MINUTES = int(os.getenv("ALERT_LOOKBACK_MINUTES", "30"))
 ALERT_LIMIT = int(os.getenv("ALERT_LIMIT", "200"))
 ROUTE_LIMIT = int(os.getenv("ROUTE_LIMIT", "500"))
 
+SEVERITY_MAP = {
+    "CRITICAL": 5,
+    "WARNING": 3,
+    "INFO": 1,
+}
+
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -25,9 +31,20 @@ def route_matches(alert: dict, route: dict) -> bool:
     if route["deliver_on"] is None or "OPEN" not in route["deliver_on"]:
         return False
 
-    min_sev = route["min_severity"]
+    min_sev = route.get("min_severity")
     if min_sev is not None and alert["severity"] < min_sev:
         return False
+
+    severities = route.get("severities")
+    if severities:
+        alert_severity_int = alert["severity"]
+        severity_str = None
+        for name, val in SEVERITY_MAP.items():
+            if val == alert_severity_int:
+                severity_str = name
+                break
+        if severity_str and severity_str not in severities:
+            return False
 
     alert_types = route["alert_types"] or []
     if alert_types and alert["alert_type"] not in alert_types:
@@ -75,9 +92,14 @@ async def fetch_open_alerts(conn: asyncpg.Connection) -> list[asyncpg.Record]:
 async def fetch_routes(conn: asyncpg.Connection, tenant_id: str) -> list[asyncpg.Record]:
     return await conn.fetch(
         """
-        SELECT tenant_id, route_id, integration_id, min_severity, alert_types, site_ids, device_prefixes, deliver_on
-        FROM integration_routes
-        WHERE tenant_id=$1 AND enabled=true
+        SELECT ir.tenant_id, ir.route_id, ir.integration_id, ir.min_severity,
+               ir.alert_types, ir.site_ids, ir.device_prefixes, ir.deliver_on,
+               ir.severities
+        FROM integration_routes ir
+        JOIN integrations i ON ir.integration_id = i.integration_id AND ir.tenant_id = i.tenant_id
+        WHERE ir.tenant_id=$1
+          AND ir.enabled=true
+          AND i.enabled=true
         ORDER BY priority ASC, created_at ASC
         LIMIT $2
         """,
@@ -111,10 +133,21 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
         alerts_by_tenant.setdefault(alert["tenant_id"], []).append(alert)
 
     created = 0
+    created_webhook = 0
+    created_snmp = 0
     for tenant_id, tenant_alerts in alerts_by_tenant.items():
         routes = await fetch_routes(conn, tenant_id)
         if not routes:
             continue
+
+        integration_types = {}
+        for route in routes:
+            if route["integration_id"] not in integration_types:
+                int_type = await conn.fetchval(
+                    "SELECT type FROM integrations WHERE integration_id = $1",
+                    route["integration_id"],
+                )
+                integration_types[route["integration_id"]] = int_type or "webhook"
 
         for alert in tenant_alerts:
             alert_dict = dict(alert)
@@ -142,6 +175,16 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
                 )
                 if row is not None:
                     created += 1
+                    int_type = integration_types.get(route["integration_id"], "webhook")
+                    if int_type == "snmp":
+                        created_snmp += 1
+                    else:
+                        created_webhook += 1
+
+    if created:
+        print(
+            f"[dispatcher] created_jobs={created} webhook={created_webhook} snmp={created_snmp} ts={now_utc().isoformat()}"
+        )
 
     return created
 
@@ -152,9 +195,7 @@ async def main() -> None:
     while True:
         try:
             async with pool.acquire() as conn:
-                created = await dispatch_once(conn)
-                if created:
-                    print(f"[dispatcher] created_jobs={created} ts={now_utc().isoformat()}")
+                await dispatch_once(conn)
         except Exception as exc:
             print(f"[dispatcher] error={type(exc).__name__} {exc}")
 
