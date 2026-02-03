@@ -52,6 +52,7 @@ from db.queries import (
     update_integration_route,
 )
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
+from services.email_sender import send_alert_email
 
 logger = logging.getLogger(__name__)
 
@@ -1156,10 +1157,100 @@ async def test_snmp_integration(integration_id: str):
     }
 
 
+@router.post(
+    "/integrations/email/{integration_id}/test",
+    dependencies=[Depends(require_customer_admin)],
+)
+async def test_email_integration(integration_id: str):
+    """Send a test email."""
+    tenant_id = get_tenant_id()
+
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            # Rate limit
+            allowed, _ = await check_and_increment_rate_limit(
+                conn,
+                tenant_id=tenant_id,
+                action="test_delivery",
+                limit=5,
+                window_seconds=60,
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Maximum 5 test deliveries per minute.",
+                )
+
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, type, email_config,
+                       email_recipients, email_template, enabled
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'email'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch email integration for test")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    email_config = row["email_config"] or {}
+    email_recipients = row["email_recipients"] or {}
+    email_template = row["email_template"] or {}
+
+    # Send test email
+    result = await send_alert_email(
+        smtp_host=email_config.get("smtp_host", ""),
+        smtp_port=email_config.get("smtp_port", 587),
+        smtp_user=email_config.get("smtp_user"),
+        smtp_password=email_config.get("smtp_password"),
+        smtp_tls=email_config.get("smtp_tls", True),
+        from_address=email_config.get("from_address", ""),
+        from_name=email_config.get("from_name", "OpsConductor Alerts"),
+        recipients=email_recipients,
+        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
+        device_id="test-device",
+        tenant_id=tenant_id,
+        severity="info",
+        message="This is a test email from OpsConductor Pulse. If you received this, your email integration is working correctly.",
+        alert_type="TEST_ALERT",
+        timestamp=datetime.datetime.utcnow(),
+        subject_template=email_template.get("subject_template"),
+        body_template=email_template.get("body_template"),
+        body_format=email_template.get("format", "html"),
+    )
+
+    return {
+        "success": result.success,
+        "integration_id": integration_id,
+        "integration_name": row["name"],
+        "recipients_count": result.recipients_count,
+        "error": result.error,
+        "duration_ms": result.duration_ms,
+    }
+
+
 @router.post("/integrations/{integration_id}/test", dependencies=[Depends(require_customer_admin)])
 async def test_integration_delivery(integration_id: str):
     """Send a test delivery to any integration type."""
     tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
     try:
         p = await get_pool()
         async with tenant_connection(p, tenant_id) as conn:
@@ -1180,7 +1271,9 @@ async def test_integration_delivery(integration_id: str):
                 """
                 SELECT integration_id, tenant_id, name, type,
                        config_json->>'url' AS webhook_url,
-                       snmp_host, snmp_port, snmp_config, snmp_oid_prefix, enabled
+                       snmp_host, snmp_port, snmp_config, snmp_oid_prefix,
+                       email_config, email_recipients, email_template,
+                       enabled
                 FROM integrations
                 WHERE integration_id = $1 AND tenant_id = $2
                 """,
@@ -1196,36 +1289,98 @@ async def test_integration_delivery(integration_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    test_alert = AlertPayload(
-        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
-        device_id="test-device",
-        tenant_id=tenant_id,
-        severity="info",
-        message="Test delivery from OpsConductor Pulse",
-        timestamp=datetime.datetime.utcnow(),
-    )
+    integration_type = row["type"]
+    now = datetime.datetime.utcnow()
 
-    integration = dict(row)
-    integration["enabled"] = True
-    integration["webhook_url"] = row["webhook_url"]
+    if integration_type == "email":
+        # Email delivery
+        email_config = row["email_config"] or {}
+        email_recipients = row["email_recipients"] or {}
+        email_template = row["email_template"] or {}
 
-    result = await dispatch_to_integration(test_alert, integration)
+        result = await send_alert_email(
+            smtp_host=email_config.get("smtp_host", ""),
+            smtp_port=email_config.get("smtp_port", 587),
+            smtp_user=email_config.get("smtp_user"),
+            smtp_password=email_config.get("smtp_password"),
+            smtp_tls=email_config.get("smtp_tls", True),
+            from_address=email_config.get("from_address", ""),
+            from_name=email_config.get("from_name", "OpsConductor Alerts"),
+            recipients=email_recipients,
+            alert_id=f"test-{int(now.timestamp())}",
+            device_id="test-device",
+            tenant_id=tenant_id,
+            severity="info",
+            message="Test delivery from OpsConductor Pulse",
+            alert_type="TEST_ALERT",
+            timestamp=now,
+            subject_template=email_template.get("subject_template"),
+            body_template=email_template.get("body_template"),
+            body_format=email_template.get("format", "html"),
+        )
 
-    response = {
-        "success": result.success,
-        "integration_id": integration_id,
-        "integration_name": row["name"],
-        "integration_type": row["type"],
-        "error": result.error,
-        "duration_ms": result.duration_ms,
-    }
+        return {
+            "success": result.success,
+            "integration_id": integration_id,
+            "integration_name": row["name"],
+            "integration_type": "email",
+            "destination": f"{len((email_recipients.get('to', [])))} recipients",
+            "error": result.error,
+            "duration_ms": result.duration_ms,
+        }
 
-    if row["type"] == "webhook":
-        response["destination"] = row["webhook_url"]
-    elif row["type"] == "snmp":
-        response["destination"] = f"{row['snmp_host']}:{row['snmp_port']}"
+    elif integration_type == "snmp":
+        # SNMP delivery (existing code)
+        test_alert = AlertPayload(
+            alert_id=f"test-{int(now.timestamp())}",
+            device_id="test-device",
+            tenant_id=tenant_id,
+            severity="info",
+            message="Test delivery from OpsConductor Pulse",
+            timestamp=now,
+        )
 
-    return response
+        integration_dict = dict(row)
+        integration_dict["enabled"] = True
+
+        result = await dispatch_to_integration(test_alert, integration_dict)
+
+        return {
+            "success": result.success,
+            "integration_id": integration_id,
+            "integration_name": row["name"],
+            "integration_type": "snmp",
+            "destination": f"{row['snmp_host']}:{row['snmp_port']}",
+            "error": result.error,
+            "duration_ms": result.duration_ms,
+        }
+
+    else:
+        # Webhook delivery (existing code)
+        test_alert = AlertPayload(
+            alert_id=f"test-{int(now.timestamp())}",
+            device_id="test-device",
+            tenant_id=tenant_id,
+            severity="info",
+            message="Test delivery from OpsConductor Pulse",
+            timestamp=now,
+        )
+
+        integration_dict = dict(row)
+        integration_dict["enabled"] = True
+        integration_dict["webhook_url"] = row["webhook_url"]
+
+        result = await dispatch_to_integration(test_alert, integration_dict)
+
+        return {
+            "success": result.success,
+            "integration_id": integration_id,
+            "integration_name": row["name"],
+            "integration_type": "webhook",
+            "destination": row["webhook_url"],
+            "error": result.error,
+            "duration_ms": result.duration_ms,
+        }
 
 
 @router.get("/integration-routes")
