@@ -206,6 +206,25 @@ def _normalize_list(values: list[str] | None, allowed: set[str], field_name: str
     return cleaned
 
 
+def _normalize_json(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 def generate_test_payload(tenant_id: str, integration_name: str) -> dict:
     now = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     return {
@@ -708,23 +727,28 @@ async def list_email_integrations():
         logger.exception("Failed to fetch email integrations")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return [
-        EmailIntegrationResponse(
-            id=str(row["integration_id"]),
-            tenant_id=row["tenant_id"],
-            name=row["name"],
-            smtp_host=(row["email_config"] or {}).get("smtp_host", ""),
-            smtp_port=(row["email_config"] or {}).get("smtp_port", 587),
-            smtp_tls=(row["email_config"] or {}).get("smtp_tls", True),
-            from_address=(row["email_config"] or {}).get("from_address", ""),
-            recipient_count=len((row["email_recipients"] or {}).get("to", [])),
-            template_format=(row["email_template"] or {}).get("format", "html"),
-            enabled=row["enabled"],
-            created_at=row["created_at"].isoformat(),
-            updated_at=row["updated_at"].isoformat(),
+    results = []
+    for row in rows:
+        email_config = _normalize_json(row["email_config"])
+        email_recipients = _normalize_json(row["email_recipients"])
+        email_template = _normalize_json(row["email_template"])
+        results.append(
+            EmailIntegrationResponse(
+                id=str(row["integration_id"]),
+                tenant_id=row["tenant_id"],
+                name=row["name"],
+                smtp_host=email_config.get("smtp_host", ""),
+                smtp_port=email_config.get("smtp_port", 587),
+                smtp_tls=email_config.get("smtp_tls", True),
+                from_address=email_config.get("from_address", ""),
+                recipient_count=len(email_recipients.get("to", [])),
+                template_format=email_template.get("format", "html"),
+                enabled=row["enabled"],
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+            )
         )
-        for row in rows
-    ]
+    return results
 
 
 @router.get("/integrations/email/{integration_id}", response_model=EmailIntegrationResponse)
@@ -756,16 +780,19 @@ async def get_email_integration(integration_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    email_config = _normalize_json(row["email_config"])
+    email_recipients = _normalize_json(row["email_recipients"])
+    email_template = _normalize_json(row["email_template"])
     return EmailIntegrationResponse(
         id=str(row["integration_id"]),
         tenant_id=row["tenant_id"],
         name=row["name"],
-        smtp_host=(row["email_config"] or {}).get("smtp_host", ""),
-        smtp_port=(row["email_config"] or {}).get("smtp_port", 587),
-        smtp_tls=(row["email_config"] or {}).get("smtp_tls", True),
-        from_address=(row["email_config"] or {}).get("from_address", ""),
-        recipient_count=len((row["email_recipients"] or {}).get("to", [])),
-        template_format=(row["email_template"] or {}).get("format", "html"),
+        smtp_host=email_config.get("smtp_host", ""),
+        smtp_port=email_config.get("smtp_port", 587),
+        smtp_tls=email_config.get("smtp_tls", True),
+        from_address=email_config.get("from_address", ""),
+        recipient_count=len(email_recipients.get("to", [])),
+        template_format=email_template.get("format", "html"),
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
@@ -881,8 +908,8 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
         if not existing:
             raise HTTPException(status_code=404, detail="Integration not found")
 
-        smtp_config = data.smtp_config.model_dump() if data.smtp_config else (existing["email_config"] or {})
-        recipients = data.recipients.model_dump() if data.recipients else (existing["email_recipients"] or {})
+        smtp_config = data.smtp_config.model_dump() if data.smtp_config else _normalize_json(existing["email_config"])
+        recipients = data.recipients.model_dump() if data.recipients else _normalize_json(existing["email_recipients"])
         validation = validate_email_integration(
             smtp_host=smtp_config.get("smtp_host", ""),
             smtp_port=smtp_config.get("smtp_port", 587),
@@ -948,9 +975,9 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    email_config = row["email_config"] or {}
-    email_recipients = row["email_recipients"] or {}
-    email_template = row["email_template"] or {}
+    email_config = _normalize_json(row["email_config"])
+    email_recipients = _normalize_json(row["email_recipients"])
+    email_template = _normalize_json(row["email_template"])
 
     return EmailIntegrationResponse(
         id=str(row["integration_id"]),
@@ -1164,6 +1191,7 @@ async def test_snmp_integration(integration_id: str):
         "destination": f"{row['snmp_host']}:{row['snmp_port']}",
         "error": result.error,
         "duration_ms": result.duration_ms,
+        "latency_ms": result.duration_ms,
     }
 
 
@@ -1216,9 +1244,9 @@ async def test_email_integration(integration_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    email_config = row["email_config"] or {}
-    email_recipients = row["email_recipients"] or {}
-    email_template = row["email_template"] or {}
+    email_config = _normalize_json(row["email_config"])
+    email_recipients = _normalize_json(row["email_recipients"])
+    email_template = _normalize_json(row["email_template"])
 
     # Send test email
     result = await send_alert_email(
@@ -1304,9 +1332,9 @@ async def test_integration_delivery(integration_id: str):
 
     if integration_type == "email":
         # Email delivery
-        email_config = row["email_config"] or {}
-        email_recipients = row["email_recipients"] or {}
-        email_template = row["email_template"] or {}
+        email_config = _normalize_json(row["email_config"])
+        email_recipients = _normalize_json(row["email_recipients"])
+        email_template = _normalize_json(row["email_template"])
 
         result = await send_alert_email(
             smtp_host=email_config.get("smtp_host", ""),
@@ -1337,6 +1365,7 @@ async def test_integration_delivery(integration_id: str):
             "destination": f"{len((email_recipients.get('to', [])))} recipients",
             "error": result.error,
             "duration_ms": result.duration_ms,
+            "latency_ms": result.duration_ms,
         }
 
     elif integration_type == "snmp":
@@ -1363,6 +1392,7 @@ async def test_integration_delivery(integration_id: str):
             "destination": f"{row['snmp_host']}:{row['snmp_port']}",
             "error": result.error,
             "duration_ms": result.duration_ms,
+            "latency_ms": result.duration_ms,
         }
 
     else:
@@ -1390,6 +1420,7 @@ async def test_integration_delivery(integration_id: str):
             "destination": row["webhook_url"],
             "error": result.error,
             "duration_ms": result.duration_ms,
+            "latency_ms": result.duration_ms,
         }
 
 

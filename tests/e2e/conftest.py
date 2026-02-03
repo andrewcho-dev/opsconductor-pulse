@@ -1,15 +1,32 @@
 import os
 
 import pytest
+import httpx
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
 BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:8080")
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+RUN_E2E = os.getenv("RUN_E2E", "").lower() in {"1", "true", "yes"}
+
+
+async def _is_reachable(url: str) -> bool:
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+            response = await client.get(url)
+            return response.status_code < 500
+    except Exception:
+        return False
 
 
 @pytest.fixture(scope="session")
 async def browser():
     """Create browser instance."""
+    if not RUN_E2E:
+        pytest.skip("E2E tests disabled (set RUN_E2E=1 to enable)")
+    base_ok = await _is_reachable(BASE_URL)
+    keycloak_ok = await _is_reachable(KEYCLOAK_URL)
+    if not base_ok or not keycloak_ok:
+        pytest.skip("E2E services not available (set E2E_BASE_URL and KEYCLOAK_URL)")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         yield browser

@@ -1,21 +1,8 @@
-import os
-
 import asyncpg
 import pytest
 import pytest_asyncio
 
 from db.pool import tenant_connection, operator_connection
-
-
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot_dev@localhost:5432/iotcloud")
-
-
-@pytest_asyncio.fixture
-async def db_pool():
-    pool = await asyncpg.create_pool(DATABASE_URL)
-    yield pool
-    await pool.close()
-
 
 @pytest_asyncio.fixture
 async def test_data(db_pool):

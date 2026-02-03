@@ -204,13 +204,15 @@ async def operator_admin_token() -> str:
     return await get_operator_admin_token()
 
 
-@pytest_asyncio.fixture(scope="session")
-async def auth_headers(customer_a_token):
+@pytest_asyncio.fixture
+async def auth_headers():
     """Mock auth headers for customer admin."""
-    return {"Authorization": f"Bearer {customer_a_token}"}
+    token = await get_customer1_token()
+    return {"Authorization": f"Bearer {token}"}
 
 
-@pytest_asyncio.fixture(scope="session")
-async def other_tenant_headers(customer_b_token):
+@pytest_asyncio.fixture
+async def other_tenant_headers():
     """Auth headers for a different tenant (for isolation tests)."""
-    return {"Authorization": f"Bearer {customer_b_token}"}
+    token = await get_customer2_token()
+    return {"Authorization": f"Bearer {token}"}

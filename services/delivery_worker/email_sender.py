@@ -18,6 +18,7 @@ try:
 
     AIOSMTPLIB_AVAILABLE = True
 except ImportError:
+    aiosmtplib = None
     AIOSMTPLIB_AVAILABLE = False
     logger.warning("aiosmtplib not available - email delivery disabled")
 
