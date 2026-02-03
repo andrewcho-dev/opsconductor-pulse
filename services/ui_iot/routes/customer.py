@@ -19,6 +19,7 @@ from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 from utils.url_validator import validate_webhook_url
 from utils.snmp_validator import validate_snmp_host
+from utils.email_validator import validate_email_integration
 from schemas.snmp import (
     SNMPIntegrationCreate,
     SNMPIntegrationUpdate,
@@ -770,6 +771,14 @@ async def create_email_integration(data: EmailIntegrationCreate):
     """Create a new email integration."""
     tenant_id = get_tenant_id()
     name = _validate_name(data.name)
+    validation = validate_email_integration(
+        smtp_host=data.smtp_config.smtp_host,
+        smtp_port=data.smtp_config.smtp_port,
+        from_address=data.smtp_config.from_address,
+        recipients=data.recipients.model_dump(),
+    )
+    if not validation.valid:
+        raise HTTPException(status_code=400, detail=f"Invalid email configuration: {validation.error}")
 
     integration_id = str(uuid.uuid4())
     now = datetime.datetime.utcnow()
@@ -840,6 +849,37 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "smtp_config" in update_data or "recipients" in update_data:
+        try:
+            p = await get_pool()
+            async with tenant_connection(p, tenant_id) as conn:
+                existing = await conn.fetchrow(
+                    """
+                    SELECT email_config, email_recipients
+                    FROM integrations
+                    WHERE integration_id = $1 AND tenant_id = $2 AND type = 'email'
+                    """,
+                    integration_id,
+                    tenant_id,
+                )
+        except Exception:
+            logger.exception("Failed to load email integration for validation")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+        if not existing:
+            raise HTTPException(status_code=404, detail="Integration not found")
+
+        smtp_config = data.smtp_config.model_dump() if data.smtp_config else (existing["email_config"] or {})
+        recipients = data.recipients.model_dump() if data.recipients else (existing["email_recipients"] or {})
+        validation = validate_email_integration(
+            smtp_host=smtp_config.get("smtp_host", ""),
+            smtp_port=smtp_config.get("smtp_port", 587),
+            from_address=smtp_config.get("from_address", ""),
+            recipients=recipients,
+        )
+        if not validation.valid:
+            raise HTTPException(status_code=400, detail=f"Invalid email configuration: {validation.error}")
 
     updates = []
     values = []
