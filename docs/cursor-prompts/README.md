@@ -151,7 +151,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 **Exit Criteria**:
 - [x] Customer can create SNMP integrations (v2c and v3)
 - [x] SNMP destinations validated (no internal IPs)
-- [x] Alerts dispatch to SNMP alongside webhooks
+- [~] Alerts dispatch to SNMP alongside webhooks (UI test delivery only - see Phase 5)
 - [x] Test delivery sends real SNMP trap
 - [x] Customer UI for SNMP management
 - [x] Same tenant isolation as webhooks
@@ -160,6 +160,41 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 - Task specs had gaps (referenced non-existent helpers/files); Cursor adapted to actual codebase
 - `012_delivery_log.sql` migration needs to be run on deployment
 - pysnmp-lextudio deprecation warning; may need to switch to pysnmp in future
+- **Critical**: Background delivery worker only supports webhooks; SNMP delivery via test endpoint only. See Phase 5.
+
+---
+
+## Phase 5: System Completion
+
+**Goal**: Complete SNMP background delivery integration, update all documentation to 100% accuracy.
+
+**Directory**: `phase5-system-completion/`
+
+**Status**: NOT STARTED
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-delivery-worker-snmp-support.md` | Add SNMP support to background delivery worker | `[ ]` | Phase 4 |
+| 2 | `002-dispatcher-snmp-routes.md` | Ensure dispatcher handles SNMP integration routes | `[ ]` | #1 |
+| 3 | `003-readme-update.md` | Update main README with complete documentation | `[ ]` | None |
+| 4 | `004-architecture-update.md` | Update ARCHITECTURE.md to reflect current state | `[ ]` | None |
+| 5 | `005-integrations-doc-update.md` | Update INTEGRATIONS_AND_DELIVERY.md | `[ ]` | #1, #2 |
+| 6 | `006-pending-migrations.md` | Run pending migrations, create migration tooling | `[ ]` | None |
+| 7 | `007-end-to-end-validation.md` | Create E2E tests for full delivery pipeline | `[ ]` | #1, #2 |
+
+**Exit Criteria**:
+- [ ] SNMP integrations receive automatic alert delivery (not just test)
+- [ ] delivery_worker logs show SNMP deliveries
+- [ ] README.md documents Keycloak, customer portal, SNMP
+- [ ] ARCHITECTURE.md reflects actual system (not "non-goals")
+- [ ] INTEGRATIONS_AND_DELIVERY.md matches implementation
+- [ ] All migrations documented and runnable
+- [ ] E2E tests verify alert-to-delivery flow
+
+**Critical Fixes**:
+- Background delivery worker updated to support SNMP integration type
+- Documentation updated to match implementation
+- Migration 012 properly tracked and documented
 
 ---
 
