@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 import asyncpg
 import httpx
 
+from snmp_sender import send_alert_trap, SNMPTrapResult, PYSNMP_AVAILABLE
+
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
@@ -42,6 +44,26 @@ def now_utc() -> datetime:
 
 
 def normalize_config_json(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def normalize_snmp_config(value) -> dict:
+    """Normalize snmp_config from various storage formats."""
     if value is None:
         return {}
     if isinstance(value, dict):
@@ -159,7 +181,7 @@ async def fetch_jobs(conn: asyncpg.Connection) -> list[asyncpg.Record]:
 async def fetch_integration(conn: asyncpg.Connection, tenant_id: str, integration_id) -> dict | None:
     row = await conn.fetchrow(
         """
-        SELECT enabled, config_json
+        SELECT type, enabled, config_json, snmp_host, snmp_port, snmp_config, snmp_oid_prefix
         FROM integrations
         WHERE tenant_id=$1 AND integration_id=$2
         """,
@@ -259,31 +281,12 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
     elif not integration["enabled"]:
         error = "integration_disabled"
     else:
-        config = normalize_config_json(integration.get("config_json"))
-        url = config.get("url")
-        headers = config.get("headers") or {}
+        integration_type = integration.get("type", "webhook")
 
-        if not url:
-            error = "missing_url"
+        if integration_type == "snmp":
+            ok, error = await deliver_snmp(integration, job)
         else:
-            allowed, reason = validate_url(url)
-            if not allowed:
-                error = f"url_blocked:{reason}"
-            else:
-                payload = job["payload_json"]
-                if isinstance(payload, str):
-                    payload = json.loads(payload)
-
-                try:
-                    timeout = httpx.Timeout(WORKER_TIMEOUT_SECONDS)
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        resp = await client.post(url, json=payload, headers=headers)
-                        http_status = resp.status_code
-                        ok = 200 <= resp.status_code < 300
-                        if not ok:
-                            error = f"http_{resp.status_code}"
-                except Exception as exc:
-                    error = f"request_error:{type(exc).__name__}"
+            ok, http_status, error = await deliver_webhook(integration, job)
 
     finished_at = now_utc()
     latency_ms = int((finished_at - started_at).total_seconds() * 1000)
@@ -312,15 +315,96 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
     await update_job_retry(conn, job_id, attempt_no, error or "failed")
 
 
+async def deliver_webhook(integration: dict, job: asyncpg.Record) -> tuple[bool, int | None, str | None]:
+    """Deliver via webhook. Returns (ok, http_status, error)."""
+    config = normalize_config_json(integration.get("config_json"))
+    url = config.get("url")
+    headers = config.get("headers") or {}
+
+    if not url:
+        return False, None, "missing_url"
+
+    allowed, reason = validate_url(url)
+    if not allowed:
+        return False, None, f"url_blocked:{reason}"
+
+    payload = job["payload_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    try:
+        timeout = httpx.Timeout(WORKER_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            http_status = resp.status_code
+            ok = 200 <= resp.status_code < 300
+            error = None if ok else f"http_{resp.status_code}"
+            return ok, http_status, error
+    except Exception as exc:
+        return False, None, f"request_error:{type(exc).__name__}"
+
+
+async def deliver_snmp(integration: dict, job: asyncpg.Record) -> tuple[bool, str | None]:
+    """Deliver via SNMP trap. Returns (ok, error)."""
+    if not PYSNMP_AVAILABLE:
+        return False, "snmp_not_available"
+
+    snmp_host = integration.get("snmp_host")
+    snmp_port = integration.get("snmp_port") or 162
+    snmp_config = normalize_snmp_config(integration.get("snmp_config"))
+    oid_prefix = integration.get("snmp_oid_prefix") or "1.3.6.1.4.1.99999"
+
+    if not snmp_host:
+        return False, "missing_snmp_host"
+
+    if not snmp_config:
+        return False, "missing_snmp_config"
+
+    payload = job["payload_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    alert_id = str(payload.get("alert_id", "unknown"))
+    device_id = payload.get("device_id", "unknown")
+    tenant_id = job["tenant_id"]
+    severity = str(payload.get("severity", "info"))
+    message = payload.get("summary") or payload.get("message") or "Alert"
+
+    ts_str = payload.get("created_at")
+    if ts_str:
+        try:
+            timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            timestamp = now_utc()
+    else:
+        timestamp = now_utc()
+
+    result = await send_alert_trap(
+        host=snmp_host,
+        port=snmp_port,
+        config=snmp_config,
+        alert_id=alert_id,
+        device_id=device_id,
+        tenant_id=tenant_id,
+        severity=severity,
+        message=message,
+        timestamp=timestamp,
+        oid_prefix=oid_prefix,
+    )
+
+    return result.success, result.error
+
+
 async def run_worker() -> None:
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
     print(
-        "[worker] startup mode={} ssrf_strict={} timeout_seconds={} max_attempts={}".format(
+        "[worker] startup mode={} ssrf_strict={} timeout_seconds={} max_attempts={} snmp_available={}".format(
             MODE,
             ssrf_strict,
             WORKER_TIMEOUT_SECONDS,
             WORKER_MAX_ATTEMPTS,
+            PYSNMP_AVAILABLE,
         )
     )
 
