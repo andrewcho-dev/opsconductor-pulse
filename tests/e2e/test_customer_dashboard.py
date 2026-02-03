@@ -14,26 +14,33 @@ class TestCustomerDashboard:
         page = authenticated_customer_page
         stats = page.locator(".stats")
         await expect(stats).to_be_visible()
-        await expect(page.locator("text=Total Devices")).to_be_visible()
-        await expect(page.locator("text=Online")).to_be_visible()
-        await expect(page.locator("text=Stale")).to_be_visible()
+        await expect(stats.locator("text=Total Devices")).to_be_visible()
+        await expect(stats.locator("text=Online").first).to_be_visible()
+        await expect(stats.locator("text=Stale").first).to_be_visible()
 
     async def test_dashboard_shows_devices_table(
         self, authenticated_customer_page: Page
     ):
         """Dashboard shows devices table."""
         page = authenticated_customer_page
-        table = page.locator("table").first
-        await expect(table).to_be_visible()
-        await expect(page.locator("th:has-text('Device ID')")).to_be_visible()
-        await expect(page.locator("th:has-text('Status')")).to_be_visible()
+        devices_table = page.locator("table").filter(
+            has=page.locator("th:has-text('Device ID')")
+        ).first
+        await expect(devices_table).to_be_visible()
+        await expect(devices_table.locator("th:has-text('Device ID')")).to_be_visible()
+        await expect(devices_table.locator("th:has-text('Status')")).to_be_visible()
 
     async def test_device_link_navigates_to_detail(
         self, authenticated_customer_page: Page
     ):
         """Clicking device navigates to detail page."""
         page = authenticated_customer_page
-        device_link = page.locator("table tbody tr td a").first
+        devices_table = page.locator("table").filter(
+            has=page.locator("th:has-text('Device ID')")
+        ).first
+        await expect(devices_table.locator("tbody tr").first).to_be_visible()
+        device_link = devices_table.locator("tbody tr td a").first
+        await expect(device_link).to_be_visible()
         device_id = await device_link.inner_text()
         await device_link.click()
         await page.wait_for_url("**/customer/devices/**")
@@ -62,10 +69,18 @@ class TestCustomerDeviceDetail:
     ):
         """Device detail page loads correctly."""
         page = authenticated_customer_page
-        device_link = page.locator("table tbody tr td a").first
+        devices_table = page.locator("table").filter(
+            has=page.locator("th:has-text('Device ID')")
+        ).first
+        await expect(devices_table.locator("tbody tr").first).to_be_visible()
+        device_link = devices_table.locator("tbody tr td a").first
+        await expect(device_link).to_be_visible()
+        device_id = await device_link.inner_text()
         await device_link.click()
         await page.wait_for_url("**/customer/devices/**")
-        await expect(page.locator("h1, h2")).to_be_visible()
+        breadcrumb = page.locator(".breadcrumb")
+        await expect(breadcrumb).to_be_visible()
+        await expect(breadcrumb).to_contain_text(device_id)
 
     async def test_cannot_access_other_tenant_device(
         self, authenticated_customer_page: Page

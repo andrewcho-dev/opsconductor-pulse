@@ -1,112 +1,80 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Device {{ device_id }} - OpsConductor Pulse</title>
-  <meta http-equiv="refresh" content="{{ refresh }}">
-  <style>
-    body { font-family: monospace; margin: 20px; background: #1a1a2e; color: #eee; }
-    a { color: #8ab4f8; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .header { display: flex; justify-content: space-between; align-items: center; }
-    .tenant-badge { background: #4a4a6a; padding: 4px 12px; border-radius: 4px; }
-    .user-info { font-size: 0.9em; color: #aaa; margin-left: 8px; }
-    .logout-btn { background: #4a4a6a; color: #fff; padding: 8px 16px;
-                  text-decoration: none; border-radius: 4px; margin-left: 8px; }
-    .pill { display:inline-block; padding:2px 8px; border:1px solid #444; border-radius:999px; font-size:12px; background:#2a2a4e; margin-right:6px; margin-bottom:6px; }
-    .ONLINE { background: #1f3d2b; }
-    .STALE { background: #4a3b1e; }
-    h2 { margin: 18px 0 8px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #333; padding: 6px 8px; font-size: 13px; }
-    th { background: #2a2a4e; text-align: left; }
-    .small { font-size:12px; color:#aaa; }
-    .chartbox { border:1px solid #333; border-radius:10px; padding:10px; margin:10px 0; }
-    .breadcrumb { margin: 10px 0 16px; color: #aaa; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>Device {{ device_id }}</h1>
-    <div>
-      <span class="tenant-badge">Tenant: {{ tenant_id }}</span>
-      {% if user and user.email %}
-      <span class="user-info">{{ user.email }}</span>
-      {% endif %}
-      <a href="/logout" class="logout-btn">Logout</a>
-    </div>
-  </div>
+{% extends "customer/base.html" %}
 
-  <div class="breadcrumb">
-    <a href="/customer/dashboard">Dashboard</a> &gt;
-    <a href="/customer/devices">Devices</a> &gt;
-    {{ device_id }}
-  </div>
+{% block title %}Device {{ device_id }} - OpsConductor Pulse{% endblock %}
 
-  <div class="small">Auto-refresh: {{ refresh }}s</div>
+{% block head %}
+<meta http-equiv="refresh" content="{{ refresh }}">
+{% endblock %}
 
-  {% if dev %}
-    <div class="pill">Site: <b>{{ dev.site_id }}</b></div>
-    <div class="pill {{ dev.status }}">Status: <b>{{ dev.status }}</b></div>
-    <div class="pill">Last Seen: <b>{{ dev.last_seen_at }}</b></div>
-    <div class="pill">Battery: <b>{{ dev.battery_pct }}</b></div>
-    <div class="pill">Temp: <b>{{ dev.temp_c }}</b></div>
-    <div class="pill">RSSI: <b>{{ dev.rssi_dbm }}</b></div>
-    <div class="pill">SNR: <b>{{ dev.snr_db }}</b></div>
-  {% else %}
-    <div class="small">No device_state row found yet for {{ device_id }}.</div>
-  {% endif %}
+{% block content %}
+<div class="breadcrumb">
+  <a href="/customer/dashboard">Dashboard</a> &gt;
+  <a href="/customer/devices">Devices</a> &gt;
+  {{ device_id }}
+</div>
 
-  <h2>Charts (last ~120 accepted telemetry points)</h2>
+<div class="small">Auto-refresh: {{ refresh }}s</div>
 
-  <div class="chartbox">
-    <div class="small"><b>Battery%</b></div>
-    <svg width="540" height="70">
-      <polyline fill="none" stroke="#8ab4f8" stroke-width="2" points="{{ charts.battery_pts }}"></polyline>
-    </svg>
-  </div>
+{% if dev %}
+  <div class="pill">Site: <b>{{ dev.site_id }}</b></div>
+  <div class="pill {{ dev.status }}">Status: <b>{{ dev.status }}</b></div>
+  <div class="pill">Last Seen: <b>{{ dev.last_seen_at }}</b></div>
+  <div class="pill">Battery: <b>{{ dev.battery_pct }}</b></div>
+  <div class="pill">Temp: <b>{{ dev.temp_c }}</b></div>
+  <div class="pill">RSSI: <b>{{ dev.rssi_dbm }}</b></div>
+  <div class="pill">SNR: <b>{{ dev.snr_db }}</b></div>
+{% else %}
+  <div class="small">No device_state row found yet for {{ device_id }}.</div>
+{% endif %}
 
-  <div class="chartbox">
-    <div class="small"><b>Temp C</b></div>
-    <svg width="540" height="70">
-      <polyline fill="none" stroke="#2a9d8f" stroke-width="2" points="{{ charts.temp_pts }}"></polyline>
-    </svg>
-  </div>
+<h2>Charts (last ~120 accepted telemetry points)</h2>
 
-  <div class="chartbox">
-    <div class="small"><b>RSSI (dBm)</b></div>
-    <svg width="540" height="70">
-      <polyline fill="none" stroke="#e76f51" stroke-width="2" points="{{ charts.rssi_pts }}"></polyline>
-    </svg>
-  </div>
+<div class="chartbox">
+  <div class="small"><b>Battery%</b></div>
+  <svg width="540" height="70">
+    <polyline fill="none" stroke="#8ab4f8" stroke-width="2" points="{{ charts.battery_pts }}"></polyline>
+  </svg>
+</div>
 
-  <h2>Last 50 Events</h2>
-  {% if events|length == 0 %}
-    <div class="small">No events found.</div>
-  {% else %}
-  <table>
-    <thead>
-      <tr>
-        <th>Ingested</th>
-        <th>Accepted</th>
-        <th>Site</th>
-        <th>Type</th>
-        <th>Reject Reason</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in events %}
-      <tr>
-        <td>{{ e.ingested_at }}</td>
-        <td><b>{{ e.accepted }}</b></td>
-        <td>{{ e.site_id }}</td>
-        <td>{{ e.msg_type }}</td>
-        <td>{{ e.reject_reason }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-  <script src="/static/js/auth.js"></script>
-</body>
-</html>
+<div class="chartbox">
+  <div class="small"><b>Temp C</b></div>
+  <svg width="540" height="70">
+    <polyline fill="none" stroke="#2a9d8f" stroke-width="2" points="{{ charts.temp_pts }}"></polyline>
+  </svg>
+</div>
+
+<div class="chartbox">
+  <div class="small"><b>RSSI (dBm)</b></div>
+  <svg width="540" height="70">
+    <polyline fill="none" stroke="#e76f51" stroke-width="2" points="{{ charts.rssi_pts }}"></polyline>
+  </svg>
+</div>
+
+<h2>Last 50 Events</h2>
+{% if events|length == 0 %}
+  <div class="small">No events found.</div>
+{% else %}
+<table>
+  <thead>
+    <tr>
+      <th>Ingested</th>
+      <th>Accepted</th>
+      <th>Site</th>
+      <th>Type</th>
+      <th>Reject Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.ingested_at }}</td>
+      <td><b>{{ e.accepted }}</b></td>
+      <td>{{ e.site_id }}</td>
+      <td>{{ e.msg_type }}</td>
+      <td>{{ e.reject_reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
