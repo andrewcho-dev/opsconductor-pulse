@@ -13,31 +13,31 @@ async function loadIntegrations() {
         const integrations = await response.json();
 
         if (integrations.length === 0) {
-            list.innerHTML = '<div class="p-8 text-center text-gray-500">No email integrations configured.</div>';
+            list.innerHTML = '<div>No email integrations configured.</div>';
             return;
         }
 
         list.innerHTML = `<table class="w-full">
-            <thead class="bg-gray-50"><tr>
-                <th class="px-4 py-3 text-left">Name</th>
-                <th class="px-4 py-3 text-left">SMTP Server</th>
-                <th class="px-4 py-3 text-left">Recipients</th>
-                <th class="px-4 py-3 text-left">Status</th>
-                <th class="px-4 py-3 text-right">Actions</th>
+            <thead><tr>
+                <th style="text-align:left;">Name</th>
+                <th style="text-align:left;">SMTP Server</th>
+                <th style="text-align:left;">Recipients</th>
+                <th style="text-align:left;">Status</th>
+                <th style="text-align:right;">Actions</th>
             </tr></thead>
-            <tbody class="divide-y">${integrations.map(i => `<tr>
-                <td class="px-4 py-3">${escapeHtml(i.name)}</td>
-                <td class="px-4 py-3 font-mono text-sm">${escapeHtml(i.smtp_host)}:${i.smtp_port}</td>
-                <td class="px-4 py-3">${i.recipient_count} recipient${i.recipient_count !== 1 ? 's' : ''}</td>
-                <td class="px-4 py-3"><span class="px-2 py-1 rounded text-xs ${i.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${i.enabled ? 'Enabled' : 'Disabled'}</span></td>
-                <td class="px-4 py-3 text-right">
-                    <button onclick="testIntegration('${i.id}')" class="text-blue-600 hover:text-blue-800 mr-2">Test</button>
-                    <button onclick="deleteIntegration('${i.id}')" class="text-red-600 hover:text-red-800">Delete</button>
+            <tbody>${integrations.map(i => `<tr>
+                <td>${escapeHtml(i.name)}</td>
+                <td style="font-family: monospace;">${escapeHtml(i.smtp_host)}:${escapeHtml(String(i.smtp_port))}</td>
+                <td>${i.recipient_count} recipient${i.recipient_count !== 1 ? 's' : ''}</td>
+                <td>${i.enabled ? 'Enabled' : 'Disabled'}</td>
+                <td style="text-align:right;">
+                    <button onclick="testIntegration('${escapeHtml(i.id)}')">Test</button>
+                    <button onclick="deleteIntegration('${escapeHtml(i.id)}')">Delete</button>
                 </td>
             </tr>`).join('')}</tbody>
         </table>`;
     } catch (e) {
-        list.innerHTML = '<div class="p-4 text-red-600">Error loading integrations.</div>';
+        list.innerHTML = '<div style="color:#f88;">Error loading integrations.</div>';
     }
 }
 
@@ -58,12 +58,12 @@ function openModal() {
     document.getElementById('modal-title').textContent = 'Add Email Integration';
     document.getElementById('form-error').classList.add('hidden');
     document.getElementById('email-modal').classList.remove('hidden');
-    document.getElementById('email-modal').classList.add('flex');
+    document.getElementById('email-modal').style.display = 'flex';
 }
 
 function closeModal() {
     document.getElementById('email-modal').classList.add('hidden');
-    document.getElementById('email-modal').classList.remove('flex');
+    document.getElementById('email-modal').style.display = 'none';
 }
 
 async function saveIntegration(e) {

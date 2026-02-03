@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('snmp-form').addEventListener('submit', saveIntegration);
 });
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 async function loadIntegrations() {
     const list = document.getElementById('snmp-list');
     try {
@@ -30,12 +36,12 @@ async function loadIntegrations() {
                 <th style="text-align:right;">Actions</th>
             </tr></thead>
             <tbody>${integrations.map(i => `<tr>
-                <td>${i.name}</td>
-                <td style="font-family: monospace;">${i.snmp_host}:${i.snmp_port}</td>
+                <td>${escapeHtml(i.name)}</td>
+                <td style="font-family: monospace;">${escapeHtml(i.snmp_host)}:${escapeHtml(String(i.snmp_port))}</td>
                 <td>${i.enabled ? 'Enabled' : 'Disabled'}</td>
                 <td style="text-align:right;">
-                    <button onclick="testIntegration('${i.id}')">Test</button>
-                    <button onclick="deleteIntegration('${i.id}')">Delete</button>
+                    <button onclick="testIntegration('${escapeHtml(i.id)}')">Test</button>
+                    <button onclick="deleteIntegration('${escapeHtml(i.id)}')">Delete</button>
                 </td>
             </tr>`).join('')}</tbody>
         </table>`;

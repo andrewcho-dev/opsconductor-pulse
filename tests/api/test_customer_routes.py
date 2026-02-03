@@ -17,7 +17,7 @@ class TestCustomerDevices:
     ):
         """Authenticated request returns tenant's devices only."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": f"Bearer {customer_a_token}"},
         )
         assert response.status_code == 200
@@ -32,7 +32,7 @@ class TestCustomerDevices:
     ):
         """Cookie authentication works."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             cookies={"pulse_session": customer_a_token},
         )
         assert response.status_code == 200
@@ -78,7 +78,7 @@ class TestCustomerAlerts:
     ):
         """List alerts for tenant."""
         response = await client.get(
-            "/customer/alerts",
+            "/customer/alerts?format=json",
             headers={"Authorization": f"Bearer {customer_a_token}"},
         )
         assert response.status_code == 200

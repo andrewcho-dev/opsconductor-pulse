@@ -269,7 +269,7 @@ async def customer_dashboard(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return templates.TemplateResponse(
-        "customer_dashboard.html",
+        "customer/dashboard.html",
         {
             "request": request,
             "refresh": UI_REFRESH_SECONDS,
@@ -313,10 +313,12 @@ async def webhooks_page(request: Request):
     )
 
 
-@router.get("/devices")
+@router.get("/devices", response_class=HTMLResponse)
 async def list_devices(
+    request: Request,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    format: str = Query("html"),
 ):
     tenant_id = get_tenant_id()
     try:
@@ -327,12 +329,24 @@ async def list_devices(
         logger.exception("Failed to fetch tenant devices")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return {
-        "tenant_id": tenant_id,
-        "devices": devices,
-        "limit": limit,
-        "offset": offset,
-    }
+    if format == "json":
+        payload = {
+            "tenant_id": tenant_id,
+            "devices": devices,
+            "limit": limit,
+            "offset": offset,
+        }
+        return JSONResponse(jsonable_encoder(payload))
+
+    return templates.TemplateResponse(
+        "customer/devices.html",
+        {
+            "request": request,
+            "tenant_id": tenant_id,
+            "devices": devices,
+            "user": getattr(request.state, "user", None),
+        },
+    )
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
@@ -379,7 +393,7 @@ async def get_device_detail(
     }
 
     return templates.TemplateResponse(
-        "customer_device.html",
+        "customer/device.html",
         {
             "request": request,
             "refresh": UI_REFRESH_SECONDS,
@@ -393,10 +407,12 @@ async def get_device_detail(
     )
 
 
-@router.get("/alerts")
+@router.get("/alerts", response_class=HTMLResponse)
 async def list_alerts(
+    request: Request,
     status: str = Query("OPEN"),
     limit: int = Query(100, ge=1, le=500),
+    format: str = Query("html"),
 ):
     tenant_id = get_tenant_id()
     try:
@@ -407,7 +423,20 @@ async def list_alerts(
         logger.exception("Failed to fetch tenant alerts")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return {"tenant_id": tenant_id, "alerts": alerts, "status": status, "limit": limit}
+    if format == "json":
+        payload = {"tenant_id": tenant_id, "alerts": alerts, "status": status, "limit": limit}
+        return JSONResponse(jsonable_encoder(payload))
+
+    return templates.TemplateResponse(
+        "customer/alerts.html",
+        {
+            "request": request,
+            "tenant_id": tenant_id,
+            "alerts": alerts,
+            "status": status,
+            "user": getattr(request.state, "user", None),
+        },
+    )
 
 
 @router.get("/alerts/{alert_id}")

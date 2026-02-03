@@ -4,63 +4,63 @@
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="header-row">
         <h2>SNMP Integrations</h2>
         <button id="btn-add-snmp">Add SNMP Integration</button>
     </div>
-    <div id="snmp-list" style="margin-top: 12px;">
+    <div id="snmp-list" class="list-body">
         <div>Loading...</div>
     </div>
 </div>
 
-<div id="snmp-modal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center;">
-    <div class="card" style="width: 420px;">
+<div id="snmp-modal" class="hidden modal-overlay">
+    <div class="card modal">
         <h3 id="modal-title">Add SNMP Integration</h3>
         <form id="snmp-form">
             <input type="hidden" id="integration-id" value="">
-            <div style="margin: 10px 0;">
+            <div class="form-row">
                 <label>Name</label>
-                <input type="text" id="snmp-name" required style="width: 100%;">
+                <input type="text" id="snmp-name" required>
             </div>
-            <div style="margin: 10px 0;">
+            <div class="form-row">
                 <label>Host</label>
-                <input type="text" id="snmp-host" required style="width: 100%;">
+                <input type="text" id="snmp-host" required>
             </div>
-            <div style="margin: 10px 0;">
+            <div class="form-row">
                 <label>Port</label>
-                <input type="number" id="snmp-port" value="162" style="width: 100%;">
+                <input type="number" id="snmp-port" value="162">
             </div>
-            <div style="margin: 10px 0;">
+            <div class="form-row">
                 <label>SNMP Version</label>
-                <select id="snmp-version" style="width: 100%;">
+                <select id="snmp-version">
                     <option value="2c">SNMPv2c</option>
                     <option value="3">SNMPv3</option>
                 </select>
             </div>
             <div id="v2c-config">
-                <div style="margin: 10px 0;">
+                <div class="form-row">
                     <label>Community String</label>
-                    <input type="text" id="snmp-community" value="public" style="width: 100%;">
+                    <input type="text" id="snmp-community" value="public">
                 </div>
             </div>
             <div id="v3-config" class="hidden">
-                <div style="margin: 10px 0;">
+                <div class="form-row">
                     <label>Username</label>
-                    <input type="text" id="snmp-username" style="width: 100%;">
+                    <input type="text" id="snmp-username">
                 </div>
-                <div style="margin: 10px 0;">
+                <div class="form-row">
                     <label>Auth Password</label>
-                    <input type="password" id="snmp-auth-password" style="width: 100%;">
+                    <input type="password" id="snmp-auth-password">
                 </div>
             </div>
-            <div style="margin: 10px 0;">
+            <div class="form-row">
                 <label>
                     <input type="checkbox" id="snmp-enabled" checked>
                     Enabled
                 </label>
             </div>
-            <div id="form-error" class="hidden" style="margin: 10px 0; color: #f88;"></div>
-            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <div id="form-error" class="hidden form-error"></div>
+            <div class="form-actions">
                 <button type="button" id="btn-cancel">Cancel</button>
                 <button type="submit">Save</button>
             </div>

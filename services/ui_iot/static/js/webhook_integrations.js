@@ -5,6 +5,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('webhook-form').addEventListener('submit', saveIntegration);
 });
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 async function loadIntegrations() {
     const list = document.getElementById('webhook-list');
     try {
@@ -28,12 +34,12 @@ async function loadIntegrations() {
                 <th style="text-align:right;">Actions</th>
             </tr></thead>
             <tbody>${integrations.map(i => `<tr>
-                <td>${i.name}</td>
-                <td style="font-family: monospace;">${i.url || '-'}</td>
+                <td>${escapeHtml(i.name)}</td>
+                <td style="font-family: monospace;">${escapeHtml(i.url || '-')}</td>
                 <td>${i.enabled ? 'Enabled' : 'Disabled'}</td>
                 <td style="text-align:right;">
-                    <button onclick="testIntegration('${i.integration_id}')">Test</button>
-                    <button onclick="deleteIntegration('${i.integration_id}')">Delete</button>
+                    <button onclick="testIntegration('${escapeHtml(i.integration_id)}')">Test</button>
+                    <button onclick="deleteIntegration('${escapeHtml(i.integration_id)}')">Delete</button>
                 </td>
             </tr>`).join('')}</tbody>
         </table>`;

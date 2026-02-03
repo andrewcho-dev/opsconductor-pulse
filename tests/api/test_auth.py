@@ -14,7 +14,7 @@ class TestTokenValidation:
     ):
         """Valid token is accepted."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": f"Bearer {customer_a_token}"},
         )
         assert response.status_code == 200
@@ -22,7 +22,7 @@ class TestTokenValidation:
     async def test_invalid_token_rejected(self, client: AsyncClient):
         """Invalid token returns 401."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": "Bearer invalid.token.here"},
         )
         assert response.status_code == 401
@@ -31,20 +31,20 @@ class TestTokenValidation:
         """Expired token returns 401."""
         expired_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDAwMDAwMDB9.fake"
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": f"Bearer {expired_token}"},
         )
         assert response.status_code == 401
 
     async def test_missing_auth_returns_401(self, client: AsyncClient):
         """No auth returns 401."""
-        response = await client.get("/customer/devices")
+        response = await client.get("/customer/devices?format=json")
         assert response.status_code == 401
 
     async def test_malformed_auth_header(self, client: AsyncClient):
         """Malformed auth header returns 401."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": "NotBearer token"},
         )
         assert response.status_code == 401
@@ -58,7 +58,7 @@ class TestCookieAuth:
     ):
         """Cookie authentication is accepted."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             cookies={"pulse_session": customer_a_token},
         )
         assert response.status_code == 200
@@ -68,7 +68,7 @@ class TestCookieAuth:
     ):
         """When both present, Bearer header takes precedence."""
         response = await client.get(
-            "/customer/devices",
+            "/customer/devices?format=json",
             headers={"Authorization": f"Bearer {customer_a_token}"},
             cookies={"pulse_session": customer_b_token},
         )
