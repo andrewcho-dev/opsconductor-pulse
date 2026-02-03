@@ -151,16 +151,14 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 **Exit Criteria**:
 - [x] Customer can create SNMP integrations (v2c and v3)
 - [x] SNMP destinations validated (no internal IPs)
-- [~] Alerts dispatch to SNMP alongside webhooks (UI test delivery only - see Phase 5)
+- [x] Alerts dispatch to SNMP alongside webhooks (completed in Phase 5)
 - [x] Test delivery sends real SNMP trap
 - [x] Customer UI for SNMP management
 - [x] Same tenant isolation as webhooks
 
 **Notes**:
 - Task specs had gaps (referenced non-existent helpers/files); Cursor adapted to actual codebase
-- `012_delivery_log.sql` migration needs to be run on deployment
 - pysnmp-lextudio deprecation warning; may need to switch to pysnmp in future
-- **Critical**: Background delivery worker only supports webhooks; SNMP delivery via test endpoint only. See Phase 5.
 
 ---
 
@@ -170,31 +168,123 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 **Directory**: `phase5-system-completion/`
 
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-delivery-worker-snmp-support.md` | Add SNMP support to background delivery worker | `[x]` | Phase 4 |
+| 2 | `002-dispatcher-snmp-routes.md` | Ensure dispatcher handles SNMP integration routes | `[x]` | #1 |
+| 3 | `003-readme-update.md` | Update main README with complete documentation | `[x]` | None |
+| 4 | `004-architecture-update.md` | Update ARCHITECTURE.md to reflect current state | `[x]` | None |
+| 5 | `005-integrations-doc-update.md` | Update INTEGRATIONS_AND_DELIVERY.md | `[x]` | #1, #2 |
+| 6 | `006-pending-migrations.md` | Run pending migrations, create migration tooling | `[x]` | None |
+| 7 | `007-end-to-end-validation.md` | Create E2E tests for full delivery pipeline | `[x]` | #1, #2 |
+
+**Exit Criteria**:
+- [x] SNMP integrations receive automatic alert delivery (not just test)
+- [x] delivery_worker logs show SNMP deliveries
+- [x] README.md documents Keycloak, customer portal, SNMP
+- [x] ARCHITECTURE.md reflects actual system (not "non-goals")
+- [x] INTEGRATIONS_AND_DELIVERY.md matches implementation
+- [x] All migrations documented and runnable
+- [x] E2E tests verify alert-to-delivery flow
+
+**Notes**:
+- Fixed schema compatibility issues (SNMP type constraint, guarded policy creation)
+- Fixed dispatcher ordering ambiguous column error
+- E2E tests passing
+
+---
+
+## Phase 6: Email Delivery
+
+**Goal**: Customers can configure email alert delivery alongside webhooks and SNMP.
+
+**Directory**: `phase6-email-delivery/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-email-schema.md` | Add email type to integrations, email config columns | `[x]` | Phase 5 |
+| 2 | `002-email-sender.md` | Async SMTP sender with aiosmtplib | `[x]` | #1 |
+| 3 | `003-email-customer-routes.md` | Customer CRUD for email integrations | `[x]` | #1, #2 |
+| 4 | `004-email-validation.md` | Validate email addresses and SMTP hosts | `[x]` | #3 |
+| 5 | `005-delivery-worker-email.md` | Add email support to delivery worker | `[x]` | #2, #3, #4 |
+| 6 | `006-email-test-delivery.md` | Test email delivery endpoint | `[x]` | #2, #3 |
+| 7 | `007-email-ui.md` | Customer UI for email configuration | `[x]` | #3, #6 |
+| 8 | `008-documentation-update.md` | Update all docs for email support | `[x]` | #1-#7 |
+| 9 | `009-email-tests.md` | Integration and E2E tests for email | `[x]` | #1-#8 |
+
+**Exit Criteria**:
+- [x] Customer can create email integrations with SMTP settings
+- [x] Email addresses validated, SMTP hosts blocked for internal IPs
+- [x] delivery_worker sends emails for email-type integrations
+- [x] Test delivery sends real email
+- [x] Customer UI for email management
+- [x] HTML and plain text templates supported
+- [x] Documentation updated for email
+- [x] Integration and E2E tests pass for email (RUN_E2E=1, all green)
+
+**Features**:
+- SMTP with TLS/STARTTLS
+- Multiple recipients (to, cc, bcc)
+- Customizable subject and body templates
+- Template variables: {severity}, {alert_type}, {device_id}, {message}, {timestamp}
+
+---
+
+## Phase 7: Login Fix
+
+**Goal**: Fix OAuth login flow that breaks due to hostname mismatches between browser, Keycloak, and app URLs.
+
+**Directory**: `phase7-login-fix/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-fix-hostname-configuration.md` | Fix URL configuration, .env, auth.py defaults | `[ ]` | Phase 6 |
+| 2 | `002-verify-keycloak-realm-import.md` | Force realm re-import, verify users/clients | `[ ]` | #1 |
+| 3 | `003-add-login-diagnostic-endpoint.md` | /debug/auth endpoint, improved error logging | `[ ]` | #1 |
+| 4 | `004-run-full-validation.md` | Full end-to-end validation of login flow | `[ ]` | #1, #2, #3 |
+
+**Exit Criteria**:
+- [ ] All browser-facing URLs use the same hostname
+- [ ] Keycloak issuer matches JWT validator expectation
+- [ ] OAuth cookies survive the redirect flow (same domain)
+- [ ] `/debug/auth` reports `"ok"` status
+- [ ] Manual browser login works
+- [ ] All tests pass including E2E (RUN_E2E=1)
+
+**Root Cause**: Cookies set during `/login` on one hostname (e.g., `192.168.10.53`) were invisible when the callback returned on a different hostname (`localhost`). The `oauth_state` cookie was lost, causing `missing_state` error.
+
+---
+
+## Phase 8: Customer UI Fix
+
+**Goal**: Fix customer UI so all pages have navigation and all integration types have UI pages.
+
+**Directory**: `phase8-customer-ui-fix/`
+
 **Status**: NOT STARTED
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-delivery-worker-snmp-support.md` | Add SNMP support to background delivery worker | `[ ]` | Phase 4 |
-| 2 | `002-dispatcher-snmp-routes.md` | Ensure dispatcher handles SNMP integration routes | `[ ]` | #1 |
-| 3 | `003-readme-update.md` | Update main README with complete documentation | `[ ]` | None |
-| 4 | `004-architecture-update.md` | Update ARCHITECTURE.md to reflect current state | `[ ]` | None |
-| 5 | `005-integrations-doc-update.md` | Update INTEGRATIONS_AND_DELIVERY.md | `[ ]` | #1, #2 |
-| 6 | `006-pending-migrations.md` | Run pending migrations, create migration tooling | `[ ]` | None |
-| 7 | `007-end-to-end-validation.md` | Create E2E tests for full delivery pipeline | `[ ]` | #1, #2 |
+| 0 | `000-fix-test-infrastructure.md` | Fix migration enum cast + test Keycloak URL mismatch | `[x]` | Phase 7 |
+| 1 | `001-dashboard-nav-refactor.md` | Refactor dashboard and device pages to extend base.html | `[x]` | #0 |
+| 2 | `002-webhook-ui-page.md` | Create webhook integration UI (template, JS, route) | `[x]` | #1 |
+| 3 | `003-run-full-validation.md` | Verify all pages have nav, all integration UIs work | `[x]` | #1, #2 |
 
 **Exit Criteria**:
-- [ ] SNMP integrations receive automatic alert delivery (not just test)
-- [ ] delivery_worker logs show SNMP deliveries
-- [ ] README.md documents Keycloak, customer portal, SNMP
-- [ ] ARCHITECTURE.md reflects actual system (not "non-goals")
-- [ ] INTEGRATIONS_AND_DELIVERY.md matches implementation
-- [ ] All migrations documented and runnable
-- [ ] E2E tests verify alert-to-delivery flow
+- [x] Customer dashboard has nav bar with links to all integration pages
+- [x] Customer device detail has nav bar
+- [x] Webhook integrations have a full UI page (not raw JSON)
+- [x] SNMP and Email integration pages still work
+- [x] All 6 nav links work from every customer page
+- [x] All tests pass including E2E
 
-**Critical Fixes**:
-- Background delivery worker updated to support SNMP integration type
-- Documentation updated to match implementation
-- Migration 012 properly tracked and documented
+**Root Cause**: `customer_dashboard.html` was a standalone template created in Phase 1 before the nav system existed. When SNMP (Phase 4) and Email (Phase 6) added `customer/base.html` with a nav bar, nobody went back and converted the dashboard to use it. Webhook integrations had API routes but no UI template was ever created.
 
 ---
 
