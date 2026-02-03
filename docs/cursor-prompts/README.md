@@ -244,18 +244,18 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 | # | File | Description | Status | Dependencies |
 |---|------|-------------|--------|--------------|
-| 1 | `001-fix-hostname-configuration.md` | Fix URL configuration, .env, auth.py defaults | `[ ]` | Phase 6 |
-| 2 | `002-verify-keycloak-realm-import.md` | Force realm re-import, verify users/clients | `[ ]` | #1 |
-| 3 | `003-add-login-diagnostic-endpoint.md` | /debug/auth endpoint, improved error logging | `[ ]` | #1 |
-| 4 | `004-run-full-validation.md` | Full end-to-end validation of login flow | `[ ]` | #1, #2, #3 |
+| 1 | `001-fix-hostname-configuration.md` | Fix URL configuration, .env, auth.py defaults | `[x]` | Phase 6 |
+| 2 | `002-verify-keycloak-realm-import.md` | Force realm re-import, verify users/clients | `[x]` | #1 |
+| 3 | `003-add-login-diagnostic-endpoint.md` | /debug/auth endpoint, improved error logging | `[x]` | #1 |
+| 4 | `004-run-full-validation.md` | Full end-to-end validation of login flow | `[x]` | #1, #2, #3 |
 
 **Exit Criteria**:
-- [ ] All browser-facing URLs use the same hostname
-- [ ] Keycloak issuer matches JWT validator expectation
-- [ ] OAuth cookies survive the redirect flow (same domain)
-- [ ] `/debug/auth` reports `"ok"` status
-- [ ] Manual browser login works
-- [ ] All tests pass including E2E (RUN_E2E=1)
+- [x] All browser-facing URLs use the same hostname
+- [x] Keycloak issuer matches JWT validator expectation
+- [x] OAuth cookies survive the redirect flow (same domain)
+- [x] `/debug/auth` reports `"ok"` status
+- [x] Manual browser login works
+- [x] All tests pass including E2E (RUN_E2E=1)
 
 **Root Cause**: Cookies set during `/login` on one hostname (e.g., `192.168.10.53`) were invisible when the callback returned on a different hostname (`localhost`). The `oauth_state` cookie was lost, causing `missing_state` error.
 

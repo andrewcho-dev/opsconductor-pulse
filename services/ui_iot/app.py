@@ -312,12 +312,25 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
 
     stored_state = request.cookies.get("oauth_state")
     if not stored_state or not state:
+        logger.warning(
+            "OAuth callback: missing state cookie. Browser host: %s, cookies present: %s",
+            request.headers.get("host"),
+            list(request.cookies.keys()),
+        )
         return RedirectResponse(url="/?error=missing_state", status_code=302)
     if state != stored_state:
+        logger.warning(
+            "OAuth callback: state mismatch. Expected cookie value, got query param: %s",
+            state[:8] + "...",
+        )
         return RedirectResponse(url="/?error=state_mismatch", status_code=302)
 
     verifier = request.cookies.get("oauth_verifier")
     if not verifier:
+        logger.warning(
+            "OAuth callback: missing verifier cookie. Browser host: %s",
+            request.headers.get("host"),
+        )
         return RedirectResponse(url="/?error=missing_verifier", status_code=302)
 
     keycloak_url = _get_keycloak_internal_url()
@@ -345,7 +358,11 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
         logger.error("OAuth token exchange server error: %s", response.text)
         raise HTTPException(status_code=503, detail="Auth service unavailable")
     if response.status_code >= 400:
-        logger.warning("OAuth token exchange rejected: %s", response.text)
+        logger.warning(
+            "OAuth token exchange rejected (HTTP %s): %s",
+            response.status_code,
+            response.text[:200],
+        )
         return RedirectResponse(url="/?error=invalid_code", status_code=302)
 
     token_payload = response.json()
@@ -357,7 +374,8 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
 
     try:
         validated = await validate_token(access_token)
-    except Exception:
+    except Exception as e:
+        logger.warning("OAuth callback: token validation failed: %s", str(e))
         return RedirectResponse(url="/?error=invalid_token", status_code=302)
 
     role = validated.get("role", "")
@@ -501,6 +519,90 @@ async def auth_refresh(request: Request):
         path="/",
     )
     return refreshed
+
+
+@app.get("/debug/auth")
+async def debug_auth(request: Request):
+    """Diagnostic endpoint for OAuth configuration (DEV only)."""
+    mode = os.getenv("MODE", "DEV").upper()
+    if mode != "DEV":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    keycloak_public = _get_keycloak_public_url()
+    keycloak_internal = _get_keycloak_internal_url()
+    ui_base = get_ui_base_url()
+    callback = get_callback_url()
+
+    kc_host = urlparse(keycloak_public).hostname
+    ui_host = urlparse(ui_base).hostname
+
+    # Check if Keycloak is reachable internally
+    keycloak_reachable = False
+    keycloak_issuer = None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                f"{keycloak_internal}/realms/{os.getenv('KEYCLOAK_REALM', 'pulse')}/.well-known/openid-configuration"
+            )
+            if r.status_code == 200:
+                keycloak_reachable = True
+                keycloak_issuer = r.json().get("issuer")
+    except Exception:
+        keycloak_reachable = False
+
+    expected_issuer = f"{keycloak_public}/realms/{os.getenv('KEYCLOAK_REALM', 'pulse')}"
+
+    # Check cookies
+    has_session = "pulse_session" in request.cookies
+    has_refresh = "pulse_refresh" in request.cookies
+    has_state = "oauth_state" in request.cookies
+    has_verifier = "oauth_verifier" in request.cookies
+
+    # Browser info
+    host_header = request.headers.get("host", "unknown")
+    origin = request.headers.get("origin", "none")
+    forwarded = request.headers.get("x-forwarded-for", "none")
+
+    hostname_match = kc_host == ui_host
+    issuer_match = keycloak_issuer == expected_issuer if keycloak_issuer else None
+
+    return {
+        "status": "ok" if (hostname_match and keycloak_reachable and issuer_match) else "MISCONFIGURED",
+        "urls": {
+            "keycloak_public": keycloak_public,
+            "keycloak_internal": keycloak_internal,
+            "ui_base": ui_base,
+            "callback": callback,
+        },
+        "hostname_check": {
+            "keycloak_hostname": kc_host,
+            "ui_hostname": ui_host,
+            "match": hostname_match,
+            "verdict": "OK" if hostname_match else "FAIL: cookies will be lost across domains",
+        },
+        "keycloak_check": {
+            "reachable": keycloak_reachable,
+            "actual_issuer": keycloak_issuer,
+            "expected_issuer": expected_issuer,
+            "issuer_match": issuer_match,
+            "verdict": (
+                "OK" if issuer_match
+                else "FAIL: token iss claim won't match validator" if keycloak_issuer
+                else "FAIL: Keycloak unreachable"
+            ),
+        },
+        "cookies": {
+            "pulse_session": has_session,
+            "pulse_refresh": has_refresh,
+            "oauth_state": has_state,
+            "oauth_verifier": has_verifier,
+        },
+        "request": {
+            "host_header": host_header,
+            "origin": origin,
+            "x_forwarded_for": forwarded,
+        },
+    }
 
 
 @app.get("/device/{device_id}", response_class=HTMLResponse)
