@@ -302,7 +302,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 | 1 | `001-test-infrastructure.md` | Fix markers, coverage enforcement, test directory structure | `[x]` | #0 |
 | 2 | `002-unit-tests-core.md` | Unit tests for OAuth flow, auth middleware, tenant middleware | `[x]` | #1 |
 | 3 | `003-unit-tests-delivery.md` | Unit tests for delivery worker, dispatcher, senders | `[x]` | #1 |
-| 4 | `004-unit-tests-routes-utils.md` | Unit tests for routes, validators, query builders | `[ ]` | #1 |
+| 4 | `004-unit-tests-routes-utils.md` | Unit tests for routes, validators, query builders | `[x]` | #1 |
 | 5 | `005-e2e-navigation-crud.md` | E2E tests for nav links, page rendering, integration CRUD | `[ ]` | #0, #1 |
 | 6 | `006-e2e-visual-regression.md` | Playwright screenshot baselines for visual regression | `[ ]` | #0, #5 |
 | 7 | `007-performance-baselines.md` | API, query, and page load performance benchmarks | `[ ]` | #1 |
