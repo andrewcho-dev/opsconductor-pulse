@@ -12,7 +12,10 @@ class TestOperatorDashboard:
     ):
         """Operator dashboard shows data from all tenants."""
         page = authenticated_operator_page
-        await expect(page.locator("th:has-text('Tenant')")).to_be_visible()
+        tenant_table = page.locator("table").filter(
+            has=page.locator("th:has-text('Tenant')")
+        ).first
+        await expect(tenant_table.locator("th:has-text('Tenant')")).to_be_visible()
 
     async def test_operator_badge_visible(
         self, authenticated_operator_page: Page

@@ -1,12 +1,41 @@
 import os
+import asyncio
+import asyncpg
+from urllib.parse import urlparse
 
 import pytest
 import httpx
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
-BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:8080")
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8180")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
+UI_BASE_URL = os.getenv("UI_BASE_URL")
+E2E_BASE_URL = os.getenv("E2E_BASE_URL")
+E2E_DATABASE_URL = os.getenv(
+    "E2E_DATABASE_URL",
+    os.getenv("DATABASE_URL", "postgresql://iot:iot_dev@localhost:5432/iotcloud"),
+)
 RUN_E2E = os.getenv("RUN_E2E", "").lower() in {"1", "true", "yes"}
+
+
+def _default_base_url() -> str:
+    if E2E_BASE_URL:
+        return E2E_BASE_URL
+    if UI_BASE_URL:
+        return UI_BASE_URL
+    parsed = urlparse(KEYCLOAK_URL)
+    if parsed.hostname:
+        scheme = parsed.scheme or "http"
+        return f"{scheme}://{parsed.hostname}:8080"
+    return "http://localhost:8080"
+
+
+BASE_URL = _default_base_url()
+if not KEYCLOAK_URL:
+    parsed_base = urlparse(BASE_URL)
+    scheme = parsed_base.scheme or "http"
+    host = parsed_base.hostname or "localhost"
+    KEYCLOAK_URL = f"{scheme}://{host}:8180"
+os.environ.setdefault("KEYCLOAK_URL", KEYCLOAK_URL)
 
 
 async def _is_reachable(url: str) -> bool:
@@ -18,15 +47,40 @@ async def _is_reachable(url: str) -> bool:
         return False
 
 
+async def _wait_for_reachable(url: str, attempts: int = 10, delay: float = 1.0) -> bool:
+    for _ in range(attempts):
+        if await _is_reachable(url):
+            return True
+        await asyncio.sleep(delay)
+    return False
+
+
+async def _seed_device_state() -> None:
+    conn = await asyncpg.connect(E2E_DATABASE_URL)
+    try:
+        await conn.execute(
+            """
+            INSERT INTO device_state (tenant_id, device_id, site_id, status, last_seen_at)
+            VALUES
+                ('tenant-a', 'test-device-a1', 'test-site-a', 'ONLINE', now()),
+                ('tenant-a', 'test-device-a2', 'test-site-a', 'STALE', now() - interval '1 hour'),
+                ('tenant-b', 'test-device-b1', 'test-site-b', 'ONLINE', now())
+            ON CONFLICT (tenant_id, device_id) DO NOTHING
+            """
+        )
+    finally:
+        await conn.close()
+
+
 @pytest.fixture(scope="session")
 async def browser():
     """Create browser instance."""
     if not RUN_E2E:
         pytest.skip("E2E tests disabled (set RUN_E2E=1 to enable)")
-    base_ok = await _is_reachable(BASE_URL)
-    keycloak_ok = await _is_reachable(KEYCLOAK_URL)
+    base_ok = await _wait_for_reachable(BASE_URL)
+    keycloak_ok = await _wait_for_reachable(KEYCLOAK_URL)
     if not base_ok or not keycloak_ok:
-        pytest.skip("E2E services not available (set E2E_BASE_URL and KEYCLOAK_URL)")
+        pytest.fail("E2E services not available (set E2E_BASE_URL and KEYCLOAK_URL)")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         yield browser
@@ -55,6 +109,7 @@ async def page(context: BrowserContext):
 @pytest.fixture
 async def authenticated_customer_page(context: BrowserContext):
     """Create page with customer1 logged in."""
+    await _seed_device_state()
     page = await context.new_page()
     await page.goto("/")
     await page.wait_for_url(f"{KEYCLOAK_URL}/**")
@@ -69,6 +124,7 @@ async def authenticated_customer_page(context: BrowserContext):
 @pytest.fixture
 async def authenticated_operator_page(context: BrowserContext):
     """Create page with operator1 logged in."""
+    await _seed_device_state()
     page = await context.new_page()
     await page.goto("/")
     await page.wait_for_url(f"{KEYCLOAK_URL}/**")

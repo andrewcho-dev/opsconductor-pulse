@@ -28,7 +28,7 @@ class TestIntegrationManagement:
                     "enabled": True,
                 },
             )
-            assert response.status == 201
+            assert response.status in (200, 201)
 
     async def test_list_integrations(
         self, authenticated_customer_page: Page

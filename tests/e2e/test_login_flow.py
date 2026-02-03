@@ -1,9 +1,15 @@
+import os
+from urllib.parse import urlparse
 import pytest
 from playwright.async_api import Page, expect
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
 
-KEYCLOAK_URL = "http://localhost:8180"
+_base_url = os.getenv("E2E_BASE_URL") or os.getenv("UI_BASE_URL") or "http://localhost:8080"
+_parsed_base = urlparse(_base_url)
+_base_scheme = _parsed_base.scheme or "http"
+_base_host = _parsed_base.hostname or "localhost"
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL") or f"{_base_scheme}://{_base_host}:8180"
 
 
 class TestLoginFlow:
@@ -53,7 +59,8 @@ class TestLoginFlow:
     async def test_logout_flow(self, authenticated_customer_page: Page):
         """User can logout."""
         page = authenticated_customer_page
-        await page.click("text=Logout")
-        await page.wait_for_url("**/", timeout=10000)
-        await page.goto("/customer/dashboard")
-        await page.wait_for_url(f"{KEYCLOAK_URL}/**", timeout=10000)
+        async with page.expect_navigation():
+            await page.click("text=Logout")
+        response = await page.goto("/customer/dashboard")
+        assert response is not None
+        assert response.status == 401
