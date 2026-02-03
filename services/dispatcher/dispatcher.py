@@ -100,7 +100,7 @@ async def fetch_routes(conn: asyncpg.Connection, tenant_id: str) -> list[asyncpg
         WHERE ir.tenant_id=$1
           AND ir.enabled=true
           AND i.enabled=true
-        ORDER BY priority ASC, created_at ASC
+        ORDER BY ir.priority ASC, ir.created_at ASC
         LIMIT $2
         """,
         tenant_id,

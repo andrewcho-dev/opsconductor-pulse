@@ -17,8 +17,17 @@ CREATE INDEX IF NOT EXISTS idx_delivery_log_created_at ON delivery_log(created_a
 
 ALTER TABLE delivery_log ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS delivery_log_tenant_policy ON delivery_log
-    FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE policyname = 'delivery_log_tenant_policy'
+          AND tablename = 'delivery_log'
+    ) THEN
+        CREATE POLICY delivery_log_tenant_policy ON delivery_log
+            FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+    END IF;
+END$$;
 
 GRANT SELECT, INSERT ON delivery_log TO pulse_app;
 GRANT SELECT ON delivery_log TO pulse_operator;

@@ -10,6 +10,36 @@ END$$;
 ALTER TABLE integrations
 ADD COLUMN IF NOT EXISTS type integration_type NOT NULL DEFAULT 'webhook';
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'integrations_type_check'
+    ) THEN
+        ALTER TABLE integrations DROP CONSTRAINT integrations_type_check;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'integrations'
+          AND column_name = 'type'
+          AND data_type = 'text'
+    ) THEN
+        ALTER TABLE integrations ALTER COLUMN type DROP DEFAULT;
+        ALTER TABLE integrations
+        ALTER COLUMN type TYPE integration_type
+        USING type::integration_type;
+    END IF;
+END$$;
+
+ALTER TABLE integrations
+ALTER COLUMN type SET DEFAULT 'webhook';
+
 -- Add SNMP configuration column (JSON)
 -- Structure for SNMPv2c: {"version": "2c", "community": "public"}
 -- Structure for SNMPv3: {"version": "3", "username": "...", "auth_protocol": "SHA", "auth_password": "...", "priv_protocol": "AES", "priv_password": "..."}
@@ -23,12 +53,21 @@ ADD COLUMN IF NOT EXISTS snmp_host VARCHAR(255);
 ALTER TABLE integrations
 ADD COLUMN IF NOT EXISTS snmp_port INTEGER DEFAULT 162;
 
--- Add constraint: webhook requires webhook_url, snmp requires snmp_host
-ALTER TABLE integrations
-ADD CONSTRAINT integration_type_config_check CHECK (
-    (type = 'webhook' AND webhook_url IS NOT NULL) OR
-    (type = 'snmp' AND snmp_host IS NOT NULL AND snmp_config IS NOT NULL)
-);
+-- Add constraint: webhook requires webhook URL config, snmp requires snmp_host
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'integration_type_config_check'
+    ) THEN
+        ALTER TABLE integrations
+        ADD CONSTRAINT integration_type_config_check CHECK (
+            (type = 'webhook' AND (config_json->>'url') IS NOT NULL) OR
+            (type = 'snmp' AND snmp_host IS NOT NULL AND snmp_config IS NOT NULL)
+        );
+    END IF;
+END$$;
 
 -- Index for type queries
 CREATE INDEX IF NOT EXISTS idx_integrations_type ON integrations(type);
