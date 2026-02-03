@@ -1143,7 +1143,7 @@ async def test_snmp_integration(integration_id: str):
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
                 tenant_id=tenant_id,
-                action="test_delivery",
+                action=f"test_delivery:{integration_id}",
                 limit=5,
                 window_seconds=60,
             )
@@ -1225,7 +1225,7 @@ async def test_email_integration(integration_id: str):
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
                 tenant_id=tenant_id,
-                action="test_delivery",
+                action=f"test_delivery:{integration_id}",
                 limit=5,
                 window_seconds=60,
             )
@@ -1305,7 +1305,7 @@ async def test_integration_delivery(integration_id: str):
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
                 tenant_id=tenant_id,
-                action="test_delivery",
+                action=f"test_delivery:{integration_id}",
                 limit=5,
                 window_seconds=60,
             )
