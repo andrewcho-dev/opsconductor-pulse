@@ -29,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
+          pip install -r requirements-test.txt
 
       - name: Run unit tests
         run: |
@@ -86,7 +86,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov httpx
+          pip install -r requirements-test.txt
 
       - name: Wait for Keycloak
         run: |
@@ -125,6 +125,8 @@ jobs:
           KEYCLOAK_URL: http://localhost:8180
         run: |
           pytest -m integration -v --tb=short --cov=services/ui_iot --cov-report=xml
+      - name: Check coverage thresholds
+        run: python scripts/check_coverage.py
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
@@ -148,7 +150,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
-          pip install pytest pytest-asyncio playwright pytest-playwright
+          pip install -r requirements-test.txt
 
       - name: Install Playwright browsers
         run: playwright install chromium

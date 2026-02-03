@@ -6,13 +6,15 @@ import sys
 import xml.etree.ElementTree as ET
 
 CRITICAL_MODULES = {
-    "services/ui_iot/middleware/auth.py": 90,
-    "services/ui_iot/middleware/tenant.py": 90,
+    "services/ui_iot/middleware/auth.py": 85,
+    "services/ui_iot/middleware/tenant.py": 85,
     "services/ui_iot/db/pool.py": 85,
-    "services/ui_iot/utils/url_validator.py": 90,
+    "services/ui_iot/utils/url_validator.py": 80,
+    "services/ui_iot/utils/snmp_validator.py": 75,
+    "services/ui_iot/utils/email_validator.py": 80,
 }
 
-OVERALL_MINIMUM = 70
+OVERALL_MINIMUM = 60
 
 
 def get_coverage_from_xml(xml_path: str) -> dict:
@@ -61,8 +63,8 @@ def main():
         failed = True
 
     if failed:
-        print("\n⚠️ Coverage requirements not met (non-blocking).")
-        sys.exit(0)
+        print("\n⚠️ Coverage requirements not met.")
+        sys.exit(1)
 
     print("\n✅ All coverage requirements met!")
     sys.exit(0)

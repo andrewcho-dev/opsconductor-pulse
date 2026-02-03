@@ -4,6 +4,8 @@ import pytest_asyncio
 
 from db.pool import tenant_connection, operator_connection
 
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
 @pytest_asyncio.fixture
 async def test_data(db_pool):
     """Create test data in two tenants."""
@@ -27,7 +29,6 @@ async def test_data(db_pool):
         )
 
 
-@pytest.mark.asyncio
 async def test_no_tenant_context_returns_zero_rows(db_pool, test_data):
     """Without app.tenant_id set, RLS should return zero rows."""
     async with db_pool.acquire() as conn:
@@ -39,7 +40,6 @@ async def test_no_tenant_context_returns_zero_rows(db_pool, test_data):
             assert len(rows) == 0, "Expected zero rows when tenant context not set"
 
 
-@pytest.mark.asyncio
 async def test_wrong_tenant_returns_zero_rows(db_pool, test_data):
     """With wrong app.tenant_id, RLS should return zero rows."""
     async with db_pool.acquire() as conn:
@@ -52,7 +52,6 @@ async def test_wrong_tenant_returns_zero_rows(db_pool, test_data):
             assert len(rows) == 0, "Expected zero rows for wrong tenant"
 
 
-@pytest.mark.asyncio
 async def test_correct_tenant_returns_matching_rows(db_pool, test_data):
     """With correct app.tenant_id, RLS returns only that tenant's rows."""
     async with db_pool.acquire() as conn:
@@ -65,7 +64,6 @@ async def test_correct_tenant_returns_matching_rows(db_pool, test_data):
                 assert row["tenant_id"] == "test-tenant-a"
 
 
-@pytest.mark.asyncio
 async def test_operator_bypasses_rls(db_pool, test_data):
     """Operator role should see all rows regardless of tenant context."""
     async with db_pool.acquire() as conn:
@@ -77,7 +75,6 @@ async def test_operator_bypasses_rls(db_pool, test_data):
             assert len(rows) == 3, "Operator should see all 3 test rows"
 
 
-@pytest.mark.asyncio
 async def test_cross_tenant_query_blocked(db_pool, test_data):
     """App role cannot see other tenant's data even with explicit query."""
     async with db_pool.acquire() as conn:
@@ -90,7 +87,6 @@ async def test_cross_tenant_query_blocked(db_pool, test_data):
             assert len(rows) == 0, "Cross-tenant query should return zero rows"
 
 
-@pytest.mark.asyncio
 async def test_insert_wrong_tenant_blocked(db_pool):
     """Cannot insert data for a different tenant."""
     async with db_pool.acquire() as conn:
@@ -106,7 +102,6 @@ async def test_insert_wrong_tenant_blocked(db_pool):
                 )
 
 
-@pytest.mark.asyncio
 async def test_tenant_connection_wrapper(db_pool, test_data):
     """tenant_connection should set correct context."""
     async with tenant_connection(db_pool, "test-tenant-a") as conn:
@@ -116,7 +111,6 @@ async def test_tenant_connection_wrapper(db_pool, test_data):
             assert row["tenant_id"] == "test-tenant-a"
 
 
-@pytest.mark.asyncio
 async def test_operator_connection_wrapper(db_pool, test_data):
     """operator_connection should bypass RLS."""
     async with operator_connection(db_pool) as conn:

@@ -3,13 +3,11 @@
 These tests verify the complete flow from alert creation to delivery.
 """
 
-import asyncio
 import json
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import asyncpg
+import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -17,7 +15,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 class TestWebhookDeliveryE2E:
     """Test webhook delivery end-to-end."""
 
-    async def test_alert_creates_delivery_job(self, db_pool, test_tenant):
+    async def test_alert_creates_delivery_job(self, db_pool, test_tenants):
         """Verify alert + route creates delivery job."""
         async with db_pool.acquire() as conn:
             # Create integration
@@ -27,7 +25,7 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, 'Test Webhook', 'webhook', '{"url": "https://example.com/webhook"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Create route
@@ -37,7 +35,7 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, $2, 'Test Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -48,13 +46,13 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, 'site-1', 'device-1', 'NO_HEARTBEAT', 'fp-test-1', 4, 0.9, 'Test alert', 'OPEN')
                 RETURNING id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Import and run dispatcher once
             from services.dispatcher.dispatcher import dispatch_once
 
-            created = await dispatch_once(conn)
+            await dispatch_once(conn)
 
             # Verify job was created
             job = await conn.fetchrow(
@@ -62,7 +60,7 @@ class TestWebhookDeliveryE2E:
                 SELECT * FROM delivery_jobs
                 WHERE tenant_id = $1 AND alert_id = $2
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 alert_id,
             )
 
@@ -71,7 +69,7 @@ class TestWebhookDeliveryE2E:
             assert job["route_id"] == route_id
             assert job["status"] == "PENDING"
 
-    async def test_webhook_delivery_success(self, db_pool, test_tenant):
+    async def test_webhook_delivery_success(self, db_pool, test_tenants):
         """Verify webhook delivery sends HTTP POST."""
         async with db_pool.acquire() as conn:
             # Setup integration and job
@@ -81,7 +79,7 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, 'Test Webhook', 'webhook', '{"url": "https://httpbin.org/post"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             route_id = await conn.fetchval(
@@ -90,7 +88,7 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, $2, 'Webhook Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -100,7 +98,7 @@ class TestWebhookDeliveryE2E:
                 VALUES ($1, 1, $2, $3, 'OPEN', 'PENDING', '{"alert_id": 1, "message": "test"}')
                 RETURNING job_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
                 route_id,
             )
@@ -132,7 +130,7 @@ class TestWebhookDeliveryE2E:
 class TestSNMPDeliveryE2E:
     """Test SNMP delivery end-to-end."""
 
-    async def test_snmp_integration_creates_job(self, db_pool, test_tenant):
+    async def test_snmp_integration_creates_job(self, db_pool, test_tenants):
         """Verify SNMP integration creates delivery job."""
         async with db_pool.acquire() as conn:
             # Create SNMP integration
@@ -144,7 +142,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, 'Test SNMP', 'snmp', '192.0.2.100', 162, '{"version": "2c", "community": "public"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Create route
@@ -154,7 +152,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, $2, 'SNMP Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -165,7 +163,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, 'site-1', 'device-snmp', 'NO_HEARTBEAT', 'fp-snmp-1', 4, 0.9, 'SNMP test alert', 'OPEN')
                 RETURNING id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Run dispatcher
@@ -179,14 +177,14 @@ class TestSNMPDeliveryE2E:
                 SELECT * FROM delivery_jobs
                 WHERE tenant_id = $1 AND alert_id = $2
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 alert_id,
             )
 
             assert job is not None
             assert job["integration_id"] == integration_id
 
-    async def test_snmp_delivery_calls_sender(self, db_pool, test_tenant):
+    async def test_snmp_delivery_calls_sender(self, db_pool, test_tenants):
         """Verify SNMP delivery calls snmp_sender."""
         async with db_pool.acquire() as conn:
             # Setup SNMP integration and job
@@ -198,7 +196,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, 'Test SNMP', 'snmp', '192.0.2.100', 162, '{"version": "2c", "community": "public"}', '1.3.6.1.4.1.99999', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             route_id = await conn.fetchval(
@@ -207,7 +205,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, $2, 'SNMP Job Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -217,7 +215,7 @@ class TestSNMPDeliveryE2E:
                 VALUES ($1, 2, $2, $3, 'OPEN', 'PENDING', '{"alert_id": 2, "severity": 4, "summary": "test", "device_id": "dev-1"}')
                 RETURNING job_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
                 route_id,
             )
@@ -250,7 +248,7 @@ class TestSNMPDeliveryE2E:
 class TestDeliveryRetry:
     """Test delivery retry logic."""
 
-    async def test_failed_delivery_retries(self, db_pool, test_tenant):
+    async def test_failed_delivery_retries(self, db_pool, test_tenants):
         """Verify failed delivery schedules retry."""
         async with db_pool.acquire() as conn:
             integration_id = await conn.fetchval(
@@ -259,7 +257,7 @@ class TestDeliveryRetry:
                 VALUES ($1, 'Failing Webhook', 'webhook', '{"url": "https://example.com/fail"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             route_id = await conn.fetchval(
@@ -268,7 +266,7 @@ class TestDeliveryRetry:
                 VALUES ($1, $2, 'Retry Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -278,7 +276,7 @@ class TestDeliveryRetry:
                 VALUES ($1, 3, $2, $3, 'OPEN', 'PENDING', 0, '{"alert_id": 3}')
                 RETURNING job_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
                 route_id,
             )
@@ -301,7 +299,7 @@ class TestDeliveryRetry:
             assert job["last_error"] == "http_500"
             assert job["next_run_at"] > datetime.now(timezone.utc)
 
-    async def test_max_attempts_fails_job(self, db_pool, test_tenant):
+    async def test_max_attempts_fails_job(self, db_pool, test_tenants):
         """Verify job fails after max attempts."""
         async with db_pool.acquire() as conn:
             integration_id = await conn.fetchval(
@@ -310,7 +308,7 @@ class TestDeliveryRetry:
                 VALUES ($1, 'Failing Webhook', 'webhook', '{"url": "https://example.com/fail"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Job already at attempt 4 (max is 5)
@@ -320,7 +318,7 @@ class TestDeliveryRetry:
                 VALUES ($1, $2, 'Max Attempts Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -330,7 +328,7 @@ class TestDeliveryRetry:
                 VALUES ($1, 4, $2, $3, 'OPEN', 'PENDING', 4, '{"alert_id": 4}')
                 RETURNING job_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
                 route_id,
             )
@@ -354,7 +352,7 @@ class TestDeliveryRetry:
 class TestRouteMatching:
     """Test alert-to-route matching."""
 
-    async def test_route_filters_by_alert_type(self, db_pool, test_tenant):
+    async def test_route_filters_by_alert_type(self, db_pool, test_tenants):
         """Verify route only matches specified alert types."""
         async with db_pool.acquire() as conn:
             integration_id = await conn.fetchval(
@@ -363,7 +361,7 @@ class TestRouteMatching:
                 VALUES ($1, 'Filtered Webhook', 'webhook', '{"url": "https://example.com"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Route only matches LOW_BATTERY
@@ -372,7 +370,7 @@ class TestRouteMatching:
                 INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
                 VALUES ($1, $2, 'Filter Route', ARRAY['LOW_BATTERY'], ARRAY['OPEN'], true)
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -383,7 +381,7 @@ class TestRouteMatching:
                 VALUES ($1, 'site-1', 'device-1', 'NO_HEARTBEAT', 'fp-filter-1', 4, 0.9, 'Wrong type', 'OPEN')
                 RETURNING id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             from services.dispatcher.dispatcher import dispatch_once
@@ -393,7 +391,7 @@ class TestRouteMatching:
             # Verify no job created
             job = await conn.fetchrow(
                 "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
-                test_tenant,
+                test_tenants["tenant_a"],
                 alert_id,
             )
             assert job is None
@@ -402,7 +400,7 @@ class TestRouteMatching:
 class TestEmailDeliveryE2E:
     """Test email delivery end-to-end."""
 
-    async def test_email_integration_creates_job(self, db_pool, test_tenant):
+    async def test_email_integration_creates_job(self, db_pool, test_tenants):
         """Verify email integration creates delivery job."""
         async with db_pool.acquire() as conn:
             # Create email integration
@@ -417,7 +415,7 @@ class TestEmailDeliveryE2E:
                     true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Create route
@@ -426,7 +424,7 @@ class TestEmailDeliveryE2E:
                 INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
                 VALUES ($1, $2, 'Email Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -437,7 +435,7 @@ class TestEmailDeliveryE2E:
                 VALUES ($1, 'site-1', 'device-email', 'NO_HEARTBEAT', 'fp-email-1', 4, 0.9, 'Email test alert', 'OPEN')
                 RETURNING id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Run dispatcher
@@ -447,14 +445,14 @@ class TestEmailDeliveryE2E:
             # Verify job created
             job = await conn.fetchrow(
                 "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
-                test_tenant,
+                test_tenants["tenant_a"],
                 alert_id,
             )
 
             assert job is not None
             assert job["integration_id"] == integration_id
 
-    async def test_email_delivery_calls_sender(self, db_pool, test_tenant):
+    async def test_email_delivery_calls_sender(self, db_pool, test_tenants):
         """Verify email delivery calls email sender."""
         async with db_pool.acquire() as conn:
             integration_id = await conn.fetchval(
@@ -469,7 +467,7 @@ class TestEmailDeliveryE2E:
                     true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             route_id = await conn.fetchval(
@@ -478,7 +476,7 @@ class TestEmailDeliveryE2E:
                 VALUES ($1, $2, 'Email Delivery Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                 RETURNING route_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
             )
 
@@ -489,7 +487,7 @@ class TestEmailDeliveryE2E:
                     '{"alert_id": 100, "severity": "critical", "alert_type": "NO_HEARTBEAT", "device_id": "dev-1", "summary": "Test"}')
                 RETURNING job_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
                 integration_id,
                 route_id,
             )
@@ -523,7 +521,7 @@ class TestEmailDeliveryE2E:
 class TestMultiTypeDelivery:
     """Test delivery to multiple integration types."""
 
-    async def test_alert_dispatches_to_all_types(self, db_pool, test_tenant):
+    async def test_alert_dispatches_to_all_types(self, db_pool, test_tenants):
         """Verify alert creates jobs for webhook, SNMP, and email."""
         async with db_pool.acquire() as conn:
             # Create one of each type
@@ -533,7 +531,7 @@ class TestMultiTypeDelivery:
                 VALUES ($1, 'Webhook', 'webhook', '{"url": "https://example.com"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             snmp_id = await conn.fetchval(
@@ -542,7 +540,7 @@ class TestMultiTypeDelivery:
                 VALUES ($1, 'SNMP', 'snmp', '192.0.2.100', 162, '{"version": "2c", "community": "public"}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             email_id = await conn.fetchval(
@@ -551,7 +549,7 @@ class TestMultiTypeDelivery:
                 VALUES ($1, 'Email', 'email', '{"smtp_host": "smtp.example.com", "from_address": "a@b.com"}', '{"to": ["x@y.com"]}', true)
                 RETURNING integration_id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Create routes for each
@@ -561,7 +559,7 @@ class TestMultiTypeDelivery:
                     INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
                     VALUES ($1, $2, 'Multi Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
                     """,
-                    test_tenant,
+                    test_tenants["tenant_a"],
                     int_id,
                 )
 
@@ -572,17 +570,17 @@ class TestMultiTypeDelivery:
                 VALUES ($1, 'site-1', 'multi-device', 'NO_HEARTBEAT', 'fp-multi-1', 4, 0.9, 'Multi-type test', 'OPEN')
                 RETURNING id
                 """,
-                test_tenant,
+                test_tenants["tenant_a"],
             )
 
             # Run dispatcher
             from services.dispatcher.dispatcher import dispatch_once
-            created = await dispatch_once(conn)
+            await dispatch_once(conn)
 
             # Verify 3 jobs created
             jobs = await conn.fetch(
                 "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
-                test_tenant,
+                test_tenants["tenant_a"],
                 alert_id,
             )
 
@@ -593,27 +591,3 @@ class TestMultiTypeDelivery:
             assert email_id in integration_ids
 
 
-@pytest.fixture(scope="session")
-async def db_pool():
-    """Create database connection pool for tests."""
-    import os
-
-    pool = await asyncpg.create_pool(
-        host=os.getenv("PG_HOST", "localhost"),
-        port=int(os.getenv("PG_PORT", "5432")),
-        database=os.getenv("PG_DB", "iotcloud_test"),
-        user=os.getenv("PG_USER", "iot"),
-        password=os.getenv("PG_PASS", "iot_dev"),
-        min_size=1,
-        max_size=5,
-    )
-    yield pool
-    await pool.close()
-
-
-@pytest.fixture
-def test_tenant():
-    """Unique tenant ID for test isolation."""
-    import uuid
-
-    return f"test-tenant-{uuid.uuid4().hex[:8]}"
