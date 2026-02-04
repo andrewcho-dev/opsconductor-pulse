@@ -3,7 +3,7 @@ import time
 import pytest
 from playwright.async_api import Page, expect
 
-pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
+pytestmark = [pytest.mark.e2e, pytest.mark.benchmark, pytest.mark.asyncio]
 
 
 async def _measure_page_load(page: Page, url: str) -> float:
