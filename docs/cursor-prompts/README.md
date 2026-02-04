@@ -325,6 +325,26 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 10: MQTT Alert Delivery
+
+**Goal**: Add MQTT as a fourth alert delivery channel with validation, UI, and tests.
+
+**Directory**: `phase10-mqtt-alert-delivery/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-mqtt-schema.md` | MQTT integration schema + migration | `[x]` | Phase 6 |
+| 2 | `002-mqtt-sender-validator.md` | MQTT sender + topic validation | `[x]` | #1 |
+| 3 | `003-mqtt-customer-routes.md` | Customer MQTT CRUD + test delivery routes | `[x]` | #1, #2 |
+| 4 | `004-mqtt-delivery-worker.md` | Delivery worker MQTT support | `[x]` | #2, #3 |
+| 5 | `005-mqtt-ui.md` | Customer MQTT UI page | `[x]` | #3 |
+| 6 | `006-mosquitto-acl.md` | Mosquitto ACL configuration | `[x]` | #5 |
+| 7 | `007-mqtt-tests.md` | MQTT unit, integration, and E2E tests | `[x]` | #1-#6 |
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order

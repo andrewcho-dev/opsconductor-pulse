@@ -12,6 +12,7 @@ import httpx
 
 from snmp_sender import send_alert_trap, SNMPTrapResult, PYSNMP_AVAILABLE
 from email_sender import send_alert_email, EmailResult, AIOSMTPLIB_AVAILABLE
+from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -85,6 +86,26 @@ def normalize_snmp_config(value) -> dict:
 
 def normalize_email_config(value) -> dict:
     """Normalize email_config from various storage formats."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def normalize_mqtt_config(value) -> dict:
+    """Normalize mqtt_config from various storage formats."""
     if value is None:
         return {}
     if isinstance(value, dict):
@@ -204,7 +225,8 @@ async def fetch_integration(conn: asyncpg.Connection, tenant_id: str, integratio
         """
         SELECT type, enabled, config_json,
                snmp_host, snmp_port, snmp_config, snmp_oid_prefix,
-               email_config, email_recipients, email_template
+               email_config, email_recipients, email_template,
+               mqtt_topic, mqtt_qos, mqtt_retain, mqtt_config
         FROM integrations
         WHERE tenant_id=$1 AND integration_id=$2
         """,
@@ -310,6 +332,8 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
             ok, error = await deliver_snmp(integration, job)
         elif integration_type == "email":
             ok, error = await deliver_email(integration, job)
+        elif integration_type == "mqtt":
+            ok, error = await deliver_mqtt(integration, job)
         else:
             ok, http_status, error = await deliver_webhook(integration, job)
 
@@ -480,15 +504,59 @@ async def deliver_email(integration: dict, job: asyncpg.Record) -> tuple[bool, s
     return result.success, result.error
 
 
+async def deliver_mqtt(integration: dict, job: asyncpg.Record) -> tuple[bool, str | None]:
+    """Deliver via MQTT. Returns (ok, error)."""
+    if not PAHO_MQTT_AVAILABLE:
+        return False, "paho_mqtt_not_available"
+
+    mqtt_topic = integration.get("mqtt_topic")
+    if not mqtt_topic:
+        return False, "missing_mqtt_topic"
+
+    mqtt_config = normalize_mqtt_config(integration.get("mqtt_config"))
+    broker_url = mqtt_config.get("broker_url") or "mqtt://iot-mqtt:1883"
+    mqtt_qos = integration.get("mqtt_qos") if integration.get("mqtt_qos") is not None else 1
+    mqtt_retain = integration.get("mqtt_retain") if integration.get("mqtt_retain") is not None else False
+
+    payload = job["payload_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    resolved_topic = mqtt_topic
+    replacements = {
+        "tenant_id": payload.get("tenant_id"),
+        "severity": payload.get("severity"),
+        "site_id": payload.get("site_id"),
+        "device_id": payload.get("device_id"),
+        "alert_id": payload.get("alert_id"),
+        "alert_type": payload.get("alert_type"),
+    }
+    for key, value in replacements.items():
+        if value is not None:
+            resolved_topic = resolved_topic.replace(f"{{{key}}}", str(value))
+
+    payload_json = json.dumps(payload)
+    result = await publish_alert(
+        broker_url=broker_url,
+        topic=resolved_topic,
+        payload=payload_json,
+        qos=mqtt_qos,
+        retain=mqtt_retain,
+    )
+
+    return result.success, result.error
+
+
 async def run_worker() -> None:
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
     print(
-        "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={}".format(
+        "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={} mqtt_available={}".format(
             MODE,
             ssrf_strict,
             PYSNMP_AVAILABLE,
             AIOSMTPLIB_AVAILABLE,
+            PAHO_MQTT_AVAILABLE,
         )
     )
 

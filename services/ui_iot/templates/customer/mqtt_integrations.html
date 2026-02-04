@@ -1,0 +1,69 @@
+{% extends "customer/base.html" %}
+
+{% block title %}MQTT Integrations{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="header-row">
+        <h2>MQTT Integrations</h2>
+        <button id="btn-add-mqtt">Add MQTT Integration</button>
+    </div>
+    <div id="mqtt-list" class="list-body">
+        <div>Loading...</div>
+    </div>
+</div>
+
+<div id="mqtt-modal" class="hidden modal-overlay">
+    <div class="card modal">
+        <h3 id="modal-title">Add MQTT Integration</h3>
+        <form id="mqtt-form">
+            <div class="form-row">
+                <label>Name</label>
+                <input type="text" id="mqtt-name" required placeholder="Alert MQTT">
+            </div>
+
+            <div class="form-row">
+                <label>Topic</label>
+                <input
+                    type="text"
+                    id="mqtt-topic"
+                    required
+                    placeholder="alerts/{tenant_id}/{severity}/{site_id}/{device_id}"
+                >
+            </div>
+
+            <div class="form-row">
+                <label>QoS</label>
+                <select id="mqtt-qos">
+                    <option value="0">0 - At most once</option>
+                    <option value="1" selected>1 - At least once</option>
+                    <option value="2">2 - Exactly once</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <label>
+                    <input type="checkbox" id="mqtt-retain">
+                    Retain messages
+                </label>
+            </div>
+
+            <div class="form-row">
+                <label>
+                    <input type="checkbox" id="mqtt-enabled" checked>
+                    Enabled
+                </label>
+            </div>
+
+            <div id="form-error" class="hidden form-error"></div>
+
+            <div class="form-actions">
+                <button type="button" id="btn-cancel">Cancel</button>
+                <button type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/static/js/mqtt_integrations.js"></script>
+{% endblock %}

@@ -20,6 +20,7 @@ from middleware.tenant import inject_tenant_context, get_tenant_id, require_cust
 from utils.url_validator import validate_webhook_url
 from utils.snmp_validator import validate_snmp_host
 from utils.email_validator import validate_email_integration
+from utils.mqtt_validator import validate_mqtt_topic
 from schemas.snmp import (
     SNMPIntegrationCreate,
     SNMPIntegrationUpdate,
@@ -29,6 +30,11 @@ from schemas.email import (
     EmailIntegrationCreate,
     EmailIntegrationUpdate,
     EmailIntegrationResponse,
+)
+from schemas.mqtt import (
+    MQTTIntegrationCreate,
+    MQTTIntegrationUpdate,
+    MQTTIntegrationResponse,
 )
 from db.pool import tenant_connection
 from db.queries import (
@@ -53,6 +59,7 @@ from db.queries import (
 )
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 from services.email_sender import send_alert_email
+from services.mqtt_sender import publish_alert
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +306,16 @@ async def email_integrations_page(request: Request):
     tenant_id = get_tenant_id()
     return templates.TemplateResponse(
         "customer/email_integrations.html",
+        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
+    )
+
+
+@router.get("/mqtt-integrations", include_in_schema=False)
+async def mqtt_integrations_page(request: Request):
+    """Render MQTT integrations page."""
+    tenant_id = get_tenant_id()
+    return templates.TemplateResponse(
+        "customer/mqtt_integrations.html",
         {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
     )
 
@@ -1071,6 +1088,339 @@ async def delete_email_integration(integration_id: str):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     return Response(status_code=204)
+
+
+@router.get("/integrations/mqtt", response_model=list[MQTTIntegrationResponse])
+async def list_mqtt_integrations():
+    """List all MQTT integrations for this tenant."""
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT integration_id, tenant_id, name, mqtt_topic, mqtt_qos,
+                       mqtt_retain, enabled, created_at, updated_at
+                FROM integrations
+                WHERE tenant_id = $1 AND type = 'mqtt'
+                ORDER BY created_at DESC
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch MQTT integrations")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    results = []
+    for row in rows:
+        results.append(
+            MQTTIntegrationResponse(
+                id=str(row["integration_id"]),
+                tenant_id=str(row["tenant_id"]),
+                name=row["name"],
+                mqtt_topic=row["mqtt_topic"],
+                mqtt_qos=row["mqtt_qos"],
+                mqtt_retain=row["mqtt_retain"],
+                enabled=row["enabled"],
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+            )
+        )
+    return results
+
+
+@router.get("/integrations/mqtt/{integration_id}", response_model=MQTTIntegrationResponse)
+async def get_mqtt_integration(integration_id: str):
+    """Get a specific MQTT integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, mqtt_topic, mqtt_qos,
+                       mqtt_retain, enabled, created_at, updated_at
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'mqtt'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch MQTT integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return MQTTIntegrationResponse(
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
+        name=row["name"],
+        mqtt_topic=row["mqtt_topic"],
+        mqtt_qos=row["mqtt_qos"],
+        mqtt_retain=row["mqtt_retain"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.post(
+    "/integrations/mqtt",
+    response_model=MQTTIntegrationResponse,
+    status_code=201,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def create_mqtt_integration(data: MQTTIntegrationCreate):
+    """Create a new MQTT integration."""
+    tenant_id = get_tenant_id()
+    name = _validate_name(data.name)
+    validation = validate_mqtt_topic(data.mqtt_topic, tenant_id)
+    if not validation.valid:
+        raise HTTPException(status_code=400, detail=f"Invalid MQTT topic: {validation.error}")
+
+    integration_id = str(uuid.uuid4())
+    now = datetime.datetime.utcnow()
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO integrations (
+                    integration_id, tenant_id, name, type, mqtt_topic,
+                    mqtt_qos, mqtt_retain, enabled, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, 'mqtt', $4, $5, $6, $7, $8, $9)
+                RETURNING integration_id, tenant_id, name, mqtt_topic, mqtt_qos,
+                          mqtt_retain, enabled, created_at, updated_at
+                """,
+                integration_id,
+                tenant_id,
+                name,
+                data.mqtt_topic,
+                data.mqtt_qos,
+                data.mqtt_retain,
+                data.enabled,
+                now,
+                now,
+            )
+    except Exception:
+        logger.exception("Failed to create MQTT integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return MQTTIntegrationResponse(
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
+        name=row["name"],
+        mqtt_topic=row["mqtt_topic"],
+        mqtt_qos=row["mqtt_qos"],
+        mqtt_retain=row["mqtt_retain"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.patch(
+    "/integrations/mqtt/{integration_id}",
+    response_model=MQTTIntegrationResponse,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def update_mqtt_integration(integration_id: str, data: MQTTIntegrationUpdate):
+    """Update a MQTT integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "mqtt_topic" in update_data and update_data["mqtt_topic"] is not None:
+        validation = validate_mqtt_topic(update_data["mqtt_topic"], tenant_id)
+        if not validation.valid:
+            raise HTTPException(status_code=400, detail=f"Invalid MQTT topic: {validation.error}")
+
+    updates = []
+    values = []
+    param_idx = 1
+
+    if "name" in update_data and update_data["name"] is not None:
+        update_data["name"] = _validate_name(update_data["name"])
+
+    for field in ["name", "mqtt_topic", "mqtt_qos", "mqtt_retain", "enabled"]:
+        if field in update_data and update_data[field] is not None:
+            updates.append(f"{field} = ${param_idx}")
+            values.append(update_data[field])
+            param_idx += 1
+
+    updates.append(f"updated_at = ${param_idx}")
+    values.append(datetime.datetime.utcnow())
+    param_idx += 1
+
+    values.extend([integration_id, tenant_id])
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE integrations
+                SET {", ".join(updates)}
+                WHERE integration_id = ${param_idx} AND tenant_id = ${param_idx + 1} AND type = 'mqtt'
+                RETURNING integration_id, tenant_id, name, mqtt_topic, mqtt_qos,
+                          mqtt_retain, enabled, created_at, updated_at
+                """,
+                *values,
+            )
+    except Exception:
+        logger.exception("Failed to update MQTT integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return MQTTIntegrationResponse(
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
+        name=row["name"],
+        mqtt_topic=row["mqtt_topic"],
+        mqtt_qos=row["mqtt_qos"],
+        mqtt_retain=row["mqtt_retain"],
+        enabled=row["enabled"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.delete(
+    "/integrations/mqtt/{integration_id}",
+    status_code=204,
+    dependencies=[Depends(require_customer_admin)],
+)
+async def delete_mqtt_integration(integration_id: str):
+    """Delete a MQTT integration."""
+    tenant_id = get_tenant_id()
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'mqtt'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to delete MQTT integration")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    return Response(status_code=204)
+
+
+@router.post(
+    "/integrations/mqtt/{integration_id}/test",
+    dependencies=[Depends(require_customer_admin)],
+)
+async def test_mqtt_integration(integration_id: str):
+    """Send a test MQTT message."""
+    tenant_id = get_tenant_id()
+
+    try:
+        UUID(integration_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            allowed, _ = await check_and_increment_rate_limit(
+                conn,
+                tenant_id=tenant_id,
+                action=f"test_delivery:{integration_id}",
+                limit=5,
+                window_seconds=60,
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Maximum 5 test deliveries per minute.",
+                )
+
+            row = await conn.fetchrow(
+                """
+                SELECT integration_id, tenant_id, name, type, mqtt_topic,
+                       mqtt_qos, mqtt_retain, mqtt_config, enabled
+                FROM integrations
+                WHERE integration_id = $1 AND tenant_id = $2 AND type = 'mqtt'
+                """,
+                integration_id,
+                tenant_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch MQTT integration for test")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    now = datetime.datetime.utcnow().replace(microsecond=0)
+    timestamp = now.isoformat() + "Z"
+    test_values = {
+        "tenant_id": tenant_id,
+        "severity": "INFO",
+        "site_id": "test-site",
+        "device_id": "test-device",
+        "alert_id": "test-alert-001",
+        "alert_type": "test",
+    }
+
+    resolved_topic = row["mqtt_topic"]
+    for key, value in test_values.items():
+        resolved_topic = resolved_topic.replace(f"{{{key}}}", value)
+
+    payload = {
+        **test_values,
+        "message": "Test MQTT delivery from OpsConductor Pulse",
+        "timestamp": timestamp,
+    }
+
+    mqtt_config = _normalize_json(row["mqtt_config"])
+    broker_url = mqtt_config.get("broker_url") or "mqtt://iot-mqtt:1883"
+
+    result = await publish_alert(
+        broker_url=broker_url,
+        topic=resolved_topic,
+        payload=json.dumps(payload),
+        qos=row["mqtt_qos"] if row["mqtt_qos"] is not None else 1,
+        retain=row["mqtt_retain"] if row["mqtt_retain"] is not None else False,
+    )
+
+    return {
+        "success": result.success,
+        "error": result.error,
+        "duration_ms": result.duration_ms,
+    }
 
 
 @router.post("/integrations", dependencies=[Depends(require_customer_admin)])

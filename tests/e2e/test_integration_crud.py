@@ -426,6 +426,77 @@ class TestEmailCRUD:
         assert name not in content
 
 
+class TestMQTTCRUD:
+    """Test MQTT integration create/delete through the browser."""
+
+    async def test_create_mqtt_integration(
+        self, authenticated_customer_page: Page, cleanup_integrations
+    ):
+        page = authenticated_customer_page
+        await page.goto("/customer/mqtt-integrations")
+        await page.wait_for_load_state("domcontentloaded")
+
+        name = f"E2E MQTT {uuid.uuid4().hex[:6]}"
+
+        await page.click("#btn-add-mqtt")
+        modal = page.locator("#mqtt-modal")
+        await expect(modal).to_be_visible()
+
+        await page.fill("#mqtt-name", name)
+        await page.fill("#mqtt-topic", "alerts/test-tenant/INFO/test-site/test-device")
+
+        await page.click("#mqtt-form button[type='submit']")
+
+        await expect(modal).to_be_hidden(timeout=5000)
+        await page.wait_for_timeout(500)
+
+        list_el = page.locator("#mqtt-list")
+        await expect(list_el).to_contain_text(name)
+
+        response = await page.request.get("/customer/integrations/mqtt")
+        data = await response.json()
+        for integration in data if isinstance(data, list) else []:
+            if integration.get("name") == name:
+                cleanup_integrations.append(("mqtt", integration["id"]))
+                break
+
+    async def test_delete_mqtt_integration(self, authenticated_customer_page: Page):
+        page = authenticated_customer_page
+
+        name = f"E2E MQTT Del {uuid.uuid4().hex[:6]}"
+        response = await page.request.post(
+            "/customer/integrations/mqtt",
+            data=json.dumps({
+                "name": name,
+                "mqtt_topic": "alerts/test/INFO/site/dev",
+                "mqtt_qos": 1,
+                "enabled": True,
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status in (200, 201)
+
+        await page.goto("/customer/mqtt-integrations")
+        await page.wait_for_load_state("domcontentloaded")
+        await page.wait_for_timeout(500)
+
+        list_el = page.locator("#mqtt-list")
+        await expect(list_el).to_contain_text(name)
+
+        delete_btn = await _find_row_with_name(page, "#mqtt-list", name)
+        assert delete_btn is not None, f"Could not find row with name {name}"
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        await delete_btn.click()
+        await page.wait_for_timeout(500)
+
+        await page.goto("/customer/mqtt-integrations")
+        await page.wait_for_load_state("domcontentloaded")
+        await page.wait_for_timeout(500)
+        content = await list_el.inner_text()
+        assert name not in content
+
+
 class TestDesignConsistency:
     """Verify all integration pages use the same visual theme."""
 
@@ -439,6 +510,7 @@ class TestDesignConsistency:
             ("webhook", "/customer/webhooks"),
             ("snmp", "/customer/snmp-integrations"),
             ("email", "/customer/email-integrations"),
+            ("mqtt", "/customer/mqtt-integrations"),
         ]:
             await page.goto(path)
             await page.wait_for_load_state("domcontentloaded")
@@ -451,7 +523,7 @@ class TestDesignConsistency:
 
         # All three should use the same card background color
         colors = list(bg_colors.values())
-        assert colors[0] == colors[1] == colors[2], (
+        assert len(set(colors)) == 1, (
             f"Card backgrounds differ: {bg_colors}"
         )
 
@@ -464,6 +536,7 @@ class TestDesignConsistency:
             ("/customer/webhooks", "#btn-add-webhook"),
             ("/customer/snmp-integrations", "#btn-add-snmp"),
             ("/customer/email-integrations", "#btn-add-email"),
+            ("/customer/mqtt-integrations", "#btn-add-mqtt"),
         ]:
             await page.goto(path)
             await page.wait_for_load_state("domcontentloaded")

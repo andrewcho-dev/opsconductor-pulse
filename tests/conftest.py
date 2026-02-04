@@ -84,6 +84,7 @@ async def setup_delivery_tables(db_pool):
             "db/migrations/011_snmp_integrations.sql",
             "db/migrations/012_delivery_log.sql",
             "db/migrations/013_email_integrations.sql",
+            "db/migrations/014_mqtt_integrations.sql",
         ]
         for migration in migrations:
             try:
@@ -91,6 +92,57 @@ async def setup_delivery_tables(db_pool):
                     await conn.execute(f.read())
             except Exception as e:
                 print(f"Migration {migration}: {e}")
+
+        try:
+            await conn.execute("ALTER TABLE integrations ADD COLUMN IF NOT EXISTS mqtt_topic VARCHAR(512)")
+            await conn.execute("ALTER TABLE integrations ADD COLUMN IF NOT EXISTS mqtt_qos INTEGER DEFAULT 1")
+            await conn.execute("ALTER TABLE integrations ADD COLUMN IF NOT EXISTS mqtt_retain BOOLEAN DEFAULT false")
+            await conn.execute("ALTER TABLE integrations ADD COLUMN IF NOT EXISTS mqtt_config JSONB")
+        except Exception as e:
+            print(f"Migration integrations.mqtt_columns: {e}")
+
+        try:
+            await conn.execute(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'integration_type') THEN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_enum
+                            WHERE enumlabel = 'mqtt'
+                              AND enumtypid = 'integration_type'::regtype
+                        ) THEN
+                            ALTER TYPE integration_type ADD VALUE 'mqtt';
+                        END IF;
+                    END IF;
+                END$$;
+                """
+            )
+            await conn.execute("ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_type_check")
+            await conn.execute(
+                """
+                ALTER TABLE integrations ADD CONSTRAINT integrations_type_check
+                CHECK (type::text IN ('webhook', 'snmp', 'email', 'mqtt'))
+                """
+            )
+            await conn.execute(
+                """
+                ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integration_type_config_check
+                """
+            )
+            await conn.execute(
+                """
+                ALTER TABLE integrations ADD CONSTRAINT integration_type_config_check CHECK (
+                    (type::text = 'webhook' AND (config_json->>'url') IS NOT NULL) OR
+                    (type::text = 'snmp' AND snmp_host IS NOT NULL AND snmp_config IS NOT NULL) OR
+                    (type::text = 'email' AND email_config IS NOT NULL AND email_recipients IS NOT NULL) OR
+                    (type::text = 'mqtt' AND mqtt_topic IS NOT NULL)
+                )
+                """
+            )
+        except Exception as e:
+            print(f"Migration integrations.mqtt_type: {e}")
 
         try:
             await conn.execute(

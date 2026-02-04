@@ -11,6 +11,7 @@ NAV_LINKS = [
     ("Webhooks", "/customer/webhooks"),
     ("SNMP", "/customer/snmp-integrations"),
     ("Email", "/customer/email-integrations"),
+    ("MQTT", "/customer/mqtt-integrations"),
 ]
 
 
@@ -65,6 +66,13 @@ class TestCustomerNavLinks:
         heading = page.locator("h2:has-text('Email')")
         await expect(heading).to_be_visible()
 
+    async def test_mqtt_link_works(self, authenticated_customer_page: Page):
+        page = authenticated_customer_page
+        await page.click("a.nav-link:has-text('MQTT')")
+        await page.wait_for_url("**/customer/mqtt-integrations")
+        heading = page.locator("h2:has-text('MQTT')")
+        await expect(heading).to_be_visible()
+
 
 class TestNavBarPresence:
     """Verify the nav bar appears on every customer page with all 6 links."""
@@ -73,7 +81,7 @@ class TestNavBarPresence:
         nav = page.locator(".nav")
         await expect(nav).to_be_visible()
         links = nav.locator("a.nav-link")
-        assert await links.count() == 6
+        assert await links.count() == 7
 
     async def test_dashboard_has_nav(self, authenticated_customer_page: Page):
         page = authenticated_customer_page
@@ -106,6 +114,12 @@ class TestNavBarPresence:
     async def test_email_page_has_nav(self, authenticated_customer_page: Page):
         page = authenticated_customer_page
         await page.goto("/customer/email-integrations")
+        await page.wait_for_load_state("domcontentloaded")
+        await self._assert_nav_present(page)
+
+    async def test_mqtt_page_has_nav(self, authenticated_customer_page: Page):
+        page = authenticated_customer_page
+        await page.goto("/customer/mqtt-integrations")
         await page.wait_for_load_state("domcontentloaded")
         await self._assert_nav_present(page)
 

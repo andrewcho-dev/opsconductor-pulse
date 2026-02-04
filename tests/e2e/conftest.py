@@ -202,6 +202,8 @@ async def cleanup_integrations(authenticated_customer_page):
                 await page.request.delete(f"/customer/integrations/snmp/{int_id}")
             elif int_type == "email":
                 await page.request.delete(f"/customer/integrations/email/{int_id}")
+            elif int_type == "mqtt":
+                await page.request.delete(f"/customer/integrations/mqtt/{int_id}")
             else:
                 await page.request.delete(f"/customer/integrations/{int_id}")
         except Exception:

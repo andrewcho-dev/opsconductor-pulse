@@ -518,11 +518,138 @@ class TestEmailDeliveryE2E:
             assert job["status"] == "COMPLETED"
 
 
+class TestMQTTDeliveryE2E:
+    """Test MQTT delivery end-to-end."""
+
+    async def test_mqtt_integration_creates_job(self, db_pool, test_tenants):
+        """Verify MQTT integration creates delivery job."""
+        async with db_pool.acquire() as conn:
+            integration_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (
+                    tenant_id, name, type, mqtt_topic, mqtt_qos, mqtt_retain, enabled
+                )
+                VALUES ($1, 'Test MQTT', 'mqtt', 'alerts/{tenant_id}/{severity}', 1, false, true)
+                RETURNING integration_id
+                """,
+                test_tenants["tenant_a"],
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
+                VALUES ($1, $2, 'MQTT Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
+                """,
+                test_tenants["tenant_a"],
+                integration_id,
+            )
+
+            alert_id = await conn.fetchval(
+                """
+                INSERT INTO fleet_alert (tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, status)
+                VALUES ($1, 'site-1', 'device-mqtt', 'NO_HEARTBEAT', 'fp-mqtt-1', 4, 0.9, 'MQTT test alert', 'OPEN')
+                RETURNING id
+                """,
+                test_tenants["tenant_a"],
+            )
+
+            from services.dispatcher.dispatcher import dispatch_once
+
+            await dispatch_once(conn)
+
+            job = await conn.fetchrow(
+                "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
+                test_tenants["tenant_a"],
+                alert_id,
+            )
+
+            assert job is not None
+            assert job["integration_id"] == integration_id
+            assert job["status"] == "PENDING"
+
+    async def test_mqtt_delivery_calls_sender(self, db_pool, test_tenants):
+        """Verify MQTT delivery calls mqtt_sender."""
+        async with db_pool.acquire() as conn:
+            integration_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (
+                    tenant_id, name, type, mqtt_topic, mqtt_qos, mqtt_retain, enabled
+                )
+                VALUES (
+                    $1, 'Test MQTT', 'mqtt',
+                    'alerts/{tenant_id}/{severity}/{site_id}/{device_id}/{alert_id}/{alert_type}',
+                    1, false, true
+                )
+                RETURNING integration_id
+                """,
+                test_tenants["tenant_a"],
+            )
+
+            route_id = await conn.fetchval(
+                """
+                INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
+                VALUES ($1, $2, 'MQTT Delivery Route', ARRAY['NO_HEARTBEAT'], ARRAY['OPEN'], true)
+                RETURNING route_id
+                """,
+                test_tenants["tenant_a"],
+                integration_id,
+            )
+
+            payload = {
+                "tenant_id": test_tenants["tenant_a"],
+                "severity": "INFO",
+                "site_id": "site-1",
+                "device_id": "device-1",
+                "alert_id": "alert-001",
+                "alert_type": "NO_HEARTBEAT",
+                "summary": "MQTT test",
+            }
+
+            job_id = await conn.fetchval(
+                """
+                INSERT INTO delivery_jobs (tenant_id, alert_id, integration_id, route_id, deliver_on_event, status, payload_json)
+                VALUES ($1, 200, $2, $3, 'OPEN', 'PENDING', $4)
+                RETURNING job_id
+                """,
+                test_tenants["tenant_a"],
+                integration_id,
+                route_id,
+                json.dumps(payload),
+            )
+
+            with patch("services.delivery_worker.worker.publish_alert") as mock_publish, patch(
+                "services.delivery_worker.worker.PAHO_MQTT_AVAILABLE", True
+            ):
+                mock_publish.return_value = MagicMock(success=True, error=None, duration_ms=5)
+
+                from services.delivery_worker.worker import process_job
+
+                job = await conn.fetchrow("SELECT * FROM delivery_jobs WHERE job_id = $1", job_id)
+                await process_job(conn, job)
+
+                mock_publish.assert_called_once()
+                call_args = mock_publish.call_args
+                if call_args.args:
+                    broker_url, topic, payload_str = call_args.args[:3]
+                else:
+                    broker_url = call_args.kwargs.get("broker_url")
+                    topic = call_args.kwargs.get("topic")
+                    payload_str = call_args.kwargs.get("payload")
+                assert broker_url == "mqtt://iot-mqtt:1883"
+                assert topic == "alerts/tenant-a/INFO/site-1/device-1/alert-001/NO_HEARTBEAT"
+                payload_json = json.loads(payload_str)
+                assert payload_json["tenant_id"] == "tenant-a"
+                assert payload_json["alert_type"] == "NO_HEARTBEAT"
+
+            job = await conn.fetchrow("SELECT * FROM delivery_jobs WHERE job_id = $1", job_id)
+            assert job["status"] == "COMPLETED"
+
+
 class TestMultiTypeDelivery:
     """Test delivery to multiple integration types."""
 
     async def test_alert_dispatches_to_all_types(self, db_pool, test_tenants):
-        """Verify alert creates jobs for webhook, SNMP, and email."""
+        """Verify alert creates jobs for webhook, SNMP, email, and MQTT."""
         async with db_pool.acquire() as conn:
             # Create one of each type
             webhook_id = await conn.fetchval(
@@ -552,8 +679,17 @@ class TestMultiTypeDelivery:
                 test_tenants["tenant_a"],
             )
 
+            mqtt_id = await conn.fetchval(
+                """
+                INSERT INTO integrations (tenant_id, name, type, mqtt_topic, mqtt_qos, mqtt_retain, enabled)
+                VALUES ($1, 'MQTT', 'mqtt', 'alerts/{tenant_id}/{severity}', 1, false, true)
+                RETURNING integration_id
+                """,
+                test_tenants["tenant_a"],
+            )
+
             # Create routes for each
-            for int_id in [webhook_id, snmp_id, email_id]:
+            for int_id in [webhook_id, snmp_id, email_id, mqtt_id]:
                 await conn.execute(
                     """
                     INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
@@ -577,17 +713,18 @@ class TestMultiTypeDelivery:
             from services.dispatcher.dispatcher import dispatch_once
             await dispatch_once(conn)
 
-            # Verify 3 jobs created
+            # Verify 4 jobs created
             jobs = await conn.fetch(
                 "SELECT * FROM delivery_jobs WHERE tenant_id = $1 AND alert_id = $2",
                 test_tenants["tenant_a"],
                 alert_id,
             )
 
-            assert len(jobs) == 3
+            assert len(jobs) == 4
             integration_ids = {j["integration_id"] for j in jobs}
             assert webhook_id in integration_ids
             assert snmp_id in integration_ids
             assert email_id in integration_ids
+            assert mqtt_id in integration_ids
 
 
