@@ -30,6 +30,36 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  influxdb:
+    image: influxdb:3-core
+    container_name: iot-influxdb
+    environment:
+      INFLUXDB3_HTTP_BIND_ADDR: "0.0.0.0:8181"
+      INFLUXDB3_DB_DIR: /var/lib/influxdb3
+      INFLUXDB3_NODE_IDENTIFIER_PREFIX: "iot-node"
+      INFLUXDB3_OBJECT_STORE: "file"
+      INFLUXDB3_AUTH_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+    ports:
+      - "8181:8181"
+    volumes:
+      - ../data/influxdb3:/var/lib/influxdb3:z
+    command:
+      - influxdb3
+      - serve
+      - --node-id
+      - iot-node
+      - --object-store
+      - file
+      - --disable-authz
+      - health
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
   ingest:
     build: ../services/ingest_iot
     container_name: iot-ingest
@@ -47,10 +77,14 @@ services:
       COUNTERS_ENABLED: "1"
       SETTINGS_POLL_SECONDS: "5"
       LOG_STATS_EVERY_SECONDS: "30"
+      INFLUXDB_URL: "http://iot-influxdb:8181"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     depends_on:
       mqtt:
         condition: service_started
       postgres:
+        condition: service_healthy
+      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -65,8 +99,12 @@ services:
       PG_PASS: iot_dev
       POLL_SECONDS: "5"
       HEARTBEAT_STALE_SECONDS: "30"
+      INFLUXDB_URL: "http://iot-influxdb:8181"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     depends_on:
       postgres:
+        condition: service_healthy
+      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -151,6 +189,8 @@ services:
       KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
+      INFLUXDB_URL: "http://iot-influxdb:8181"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     ports:
       - "8080:8080"
     depends_on:
@@ -158,6 +198,8 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+      influxdb:
+        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -171,10 +213,14 @@ services:
       PG_PASS: iot_dev
       ADMIN_KEY: "change-me-now"
       ACTIVATION_TTL_MINUTES: "60"
+      INFLUXDB_URL: "http://iot-influxdb:8181"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     ports:
       - "8081:8081"
     depends_on:
       postgres:
+        condition: service_healthy
+      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
