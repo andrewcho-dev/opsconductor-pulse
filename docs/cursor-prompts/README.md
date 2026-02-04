@@ -306,7 +306,7 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 | 5 | `005-e2e-navigation-crud.md` | E2E tests for nav links, page rendering, integration CRUD | `[x]` | #0, #1 |
 | 6 | `006-e2e-visual-regression.md` | Playwright screenshot baselines for visual regression | `[x]` | #0, #5 |
 | 7 | `007-performance-baselines.md` | API, query, and page load performance benchmarks | `[x]` | #1 |
-| 8 | `008-ci-enforcement.md` | CI pipeline hardening, coverage gates, benchmark tracking | `[ ]` | #1-#7 |
+| 8 | `008-ci-enforcement.md` | CI pipeline hardening, coverage gates, benchmark tracking | `[x]` | #1-#7 |
 | 9 | `009-full-validation.md` | Full validation of all Phase 9 deliverables | `[ ]` | #0-#8 |
 
 **Exit Criteria**:
