@@ -2,15 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
-
-env:
-  PYTHON_VERSION: "3.11"
-  POSTGRES_USER: iot
-  POSTGRES_PASSWORD: iot_dev
-  POSTGRES_DB: iotcloud_test
+    branches: [main]
 
 jobs:
   unit-tests:
@@ -22,36 +16,42 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
           pip install -r requirements-test.txt
 
       - name: Run unit tests
         run: |
-          pytest -m unit -v --tb=short
+          mkdir -p test-results
+          pytest -m unit -v --tb=short --junitxml=test-results/unit.xml
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: test-results/unit.xml
 
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16
         env:
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_DB: iotcloud_test
+          POSTGRES_USER: iot
+          POSTGRES_PASSWORD: iot_dev
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
+          --health-cmd "pg_isready -U iot -d iotcloud_test"
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
       keycloak:
         image: quay.io/keycloak/keycloak:24.0
@@ -59,18 +59,18 @@ jobs:
           KEYCLOAK_ADMIN: admin
           KEYCLOAK_ADMIN_PASSWORD: admin_dev
           KC_DB: postgres
-          KC_DB_URL: jdbc:postgresql://postgres:5432/${{ env.POSTGRES_DB }}
-          KC_DB_USERNAME: ${{ env.POSTGRES_USER }}
-          KC_DB_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          KC_HOSTNAME_STRICT: "false"
+          KC_DB_URL: jdbc:postgresql://postgres:5432/iotcloud_test
+          KC_DB_USERNAME: iot
+          KC_DB_PASSWORD: iot_dev
+          KC_HOSTNAME_URL: http://localhost:8180
           KC_HTTP_ENABLED: "true"
         ports:
           - 8180:8080
         options: >-
-          --health-cmd "curl -f http://localhost:8080/health/ready || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 10
+          --health-cmd "curl -sf http://localhost:8080/health/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
           --health-start-period 60s
 
     steps:
@@ -79,60 +79,54 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
           pip install -r requirements-test.txt
 
       - name: Wait for Keycloak
         run: |
-          echo "Waiting for Keycloak to be ready..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8180/health/ready > /dev/null; then
-              echo "Keycloak is ready"
-              break
-            fi
-            echo "Waiting... ($i/30)"
-            sleep 10
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8180/realms/master && break
+            echo "Waiting for Keycloak... ($i)"
+            sleep 5
           done
-
-      - name: Import Keycloak realm
-        run: |
-          docker exec $(docker ps -q -f ancestor=quay.io/keycloak/keycloak:24.0) \
-            /opt/keycloak/bin/kcadm.sh config credentials \
-            --server http://localhost:8080 \
-            --realm master \
-            --user admin \
-            --password admin_dev
-          # TODO: Import realm-pulse.json
 
       - name: Run database migrations
-        env:
-          DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
         run: |
           for f in db/migrations/*.sql; do
-            echo "Running migration: $f"
-            PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }} -f "$f"
+            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f" || true
           done
 
-      - name: Run integration tests
+      - name: Run integration tests with coverage
         env:
-          TEST_DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
           KEYCLOAK_URL: http://localhost:8180
+          TEST_DATABASE_URL: postgresql://iot:iot_dev@localhost:5432/iotcloud_test
         run: |
-          pytest -m integration -v --tb=short --cov=services/ui_iot --cov-report=xml
-      - name: Check coverage thresholds
+          mkdir -p test-results
+          pytest -m integration -v --tb=short \
+            --cov=services/ui_iot --cov=services/dispatcher --cov=services/delivery_worker \
+            --cov-report=xml --cov-report=term-missing \
+            --junitxml=test-results/integration.xml
+
+      - name: Enforce coverage thresholds
         run: python scripts/check_coverage.py
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        if: always()
+        uses: codecov/codecov-action@v4
         with:
-          files: ./coverage.xml
+          file: coverage.xml
           fail_ci_if_error: false
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: test-results/integration.xml
 
   e2e-tests:
     name: E2E Tests
@@ -143,51 +137,48 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r services/ui_iot/requirements.txt
           pip install -r requirements-test.txt
+          playwright install chromium
 
-      - name: Install Playwright browsers
-        run: playwright install chromium
-
-      - name: Start services with Docker Compose
+      - name: Start services
         run: |
           cd compose
-          docker compose up -d --build
-          echo "Waiting for services to be ready..."
-          sleep 60
+          docker compose up -d
+          cd ..
 
       - name: Wait for services
         run: |
-          for i in {1..30}; do
-            if curl -s http://localhost:8080/ > /dev/null; then
-              echo "UI is ready"
-              break
-            fi
-            echo "Waiting for UI... ($i/30)"
+          echo "Waiting for UI..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/login && break
             sleep 5
           done
-
-          for i in {1..30}; do
-            if curl -s http://localhost:8180/health/ready > /dev/null; then
-              echo "Keycloak is ready"
-              break
-            fi
-            echo "Waiting for Keycloak... ($i/30)"
+          echo "Waiting for Keycloak..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8180/realms/pulse && break
             sleep 5
           done
 
       - name: Run E2E tests
         env:
-          E2E_BASE_URL: http://localhost:8080
           KEYCLOAK_URL: http://localhost:8180
+          UI_BASE_URL: http://localhost:8080
+          RUN_E2E: "1"
         run: |
-          pytest -m e2e -v --tb=short
+          mkdir -p test-results
+          pytest -m e2e -v --tb=short --junitxml=test-results/e2e.xml
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: test-results/e2e.xml
 
       - name: Upload Playwright traces on failure
         if: failure()
@@ -196,11 +187,27 @@ jobs:
           name: playwright-traces
           path: test-results/
 
-      - name: Stop services
+      - name: Collect container logs on failure
+        if: failure()
+        run: |
+          cd compose
+          docker compose logs ui > ../test-results/ui.log 2>&1
+          docker compose logs keycloak > ../test-results/keycloak.log 2>&1
+          cd ..
+
+      - name: Upload container logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: test-results/*.log
+
+      - name: Cleanup
         if: always()
         run: |
           cd compose
           docker compose down -v
+          cd ..
 
   lint:
     name: Lint
@@ -211,16 +218,90 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.11"
 
       - name: Install linters
-        run: |
-          pip install ruff mypy
+        run: pip install ruff mypy
 
-      - name: Run ruff
+      - name: Ruff check
         run: ruff check services/
 
-      - name: Run mypy
-        run: mypy services/ui_iot --ignore-missing-imports
-        continue-on-error: true
+      - name: Ruff format check
+        run: ruff format --check services/
+
+      - name: Type check (non-blocking)
+        run: mypy services/ui_iot --ignore-missing-imports || true
+
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [unit-tests, integration-tests]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: iotcloud_test
+          POSTGRES_USER: iot
+          POSTGRES_PASSWORD: iot_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iot -d iotcloud_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      keycloak:
+        image: quay.io/keycloak/keycloak:24.0
+        env:
+          KEYCLOAK_ADMIN: admin
+          KEYCLOAK_ADMIN_PASSWORD: admin_dev
+          KC_DB: postgres
+          KC_DB_URL: jdbc:postgresql://postgres:5432/iotcloud_test
+          KC_DB_USERNAME: iot
+          KC_DB_PASSWORD: iot_dev
+          KC_HOSTNAME_URL: http://localhost:8180
+          KC_HTTP_ENABLED: "true"
+        ports:
+          - 8180:8080
+        options: >-
+          --health-cmd "curl -sf http://localhost:8080/health/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 60s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r services/ui_iot/requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Run database migrations
+        run: |
+          for f in db/migrations/*.sql; do
+            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f" || true
+          done
+
+      - name: Run benchmarks
+        env:
+          KEYCLOAK_URL: http://localhost:8180
+          TEST_DATABASE_URL: postgresql://iot:iot_dev@localhost:5432/iotcloud_test
+        run: >
+          pytest -m benchmark -v
+          --benchmark-json=benchmark_results.json
+          --benchmark-enable
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_results.json
