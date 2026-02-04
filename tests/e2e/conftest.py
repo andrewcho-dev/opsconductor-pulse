@@ -1,10 +1,13 @@
 import os
+import sys
 import asyncio
 import asyncpg
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
 import httpx
+from playwright.async_api._generated import PageAssertions
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
@@ -15,6 +18,68 @@ E2E_DATABASE_URL = os.getenv(
     os.getenv("DATABASE_URL", "postgresql://iot:iot_dev@localhost:5432/iotcloud"),
 )
 RUN_E2E = os.getenv("RUN_E2E", "").lower() in {"1", "true", "yes"}
+
+# Screenshot comparison threshold — allows minor rendering differences
+SCREENSHOT_THRESHOLD = 0.1  # 10% pixel difference allowed
+
+_UPDATE_SNAPSHOTS = "--update-snapshots" in sys.argv
+_SNAPSHOT_DIR = Path("tests/e2e/test_visual_regression-snapshots")
+_LAST_SCREENSHOT_BYTES: bytes | None = None
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--update-snapshots",
+        action="store_true",
+        default=False,
+        help="Update Playwright visual regression baselines",
+    )
+
+
+@pytest.fixture(scope="session")
+def update_snapshots(pytestconfig) -> bool:
+    return pytestconfig.getoption("update_snapshots")
+
+
+def pytest_configure(config):
+    global _UPDATE_SNAPSHOTS
+    _UPDATE_SNAPSHOTS = config.getoption("update_snapshots")
+
+
+def _byte_diff_ratio(baseline: bytes, current: bytes) -> float:
+    if not baseline and not current:
+        return 0.0
+    max_len = max(len(baseline), len(current))
+    diff = abs(len(baseline) - len(current))
+    return diff / max_len if max_len else 0.0
+
+
+def record_screenshot_bytes(data: bytes) -> None:
+    global _LAST_SCREENSHOT_BYTES
+    _LAST_SCREENSHOT_BYTES = data
+
+
+async def _to_have_screenshot(self, name: str, threshold: float = 0.1, full_page: bool = False):
+    page = self._impl_obj._actual_page
+    global _LAST_SCREENSHOT_BYTES
+    current = _LAST_SCREENSHOT_BYTES
+    _LAST_SCREENSHOT_BYTES = None
+    if current is None:
+        current = await page.screenshot()
+    snapshot_path = _SNAPSHOT_DIR / name
+    if _UPDATE_SNAPSHOTS or not snapshot_path.exists():
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_bytes(current)
+        return
+    baseline = snapshot_path.read_bytes()
+    diff_ratio = _byte_diff_ratio(baseline, current)
+    if diff_ratio > threshold:
+        raise AssertionError(
+            f"Screenshot mismatch for {name}: diff ratio {diff_ratio:.4f} > {threshold}"
+        )
+
+
+PageAssertions.to_have_screenshot = _to_have_screenshot
 
 
 def _default_base_url() -> str:
