@@ -122,6 +122,28 @@ async def authenticated_customer_page(context: BrowserContext):
 
 
 @pytest.fixture
+async def cleanup_integrations(authenticated_customer_page):
+    """Track and delete integrations created during a test.
+
+    Yields a list; append tuples of (type, id) where type is
+    "webhook", "snmp", or "email".
+    """
+    page = authenticated_customer_page
+    created = []
+    yield created
+    for int_type, int_id in created:
+        try:
+            if int_type == "snmp":
+                await page.request.delete(f"/customer/integrations/snmp/{int_id}")
+            elif int_type == "email":
+                await page.request.delete(f"/customer/integrations/email/{int_id}")
+            else:
+                await page.request.delete(f"/customer/integrations/{int_id}")
+        except Exception:
+            pass
+
+
+@pytest.fixture
 async def authenticated_operator_page(context: BrowserContext):
     """Create page with operator1 logged in."""
     await _seed_device_state()

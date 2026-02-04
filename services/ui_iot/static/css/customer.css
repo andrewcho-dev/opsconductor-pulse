@@ -34,7 +34,7 @@ th { background: #2a2a4e; }
 .breadcrumb { margin: 10px 0 16px; color: #aaa; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
-.modal { width: 420px; max-width: 90%; }
+.modal { width: 420px; max-width: 90%; max-height: 85vh; overflow-y: auto; }
 
 .badge { display: inline-block; padding: 2px 6px; border-radius: 6px; font-size: 11px; border: 1px solid #444; }
 .badge-critical { color: #f44336; border-color: #f44336; }
@@ -42,7 +42,7 @@ th { background: #2a2a4e; }
 .badge-info { color: #64b5f6; border-color: #64b5f6; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
-.modal { width: 420px; max-width: 90%; }
+.modal { width: 420px; max-width: 90%; max-height: 85vh; overflow-y: auto; }
 .form-row { margin: 10px 0; }
 .form-row label { display: block; margin-bottom: 6px; }
 .form-row input, .form-row select, .form-row textarea { width: 100%; padding: 6px 8px; }

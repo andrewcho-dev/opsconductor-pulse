@@ -506,21 +506,24 @@ async def list_snmp_integrations():
         logger.exception("Failed to fetch SNMP integrations")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return [
-        SNMPIntegrationResponse(
-            id=row["integration_id"],
-            tenant_id=row["tenant_id"],
-            name=row["name"],
-            snmp_host=row["snmp_host"],
-            snmp_port=row["snmp_port"],
-            snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
-            snmp_oid_prefix=row["snmp_oid_prefix"],
-            enabled=row["enabled"],
-            created_at=row["created_at"].isoformat(),
-            updated_at=row["updated_at"].isoformat(),
+    integrations: list[SNMPIntegrationResponse] = []
+    for row in rows:
+        snmp_config = _normalize_json(row["snmp_config"])
+        integrations.append(
+            SNMPIntegrationResponse(
+                id=str(row["integration_id"]),
+                tenant_id=str(row["tenant_id"]),
+                name=row["name"],
+                snmp_host=row["snmp_host"],
+                snmp_port=row["snmp_port"],
+                snmp_version=snmp_config.get("version", "2c"),
+                snmp_oid_prefix=row["snmp_oid_prefix"],
+                enabled=row["enabled"],
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+            )
         )
-        for row in rows
-    ]
+    return integrations
 
 
 @router.get("/integrations/snmp/{integration_id}", response_model=SNMPIntegrationResponse)
@@ -552,13 +555,14 @@ async def get_snmp_integration(integration_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    snmp_config = _normalize_json(row["snmp_config"])
     return SNMPIntegrationResponse(
-        id=row["integration_id"],
-        tenant_id=row["tenant_id"],
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
         name=row["name"],
         snmp_host=row["snmp_host"],
         snmp_port=row["snmp_port"],
-        snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
+        snmp_version=snmp_config.get("version", "2c"),
         snmp_oid_prefix=row["snmp_oid_prefix"],
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
@@ -612,8 +616,8 @@ async def create_snmp_integration(data: SNMPIntegrationCreate):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return SNMPIntegrationResponse(
-        id=row["integration_id"],
-        tenant_id=row["tenant_id"],
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
         name=row["name"],
         snmp_host=row["snmp_host"],
         snmp_port=row["snmp_port"],
@@ -693,13 +697,14 @@ async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpda
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    snmp_config = _normalize_json(row["snmp_config"])
     return SNMPIntegrationResponse(
-        id=row["integration_id"],
-        tenant_id=row["tenant_id"],
+        id=str(row["integration_id"]),
+        tenant_id=str(row["tenant_id"]),
         name=row["name"],
         snmp_host=row["snmp_host"],
         snmp_port=row["snmp_port"],
-        snmp_version=(row["snmp_config"] or {}).get("version", "2c"),
+        snmp_version=snmp_config.get("version", "2c"),
         snmp_oid_prefix=row["snmp_oid_prefix"],
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
@@ -1216,7 +1221,7 @@ async def test_snmp_integration(integration_id: str):
         "type": row["type"],
         "snmp_host": row["snmp_host"],
         "snmp_port": row["snmp_port"],
-        "snmp_config": row["snmp_config"],
+        "snmp_config": _normalize_json(row["snmp_config"]),
         "snmp_oid_prefix": row["snmp_oid_prefix"],
         "enabled": True,
     }
