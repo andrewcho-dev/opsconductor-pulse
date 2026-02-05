@@ -325,6 +325,7 @@ async def customer_dashboard(request: Request):
             "alerts": alerts,
             "delivery_attempts": delivery_attempts,
             "user": getattr(request.state, "user", None),
+            "ws_token": request.cookies.get("pulse_session", ""),
         },
     )
 

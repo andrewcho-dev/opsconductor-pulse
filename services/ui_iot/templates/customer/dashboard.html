@@ -3,25 +3,35 @@
 {% block title %}OpsConductor Pulse - Dashboard{% endblock %}
 
 {% block head %}
-<meta http-equiv="refresh" content="{{ refresh }}">
+<meta http-equiv="refresh" content="60">
+<script src="/static/js/live_dashboard.js" defer></script>
 {% endblock %}
 
 {% block content %}
+<div id="dashboard-page" data-ws-token="{{ ws_token }}">
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+    <div></div>
+    <div id="ws-status" class="ws-indicator disconnected">
+        <span class="ws-dot"></span> Connecting...
+    </div>
+</div>
+
 <div class="stats">
     <div class="stat-card">
-        <div class="stat-value">{{ device_counts.total }}</div>
+        <div class="stat-value" id="stat-total">{{ device_counts.total }}</div>
         <div class="stat-label">Total Devices</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value status-online">{{ device_counts.online }}</div>
+        <div class="stat-value status-online" id="stat-online">{{ device_counts.online }}</div>
         <div class="stat-label">Online</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value status-stale">{{ device_counts.stale }}</div>
+        <div class="stat-value status-stale" id="stat-stale">{{ device_counts.stale }}</div>
         <div class="stat-label">Stale</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{ alerts|length }}</div>
+        <div class="stat-value" id="alert-count">{{ alerts|length }}</div>
         <div class="stat-label">Open Alerts</div>
     </div>
 </div>
@@ -50,7 +60,7 @@
     </tbody>
 </table>
 
-<h2>Open Alerts</h2>
+<h2>Open Alerts <span class="small">(live via WebSocket)</span></h2>
 <table>
     <thead>
         <tr>
@@ -61,7 +71,7 @@
             <th>Summary</th>
         </tr>
     </thead>
-    <tbody>
+    <tbody id="alert-tbody">
         {% for a in alerts %}
         <tr>
             <td>{{ a.created_at }}</td>
@@ -99,8 +109,10 @@
 </table>
 
 <p class="small">
-    Auto-refresh: {{ refresh }}s |
+    Stats refresh: 30s | Alerts: live via WebSocket | Fallback refresh: 60s |
     <a href="/customer/devices">All Devices</a> |
     <a href="/customer/alerts">All Alerts</a>
 </p>
+
+</div>
 {% endblock %}
