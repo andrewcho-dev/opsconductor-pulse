@@ -18,9 +18,6 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
 import httpx
-INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 from utils.url_validator import validate_webhook_url
 from utils.snmp_validator import validate_snmp_host
 from utils.email_validator import validate_email_integration
@@ -51,8 +48,6 @@ from db.queries import (
     fetch_delivery_attempts,
     fetch_device,
     fetch_device_count,
-    fetch_device_events,
-    fetch_device_telemetry,
     fetch_devices,
     fetch_integration,
     fetch_integration_route,
@@ -67,6 +62,9 @@ from services.email_sender import send_alert_email
 from services.mqtt_sender import publish_alert
 
 logger = logging.getLogger(__name__)
+
+fetch_device_events = fetch_device_events_influx
+fetch_device_telemetry = fetch_device_telemetry_influx
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -393,13 +391,9 @@ async def get_device_detail(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            if INFLUXDB_READ_ENABLED:
-                ic = _get_influx_client()
-                events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
-                telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
-            else:
-                events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
-                telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
+            ic = _get_influx_client()
+            events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
+            telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
     except HTTPException:
         raise
     except Exception:

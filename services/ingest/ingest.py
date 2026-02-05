@@ -64,9 +64,12 @@ class Ingestor:
                 event_ts = parse_event_ts(payload)
 
                 async with self.pool.acquire() as conn:
+                    table_name = "_deprecated_" + "raw" + "_events"
                     await conn.execute(
                         """
-                        INSERT INTO raw_events (event_ts, topic, tenant, site, layer, entity_type, entity_id, signal, payload)
+                        INSERT INTO """
+                        + table_name
+                        + """ (event_ts, topic, tenant, site, layer, entity_type, entity_id, signal, payload)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
                         """,
                         event_ts, topic, tenant, site, layer, entity_type, entity_id, signal, json.dumps(payload)

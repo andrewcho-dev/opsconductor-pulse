@@ -36,24 +36,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS fleet_alert_open_uq
 
 CREATE INDEX IF NOT EXISTS fleet_alert_site_idx ON fleet_alert (site_id, status);
 
-CREATE TABLE IF NOT EXISTS raw_events (
-  id          BIGSERIAL PRIMARY KEY,
-  ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  event_ts    TIMESTAMPTZ NULL,
-  topic       TEXT NOT NULL,
-  tenant_id   TEXT NULL,
-  site_id     TEXT NULL,
-  device_id   TEXT NULL,
-  msg_type    TEXT NULL,
-  payload     JSONB NOT NULL,
-  accepted    BOOLEAN NOT NULL DEFAULT true
-);
-
-CREATE INDEX IF NOT EXISTS raw_events_accepted_idx ON raw_events (accepted, ingested_at DESC);
-CREATE INDEX IF NOT EXISTS raw_events_device_idx ON raw_events (device_id);
-CREATE INDEX IF NOT EXISTS raw_events_ingested_at_idx ON raw_events (ingested_at DESC);
-CREATE INDEX IF NOT EXISTS raw_events_payload_gin_idx ON raw_events USING gin (payload);
-CREATE INDEX IF NOT EXISTS raw_events_tenant_idx ON raw_events (tenant_id);
+-- DEPRECATED: telemetry data moved to InfluxDB 3 Core (Phase 12)
+-- raw_events table and indexes removed from schema
+-- Historical data preserved as _deprecated_raw_events in production
 
 CREATE TABLE IF NOT EXISTS quarantine_events (
   id          BIGSERIAL PRIMARY KEY,

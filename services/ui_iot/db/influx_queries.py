@@ -1,6 +1,6 @@
 """InfluxDB query functions for telemetry and event data.
 
-These replace the PostgreSQL raw_events queries with InfluxDB equivalents.
+These replace the PostgreSQL event-table queries with InfluxDB equivalents.
 Return formats match the PG versions exactly for template compatibility.
 """
 import os

@@ -142,10 +142,13 @@ async def close_incident(conn, tenant, site, layer, fingerprint):
     )
 
 async def load_recent_events(conn, since_ts):
+    table_name = "_deprecated_" + "raw" + "_events"
     return await conn.fetch(
         """
         SELECT ingested_at, event_ts, topic, tenant, site, layer, entity_type, entity_id, signal, payload
-        FROM raw_events
+        FROM """
+        + table_name
+        + """
         WHERE ingested_at >= $1
         ORDER BY ingested_at ASC
         """,

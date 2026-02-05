@@ -16,7 +16,6 @@ POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
 HEARTBEAT_STALE_SECONDS = int(os.getenv("HEARTBEAT_STALE_SECONDS", "30"))
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
-INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
 
 DDL = """
 CREATE TABLE IF NOT EXISTS device_state (
@@ -250,63 +249,6 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
 
     return results
 
-async def fetch_rollup(conn):
-    rows = await conn.fetch(
-        """
-        WITH reg AS (
-          SELECT tenant_id, device_id, site_id, status
-          FROM device_registry
-        ),
-        times AS (
-          SELECT
-            tenant_id,
-            device_id,
-            MAX(CASE WHEN msg_type='heartbeat' THEN COALESCE(event_ts, ingested_at) END) AS last_hb,
-            MAX(CASE WHEN msg_type='telemetry'  THEN COALESCE(event_ts, ingested_at) END) AS last_tel,
-            MAX(COALESCE(event_ts, ingested_at)) AS last_seen
-          FROM raw_events
-          WHERE accepted=true
-            AND ingested_at > (now() - interval '30 minutes')
-          GROUP BY tenant_id, device_id
-        ),
-        latest_tel AS (
-          SELECT DISTINCT ON (tenant_id, device_id)
-            tenant_id,
-            device_id,
-            payload AS p
-          FROM raw_events
-          WHERE accepted=true
-            AND msg_type='telemetry'
-            AND ingested_at > (now() - interval '30 minutes')
-          ORDER BY tenant_id, device_id, ingested_at DESC
-        )
-        SELECT
-          r.tenant_id,
-          r.device_id,
-          r.site_id,
-          r.status AS registry_status,
-          t.last_hb,
-          t.last_tel,
-          t.last_seen,
-          (lt.p->'metrics'->>'battery_pct')::float AS battery_pct,
-          (lt.p->'metrics'->>'temp_c')::float AS temp_c,
-          (lt.p->'metrics'->>'rssi_dbm')::int   AS rssi_dbm,
-          (lt.p->'metrics'->>'snr_db')::float   AS snr_db,
-          CASE
-            WHEN (lt.p->'metrics'->>'uplink_ok') IS NULL THEN NULL
-            WHEN (lt.p->'metrics'->>'uplink_ok') IN ('true','false') THEN (lt.p->'metrics'->>'uplink_ok')::boolean
-            ELSE NULL
-          END AS uplink_ok
-        FROM reg r
-        LEFT JOIN times t
-          ON t.tenant_id=r.tenant_id AND t.device_id=r.device_id
-        LEFT JOIN latest_tel lt
-          ON lt.tenant_id=r.tenant_id AND lt.device_id=r.device_id
-        ORDER BY r.tenant_id, r.site_id, r.device_id
-        """
-    )
-    return rows
-
 async def main():
     pool = await asyncpg.create_pool(
         host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
@@ -315,14 +257,11 @@ async def main():
 
     async with pool.acquire() as conn:
         await ensure_schema(conn)
-    http_client = httpx.AsyncClient(timeout=10.0) if INFLUXDB_READ_ENABLED else None
+    http_client = httpx.AsyncClient(timeout=10.0)
 
     while True:
         async with pool.acquire() as conn:
-            if INFLUXDB_READ_ENABLED and http_client is not None:
-                rows = await fetch_rollup_influxdb(http_client, conn)
-            else:
-                rows = await fetch_rollup(conn)
+            rows = await fetch_rollup_influxdb(http_client, conn)
 
             for r in rows:
                 tenant_id = r["tenant_id"]

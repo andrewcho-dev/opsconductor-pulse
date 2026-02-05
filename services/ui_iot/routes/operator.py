@@ -18,9 +18,6 @@ from middleware.tenant import (
     is_operator,
 )
 import httpx
-INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 from db.queries import (
     fetch_alerts,
     fetch_all_alerts,
@@ -29,8 +26,6 @@ from db.queries import (
     fetch_all_integrations,
     fetch_delivery_attempts,
     fetch_device,
-    fetch_device_events,
-    fetch_device_telemetry,
     fetch_devices,
     fetch_integrations,
     fetch_quarantine_events,
@@ -40,6 +35,9 @@ from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
 
 logger = logging.getLogger(__name__)
+
+fetch_device_events = fetch_device_events_influx
+fetch_device_telemetry = fetch_device_telemetry_influx
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -385,13 +383,9 @@ async def view_device(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            if INFLUXDB_READ_ENABLED:
-                ic = _get_influx_client()
-                events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
-                telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
-            else:
-                events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
-                telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
+            ic = _get_influx_client()
+            events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
+            telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
     except HTTPException:
         raise
     except Exception:

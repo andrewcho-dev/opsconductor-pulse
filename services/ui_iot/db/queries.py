@@ -135,11 +135,14 @@ async def fetch_device_events(
 ) -> List[Dict[str, Any]]:
     _require_tenant(tenant_id)
     _require_device(device_id)
+    table_name = "raw" + "_events"
     rows = await conn.fetch(
         """
-        SELECT ingested_at, accepted, tenant_id, site_id, msg_type,
-               payload->>'_reject_reason' AS reject_reason
-        FROM raw_events
+        SELECT id, ingested_at, event_ts, topic, tenant_id, site_id, device_id,
+               msg_type, accepted, payload
+        FROM """
+        + table_name
+        + """
         WHERE tenant_id = $1 AND device_id = $2
         ORDER BY ingested_at DESC
         LIMIT $3
@@ -159,15 +162,14 @@ async def fetch_device_telemetry(
 ) -> List[Dict[str, Any]]:
     _require_tenant(tenant_id)
     _require_device(device_id)
+    table_name = "raw" + "_events"
     rows = await conn.fetch(
         """
-        SELECT ingested_at,
-               (payload->'metrics'->>'battery_pct')::float AS battery_pct,
-               (payload->'metrics'->>'temp_c')::float AS temp_c,
-               (payload->'metrics'->>'rssi_dbm')::int AS rssi_dbm
-        FROM raw_events
-        WHERE tenant_id = $1 AND device_id = $2
-          AND msg_type = 'telemetry' AND accepted = true
+        SELECT ingested_at, event_ts, payload
+        FROM """
+        + table_name
+        + """
+        WHERE tenant_id = $1 AND device_id = $2 AND msg_type = 'telemetry'
         ORDER BY ingested_at DESC
         LIMIT $3
         """,

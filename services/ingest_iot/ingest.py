@@ -27,7 +27,6 @@ SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
 LOG_STATS_EVERY_SECONDS = int(os.getenv("LOG_STATS_EVERY_SECONDS", "30"))
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
-INFLUXDB_WRITE_ENABLED = os.getenv("INFLUXDB_WRITE_ENABLED", "1") == "1"
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -132,21 +131,6 @@ ALTER TABLE device_registry
   ADD COLUMN IF NOT EXISTS provision_token_hash TEXT,
   ADD COLUMN IF NOT EXISTS device_pubkey TEXT,
   ADD COLUMN IF NOT EXISTS fw_version TEXT;
-
-CREATE TABLE IF NOT EXISTS raw_events (
-  id          BIGSERIAL PRIMARY KEY,
-  ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  event_ts    TIMESTAMPTZ NULL,
-  topic       TEXT NOT NULL,
-  tenant_id   TEXT NULL,
-  site_id     TEXT NULL,
-  device_id   TEXT NULL,
-  msg_type    TEXT NULL,
-  accepted    BOOLEAN NOT NULL DEFAULT true,
-  payload     JSONB NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS raw_events_accepted_idx ON raw_events (accepted, ingested_at DESC);
 
 CREATE TABLE IF NOT EXISTS quarantine_events (
   id          BIGSERIAL PRIMARY KEY,
@@ -304,20 +288,6 @@ class Ingestor:
                     event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, json.dumps(payload)
                 )
 
-        if self.mirror_rejects:
-            mirrored = dict(payload) if isinstance(payload, dict) else {"payload": payload}
-            mirrored["_rejected"] = True
-            mirrored["_reject_reason"] = reason
-            assert self.pool is not None
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO raw_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, accepted, payload)
-                    VALUES ($1,$2,$3,$4,$5,$6,false,$7::jsonb)
-                    """,
-                    event_ts, topic, tenant_id, site_id, device_id, msg_type, json.dumps(mirrored)
-                )
-
     def _rate_limit_ok(self, tenant_id: str, device_id: str) -> bool:
         # token bucket: refill at rps, cap at burst
         key = (tenant_id, device_id)
@@ -337,20 +307,9 @@ class Ingestor:
             return True
         return False
 
-    async def _insert_raw(self, event_ts, topic, tenant_id, site_id, device_id, msg_type, payload):
-        assert self.pool is not None
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO raw_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, accepted, payload)
-                VALUES ($1,$2,$3,$4,$5,$6,true,$7::jsonb)
-                """,
-                event_ts, topic, tenant_id, site_id, device_id, msg_type, json.dumps(payload)
-            )
-
     async def _write_influxdb(self, tenant_id, device_id, site_id, msg_type, payload, event_ts):
         """Write event to InfluxDB. Best-effort: failures are counted but don't raise."""
-        if not INFLUXDB_WRITE_ENABLED or self.influx_client is None:
+        if self.influx_client is None:
             return
 
         line = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
@@ -358,21 +317,24 @@ class Ingestor:
             return
 
         db_name = f"telemetry_{tenant_id}"
-        try:
-            resp = await self.influx_client.post(
-                f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
-                content=line,
-                headers={
-                    "Authorization": f"Bearer {INFLUXDB_TOKEN}",
-                    "Content-Type": "text/plain",
-                },
-            )
-            if resp.status_code < 300:
-                self.influx_ok += 1
-            else:
-                self.influx_err += 1
-        except Exception:
-            self.influx_err += 1
+        headers = {
+            "Authorization": f"Bearer {INFLUXDB_TOKEN}",
+            "Content-Type": "text/plain",
+        }
+        for attempt in range(2):
+            try:
+                resp = await self.influx_client.post(
+                    f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
+                    content=line,
+                    headers=headers,
+                )
+                if resp.status_code < 300:
+                    self.influx_ok += 1
+                    return
+                print(f"[ingest] InfluxDB write failed ({attempt + 1}/2): {resp.status_code} {resp.text}")
+            except Exception as e:
+                print(f"[ingest] InfluxDB write exception ({attempt + 1}/2): {e}")
+        self.influx_err += 1
 
     async def db_worker(self):
         while True:
@@ -457,7 +419,7 @@ class Ingestor:
                             await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
                             continue
 
-                await self._insert_raw(event_ts, topic, tenant_id, site_id, device_id, msg_type, payload)
+                # Primary write: InfluxDB
                 await self._write_influxdb(tenant_id, device_id, site_id, msg_type, payload, event_ts)
 
             except Exception as e:
@@ -499,8 +461,7 @@ class Ingestor:
     async def run(self):
         await self.init_db()
         self.loop = asyncio.get_running_loop()
-        if INFLUXDB_WRITE_ENABLED:
-            self.influx_client = httpx.AsyncClient(timeout=10.0)
+        self.influx_client = httpx.AsyncClient(timeout=10.0)
 
         asyncio.create_task(self.settings_worker())
         asyncio.create_task(self.db_worker())
