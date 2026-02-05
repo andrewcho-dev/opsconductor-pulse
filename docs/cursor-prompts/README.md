@@ -374,6 +374,36 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 12: InfluxDB Cutover
+
+**Goal**: Remove PostgreSQL raw_events dependency, make InfluxDB 3 Core the sole telemetry store.
+
+**Directory**: `phase12-influxdb-cutover/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 7 | `007-remove-pg-dual-write.md` | Remove dual-write, InfluxDB primary | `[x]` | Phase 11 |
+| 8 | `008-drop-raw-events.md` | Deprecate raw_events table | `[x]` | #7 |
+| 9 | `009-documentation.md` | Update documentation | `[x]` | #7, #8 |
+| 10 | `010-full-validation.md` | Full system validation | `[x]` | #7, #8, #9 |
+
+**Exit Criteria**:
+- [x] InfluxDB is the sole telemetry write target (PG raw_events opt-in only)
+- [x] raw_events table deprecated (renamed to _deprecated_raw_events)
+- [x] All Phase 11 feature flags removed
+- [x] No Python code references raw_events
+- [x] Evaluator reads exclusively from InfluxDB
+- [x] UI reads exclusively from InfluxDB
+- [x] All services healthy, all tests pass
+
+**Architecture note**: The system now uses a two-database architecture:
+- **PostgreSQL**: Transactional data (device_registry, device_state, fleet_alert, integrations, delivery_jobs, quarantine_events)
+- **InfluxDB 3 Core**: Time-series telemetry (heartbeat, telemetry measurements per tenant database)
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
