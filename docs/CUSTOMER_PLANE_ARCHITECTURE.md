@@ -1,6 +1,6 @@
 # OpsConductor-Pulse — Customer Plane Architecture (v1.0)
 
-## Status: APPROVED DESIGN — Pending Implementation
+## Status: IMPLEMENTED
 
 **Date**: 2026-02-02
 **Decisions By**: Principal Engineer
@@ -469,10 +469,21 @@ These invariants from TENANT_CONTEXT_CONTRACT.md remain in force:
 
 ### 7.2 Token Refresh Strategy
 
-- Access token TTL: 5 minutes
+- Access token TTL: 15 minutes (900s, configured in Keycloak `accessTokenLifespan`)
 - Refresh token TTL: 30 minutes
-- UI should use silent refresh before expiry
-- API should return 401 on expired token (not auto-refresh)
+- `pulse_session` cookie `max_age` set to `expires_in + 60` seconds (60s buffer so the cookie outlives the token, giving refresh logic time to act)
+- API returns 401 on expired token (not auto-refresh)
+
+**Client-side refresh mechanisms** (`auth.js`):
+
+| Mechanism | How it works |
+|-----------|-------------|
+| `setInterval` polling | `maybeRefresh()` runs every 30 seconds; refreshes when within 90 seconds of expiry |
+| `visibilitychange` listener | Calls `maybeRefresh()` immediately when a background tab becomes visible |
+| Fetch 401 interceptor | Wraps `window.fetch`; on any non-auth 401, attempts a token refresh then retries the original request |
+| Retry-once logic | `maybeRefresh()` retries once (after 5s delay) before redirecting to login |
+
+**401 exception handler** (`app.py`): Browser page-navigation requests (`Accept: text/html`) that receive a 401 are redirected to the login page (302 to `/`) instead of returning raw JSON.
 
 ### 7.3 Audit Log Schema
 
@@ -547,4 +558,4 @@ The existing `ui_iot` service will be refactored:
 
 ---
 
-*Document version 1.0 — Ready for Phase 1 implementation upon approval.*
+*Document version 1.1 — All phases implemented. This document serves as a reference for the authentication and tenant isolation design.*

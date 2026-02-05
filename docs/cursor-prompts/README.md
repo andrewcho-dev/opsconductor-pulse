@@ -404,6 +404,30 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 13: Session Timeout Fix
+
+**Goal**: Fix spontaneous "Missing authorization" JSON error caused by browser timer throttling in background tabs expiring the session cookie before the refresh timer fires.
+
+**Directory**: `phase13-session-timeout-fix/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-fix-session-timeout.md` | Increase token TTL, rewrite auth.js, add 401 handler, cookie buffer | `[x]` | Phase 12 |
+
+**Exit Criteria**:
+- [x] Keycloak access token lifetime increased to 15 minutes (900s)
+- [x] `auth.js` uses `setInterval` polling (not `setTimeout`) for token refresh
+- [x] `auth.js` has `visibilitychange` listener for immediate refresh on tab focus
+- [x] `auth.js` has fetch 401 interceptor with retry-after-refresh
+- [x] `auth.js` has retry-once logic before redirecting to login
+- [x] `app.py` 401 exception handler redirects browser HTML requests to login page
+- [x] `pulse_session` cookie `max_age` has +60s buffer in both `/callback` and `/api/auth/refresh`
+- [x] All unit tests pass
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order

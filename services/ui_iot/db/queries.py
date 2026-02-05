@@ -127,59 +127,6 @@ async def fetch_delivery_attempts(
     return [dict(r) for r in rows]
 
 
-async def fetch_device_events(
-    conn: asyncpg.Connection,
-    tenant_id: str,
-    device_id: str,
-    limit: int = 50,
-) -> List[Dict[str, Any]]:
-    _require_tenant(tenant_id)
-    _require_device(device_id)
-    table_name = "raw" + "_events"
-    rows = await conn.fetch(
-        """
-        SELECT id, ingested_at, event_ts, topic, tenant_id, site_id, device_id,
-               msg_type, accepted, payload
-        FROM """
-        + table_name
-        + """
-        WHERE tenant_id = $1 AND device_id = $2
-        ORDER BY ingested_at DESC
-        LIMIT $3
-        """,
-        tenant_id,
-        device_id,
-        limit,
-    )
-    return [dict(r) for r in rows]
-
-
-async def fetch_device_telemetry(
-    conn: asyncpg.Connection,
-    tenant_id: str,
-    device_id: str,
-    limit: int = 120,
-) -> List[Dict[str, Any]]:
-    _require_tenant(tenant_id)
-    _require_device(device_id)
-    table_name = "raw" + "_events"
-    rows = await conn.fetch(
-        """
-        SELECT ingested_at, event_ts, payload
-        FROM """
-        + table_name
-        + """
-        WHERE tenant_id = $1 AND device_id = $2 AND msg_type = 'telemetry'
-        ORDER BY ingested_at DESC
-        LIMIT $3
-        """,
-        tenant_id,
-        device_id,
-        limit,
-    )
-    return [dict(r) for r in rows]
-
-
 async def fetch_integrations(
     conn: asyncpg.Connection,
     tenant_id: str,

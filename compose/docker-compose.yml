@@ -50,10 +50,8 @@ services:
       - iot-node
       - --object-store
       - file
-      - --disable-authz
-      - health
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      test: ["CMD-SHELL", "curl -sf -H \"Authorization: Bearer $$INFLUXDB3_AUTH_TOKEN\" http://localhost:8181/health"]
       interval: 5s
       timeout: 5s
       retries: 12

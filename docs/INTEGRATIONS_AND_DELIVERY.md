@@ -38,6 +38,15 @@ SMTP email delivery to customer-specified addresses.
 - Customizable subject and body templates
 - Template variables: {severity}, {alert_type}, {device_id}, {message}, {timestamp}
 
+### MQTT (Implemented)
+MQTT message publishing to customer-configured topics.
+
+**Features**:
+- Publish to configurable topics with template variables
+- QoS levels 0, 1, 2
+- Retain flag support
+- Topic template variables: {tenant_id}, {device_id}, {severity}, {site_id}, {alert_type}, {alert_id}
+
 ## Database Schema
 
 ### integrations
@@ -48,7 +57,7 @@ CREATE TABLE integrations (
     integration_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id VARCHAR(64) NOT NULL,
     name VARCHAR(128) NOT NULL,
-    type VARCHAR(16) NOT NULL DEFAULT 'webhook',  -- 'webhook', 'snmp', or 'email'
+    type VARCHAR(16) NOT NULL DEFAULT 'webhook',  -- 'webhook', 'snmp', 'email', or 'mqtt'
     enabled BOOLEAN NOT NULL DEFAULT true,
 
     -- Webhook fields
@@ -64,6 +73,12 @@ CREATE TABLE integrations (
     email_config JSONB,
     email_recipients JSONB,
     email_template JSONB,
+
+    -- MQTT fields
+    mqtt_topic VARCHAR(255),
+    mqtt_qos INTEGER DEFAULT 1,
+    mqtt_retain BOOLEAN DEFAULT false,
+    mqtt_config JSONB,
 
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -131,7 +146,7 @@ CREATE TABLE delivery_attempts (
     attempt_no INTEGER NOT NULL,
 
     ok BOOLEAN NOT NULL,
-    http_status INTEGER,  -- NULL for SNMP
+    http_status INTEGER,  -- NULL for SNMP/MQTT
     latency_ms INTEGER,
     error TEXT,
 
@@ -163,7 +178,7 @@ fleet_alert (new OPEN alert)
                   │
                   ├── fetch_integration() - Get integration config
                   │
-                  ├── deliver_webhook() OR deliver_snmp() - Send alert
+                  ├── deliver_webhook() / deliver_snmp() / deliver_email() / deliver_mqtt() - Send alert
                   │
                   ├── record_attempt() - Log attempt details
                   │
@@ -255,6 +270,16 @@ Trap OID: `{prefix}.0.1`
 }
 ```
 
+### MQTT Configuration
+Topic supports template variables that are resolved at delivery time:
+```
+alerts/{tenant_id}/{severity}/{device_id}
+```
+
+Available variables: `{tenant_id}`, `{device_id}`, `{site_id}`, `{severity}`, `{alert_type}`, `{alert_id}`
+
+MQTT payload is a JSON object with alert details, published to the resolved topic with the configured QoS and retain settings.
+
 ## Security
 
 ### Tenant Isolation
@@ -263,7 +288,7 @@ Trap OID: `{prefix}.0.1`
 - Customers can only see/manage their own integrations
 
 ### SSRF Prevention
-Webhook URLs and SNMP hosts are validated to block:
+Webhook URLs, SNMP hosts, and SMTP hosts are validated to block:
 - Private IP ranges (10.x, 172.16.x, 192.168.x)
 - Loopback addresses (127.x, localhost)
 - Link-local addresses (169.254.x)
@@ -285,7 +310,7 @@ In PROD mode, webhooks also require HTTPS.
 | `MODE` | DEV | DEV or PROD (affects SSRF checks) |
 | `WORKER_POLL_SECONDS` | 2 | How often to check for new jobs |
 | `WORKER_BATCH_SIZE` | 10 | Jobs to process per cycle |
-| `WORKER_TIMEOUT_SECONDS` | 30 | HTTP/SNMP timeout |
+| `WORKER_TIMEOUT_SECONDS` | 30 | HTTP/SNMP/SMTP timeout |
 | `WORKER_MAX_ATTEMPTS` | 5 | Max retry attempts |
 | `WORKER_BACKOFF_BASE_SECONDS` | 30 | Initial retry delay |
 | `WORKER_BACKOFF_MAX_SECONDS` | 7200 | Maximum retry delay |
@@ -324,6 +349,14 @@ Customers manage integrations via the `/customer/*` API endpoints:
 - `PATCH /customer/integrations/email/{id}` - Update email integration
 - `DELETE /customer/integrations/email/{id}` - Delete email integration
 - `POST /customer/integrations/email/{id}/test` - Send test email
+
+### MQTT Integrations
+- `GET /customer/integrations/mqtt` - List MQTT integrations
+- `POST /customer/integrations/mqtt` - Create MQTT integration
+- `GET /customer/integrations/mqtt/{id}` - Get MQTT integration
+- `PATCH /customer/integrations/mqtt/{id}` - Update MQTT integration
+- `DELETE /customer/integrations/mqtt/{id}` - Delete MQTT integration
+- `POST /customer/integrations/mqtt/{id}/test` - Send test MQTT message
 
 ### Integration Routes
 - `GET /customer/integration-routes` - List routes

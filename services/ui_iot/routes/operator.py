@@ -36,9 +36,6 @@ from db.pool import operator_connection
 
 logger = logging.getLogger(__name__)
 
-fetch_device_events = fetch_device_events_influx
-fetch_device_telemetry = fetch_device_telemetry_influx
-
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")

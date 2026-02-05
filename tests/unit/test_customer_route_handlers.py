@@ -683,8 +683,8 @@ async def test_get_device_detail_json(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(customer_routes, "fetch_device", AsyncMock(return_value={"device_id": "d1"}))
-    monkeypatch.setattr(customer_routes, "fetch_device_events", AsyncMock(return_value=[]))
-    monkeypatch.setattr(customer_routes, "fetch_device_telemetry", AsyncMock(return_value=[]))
+    monkeypatch.setattr(customer_routes, "fetch_device_events_influx", AsyncMock(return_value=[]))
+    monkeypatch.setattr(customer_routes, "fetch_device_telemetry_influx", AsyncMock(return_value=[]))
 
     resp = await client.get("/customer/devices/d1?format=json", headers=_auth_header())
     assert resp.status_code == 200

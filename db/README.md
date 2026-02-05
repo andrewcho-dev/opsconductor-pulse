@@ -33,9 +33,11 @@ PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud -f db/verify_migrations.
 | 011 | snmp_integrations.sql | SNMP support columns |
 | 012 | delivery_log.sql | Delivery logging table |
 | 013 | email_integrations.sql | Email support columns |
+| 014 | mqtt_integrations.sql | MQTT support columns |
+| 016 | deprecate_raw_events.sql | Deprecate raw_events table (renamed to _deprecated_raw_events) |
 
 ## Notes
 
 - Migrations are idempotent (use IF NOT EXISTS)
 - Run in numeric order
-- Gap in numbering (006-010) reserved for future use
+- Gap in numbering (006-010, 015) reserved for future use

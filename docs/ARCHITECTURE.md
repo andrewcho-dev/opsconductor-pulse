@@ -8,7 +8,7 @@ OpsConductor-Pulse is an edge telemetry, health, and signaling platform for mana
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              EXTERNAL                                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  IoT Devices ──► MQTT ──► ingest_iot ──► raw_events                         │
+│  IoT Devices ──► MQTT ──► ingest_iot ──► InfluxDB (telemetry)               │
 │                                              │                               │
 │  Keycloak ◄──────────────────────────────────┼───► ui_iot (Customer/Operator)│
 │                                              │                               │
@@ -23,24 +23,26 @@ OpsConductor-Pulse is an edge telemetry, health, and signaling platform for mana
 │                                              │                               │
 │                                              ▼                               │
 │                                      delivery_worker                         │
-│                                         │      │                             │
-│                                         ▼      ▼                             │
-│                              Webhook Endpoints  SNMP Managers                │
+│                                      │    │    │    │                         │
+│                                      ▼    ▼    ▼    ▼                        │
+│                            Webhook SNMP  Email  MQTT                         │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Services and Responsibilities
 
 ### services/ingest_iot
-Device ingress, authentication, validation, and quarantine. Handles MQTT/HTTP device connections, validates tokens, enforces rate limits, and separates accepted events from rejected/quarantined events.
+Device ingress, authentication, validation, and quarantine. Handles MQTT/HTTP device connections, validates tokens, enforces rate limits, and writes accepted telemetry to InfluxDB. Rejected events are stored in the quarantine_events table.
 
 ### services/evaluator_iot
-Heartbeat tracking, state management, and alert generation. Processes accepted raw_events to maintain device_state, detects stale devices, and generates fleet_alert records for operational issues.
+Heartbeat tracking, state management, and alert generation. Reads telemetry from InfluxDB to maintain device_state, detects stale devices, and generates fleet_alert records for operational issues.
 
 ### services/ui_iot
 Customer and operator dashboards with Keycloak authentication. Provides:
 - **Customer plane**: Tenant-scoped device views, alert monitoring, integration management
 - **Operator plane**: Cross-tenant views with audit logging
+
+Telemetry and event data is read from InfluxDB. Transactional data (devices, alerts, integrations) is read from PostgreSQL.
 
 ### services/provision_api
 Admin and device provisioning APIs. Handles device registration, activation code generation, token management, and administrative operations protected by X-Admin-Key.
@@ -49,13 +51,31 @@ Admin and device provisioning APIs. Handles device registration, activation code
 Alert-to-delivery job dispatcher. Polls fleet_alert for open alerts, matches them against integration_routes, and creates delivery_jobs for the worker.
 
 ### services/delivery_worker
-Alert delivery via webhook, SNMP, and email. Processes delivery_jobs with retry logic and exponential backoff. Supports:
+Alert delivery via webhook, SNMP, email, and MQTT. Processes delivery_jobs with retry logic and exponential backoff. Supports:
 - **Webhooks**: HTTP POST with JSON payload
 - **SNMP**: v2c and v3 trap delivery
 - **Email**: SMTP with HTML/text templates
+- **MQTT**: Publish to customer-configured topics
 
 ### simulator/device_sim_iot
 Simulation only. Generates realistic device telemetry and heartbeat messages for testing and development. Never referenced in production logic.
+
+## Data Stores
+
+### PostgreSQL
+Transactional data store for all non-telemetry data:
+- Device registry and state
+- Alerts and alert routing
+- Integration configuration
+- Delivery jobs and attempts
+- Quarantine events
+- Operator audit log
+
+### InfluxDB 3 Core
+Time-series telemetry store with per-tenant databases (`telemetry_{tenant_id}`):
+- Heartbeat measurements
+- Telemetry measurements (battery, temperature, RSSI, SNR)
+- Device events (all message types with accept/reject status)
 
 ## Authentication Model
 
@@ -81,22 +101,33 @@ OpsConductor-Pulse uses Keycloak as the identity provider with JWT tokens.
 }
 ```
 
+### Session Management
+
+Access tokens have a 15-minute lifetime (Keycloak `accessTokenLifespan: 900`). The `pulse_session` cookie carries the token with a `max_age` of `expires_in + 60` seconds, providing a 60-second buffer for refresh logic.
+
+The UI maintains session continuity through three mechanisms:
+- **Polling**: `setInterval` checks every 30s whether the token is within 90s of expiry and refreshes proactively
+- **Visibility listener**: Triggers an immediate refresh check when a background tab becomes visible (mitigates browser timer throttling)
+- **Fetch interceptor**: Catches 401 responses on non-auth requests, refreshes the token, and retries the original request
+
+On the server side, a 401 exception handler redirects browser page-navigation requests (`Accept: text/html`) to the login page instead of returning raw JSON.
+
 ## Data Model Overview
 
-### raw_events
-Central event store with `accepted` boolean flag. Only `accepted=true` events drive device_state updates. Contains tenant_id, device_id, msg_type, and full payload.
+### InfluxDB Telemetry (per-tenant database)
+Time-series measurements written by ingest_iot and read by evaluator_iot and ui_iot. Each tenant has an isolated database (`telemetry_{tenant_id}`). Stores heartbeat events, telemetry readings (battery_pct, temp_c, rssi_dbm, snr_db), and device event metadata.
 
 ### quarantine_events
 Rejected events that failed validation. Stores rejection reason and original payload for debugging. Never affects device state.
 
 ### device_state
-Current device status derived from accepted raw_events. Tenant-scoped with ONLINE/STALE status, last seen timestamps, and latest telemetry metrics.
+Current device status maintained by the evaluator from InfluxDB telemetry. Tenant-scoped with ONLINE/STALE status, last seen timestamps, and latest telemetry metrics.
 
 ### fleet_alert
 Generated alerts for operational issues. Tenant-scoped with severity, confidence, and deduplication via fingerprint.
 
 ### integrations
-Customer-configured delivery destinations. Supports webhook and SNMP types with tenant isolation.
+Customer-configured delivery destinations. Supports webhook, SNMP, email, and MQTT types with tenant isolation.
 
 ### integration_routes
 Rules for matching alerts to integrations. Filter by alert_type, severity, site, device prefix.
@@ -111,11 +142,11 @@ History of individual delivery attempts with timing and error details.
 
 ### Device Telemetry/Heartbeat Flow
 ```
-Device → MQTT → ingest_iot → validation → accepted=true → raw_events
+Device → MQTT → ingest_iot → validation → accepted=true → InfluxDB
                                                ↓
                                        evaluator_iot → device_state/fleet_alert
                                                ↓
-                                               ui_iot (read-only)
+                                               ui_iot (read-only, reads from InfluxDB)
 ```
 
 ### Alert Delivery Flow
@@ -123,9 +154,9 @@ Device → MQTT → ingest_iot → validation → accepted=true → raw_events
 fleet_alert → dispatcher → route match → delivery_job
                                               ↓
                                       delivery_worker
-                                       ↓     ↓     ↓
-                            webhook  SNMP   email
-                                       ↓     ↓     ↓
+                                    ↓    ↓     ↓     ↓
+                          webhook  SNMP  email  MQTT
+                                    ↓    ↓     ↓     ↓
                               delivery_attempts (logged)
 ```
 
@@ -152,7 +183,8 @@ Device → ingest_iot → provision_token validation → accepted telemetry
 1. **JWT-based identity**: tenant_id extracted from validated JWT claims only
 2. **Application enforcement**: All queries include tenant_id in WHERE clause
 3. **RLS defense-in-depth**: Database row-level security as backup layer
-4. **Audit logging**: All operator cross-tenant access is logged
+4. **InfluxDB isolation**: Per-tenant databases for telemetry data
+5. **Audit logging**: All operator cross-tenant access is logged
 
 ### RLS Configuration
 
@@ -167,7 +199,7 @@ CREATE POLICY device_state_tenant ON device_state
 
 ### SSRF Prevention
 
-Customer-provided URLs (webhooks, SNMP destinations) are validated:
+Customer-provided URLs (webhooks, SNMP destinations, SMTP hosts) are validated:
 - Private IP ranges blocked (10.x, 172.16.x, 192.168.x)
 - Loopback addresses blocked
 - Cloud metadata endpoints blocked
@@ -182,7 +214,7 @@ Customer-provided URLs (webhooks, SNMP destinations) are validated:
 ### Delivery Configuration
 - `WORKER_MAX_ATTEMPTS`: Maximum retry attempts (default: 5)
 - `WORKER_BACKOFF_BASE_SECONDS`: Initial retry delay (default: 30)
-- `WORKER_TIMEOUT_SECONDS`: HTTP/SNMP timeout (default: 30)
+- `WORKER_TIMEOUT_SECONDS`: HTTP/SNMP/SMTP timeout (default: 30)
 
 ### Rate Limiting
 - Per-device token bucket rate limiting

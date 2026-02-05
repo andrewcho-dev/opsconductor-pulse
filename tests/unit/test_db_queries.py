@@ -87,18 +87,6 @@ async def test_fetch_delivery_attempts_query_order():
     assert "ORDER BY finished_at DESC" in conn.last_query
 
 
-async def test_fetch_device_events_query():
-    conn = FakeConn()
-    await queries.fetch_device_events(conn, "tenant-a", "device-1", limit=10)
-    assert "FROM raw_events" in conn.last_query
-
-
-async def test_fetch_device_telemetry_query():
-    conn = FakeConn()
-    await queries.fetch_device_telemetry(conn, "tenant-a", "device-1", limit=10)
-    assert "msg_type = 'telemetry'" in conn.last_query
-
-
 async def test_fetch_integration_query_scoped():
     conn = FakeConn()
     await queries.fetch_integration(conn, "tenant-a", "int-1")
