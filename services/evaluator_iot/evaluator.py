@@ -3,6 +3,8 @@ import json
 import os
 from datetime import datetime, timezone
 import asyncpg
+import httpx
+from dateutil import parser as dtparser
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -12,6 +14,9 @@ PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
 HEARTBEAT_STALE_SECONDS = int(os.getenv("HEARTBEAT_STALE_SECONDS", "30"))
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
+INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
 
 DDL = """
 CREATE TABLE IF NOT EXISTS device_state (
@@ -85,6 +90,166 @@ async def close_alert(conn, tenant_id, fingerprint):
         tenant_id, fingerprint
     )
 
+async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> list[dict]:
+    """Execute a SQL query against InfluxDB 3 Core and return list of row dicts."""
+    try:
+        resp = await http_client.post(
+            f"{INFLUXDB_URL}/api/v3/query_sql",
+            json={"db": db, "q": sql, "format": "json"},
+            headers={
+                "Authorization": f"Bearer {INFLUXDB_TOKEN}",
+                "Content-Type": "application/json",
+            },
+        )
+        if resp.status_code != 200:
+            print(f"[evaluator] InfluxDB query error: {resp.status_code} {resp.text[:200]}")
+            return []
+
+        data = resp.json()
+
+        # Handle different response formats from InfluxDB 3 Core
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            # Some versions return {"results": [...]} or {"data": [...]}
+            if "results" in data:
+                return data["results"]
+            if "data" in data:
+                return data["data"]
+            if "columns" in data and "values" in data:
+                columns = data.get("columns") or []
+                values = data.get("values") or []
+                rows = []
+                for row in values:
+                    if isinstance(row, list) and len(row) == len(columns):
+                        rows.append({columns[i]: row[i] for i in range(len(columns))})
+                return rows
+        return []
+    except Exception as e:
+        print(f"[evaluator] InfluxDB query exception: {e}")
+        return []
+
+
+def _parse_influx_ts(val) -> datetime | None:
+    """Parse a timestamp value from InfluxDB into a timezone-aware UTC datetime."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, (int, float)):
+        # Nanosecond epoch
+        return datetime.fromtimestamp(val / 1e9, tz=timezone.utc)
+    if isinstance(val, str):
+        try:
+            dt = dtparser.isoparse(val)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return None
+    return None
+
+
+async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list[dict]:
+    """Fetch device rollup data from InfluxDB + PG device_registry.
+
+    Returns list of dicts with same keys as fetch_rollup() for compatibility:
+    tenant_id, device_id, site_id, registry_status, last_hb, last_tel,
+    last_seen, battery_pct, temp_c, rssi_dbm, snr_db, uplink_ok
+    """
+    # Step 1: Get all devices from PG registry
+    devices = await pg_conn.fetch(
+        "SELECT tenant_id, device_id, site_id, status FROM device_registry"
+    )
+
+    if not devices:
+        return []
+
+    # Group devices by tenant
+    tenants: dict[str, list] = {}
+    for d in devices:
+        tid = d["tenant_id"]
+        if tid not in tenants:
+            tenants[tid] = []
+        tenants[tid].append(d)
+
+    results = []
+
+    for tenant_id, tenant_devices in tenants.items():
+        db_name = f"telemetry_{tenant_id}"
+
+        # Step 2: Query heartbeat times
+        hb_rows = await _influx_query(
+            http_client, db_name,
+            "SELECT device_id, MAX(time) AS last_hb FROM heartbeat "
+            "WHERE time > now() - INTERVAL '30 minutes' GROUP BY device_id"
+        )
+        hb_map = {}
+        for row in hb_rows:
+            did = row.get("device_id")
+            if did:
+                hb_map[did] = _parse_influx_ts(row.get("last_hb"))
+
+        # Step 3: Query telemetry times
+        tel_rows = await _influx_query(
+            http_client, db_name,
+            "SELECT device_id, MAX(time) AS last_tel FROM telemetry "
+            "WHERE time > now() - INTERVAL '30 minutes' GROUP BY device_id"
+        )
+        tel_map = {}
+        for row in tel_rows:
+            did = row.get("device_id")
+            if did:
+                tel_map[did] = _parse_influx_ts(row.get("last_tel"))
+
+        # Step 4: Query latest metrics per device
+        metrics_rows = await _influx_query(
+            http_client, db_name,
+            "SELECT device_id, battery_pct, temp_c, rssi_dbm, snr_db, uplink_ok, time "
+            "FROM telemetry WHERE time > now() - INTERVAL '30 minutes' "
+            "ORDER BY time DESC"
+        )
+        # Deduplicate to latest per device_id
+        metrics_map: dict[str, dict] = {}
+        for row in metrics_rows:
+            did = row.get("device_id")
+            if did and did not in metrics_map:
+                metrics_map[did] = row
+
+        # Step 5: Merge into output format matching fetch_rollup()
+        for d in tenant_devices:
+            did = d["device_id"]
+            last_hb = hb_map.get(did)
+            last_tel = tel_map.get(did)
+
+            # last_seen is the most recent of heartbeat or telemetry
+            last_seen = None
+            if last_hb and last_tel:
+                last_seen = max(last_hb, last_tel)
+            elif last_hb:
+                last_seen = last_hb
+            elif last_tel:
+                last_seen = last_tel
+
+            m = metrics_map.get(did, {})
+
+            results.append({
+                "tenant_id": d["tenant_id"],
+                "device_id": did,
+                "site_id": d["site_id"],
+                "registry_status": d["status"],
+                "last_hb": last_hb,
+                "last_tel": last_tel,
+                "last_seen": last_seen,
+                "battery_pct": m.get("battery_pct"),
+                "temp_c": m.get("temp_c"),
+                "rssi_dbm": m.get("rssi_dbm"),
+                "snr_db": m.get("snr_db"),
+                "uplink_ok": m.get("uplink_ok"),
+            })
+
+    return results
+
 async def fetch_rollup(conn):
     rows = await conn.fetch(
         """
@@ -150,10 +315,14 @@ async def main():
 
     async with pool.acquire() as conn:
         await ensure_schema(conn)
+    http_client = httpx.AsyncClient(timeout=10.0) if INFLUXDB_READ_ENABLED else None
 
     while True:
         async with pool.acquire() as conn:
-            rows = await fetch_rollup(conn)
+            if INFLUXDB_READ_ENABLED and http_client is not None:
+                rows = await fetch_rollup_influxdb(http_client, conn)
+            else:
+                rows = await fetch_rollup(conn)
 
             for r in rows:
                 tenant_id = r["tenant_id"]
