@@ -171,6 +171,7 @@ services:
       RECHARGE_CHANCE_PER_TELEM: "0.002"
       RECHARGE_BOOST_MIN: "5"
       RECHARGE_BOOST_MAX: "15"
+      SIM_EXTRA_METRICS: "${SIM_EXTRA_METRICS:-1}"
     depends_on:
       mqtt:
         condition: service_started

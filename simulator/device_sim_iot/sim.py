@@ -27,6 +27,7 @@ DRAIN_PER_TELEM_JITTER = float(os.getenv("DRAIN_PER_TELEM_JITTER", "0.02"))
 RECHARGE_CHANCE_PER_TELEM = float(os.getenv("RECHARGE_CHANCE_PER_TELEM", "0.002"))  # ~0.2% per device per telemetry tick
 RECHARGE_BOOST_MIN = float(os.getenv("RECHARGE_BOOST_MIN", "5"))
 RECHARGE_BOOST_MAX = float(os.getenv("RECHARGE_BOOST_MAX", "15"))
+SIM_EXTRA_METRICS = os.getenv("SIM_EXTRA_METRICS", "1") == "1"
 
 def ts():
     return datetime.now(timezone.utc).isoformat()
@@ -60,6 +61,9 @@ def main():
             "temp_c": random.uniform(20.0, 30.0),
             "rssi_dbm": random.randint(-115, -65),
             "snr_db": random.uniform(-8.0, 18.0),
+            "pressure_psi": random.uniform(14.0, 50.0),
+            "humidity_pct": random.uniform(20.0, 95.0),
+            "vibration_g": random.uniform(0.0, 2.0),
         })
 
     start = time.time()
@@ -114,6 +118,15 @@ def main():
                     d["rssi_dbm"] = int(clamp(d["rssi_dbm"] + random.randint(-2, 2), -125, -50))
                     d["snr_db"] = float(clamp(d["snr_db"] + random.uniform(-0.7, 0.7), -20.0, 30.0))
 
+                    if SIM_EXTRA_METRICS:
+                        d["pressure_psi"] = clamp(d["pressure_psi"] + random.uniform(-0.5, 0.5), 10.0, 60.0)
+                        d["humidity_pct"] = clamp(d["humidity_pct"] + random.uniform(-1.0, 1.0), 10.0, 99.0)
+                        # Vibration: usually low, occasional spikes
+                        if random.random() < 0.05:
+                            d["vibration_g"] = random.uniform(5.0, 15.0)
+                        else:
+                            d["vibration_g"] = clamp(d["vibration_g"] + random.uniform(-0.3, 0.3), 0.0, 5.0)
+
                     payload = {
                         "ts": ts(),
                         "tenant_id": TENANT_ID,
@@ -127,7 +140,12 @@ def main():
                             "temp_c": round(d["temp_c"], 2),
                             "rssi_dbm": d["rssi_dbm"],
                             "snr_db": round(d["snr_db"], 2),
-                            "uplink_ok": True
+                            "uplink_ok": True,
+                            **({
+                                "pressure_psi": round(d["pressure_psi"], 2),
+                                "humidity_pct": round(d["humidity_pct"], 2),
+                                "vibration_g": round(d["vibration_g"], 3),
+                            } if SIM_EXTRA_METRICS else {}),
                         }
                     }
                     publish(client, topic(device_id, "telemetry"), payload)
