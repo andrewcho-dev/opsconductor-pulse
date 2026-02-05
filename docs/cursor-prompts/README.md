@@ -615,6 +615,50 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 20: Telemetry Visualization — ECharts + uPlot
+
+**Goal**: Interactive device telemetry charts with ECharts gauges and uPlot time-series, fused REST + WebSocket data.
+
+**Directory**: `phase20-telemetry-visualization/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-chart-libraries.md` | ECharts + uPlot install, dark theme, metric config, transforms | `[x]` | None |
+| 2 | `002-chart-components.md` | EChart wrapper, uPlot wrapper, gauge, time-series | `[x]` | #1 |
+| 3 | `003-device-telemetry-hook.md` | useDeviceTelemetry with REST + WS fusion | `[x]` | #1 |
+| 4 | `004-device-detail-page.md` | Full device detail page with charts | `[x]` | #1, #2, #3 |
+| 5 | `005-tests-and-documentation.md` | Verification and documentation | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] ECharts and uPlot installed as dependencies
+- [x] ECharts dark theme matching Tailwind dark theme
+- [x] Known metric configs (battery, temp, RSSI, SNR) with gauge zones
+- [x] Auto-discovery of dynamic/custom metrics from data
+- [x] MetricGauge component (ECharts gauge per metric)
+- [x] TimeSeriesChart component (uPlot per metric)
+- [x] useDeviceTelemetry hook fuses REST initial + WS live data
+- [x] Device subscribes/unsubscribes to WS telemetry on mount/unmount
+- [x] Rolling buffer (500 points max) with deduplication
+- [x] Time range selector (1h, 6h, 24h, 7d) with REST refetch
+- [x] LIVE badge when WebSocket telemetry streaming
+- [x] Device info card with status, site, timestamps
+- [x] Device-specific alerts section
+- [x] ErrorBoundary isolation on all sections
+- [x] npm run build succeeds
+- [x] All backend tests pass
+
+**Architecture decisions**:
+- **ECharts for gauges**: Rich gauge component with color zones, animation, formatted values. Used for current metric display (<10 data points per gauge).
+- **uPlot for time-series**: Ultra-fast rendering for 120-1000 historical data points. Column-major data format. Dark theme via JS options (not CSS).
+- **REST + WS fusion**: Initial data from REST API (up to 500 points), live updates from WebSocket merged into rolling buffer. Deduplication by timestamp.
+- **Metric auto-discovery**: `discoverMetrics()` extracts available metric names from data. Known metrics sorted first (battery, temp, RSSI, SNR), then alphabetical.
+- **Warm path updates**: WebSocket telemetry flows through React state (useState in hook). Sufficient for 1Hz per-device updates. Hot path (direct chart ref updates) reserved for Phase 21 if needed.
+- **Chart lifecycle**: ResizeObserver for responsive sizing. Proper dispose/destroy on unmount. React.memo on all chart components.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
