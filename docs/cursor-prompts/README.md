@@ -345,6 +345,35 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 11: InfluxDB Telemetry Migration
+
+**Goal**: Migrate time-series telemetry data from PostgreSQL raw_events to InfluxDB 3 Core while maintaining dual-write for safety.
+
+**Directory**: `phase11-influxdb-migration/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-influxdb-infrastructure.md` | Add InfluxDB to Docker Compose, env vars | `[x]` | Phase 10 |
+| 2 | `002-tenant-db-provisioning.md` | Tenant DB init script + provision API | `[x]` | #1 |
+| 3 | `003-ingest-dual-write.md` | Dual-write to PG + InfluxDB | `[x]` | #1, #2 |
+| 4 | `004-evaluator-migration.md` | Evaluator reads from InfluxDB | `[x]` | #3 |
+| 5 | `005-dashboard-telemetry-migration.md` | UI reads from InfluxDB | `[x]` | #3 |
+| 6 | `006-phase11-tests.md` | Unit + integration tests, documentation | `[x]` | #3, #4, #5 |
+
+**Exit Criteria**:
+- [x] InfluxDB 3 Core running with health checks
+- [x] Per-tenant databases (telemetry_{tenant_id})
+- [x] Ingest dual-writes to PG + InfluxDB
+- [x] Evaluator reads from InfluxDB with PG fallback
+- [x] UI reads telemetry/events from InfluxDB with PG fallback
+- [x] Feature flags for gradual rollout (INFLUXDB_WRITE_ENABLED, INFLUXDB_READ_ENABLED)
+- [x] Unit tests for line protocol helpers
+- [x] Integration tests for InfluxDB write/read
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
