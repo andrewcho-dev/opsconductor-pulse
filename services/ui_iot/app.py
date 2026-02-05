@@ -35,6 +35,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(customer_router)
 app.include_router(operator_router)
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            return RedirectResponse(url="/", status_code=302)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 pool: asyncpg.Pool | None = None
 
 logger = logging.getLogger(__name__)
@@ -395,7 +403,7 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
         httponly=True,
         secure=_secure_cookies_enabled(),
         samesite="lax",
-        max_age=int(expires_in),
+        max_age=int(expires_in) + 60,
         path="/",
     )
     redirect.set_cookie(
@@ -506,7 +514,7 @@ async def auth_refresh(request: Request):
         httponly=True,
         secure=_secure_cookies_enabled(),
         samesite="lax",
-        max_age=int(expires_in),
+        max_age=int(expires_in) + 60,
         path="/",
     )
     refreshed.set_cookie(
