@@ -11,8 +11,6 @@ COPY routes /app/routes
 COPY schemas /app/schemas
 COPY services /app/services
 COPY utils /app/utils
-COPY templates /app/templates
-COPY static /app/static
 
 EXPOSE 8080
 ENV PYTHONUNBUFFERED=1

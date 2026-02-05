@@ -5,13 +5,10 @@ import datetime
 import json
 import uuid
 from uuid import UUID
-from urllib.parse import urlparse
-
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
@@ -51,7 +48,6 @@ from db.queries import (
     fetch_alert_rules,
     fetch_delivery_attempts,
     fetch_device,
-    fetch_device_count,
     fetch_devices_v2,
     fetch_integration,
     fetch_integration_route,
@@ -77,9 +73,6 @@ PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
-UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
-
-templates = Jinja2Templates(directory="/app/templates")
 pool: asyncpg.Pool | None = None
 _influx_client: httpx.AsyncClient | None = None
 
@@ -104,61 +97,6 @@ async def get_pool() -> asyncpg.Pool:
             max_size=5,
         )
     return pool
-
-
-def to_float(v):
-    try:
-        if v is None:
-            return None
-        return float(v)
-    except Exception:
-        return None
-
-
-def to_int(v):
-    try:
-        if v is None:
-            return None
-        return int(v)
-    except Exception:
-        return None
-
-
-def sparkline_points(values, width=520, height=60, pad=4):
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return ""
-    vmin = min(vals)
-    vmax = max(vals)
-    if vmax == vmin:
-        vmax = vmin + 1.0
-
-    n = len(values)
-
-    def x(i):
-        return pad + (i * (width - 2 * pad) / max(1, n - 1))
-
-    pts = []
-    for i, v in enumerate(values):
-        if v is None:
-            continue
-        y = pad + (height - 2 * pad) * (1.0 - ((v - vmin) / (vmax - vmin)))
-        pts.append(f"{x(i):.1f},{y:.1f}")
-    return " ".join(pts)
-
-
-def redact_url(value: str | None) -> str:
-    if not value:
-        return ""
-    try:
-        parsed = urlparse(value)
-    except Exception:
-        return ""
-    if not parsed.hostname:
-        return ""
-    scheme = parsed.scheme or "http"
-    port = f":{parsed.port}" if parsed.port else ""
-    return f"{scheme}://{parsed.hostname}{port}"
 
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9 _-]+$")
@@ -303,82 +241,10 @@ router = APIRouter(
 )
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def customer_dashboard(request: Request):
-    tenant_id = get_tenant_id()
-    try:
-        p = await get_pool()
-        async with tenant_connection(p, tenant_id) as conn:
-            device_counts = await fetch_device_count(conn, tenant_id)
-            devices = await fetch_devices_v2(conn, tenant_id, limit=50, offset=0)
-            alerts = await fetch_alerts(conn, tenant_id, limit=20)
-            delivery_attempts = await fetch_delivery_attempts(conn, tenant_id, limit=10)
-    except Exception:
-        logger.exception("Failed to load customer dashboard")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    return templates.TemplateResponse(
-        "customer/dashboard.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "tenant_id": tenant_id,
-            "device_counts": device_counts,
-            "devices": devices,
-            "alerts": alerts,
-            "delivery_attempts": delivery_attempts,
-            "user": getattr(request.state, "user", None),
-            "ws_token": request.cookies.get("pulse_session", ""),
-        },
-    )
-
-
-@router.get("/snmp-integrations", include_in_schema=False)
-async def snmp_integrations_page(request: Request):
-    """Render SNMP integrations page."""
-    tenant_id = get_tenant_id()
-    return templates.TemplateResponse(
-        "customer/snmp_integrations.html",
-        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
-    )
-
-
-@router.get("/email-integrations", include_in_schema=False)
-async def email_integrations_page(request: Request):
-    """Render email integrations page."""
-    tenant_id = get_tenant_id()
-    return templates.TemplateResponse(
-        "customer/email_integrations.html",
-        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
-    )
-
-
-@router.get("/mqtt-integrations", include_in_schema=False)
-async def mqtt_integrations_page(request: Request):
-    """Render MQTT integrations page."""
-    tenant_id = get_tenant_id()
-    return templates.TemplateResponse(
-        "customer/mqtt_integrations.html",
-        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
-    )
-
-
-@router.get("/webhooks", include_in_schema=False)
-async def webhooks_page(request: Request):
-    """Render webhook integrations page."""
-    tenant_id = get_tenant_id()
-    return templates.TemplateResponse(
-        "customer/webhook_integrations.html",
-        {"request": request, "tenant_id": tenant_id, "user": getattr(request.state, "user", None)},
-    )
-
-
-@router.get("/devices", response_class=HTMLResponse)
+@router.get("/devices")
 async def list_devices(
-    request: Request,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    format: str = Query("html"),
 ):
     tenant_id = get_tenant_id()
     try:
@@ -389,32 +255,16 @@ async def list_devices(
         logger.exception("Failed to fetch tenant devices")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if format == "json":
-        payload = {
-            "tenant_id": tenant_id,
-            "devices": devices,
-            "limit": limit,
-            "offset": offset,
-        }
-        return JSONResponse(jsonable_encoder(payload))
-
-    return templates.TemplateResponse(
-        "customer/devices.html",
-        {
-            "request": request,
-            "tenant_id": tenant_id,
-            "devices": devices,
-            "user": getattr(request.state, "user", None),
-        },
-    )
+    return {
+        "tenant_id": tenant_id,
+        "devices": devices,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
-@router.get("/devices/{device_id}", response_class=HTMLResponse)
-async def get_device_detail(
-    request: Request,
-    device_id: str,
-    format: str = Query("html"),
-):
+@router.get("/devices/{device_id}")
+async def get_device_detail(device_id: str):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
@@ -432,48 +282,18 @@ async def get_device_detail(
         logger.exception("Failed to fetch tenant device detail")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if format == "json":
-        payload = {
-            "tenant_id": tenant_id,
-            "device": device,
-            "events": events,
-            "telemetry": telemetry,
-        }
-        return JSONResponse(jsonable_encoder(payload))
-
-    series = list(reversed(telemetry))
-    bat = [to_float(r["battery_pct"]) for r in series]
-    tmp = [to_float(r["temp_c"]) for r in series]
-    rssi = [to_int(r["rssi_dbm"]) for r in series]
-    rssi_f = [float(x) if x is not None else None for x in rssi]
-
-    charts = {
-        "battery_pts": sparkline_points(bat),
-        "temp_pts": sparkline_points(tmp),
-        "rssi_pts": sparkline_points(rssi_f),
+    return {
+        "tenant_id": tenant_id,
+        "device": device,
+        "events": events,
+        "telemetry": telemetry,
     }
 
-    return templates.TemplateResponse(
-        "customer/device.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "tenant_id": tenant_id,
-            "device_id": device_id,
-            "dev": device,
-            "events": events,
-            "charts": charts,
-            "user": getattr(request.state, "user", None),
-        },
-    )
 
-
-@router.get("/alerts", response_class=HTMLResponse)
+@router.get("/alerts")
 async def list_alerts(
-    request: Request,
     status: str = Query("OPEN"),
     limit: int = Query(100, ge=1, le=500),
-    format: str = Query("html"),
 ):
     tenant_id = get_tenant_id()
     try:
@@ -484,20 +304,7 @@ async def list_alerts(
         logger.exception("Failed to fetch tenant alerts")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if format == "json":
-        payload = {"tenant_id": tenant_id, "alerts": alerts, "status": status, "limit": limit}
-        return JSONResponse(jsonable_encoder(payload))
-
-    return templates.TemplateResponse(
-        "customer/alerts.html",
-        {
-            "request": request,
-            "tenant_id": tenant_id,
-            "alerts": alerts,
-            "status": status,
-            "user": getattr(request.state, "user", None),
-        },
-    )
+    return {"tenant_id": tenant_id, "alerts": alerts, "status": status, "limit": limit}
 
 
 @router.get("/alerts/{alert_id}")
@@ -537,11 +344,7 @@ async def list_integrations():
         logger.exception("Failed to fetch tenant integrations")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    integrations = []
-    for r in rows:
-        item = dict(r)
-        item["url"] = redact_url(item.get("url"))
-        integrations.append(item)
+    integrations = [dict(r) for r in rows]
 
     return {"tenant_id": tenant_id, "integrations": integrations}
 
@@ -1488,7 +1291,6 @@ async def create_integration_route(body: IntegrationCreate):
         logger.exception("Failed to create integration")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    integration["url"] = redact_url(integration.get("url"))
     return integration
 
 
@@ -1505,7 +1307,6 @@ async def get_integration(integration_id: str):
 
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
-    integration["url"] = redact_url(integration.get("url"))
     return integration
 
 
@@ -1538,7 +1339,6 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate):
 
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
-    integration["url"] = redact_url(integration.get("url"))
     return integration
 
 
@@ -1983,7 +1783,7 @@ async def delete_integration_route_endpoint(route_id: str):
 
 
 @router.get("/alert-rules")
-async def list_alert_rules(request: Request, format: str | None = Query(None)):
+async def list_alert_rules():
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
@@ -1993,18 +1793,7 @@ async def list_alert_rules(request: Request, format: str | None = Query(None)):
         logger.exception("Failed to fetch alert rules")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    accept = request.headers.get("accept", "")
-    if format == "json" or "application/json" in accept:
-        return {"tenant_id": tenant_id, "rules": rules}
-    return templates.TemplateResponse(
-        "customer/alert_rules.html",
-        {
-            "request": request,
-            "tenant_id": tenant_id,
-            "rules": rules,
-            "user": getattr(request.state, "user", None),
-        },
-    )
+    return {"tenant_id": tenant_id, "rules": rules}
 
 
 @router.get("/alert-rules/{rule_id}")

@@ -217,7 +217,7 @@ async def test_callback_success_customer(client):
         resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
 
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/customer/dashboard"
+    assert resp.headers["location"] == "/app/"
     cookies_out = resp.headers.get_list("set-cookie")
     assert any(c.startswith("pulse_session=") for c in cookies_out)
     assert any(c.startswith("pulse_refresh=") for c in cookies_out)
@@ -238,7 +238,7 @@ async def test_callback_success_operator(client):
         resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
 
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/operator/dashboard"
+    assert resp.headers["location"] == "/app/"
 
 
 async def test_callback_unknown_role(client):
@@ -256,7 +256,7 @@ async def test_callback_unknown_role(client):
         resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
 
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/?error=unknown_role"
+    assert resp.headers["location"] == "/app/"
 
 
 async def test_callback_clears_oauth_cookies(client):
@@ -433,7 +433,7 @@ async def test_debug_auth_issuer_mismatch(client, monkeypatch):
 async def test_root_no_session(client):
     response = await client.get("/")
     assert response.status_code == 302
-    assert response.headers["location"] == "/login"
+    assert response.headers["location"] == "/app/"
 
 
 async def test_root_customer_session(client):
@@ -442,7 +442,7 @@ async def test_root_customer_session(client):
         response = await client.get("/", cookies={"pulse_session": "token"})
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/customer/dashboard"
+    assert response.headers["location"] == "/app/"
 
 
 async def test_root_operator_session(client):
@@ -451,7 +451,7 @@ async def test_root_operator_session(client):
         response = await client.get("/", cookies={"pulse_session": "token"})
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/operator/dashboard"
+    assert response.headers["location"] == "/app/"
 
 
 async def test_root_invalid_session(client):
@@ -460,4 +460,4 @@ async def test_root_invalid_session(client):
         response = await client.get("/", cookies={"pulse_session": "token"})
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login"
+    assert response.headers["location"] == "/app/"

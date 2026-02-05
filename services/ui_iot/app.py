@@ -8,9 +8,8 @@ import asyncpg
 import httpx
 from pathlib import Path
 from urllib.parse import urlparse, urlencode
-from fastapi import FastAPI, Form, Query, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.middleware.cors import CORSMiddleware
@@ -28,8 +27,6 @@ PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
 
-PROVISION_API_URL = os.getenv("PROVISION_API_URL", "http://iot-api:8081")
-PROVISION_ADMIN_KEY = os.getenv("PROVISION_ADMIN_KEY", "change-me-now")
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*")
 
 app = FastAPI()
@@ -40,8 +37,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-templates = Jinja2Templates(directory="/app/templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(customer_router)
 app.include_router(operator_router)
@@ -98,57 +93,6 @@ def generate_pkce_pair() -> tuple[str, str]:
 
 def generate_state() -> str:
     return secrets.token_urlsafe(32)
-
-def to_float(v):
-    try:
-        if v is None:
-            return None
-        return float(v)
-    except Exception:
-        return None
-
-def to_int(v):
-    try:
-        if v is None:
-            return None
-        return int(v)
-    except Exception:
-        return None
-
-def sparkline_points(values, width=520, height=60, pad=4):
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return ""
-    vmin = min(vals)
-    vmax = max(vals)
-    if vmax == vmin:
-        vmax = vmin + 1.0
-
-    n = len(values)
-
-    def x(i):
-        return pad + (i * (width - 2 * pad) / max(1, n - 1))
-
-    pts = []
-    for i, v in enumerate(values):
-        if v is None:
-            continue
-        y = pad + (height - 2 * pad) * (1.0 - ((v - vmin) / (vmax - vmin)))
-        pts.append(f"{x(i):.1f},{y:.1f}")
-    return " ".join(pts)
-
-def redact_url(value: str | None) -> str:
-    if not value:
-        return ""
-    try:
-        parsed = urlparse(value)
-    except Exception:
-        return ""
-    if not parsed.hostname:
-        return ""
-    scheme = parsed.scheme or "http"
-    port = f":{parsed.port}" if parsed.port else ""
-    return f"{scheme}://{parsed.hostname}{port}"
 
 async def get_pool():
     global pool
@@ -207,73 +151,9 @@ async def get_settings(conn):
 
     return mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes
 
-@app.post("/settings")
-async def settings_redirect():
-    return RedirectResponse(url="/operator/settings", status_code=307)
-
 @app.get("/api/v2/health")
 async def api_v2_health():
     return {"status": "ok", "service": "pulse-ui", "api_version": "v2"}
-
-@app.post("/admin/create-device")
-async def admin_create_device(
-    tenant_id: str = Form(...),
-    device_id: str = Form(...),
-    site_id: str = Form(...),
-    fw_version: str = Form(""),
-):
-    payload = {
-        "tenant_id": tenant_id.strip(),
-        "device_id": device_id.strip(),
-        "site_id": site_id.strip(),
-        "fw_version": fw_version.strip() or None,
-        "metadata": {"created_via": "ui"},
-    }
-    headers = {"X-Admin-Key": PROVISION_ADMIN_KEY}
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(f"{PROVISION_API_URL}/api/admin/devices", headers=headers, json=payload)
-        if r.status_code != 200:
-            return RedirectResponse(url="/?admin_err=create_failed", status_code=303)
-    # Store the last response in app_settings for display (simple demo approach)
-    p = await get_pool()
-    async with p.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('LAST_ADMIN_CREATE', $1, now())
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
-            """,
-            r.text
-        )
-    return RedirectResponse(url="/", status_code=303)
-
-@app.post("/admin/activate-device")
-async def admin_activate_device(
-    tenant_id: str = Form(...),
-    device_id: str = Form(...),
-    activation_code: str = Form(...),
-):
-    payload = {
-        "tenant_id": tenant_id.strip(),
-        "device_id": device_id.strip(),
-        "activation_code": activation_code.strip(),
-    }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(f"{PROVISION_API_URL}/api/device/activate", json=payload)
-        if r.status_code != 200:
-            return RedirectResponse(url="/?admin_err=activate_failed", status_code=303)
-
-    p = await get_pool()
-    async with p.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('LAST_DEVICE_ACTIVATE', $1, now())
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
-            """,
-            r.text
-        )
-    return RedirectResponse(url="/", status_code=303)
 
 def get_callback_url() -> str:
     return f"{get_ui_base_url()}/callback"
@@ -331,22 +211,9 @@ async def login():
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    session_token = request.cookies.get("pulse_session")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=302)
-
-    try:
-        payload = await validate_token(session_token)
-        role = payload.get("role", "")
-        if role in ("operator", "operator_admin"):
-            return RedirectResponse(url="/operator/dashboard", status_code=302)
-        if role in ("customer_admin", "customer_viewer"):
-            return RedirectResponse(url="/customer/dashboard", status_code=302)
-        return RedirectResponse(url="/login", status_code=302)
-    except Exception:
-        return RedirectResponse(url="/login", status_code=302)
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/app/", status_code=302)
 
 
 @app.get("/callback")
@@ -422,13 +289,7 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
         logger.warning("OAuth callback: token validation failed: %s", str(e))
         return RedirectResponse(url="/?error=invalid_token", status_code=302)
 
-    role = validated.get("role", "")
-    if role in ("operator", "operator_admin"):
-        redirect_url = "/operator/dashboard"
-    elif role in ("customer_admin", "customer_viewer"):
-        redirect_url = "/customer/dashboard"
-    else:
-        redirect_url = "/?error=unknown_role"
+    redirect_url = "/app/"
 
     redirect = RedirectResponse(url=redirect_url, status_code=302)
     redirect.delete_cookie("oauth_state", path="/")
@@ -649,23 +510,3 @@ async def debug_auth(request: Request):
     }
 
 
-@app.get("/device/{device_id}", response_class=HTMLResponse)
-async def device_detail_deprecated(request: Request, device_id: str):
-    return HTMLResponse(
-        content="""
-        <html>
-        <head><title>410 Gone</title></head>
-        <body>
-        <h1>410 Gone</h1>
-        <p>This endpoint is deprecated.</p>
-        <p>Use one of:</p>
-        <ul>
-            <li><code>/customer/devices/{device_id}</code> — for customers (requires login)</li>
-            <li><code>/operator/tenants/{tenant_id}/devices/{device_id}</code> — for operators</li>
-        </ul>
-        <p><a href="/">Go to login</a></p>
-        </body>
-        </html>
-        """,
-        status_code=410,
-    )

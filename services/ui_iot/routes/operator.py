@@ -4,24 +4,19 @@ from datetime import datetime
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from middleware.auth import JWTBearer
 from middleware.tenant import (
     inject_tenant_context,
-    get_tenant_id_or_none,
     get_user,
     require_operator,
     require_operator_admin,
-    is_operator,
 )
 import httpx
 from db.queries import (
     fetch_alerts,
     fetch_all_alerts,
-    fetch_all_delivery_attempts,
     fetch_all_devices,
     fetch_all_integrations,
     fetch_delivery_attempts,
@@ -42,9 +37,6 @@ PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
-UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
-
-templates = Jinja2Templates(directory="/app/templates")
 pool: asyncpg.Pool | None = None
 _influx_client: httpx.AsyncClient | None = None
 
@@ -77,47 +69,6 @@ def get_request_metadata(request: Request) -> tuple[str | None, str | None]:
     return ip, user_agent
 
 
-def to_float(v):
-    try:
-        if v is None:
-            return None
-        return float(v)
-    except Exception:
-        return None
-
-
-def to_int(v):
-    try:
-        if v is None:
-            return None
-        return int(v)
-    except Exception:
-        return None
-
-
-def sparkline_points(values, width=520, height=60, pad=4):
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return ""
-    vmin = min(vals)
-    vmax = max(vals)
-    if vmax == vmin:
-        vmax = vmin + 1.0
-
-    n = len(values)
-
-    def x(i):
-        return pad + (i * (width - 2 * pad) / max(1, n - 1))
-
-    pts = []
-    for i, v in enumerate(values):
-        if v is None:
-            continue
-        y = pad + (height - 2 * pad) * (1.0 - ((v - vmin) / (vmax - vmin)))
-        pts.append(f"{x(i):.1f},{y:.1f}")
-    return " ".join(pts)
-
-
 async def get_settings(conn):
     rows = await conn.fetch(
         "SELECT key, value FROM app_settings WHERE key IN "
@@ -143,105 +94,6 @@ async def get_settings(conn):
     return mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes
 
 
-async def _load_dashboard_context(conn):
-    mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes = await get_settings(conn)
-
-    last_create = await conn.fetchval("SELECT value FROM app_settings WHERE key='LAST_ADMIN_CREATE'") or ""
-    last_activate = await conn.fetchval("SELECT value FROM app_settings WHERE key='LAST_DEVICE_ACTIVATE'") or ""
-
-    devices = await fetch_all_devices(conn, limit=100, offset=0)
-    open_alerts = await fetch_all_alerts(conn, status="OPEN", limit=50)
-    integrations = await fetch_all_integrations(conn, limit=50)
-    delivery_attempts = await fetch_all_delivery_attempts(conn, limit=20)
-
-    quarantine = await conn.fetch(
-        """
-        SELECT ingested_at, tenant_id, site_id, device_id, msg_type, reason
-        FROM quarantine_events
-        ORDER BY ingested_at DESC
-        LIMIT 50
-        """
-    )
-
-    counts = await conn.fetchrow(
-        """
-        SELECT
-          (SELECT COUNT(*) FROM device_state) AS devices_total,
-          (SELECT COUNT(*) FROM device_state WHERE status='ONLINE') AS devices_online,
-          (SELECT COUNT(*) FROM device_state WHERE status='STALE') AS devices_stale,
-          (SELECT COUNT(*) FROM fleet_alert WHERE status='OPEN') AS alerts_open,
-          (SELECT COUNT(*) FROM quarantine_events WHERE ingested_at > (now() - interval '10 minutes')) AS quarantined_10m
-        """
-    )
-
-    rate_limited_10m = await conn.fetchval(
-        """
-        SELECT COALESCE(SUM(cnt),0)
-        FROM quarantine_counters_minute
-        WHERE reason='RATE_LIMITED'
-          AND bucket_minute > (date_trunc('minute', now()) - interval '10 minutes')
-        """
-    )
-
-    rate_limited_5m = await conn.fetchval(
-        """
-        SELECT COALESCE(SUM(cnt),0)
-        FROM quarantine_counters_minute
-        WHERE reason='RATE_LIMITED'
-          AND bucket_minute > (date_trunc('minute', now()) - interval '5 minutes')
-        """
-    )
-
-    reason_counts_10m = await conn.fetch(
-        """
-        SELECT reason, SUM(cnt) AS cnt
-        FROM quarantine_counters_minute
-        WHERE bucket_minute > (date_trunc('minute', now()) - interval '10 minutes')
-        GROUP BY reason
-        ORDER BY cnt DESC, reason ASC
-        LIMIT 20
-        """
-    )
-
-    rate_series = await conn.fetch(
-        """
-        SELECT bucket_minute, SUM(cnt) AS total_cnt,
-               COALESCE(SUM(cnt) FILTER (WHERE reason='RATE_LIMITED'),0) AS rate_limited_cnt
-        FROM quarantine_counters_minute
-        WHERE bucket_minute > (date_trunc('minute', now()) - interval '60 minutes')
-        GROUP BY bucket_minute
-        ORDER BY bucket_minute ASC
-        """
-    )
-    series = [
-        {"t": str(r["bucket_minute"]), "cnt": int(r["total_cnt"]), "rl": int(r["rate_limited_cnt"])}
-        for r in rate_series
-    ]
-    max_cnt = max([x["cnt"] for x in series], default=0)
-
-    return {
-        "mode": mode,
-        "store_rejects": store_rejects,
-        "mirror_rejects": mirror_rejects,
-        "rate_rps": rate_rps,
-        "rate_burst": rate_burst,
-        "max_payload_bytes": max_payload_bytes,
-        "rate_limited_10m": int(rate_limited_10m or 0),
-        "rate_limited_5m": int(rate_limited_5m or 0),
-        "counts": counts,
-        "devices": devices,
-        "open_alerts": open_alerts,
-        "integrations": integrations,
-        "delivery_attempts": delivery_attempts,
-        "quarantine": quarantine,
-        "reason_counts_10m": reason_counts_10m,
-        "rate_series": series,
-        "rate_max": max_cnt,
-        "last_create": last_create,
-        "last_activate": last_activate,
-    }
-
-
 router = APIRouter(
     prefix="/operator",
     tags=["operator"],
@@ -251,42 +103,6 @@ router = APIRouter(
         Depends(require_operator),
     ],
 )
-
-
-@router.get("/dashboard", response_class=HTMLResponse)
-async def operator_dashboard(request: Request):
-    user = get_user()
-    ip, user_agent = get_request_metadata(request)
-    tenant_hint = get_tenant_id_or_none()
-
-    try:
-        p = await get_pool()
-        async with p.acquire() as conn:
-            await log_operator_access(
-                conn,
-                user_id=user["sub"],
-                action="view_dashboard",
-                tenant_filter=tenant_hint,
-                ip_address=ip,
-                user_agent=user_agent,
-                rls_bypassed=True,
-            )
-        async with operator_connection(p) as conn:
-            context = await _load_dashboard_context(conn)
-    except Exception:
-        logger.exception("Failed to load operator dashboard")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "user": user,
-            "operator": True,
-            **context,
-        },
-    )
 
 
 @router.get("/devices")
@@ -352,12 +168,11 @@ async def list_tenant_devices(request: Request, tenant_id: str):
     return {"tenant_id": tenant_id, "devices": devices}
 
 
-@router.get("/tenants/{tenant_id}/devices/{device_id}", response_class=HTMLResponse)
+@router.get("/tenants/{tenant_id}/devices/{device_id}")
 async def view_device(
     request: Request,
     tenant_id: str,
     device_id: str,
-    format: str = Query("json"),
 ):
     user = get_user()
     ip, user_agent = get_request_metadata(request)
@@ -389,40 +204,12 @@ async def view_device(
         logger.exception("Failed to fetch operator device detail")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if format == "json":
-        return {
-            "tenant_id": tenant_id,
-            "device": device,
-            "events": events,
-            "telemetry": telemetry,
-        }
-
-    series = list(reversed(telemetry))
-    bat = [to_float(r["battery_pct"]) for r in series]
-    tmp = [to_float(r["temp_c"]) for r in series]
-    rssi = [to_int(r["rssi_dbm"]) for r in series]
-    rssi_f = [float(x) if x is not None else None for x in rssi]
-
-    charts = {
-        "battery_pts": sparkline_points(bat),
-        "temp_pts": sparkline_points(tmp),
-        "rssi_pts": sparkline_points(rssi_f),
+    return {
+        "tenant_id": tenant_id,
+        "device": device,
+        "events": events,
+        "telemetry": telemetry,
     }
-
-    return templates.TemplateResponse(
-        "device.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "device_id": device_id,
-            "tenant_id": tenant_id,
-            "dev": device,
-            "events": events,
-            "charts": charts,
-            "user": user,
-            "operator": True,
-        },
-    )
 
 
 @router.get("/alerts")
@@ -567,39 +354,6 @@ async def get_audit_log(
     }
 
 
-@router.get("/settings", response_class=HTMLResponse)
-async def settings(request: Request, _: None = Depends(require_operator_admin)):
-    user = get_user()
-    ip, user_agent = get_request_metadata(request)
-    try:
-        p = await get_pool()
-        async with p.acquire() as conn:
-            await log_operator_access(
-                conn,
-                user_id=user["sub"],
-                action="view_settings",
-                ip_address=ip,
-                user_agent=user_agent,
-                rls_bypassed=True,
-            )
-        async with operator_connection(p) as conn:
-            context = await _load_dashboard_context(conn)
-    except Exception:
-        logger.exception("Failed to load operator settings")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "refresh": UI_REFRESH_SECONDS,
-            "user": user,
-            "operator": True,
-            **context,
-        },
-    )
-
-
 @router.post("/settings")
 async def update_settings(
     request: Request,
@@ -658,4 +412,4 @@ async def update_settings(
         logger.exception("Failed to update operator settings")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return RedirectResponse(url="/operator/dashboard", status_code=303)
+    return {"status": "ok"}

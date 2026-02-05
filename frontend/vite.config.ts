@@ -18,6 +18,14 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
       },
+      "/customer": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/operator": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
 });

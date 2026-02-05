@@ -53,30 +53,6 @@ def _auth_header():
     return {"Authorization": "Bearer test-token"}
 
 
-def _dashboard_context():
-    return {
-        "mode": "DEV",
-        "store_rejects": "0",
-        "mirror_rejects": "0",
-        "rate_rps": "5",
-        "rate_burst": "20",
-        "max_payload_bytes": "8192",
-        "rate_limited_10m": 0,
-        "rate_limited_5m": 0,
-        "counts": {"devices_total": 0, "devices_online": 0, "devices_stale": 0, "alerts_open": 0, "quarantined_10m": 0},
-        "devices": [],
-        "open_alerts": [],
-        "integrations": [],
-        "delivery_attempts": [],
-        "quarantine": [],
-        "reason_counts_10m": [],
-        "rate_series": [],
-        "rate_max": 0,
-        "last_create": "",
-        "last_activate": "",
-    }
-
-
 def _mock_operator_deps(monkeypatch, conn, role="operator"):
     monkeypatch.setattr(
         auth_module,
@@ -94,17 +70,6 @@ async def client():
     transport = httpx.ASGITransport(app=app_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
-
-
-async def test_operator_dashboard_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator")
-    monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "_load_dashboard_context", AsyncMock(return_value=_dashboard_context()))
-
-    resp = await client.get("/operator/dashboard", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
 
 
 async def test_operator_list_all_devices(client, monkeypatch):
@@ -146,25 +111,6 @@ async def test_operator_audit_logged(client, monkeypatch):
     log_access.assert_awaited()
 
 
-async def test_operator_admin_settings(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator_admin")
-    monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "_load_dashboard_context", AsyncMock(return_value=_dashboard_context()))
-
-    resp = await client.get("/operator/settings", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-
-
-async def test_operator_regular_no_settings(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator")
-
-    resp = await client.get("/operator/settings", headers=_auth_header())
-    assert resp.status_code == 403
-
-
 async def test_operator_audit_log_requires_admin(client, monkeypatch):
     conn = FakeConn()
     _mock_operator_deps(monkeypatch, conn, role="operator")
@@ -177,7 +123,7 @@ async def test_customer_cannot_access_operator(client, monkeypatch):
     conn = FakeConn()
     _mock_operator_deps(monkeypatch, conn, role="customer_admin")
 
-    resp = await client.get("/operator/dashboard", headers=_auth_header())
+    resp = await client.get("/operator/devices", headers=_auth_header())
     assert resp.status_code == 403
 
 
@@ -244,25 +190,9 @@ async def test_operator_view_device_json(client, monkeypatch):
     monkeypatch.setattr(operator_routes, "fetch_device_events_influx", AsyncMock(return_value=[]))
     monkeypatch.setattr(operator_routes, "fetch_device_telemetry_influx", AsyncMock(return_value=[]))
 
-    with pytest.raises(AttributeError):
-        await client.get("/operator/tenants/tenant-a/devices/d1?format=json", headers=_auth_header())
-
-
-async def test_operator_view_device_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator")
-    monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "fetch_device", AsyncMock(return_value={"device_id": "d1"}))
-    monkeypatch.setattr(operator_routes, "fetch_device_events_influx", AsyncMock(return_value=[]))
-    monkeypatch.setattr(
-        operator_routes,
-        "fetch_device_telemetry_influx",
-        AsyncMock(return_value=[{"battery_pct": "90", "temp_c": "20", "rssi_dbm": "-40"}]),
-    )
-
-    resp = await client.get("/operator/tenants/tenant-a/devices/d1?format=html", headers=_auth_header())
+    resp = await client.get("/operator/tenants/tenant-a/devices/d1", headers=_auth_header())
     assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
+    assert resp.json()["device"]["device_id"] == "d1"
 
 
 async def test_operator_helpers():
@@ -270,54 +200,3 @@ async def test_operator_helpers():
     ip, user_agent = operator_routes.get_request_metadata(req)
     assert ip is None
     assert user_agent is None
-
-    assert operator_routes.to_float("2.5") == 2.5
-    assert operator_routes.to_float("bad") is None
-    assert operator_routes.to_int("3") == 3
-    assert operator_routes.to_int("bad") is None
-    assert operator_routes.sparkline_points([1]) == ""
-    assert operator_routes.sparkline_points([1, 2, 3]) != ""
-
-
-async def test_get_settings_mode_normalization():
-    class SettingsConn:
-        async def fetch(self, *args, **kwargs):
-            return [
-                {"key": "MODE", "value": "unknown"},
-                {"key": "STORE_REJECTS", "value": "1"},
-                {"key": "MIRROR_REJECTS_TO_RAW", "value": "1"},
-                {"key": "RATE_LIMIT_RPS", "value": "5"},
-                {"key": "RATE_LIMIT_BURST", "value": "20"},
-                {"key": "MAX_PAYLOAD_BYTES", "value": "1024"},
-            ]
-
-    mode, store_rejects, mirror_rejects, *_ = await operator_routes.get_settings(SettingsConn())
-    assert mode == "PROD"
-    assert store_rejects == "0"
-    assert mirror_rejects == "0"
-
-
-async def test_load_dashboard_context():
-    class DashboardConn:
-        async def fetch(self, query, *args):
-            if "FROM quarantine_events" in query:
-                return []
-            if "FROM quarantine_counters_minute" in query:
-                return []
-            return []
-
-        async def fetchval(self, *args, **kwargs):
-            return 0
-
-        async def fetchrow(self, *args, **kwargs):
-            return {
-                "devices_total": 0,
-                "devices_online": 0,
-                "devices_stale": 0,
-                "alerts_open": 0,
-                "quarantined_10m": 0,
-            }
-
-    monkey_conn = DashboardConn()
-    context = await operator_routes._load_dashboard_context(monkey_conn)
-    assert "counts" in context

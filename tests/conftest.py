@@ -40,9 +40,6 @@ try:
     from app import app
 finally:
     os.chdir(_orig_cwd)
-templates_path = os.path.join(ui_root, "templates")
-customer_routes.templates.env.loader.searchpath = [templates_path]
-operator_routes.templates.env.loader.searchpath = [templates_path]
 from tests.helpers.auth import (
     get_customer1_token,
     get_customer2_token,

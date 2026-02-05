@@ -91,47 +91,14 @@ async def client():
         yield client
 
 
-async def test_dashboard_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_device_count", AsyncMock(return_value={"total": 0, "online": 0, "stale": 0}))
-    monkeypatch.setattr(customer_routes, "fetch_devices", AsyncMock(return_value=[]))
-    monkeypatch.setattr(customer_routes, "fetch_alerts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(customer_routes, "fetch_delivery_attempts", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/dashboard", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-
-
-async def test_devices_page_returns_html(client, monkeypatch):
+async def test_devices_json_format(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(customer_routes, "fetch_devices", AsyncMock(return_value=[]))
 
     resp = await client.get("/customer/devices", headers=_auth_header())
     assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-
-
-async def test_devices_json_format(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_devices", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/devices?format=json", headers=_auth_header())
-    assert resp.status_code == 200
     assert "application/json" in resp.headers["content-type"]
-
-
-async def test_alerts_page_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_alerts", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/alerts", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
 
 
 async def test_alerts_json_format(client, monkeypatch):
@@ -139,33 +106,9 @@ async def test_alerts_json_format(client, monkeypatch):
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(customer_routes, "fetch_alerts", AsyncMock(return_value=[]))
 
-    resp = await client.get("/customer/alerts?format=json", headers=_auth_header())
+    resp = await client.get("/customer/alerts", headers=_auth_header())
     assert resp.status_code == 200
     assert "application/json" in resp.headers["content-type"]
-
-
-async def test_webhooks_page_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    resp = await client.get("/customer/webhooks", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-
-
-async def test_snmp_page_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    resp = await client.get("/customer/snmp-integrations", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-
-
-async def test_email_page_returns_html(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    resp = await client.get("/customer/email-integrations", headers=_auth_header())
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
 
 
 async def test_create_integration_valid(client, monkeypatch):
@@ -617,18 +560,6 @@ async def test_unauthenticated_rejected(client):
 
 
 async def test_helpers_and_normalizers():
-    assert customer_routes.to_float(None) is None
-    assert customer_routes.to_float("2.5") == 2.5
-    assert customer_routes.to_float("bad") is None
-    assert customer_routes.to_int("3") == 3
-    assert customer_routes.to_int("bad") is None
-
-    assert customer_routes.sparkline_points([1]) == ""
-    assert customer_routes.sparkline_points([1, 2, 3]) != ""
-
-    assert customer_routes.redact_url("https://example.com:8080/path") == "https://example.com:8080"
-    assert customer_routes.redact_url("not-a-url") == ""
-
     assert customer_routes._validate_name(" Valid ") == "Valid"
     with pytest.raises(HTTPException):
         customer_routes._validate_name(" ")
@@ -686,7 +617,7 @@ async def test_get_device_detail_json(client, monkeypatch):
     monkeypatch.setattr(customer_routes, "fetch_device_events_influx", AsyncMock(return_value=[]))
     monkeypatch.setattr(customer_routes, "fetch_device_telemetry_influx", AsyncMock(return_value=[]))
 
-    resp = await client.get("/customer/devices/d1?format=json", headers=_auth_header())
+    resp = await client.get("/customer/devices/d1", headers=_auth_header())
     assert resp.status_code == 200
     assert resp.json()["device"]["device_id"] == "d1"
 
@@ -1031,40 +962,6 @@ async def test_get_integration_not_found(client, monkeypatch):
     assert resp.status_code == 404
 
 
-async def test_device_detail_deprecated(client):
-    resp = await client.get("/device/test-device")
-    assert resp.status_code == 410
-
-
-async def test_admin_create_device_success(client, monkeypatch):
-    response = SimpleNamespace(status_code=200, text="ok")
-    monkeypatch.setattr(app_module.httpx, "AsyncClient", lambda *a, **k: _mock_async_client(response))
-
-    class AdminConn(FakeConn):
-        async def execute(self, *args, **kwargs):
-            return "OK"
-
-    monkeypatch.setattr(app_module, "get_pool", AsyncMock(return_value=FakePool(AdminConn())))
-
-    resp = await client.post(
-        "/admin/create-device",
-        data={"tenant_id": "tenant-a", "device_id": "d1", "site_id": "s1", "fw_version": "1.0"},
-    )
-    assert resp.status_code == 303
-
-
-async def test_admin_activate_device_failure(client, monkeypatch):
-    response = SimpleNamespace(status_code=400, text="bad")
-    monkeypatch.setattr(app_module.httpx, "AsyncClient", lambda *a, **k: _mock_async_client(response))
-    monkeypatch.setattr(app_module, "get_pool", AsyncMock(return_value=FakePool(FakeConn())))
-
-    resp = await client.post(
-        "/admin/activate-device",
-        data={"tenant_id": "tenant-a", "device_id": "d1", "activation_code": "code"},
-    )
-    assert resp.status_code == 303
-
-
 async def test_app_helpers(monkeypatch):
     monkeypatch.setenv("SECURE_COOKIES", "true")
     assert app_module._secure_cookies_enabled() is True
@@ -1073,7 +970,6 @@ async def test_app_helpers(monkeypatch):
     verifier, challenge = app_module.generate_pkce_pair()
     assert verifier and challenge
     assert app_module.generate_state()
-    assert app_module.redact_url("https://example.com/path") == "https://example.com"
 
 
 async def test_login_redirects_to_keycloak(client, monkeypatch):
@@ -1123,7 +1019,7 @@ async def test_callback_success_customer(client, monkeypatch):
 
     resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/customer/dashboard"
+    assert resp.headers["location"] == "/app/"
 
 
 async def test_logout_redirects_to_keycloak(client, monkeypatch):
@@ -1169,11 +1065,10 @@ async def test_debug_auth_prod_mode(client, monkeypatch):
 async def test_root_no_session(client):
     resp = await client.get("/")
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/login"
+    assert resp.headers["location"] == "/app/"
 
 
 async def test_root_operator_session(client, monkeypatch):
-    monkeypatch.setattr(app_module, "validate_token", AsyncMock(return_value={"role": "operator"}))
-    resp = await client.get("/", cookies={"pulse_session": "token"})
+    resp = await client.get("/")
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/operator/dashboard"
+    assert resp.headers["location"] == "/app/"

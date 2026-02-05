@@ -701,6 +701,43 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 22: SPA Cutover — Remove Legacy Templates
+
+**Goal**: Make the React SPA the sole frontend by removing all Jinja template routes, deleting template/static files, and redirecting root to the SPA.
+
+**Directory**: `phase22-spa-cutover/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-backend-spa-cutover.md` | Remove template routes, convert to JSON-only, redirect root to /app/ | `[x]` | None |
+| 2 | `002-remove-legacy-files.md` | Delete template HTML and static JS/CSS, update Dockerfile | `[x]` | #1 |
+| 3 | `003-fix-tests.md` | Fix broken tests, remove template assertions | `[x]` | #1-#2 |
+| 4 | `004-deploy-and-docs.md` | Update Vite proxy, rebuild frontend, documentation | `[x]` | #1-#3 |
+
+**Exit Criteria**:
+- [x] Root `/` redirects to `/app/` (React SPA)
+- [x] OAuth callback redirects to `/app/` after login
+- [x] All Jinja template-rendering routes removed from customer.py and operator.py
+- [x] Dual HTML/JSON routes converted to JSON-only
+- [x] All 12 HTML template files deleted
+- [x] All 9 static JS/CSS files deleted
+- [x] Dockerfile no longer copies templates or static
+- [x] Dead helper functions removed (sparklines, redact_url)
+- [x] Tests updated — no HTML assertions, no dead function references
+- [x] Vite dev proxy covers /api, /customer, /operator
+- [x] npm run build succeeds
+- [x] All backend tests pass
+
+**Architecture decisions**:
+- **SPA stays at /app/ base path**: Keeps the SPA at `/app/` to avoid route conflicts with backend API paths. Root `/` redirects to `/app/`. This is simpler than moving the SPA to `/` which would require careful catchall route ordering.
+- **Auth routes kept (unused)**: `/login`, `/callback`, `/logout` kept in app.py even though the SPA uses keycloak-js directly. They're harmless and might be useful for API-only clients or debugging.
+- **JSON-only customer routes**: Routes like `/customer/devices` that previously served both HTML and JSON now only return JSON. The `format` query param is removed.
+- **get_settings and _load_dashboard_context removed**: These operator.py functions were only used by template-rendering routes and had no JSON API consumers.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
