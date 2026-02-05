@@ -659,6 +659,48 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 21: CRUD Pages + Operator Views
+
+**Goal**: Implement all remaining page stubs — alert rules CRUD, integration management for all 4 types, and operator cross-tenant views.
+
+**Directory**: `phase21-crud-pages/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-api-client-layer.md` | Types, API functions, hooks for all CRUD endpoints | `[x]` | None |
+| 2 | `002-alert-rules-page.md` | Alert rules list + create/edit dialog | `[x]` | #1 |
+| 3 | `003-integration-pages.md` | Webhook, SNMP, Email, MQTT pages | `[x]` | #1 |
+| 4 | `004-operator-pages.md` | Operator dashboard, devices, audit log, settings | `[x]` | #1 |
+| 5 | `005-tests-and-documentation.md` | Verification and documentation | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] API client layer for alert rules, 4 integration types, and operator endpoints
+- [x] TanStack Query hooks with mutations and cache invalidation
+- [x] Alert rules CRUD page with create/edit dialog and severity display
+- [x] Webhook integration page with card layout, test delivery
+- [x] SNMP integration page with v2c/v3 config forms
+- [x] Email integration page with SMTP config and recipient management
+- [x] MQTT integration page with topic and QoS settings
+- [x] All integration pages: create/edit/delete/test/toggle enabled
+- [x] Operator dashboard with cross-tenant stats and tables
+- [x] Operator devices with tenant filter and pagination
+- [x] Audit log with role-gated access (operator_admin only)
+- [x] Settings page for system mode and reject policies
+- [x] Role-based access control (customer_admin for CRUD, operator_admin for audit/settings)
+- [x] npm run build succeeds
+- [x] All backend tests pass
+
+**Architecture decisions**:
+- **Customer CRUD via /customer/ endpoints**: The React SPA calls customer endpoints with Bearer auth. These endpoints support both cookie and Bearer token authentication, so the SPA works without changes.
+- **Operator composed dashboard**: Instead of using the monolithic HTML-returning operator dashboard endpoint, the SPA calls individual JSON endpoints (/operator/devices, /operator/alerts, /operator/quarantine) and composes the dashboard from them.
+- **Mutation + invalidation pattern**: All create/update/delete operations use TanStack Query mutations that invalidate the list query cache on success. This triggers an automatic refetch of the list.
+- **Settings form encoding**: The backend settings POST expects `application/x-www-form-urlencoded` (not JSON), so the settings page uses a custom fetch with URLSearchParams.
+- **No page stubs remaining**: All 14 routes in the router now have fully implemented pages.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
