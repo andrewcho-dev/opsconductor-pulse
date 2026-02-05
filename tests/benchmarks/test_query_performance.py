@@ -62,7 +62,7 @@ async def _seed_data(conn: asyncpg.Connection):
                 tenant,
                 f"{tenant}-site",
                 device_id,
-                "DEVICE_OFFLINE",
+                "NO_HEARTBEAT",
                 str(uuid.uuid4()),
                 "OPEN",
                 random.randint(0, 2),

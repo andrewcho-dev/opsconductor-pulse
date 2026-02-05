@@ -657,7 +657,7 @@ async def test_get_alert_success(client, monkeypatch):
         "tenant_id": "tenant-a",
         "device_id": "d1",
         "site_id": "s1",
-        "alert_type": "STALE_DEVICE",
+        "alert_type": "NO_HEARTBEAT",
         "severity": "WARNING",
         "confidence": 0.9,
         "summary": "Alert",
@@ -739,7 +739,7 @@ async def test_create_integration_route_success(client, monkeypatch):
         headers=_auth_header(),
         json={
             "integration_id": "00000000-0000-0000-0000-000000000011",
-            "alert_types": ["STALE_DEVICE"],
+            "alert_types": ["NO_HEARTBEAT"],
             "severities": ["CRITICAL"],
             "enabled": True,
         },
@@ -757,7 +757,7 @@ async def test_create_integration_route_missing_integration(client, monkeypatch)
         headers=_auth_header(),
         json={
             "integration_id": "00000000-0000-0000-0000-000000000012",
-            "alert_types": ["STALE_DEVICE"],
+            "alert_types": ["NO_HEARTBEAT"],
             "severities": ["CRITICAL"],
             "enabled": True,
         },
@@ -789,7 +789,7 @@ async def test_patch_integration_route_success(client, monkeypatch):
     resp = await client.patch(
         "/customer/integration-routes/00000000-0000-0000-0000-000000000014",
         headers=_auth_header(),
-        json={"alert_types": ["STALE_DEVICE"], "severities": ["INFO"], "enabled": True},
+        json={"alert_types": ["NO_HEARTBEAT"], "severities": ["INFO"], "enabled": True},
     )
     assert resp.status_code == 200
 

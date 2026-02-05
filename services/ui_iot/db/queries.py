@@ -519,3 +519,161 @@ async def fetch_quarantine_events(
         limit,
     )
     return [dict(r) for r in rows]
+
+
+async def fetch_alert_rules(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    _require_tenant(tenant_id)
+    rows = await conn.fetch(
+        """
+        SELECT tenant_id, rule_id, name, enabled, metric_name, operator, threshold,
+               severity, description, site_ids, created_at, updated_at
+        FROM alert_rules
+        WHERE tenant_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        """,
+        tenant_id,
+        limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_alert_rule(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    rule_id: str,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+    row = await conn.fetchrow(
+        """
+        SELECT tenant_id, rule_id, name, enabled, metric_name, operator, threshold,
+               severity, description, site_ids, created_at, updated_at
+        FROM alert_rules
+        WHERE tenant_id = $1 AND rule_id = $2
+        """,
+        tenant_id,
+        rule_id,
+    )
+    return dict(row) if row else None
+
+
+async def create_alert_rule(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    name: str,
+    metric_name: str,
+    operator: str,
+    threshold: float,
+    severity: int = 3,
+    description: str | None = None,
+    site_ids: List[str] | None = None,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    _require_tenant(tenant_id)
+    rule_id = str(uuid.uuid4())
+    row = await conn.fetchrow(
+        """
+        INSERT INTO alert_rules
+            (tenant_id, rule_id, name, enabled, metric_name, operator, threshold,
+             severity, description, site_ids, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+        RETURNING tenant_id, rule_id, name, enabled, metric_name, operator, threshold,
+                  severity, description, site_ids, created_at, updated_at
+        """,
+        tenant_id,
+        rule_id,
+        name,
+        enabled,
+        metric_name,
+        operator,
+        threshold,
+        severity,
+        description,
+        site_ids,
+    )
+    return dict(row)
+
+
+async def update_alert_rule(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    rule_id: str,
+    name: str | None = None,
+    metric_name: str | None = None,
+    operator: str | None = None,
+    threshold: float | None = None,
+    severity: int | None = None,
+    description: str | None = None,
+    site_ids: List[str] | None = None,
+    enabled: bool | None = None,
+) -> Dict[str, Any] | None:
+    _require_tenant(tenant_id)
+
+    sets: list[str] = []
+    params: list[Any] = [tenant_id, rule_id]
+    idx = 3
+
+    if name is not None:
+        sets.append(f"name = ${idx}")
+        params.append(name)
+        idx += 1
+    if metric_name is not None:
+        sets.append(f"metric_name = ${idx}")
+        params.append(metric_name)
+        idx += 1
+    if operator is not None:
+        sets.append(f"operator = ${idx}")
+        params.append(operator)
+        idx += 1
+    if threshold is not None:
+        sets.append(f"threshold = ${idx}")
+        params.append(threshold)
+        idx += 1
+    if severity is not None:
+        sets.append(f"severity = ${idx}")
+        params.append(severity)
+        idx += 1
+    if description is not None:
+        sets.append(f"description = ${idx}")
+        params.append(description)
+        idx += 1
+    if site_ids is not None:
+        sets.append(f"site_ids = ${idx}")
+        params.append(site_ids)
+        idx += 1
+    if enabled is not None:
+        sets.append(f"enabled = ${idx}")
+        params.append(enabled)
+        idx += 1
+
+    sets.append("updated_at = now()")
+
+    query = (
+        "UPDATE alert_rules SET "
+        + ", ".join(sets)
+        + " WHERE tenant_id = $1 AND rule_id = $2 "
+        + "RETURNING tenant_id, rule_id, name, enabled, metric_name, operator, threshold, "
+        + "severity, description, site_ids, created_at, updated_at"
+    )
+    row = await conn.fetchrow(query, *params)
+    return dict(row) if row else None
+
+
+async def delete_alert_rule(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    rule_id: str,
+) -> bool:
+    _require_tenant(tenant_id)
+    result = await conn.execute(
+        """
+        DELETE FROM alert_rules WHERE tenant_id = $1 AND rule_id = $2
+        """,
+        tenant_id,
+        rule_id,
+    )
+    return result.split(" ")[-1] != "0"

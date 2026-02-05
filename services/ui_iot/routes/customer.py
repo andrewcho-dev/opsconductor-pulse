@@ -40,11 +40,15 @@ from schemas.mqtt import (
 from db.pool import tenant_connection
 from db.queries import (
     check_and_increment_rate_limit,
+    create_alert_rule,
     create_integration,
     create_integration_route,
+    delete_alert_rule,
     delete_integration,
     delete_integration_route,
     fetch_alerts,
+    fetch_alert_rule,
+    fetch_alert_rules,
     fetch_delivery_attempts,
     fetch_device,
     fetch_device_count,
@@ -53,6 +57,7 @@ from db.queries import (
     fetch_integration_route,
     fetch_integration_routes,
     fetch_integrations,
+    update_alert_rule,
     update_integration,
     update_integration_route,
 )
@@ -154,6 +159,7 @@ def redact_url(value: str | None) -> str:
 
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9 _-]+$")
+METRIC_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class IntegrationCreate(BaseModel):
@@ -180,6 +186,31 @@ class RouteUpdate(BaseModel):
     severities: list[str] | None = None
     enabled: bool | None = None
 
+
+VALID_OPERATORS = {"GT", "LT", "GTE", "LTE"}
+
+
+class AlertRuleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    metric_name: str = Field(..., min_length=1, max_length=100)
+    operator: str = Field(...)
+    threshold: float
+    severity: int = Field(default=3, ge=1, le=5)
+    description: str | None = None
+    site_ids: list[str] | None = None
+    enabled: bool = True
+
+
+class AlertRuleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    operator: str | None = None
+    threshold: float | None = None
+    severity: int | None = Field(default=None, ge=1, le=5)
+    description: str | None = None
+    site_ids: list[str] | None = None
+    enabled: bool | None = None
+
 async def require_customer_admin(request: Request):
     user = get_user()
     if user.get("role") != "customer_admin":
@@ -195,7 +226,7 @@ def _validate_name(name: str) -> str:
     return cleaned
 
 
-ALERT_TYPES = {"STALE_DEVICE", "LOW_BATTERY", "TEMPERATURE_ALERT", "CONNECTIVITY_ISSUE", "DEVICE_OFFLINE"}
+ALERT_TYPES = {"NO_HEARTBEAT", "THRESHOLD"}
 SEVERITIES = {"CRITICAL", "WARNING", "INFO"}
 
 
@@ -1944,6 +1975,157 @@ async def delete_integration_route_endpoint(route_id: str):
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Integration route not found")
+    return Response(status_code=204)
+
+
+@router.get("/alert-rules")
+async def list_alert_rules(request: Request, format: str | None = Query(None)):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rules = await fetch_alert_rules(conn, tenant_id)
+    except Exception:
+        logger.exception("Failed to fetch alert rules")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    accept = request.headers.get("accept", "")
+    if format == "json" or "application/json" in accept:
+        return {"tenant_id": tenant_id, "rules": rules}
+    return templates.TemplateResponse(
+        "customer/alert_rules.html",
+        {
+            "request": request,
+            "tenant_id": tenant_id,
+            "rules": rules,
+            "user": getattr(request.state, "user", None),
+        },
+    )
+
+
+@router.get("/alert-rules/{rule_id}")
+async def get_alert_rule(rule_id: str):
+    try:
+        UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rule = await fetch_alert_rule(conn, tenant_id, rule_id)
+    except Exception:
+        logger.exception("Failed to fetch alert rule")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not rule:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    return rule
+
+
+@router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
+async def create_alert_rule_endpoint(body: AlertRuleCreate):
+    tenant_id = get_tenant_id()
+    if body.operator not in VALID_OPERATORS:
+        raise HTTPException(status_code=400, detail="Invalid operator value")
+    if not METRIC_NAME_PATTERN.match(body.metric_name):
+        raise HTTPException(status_code=400, detail="Invalid metric_name format")
+    if body.site_ids is not None:
+        for site_id in body.site_ids:
+            if site_id is None or not str(site_id).strip():
+                raise HTTPException(status_code=400, detail="Invalid site_id value")
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rule = await create_alert_rule(
+                conn,
+                tenant_id=tenant_id,
+                name=body.name,
+                metric_name=body.metric_name,
+                operator=body.operator,
+                threshold=body.threshold,
+                severity=body.severity,
+                description=body.description,
+                site_ids=body.site_ids,
+                enabled=body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to create alert rule")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return JSONResponse(status_code=201, content=jsonable_encoder(rule))
+
+
+@router.patch("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
+async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate):
+    try:
+        UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
+
+    if (
+        body.name is None
+        and body.metric_name is None
+        and body.operator is None
+        and body.threshold is None
+        and body.severity is None
+        and body.description is None
+        and body.site_ids is None
+        and body.enabled is None
+    ):
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if body.operator is not None and body.operator not in VALID_OPERATORS:
+        raise HTTPException(status_code=400, detail="Invalid operator value")
+    if body.metric_name is not None and not METRIC_NAME_PATTERN.match(body.metric_name):
+        raise HTTPException(status_code=400, detail="Invalid metric_name format")
+    if body.site_ids is not None:
+        for site_id in body.site_ids:
+            if site_id is None or not str(site_id).strip():
+                raise HTTPException(status_code=400, detail="Invalid site_id value")
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rule = await update_alert_rule(
+                conn,
+                tenant_id=tenant_id,
+                rule_id=rule_id,
+                name=body.name,
+                metric_name=body.metric_name,
+                operator=body.operator,
+                threshold=body.threshold,
+                severity=body.severity,
+                description=body.description,
+                site_ids=body.site_ids,
+                enabled=body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to update alert rule")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not rule:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    return rule
+
+
+@router.delete("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
+async def delete_alert_rule_endpoint(rule_id: str):
+    try:
+        UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
+
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            deleted = await delete_alert_rule(conn, tenant_id, rule_id)
+    except Exception:
+        logger.exception("Failed to delete alert rule")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
     return Response(status_code=204)
 
 

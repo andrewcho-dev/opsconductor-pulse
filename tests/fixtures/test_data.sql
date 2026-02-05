@@ -20,4 +20,4 @@ VALUES
 -- Test alerts
 INSERT INTO fleet_alert (tenant_id, device_id, site_id, alert_type, fingerprint, severity, confidence, summary, status, created_at)
 VALUES
-    ('tenant-a', 'test-device-a2', 'test-site-a', 'LOW_BATTERY', 'test-device-a2-low-battery', 2, 0.8, 'Battery below 25%', 'OPEN', now());
+    ('tenant-a', 'test-device-a2', 'test-site-a', 'THRESHOLD', 'test-device-a2-low-battery', 2, 0.8, 'Battery below 25%', 'OPEN', now());

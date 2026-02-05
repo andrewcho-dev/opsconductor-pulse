@@ -22,6 +22,7 @@
         <a href="/customer/dashboard" class="nav-link {% if request.url.path == '/customer/dashboard' %}active{% endif %}">Dashboard</a>
         <a href="/customer/devices" class="nav-link {% if request.url.path.startswith('/customer/devices') %}active{% endif %}">Devices</a>
         <a href="/customer/alerts" class="nav-link {% if request.url.path.startswith('/customer/alerts') %}active{% endif %}">Alerts</a>
+        <a href="/customer/alert-rules" class="nav-link {% if request.url.path == '/customer/alert-rules' %}active{% endif %}">Alert Rules</a>
         <a href="/customer/webhooks" class="nav-link {% if request.url.path == '/customer/webhooks' %}active{% endif %}">Webhooks</a>
         <a href="/customer/snmp-integrations" class="nav-link {% if request.url.path == '/customer/snmp-integrations' %}active{% endif %}">SNMP</a>
         <a href="/customer/email-integrations" class="nav-link {% if request.url.path == '/customer/email-integrations' %}active{% endif %}">Email</a>

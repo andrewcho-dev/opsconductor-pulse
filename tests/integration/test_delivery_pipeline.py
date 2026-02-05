@@ -364,11 +364,11 @@ class TestRouteMatching:
                 test_tenants["tenant_a"],
             )
 
-            # Route only matches LOW_BATTERY
+            # Route only matches THRESHOLD
             await conn.execute(
                 """
                 INSERT INTO integration_routes (tenant_id, integration_id, name, alert_types, deliver_on, enabled)
-                VALUES ($1, $2, 'Filter Route', ARRAY['LOW_BATTERY'], ARRAY['OPEN'], true)
+                VALUES ($1, $2, 'Filter Route', ARRAY['THRESHOLD'], ARRAY['OPEN'], true)
                 """,
                 test_tenants["tenant_a"],
                 integration_id,
