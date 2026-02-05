@@ -177,6 +177,21 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: iot-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ui
+      - keycloak
+    restart: unless-stopped
+
   ui:
     build: ../services/ui_iot
     container_name: iot-ui
@@ -203,8 +218,8 @@ services:
       API_RATE_LIMIT: "${API_RATE_LIMIT:-100}"
       API_RATE_WINDOW_SECONDS: "${API_RATE_WINDOW_SECONDS:-60}"
       WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -259,12 +274,17 @@ services:
       KC_HOSTNAME_ADMIN_URL: ${KEYCLOAK_URL:-http://localhost:8180}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: "xforwarded"
     command: start-dev --import-realm
     volumes:
       - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json
-    ports:
-      - "8180:8080"
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

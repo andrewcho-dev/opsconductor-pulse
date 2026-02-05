@@ -1,0 +1,32 @@
+{
+	auto_https disable_redirects
+}
+
+:443 {
+	tls internal {
+		on_demand
+	}
+
+	# Keycloak auth/admin routes
+	handle /realms/* {
+		reverse_proxy pulse-keycloak:8080
+	}
+	handle /resources/* {
+		reverse_proxy pulse-keycloak:8080
+	}
+	handle /admin/* {
+		reverse_proxy pulse-keycloak:8080
+	}
+	handle /js/* {
+		reverse_proxy pulse-keycloak:8080
+	}
+
+	# Everything else → UI (FastAPI + SPA)
+	handle {
+		reverse_proxy iot-ui:8080
+	}
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
