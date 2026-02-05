@@ -20,3 +20,9 @@ export {
 
 // ECharts theme
 export { ECHARTS_THEME, registerPulseDarkTheme } from "./theme";
+
+// Chart components
+export { EChartWrapper } from "./EChartWrapper";
+export { UPlotChart } from "./UPlotChart";
+export { MetricGauge } from "./MetricGauge";
+export { TimeSeriesChart } from "./TimeSeriesChart";
