@@ -29,6 +29,8 @@ INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
+INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "500"))
+INFLUX_FLUSH_INTERVAL_MS = int(os.getenv("INFLUX_FLUSH_INTERVAL_MS", "1000"))
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -204,6 +206,88 @@ class DeviceAuthCache:
     def stats(self):
         return {"size": len(self._cache), "hits": self._hits, "misses": self._misses}
 
+
+class InfluxBatchWriter:
+    def __init__(self, http_client, influx_url, influx_token, batch_size=500, flush_interval_ms=1000):
+        self._http = http_client
+        self._influx_url = influx_url
+        self._influx_token = influx_token
+        self._batch_size = batch_size
+        self._flush_interval_ms = flush_interval_ms
+        self._buffers = {}
+        self._flush_task = None
+        self.writes_ok = 0
+        self.writes_err = 0
+        self.flushes = 0
+
+    async def start(self):
+        self._flush_task = asyncio.create_task(self._periodic_flush())
+
+    async def stop(self):
+        if self._flush_task:
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+        await self.flush_all()
+
+    async def add(self, tenant_id, line):
+        self._buffers.setdefault(tenant_id, []).append(line)
+        if len(self._buffers[tenant_id]) >= self._batch_size:
+            lines = self._buffers[tenant_id]
+            self._buffers[tenant_id] = []
+            await self._write_batch(tenant_id, lines)
+
+    async def _periodic_flush(self):
+        while True:
+            try:
+                await asyncio.sleep(self._flush_interval_ms / 1000.0)
+                await self.flush_all()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[ingest] InfluxDB batch flush error: {e}")
+
+    async def flush_all(self):
+        to_flush = self._buffers
+        self._buffers = {}
+        for tenant_id, lines in to_flush.items():
+            if lines:
+                await self._write_batch(tenant_id, lines)
+
+    async def _write_batch(self, tenant_id, lines):
+        db_name = f"telemetry_{tenant_id}"
+        body = "\n".join(lines)
+        headers = {
+            "Authorization": f"Bearer {self._influx_token}",
+            "Content-Type": "text/plain",
+        }
+        for attempt in range(2):
+            try:
+                resp = await self._http.post(
+                    f"{self._influx_url}/api/v3/write_lp?db={db_name}",
+                    content=body,
+                    headers=headers,
+                )
+                if resp.status_code < 300:
+                    self.writes_ok += len(lines)
+                    self.flushes += 1
+                    return
+                print(f"[ingest] InfluxDB batch write failed ({attempt + 1}/2): {resp.status_code} {resp.text}")
+            except Exception as e:
+                print(f"[ingest] InfluxDB batch write exception ({attempt + 1}/2): {e}")
+        self.writes_err += len(lines)
+
+    def stats(self):
+        buffer_depth = sum(len(v) for v in self._buffers.values())
+        return {
+            "writes_ok": self.writes_ok,
+            "writes_err": self.writes_err,
+            "flushes": self.flushes,
+            "buffer_depth": buffer_depth,
+        }
+
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
@@ -228,6 +312,7 @@ class Ingestor:
         self.influx_ok = 0
         self.influx_err = 0
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
+        self.batch_writer: InfluxBatchWriter | None = None
 
     async def init_db(self):
         for attempt in range(60):
@@ -299,12 +384,22 @@ class Ingestor:
         while True:
             await asyncio.sleep(LOG_STATS_EVERY_SECONDS)
             cache_stats = self.auth_cache.stats()
+            batch_stats = {
+                "writes_ok": 0,
+                "writes_err": 0,
+                "flushes": 0,
+                "buffer_depth": 0,
+            }
+            if self.batch_writer is not None:
+                batch_stats = self.batch_writer.stats()
             print(
                 f"[stats] received={self.msg_received} enqueued={self.msg_enqueued} dropped={self.msg_dropped} "
                 f"qsize={self.queue.qsize()} mode={self.mode} store_rejects={int(self.store_rejects)} mirror_rejects={int(self.mirror_rejects)} "
                 f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst} "
                 f"influx_ok={self.influx_ok} influx_err={self.influx_err} "
-                f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']}"
+                f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']} "
+                f"influx_batch_ok={batch_stats['writes_ok']} influx_batch_err={batch_stats['writes_err']} "
+                f"influx_flushes={batch_stats['flushes']} influx_buffer={batch_stats['buffer_depth']}"
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -484,8 +579,10 @@ class Ingestor:
                         await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
                         continue
 
-                # Primary write: InfluxDB
-                await self._write_influxdb(tenant_id, device_id, site_id, msg_type, payload, event_ts)
+                # Primary write: InfluxDB (batched)
+                line = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
+                if line:
+                    await self.batch_writer.add(tenant_id, line)
 
             except Exception as e:
                 await self._insert_quarantine(
@@ -527,6 +624,11 @@ class Ingestor:
         await self.init_db()
         self.loop = asyncio.get_running_loop()
         self.influx_client = httpx.AsyncClient(timeout=10.0)
+        self.batch_writer = InfluxBatchWriter(
+            self.influx_client, INFLUXDB_URL, INFLUXDB_TOKEN,
+            INFLUX_BATCH_SIZE, INFLUX_FLUSH_INTERVAL_MS
+        )
+        await self.batch_writer.start()
 
         asyncio.create_task(self.settings_worker())
         asyncio.create_task(self.db_worker())

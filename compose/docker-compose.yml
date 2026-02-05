@@ -79,6 +79,8 @@ services:
       INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
       AUTH_CACHE_TTL_SECONDS: "${AUTH_CACHE_TTL_SECONDS:-60}"
       AUTH_CACHE_MAX_SIZE: "${AUTH_CACHE_MAX_SIZE:-10000}"
+      INFLUX_BATCH_SIZE: "${INFLUX_BATCH_SIZE:-500}"
+      INFLUX_FLUSH_INTERVAL_MS: "${INFLUX_FLUSH_INTERVAL_MS:-1000}"
     depends_on:
       mqtt:
         condition: service_started
