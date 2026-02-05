@@ -53,6 +53,24 @@ WHERE status='OPEN';
 
 CREATE INDEX IF NOT EXISTS device_state_site_idx ON device_state (site_id);
 CREATE INDEX IF NOT EXISTS fleet_alert_site_idx ON fleet_alert (site_id, status);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  tenant_id       TEXT NOT NULL,
+  rule_id         TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+  name            TEXT NOT NULL,
+  enabled         BOOLEAN NOT NULL DEFAULT true,
+  metric_name     TEXT NOT NULL,
+  operator        TEXT NOT NULL,
+  threshold       DOUBLE PRECISION NOT NULL,
+  severity        INT NOT NULL DEFAULT 3,
+  description     TEXT NULL,
+  site_ids        TEXT[] NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, rule_id)
+);
+
+CREATE INDEX IF NOT EXISTS alert_rules_tenant_idx ON alert_rules (tenant_id, enabled);
 """
 
 def now_utc():
