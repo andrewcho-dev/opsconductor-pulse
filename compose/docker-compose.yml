@@ -81,6 +81,8 @@ services:
       AUTH_CACHE_MAX_SIZE: "${AUTH_CACHE_MAX_SIZE:-10000}"
       INFLUX_BATCH_SIZE: "${INFLUX_BATCH_SIZE:-500}"
       INFLUX_FLUSH_INTERVAL_MS: "${INFLUX_FLUSH_INTERVAL_MS:-1000}"
+      INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-4}"
+      INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-50000}"
     depends_on:
       mqtt:
         condition: service_started

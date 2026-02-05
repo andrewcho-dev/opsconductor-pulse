@@ -31,6 +31,8 @@ AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
 INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "500"))
 INFLUX_FLUSH_INTERVAL_MS = int(os.getenv("INFLUX_FLUSH_INTERVAL_MS", "1000"))
+INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
+INGEST_QUEUE_SIZE = int(os.getenv("INGEST_QUEUE_SIZE", "50000"))
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -291,8 +293,9 @@ class InfluxBatchWriter:
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=20000)
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=INGEST_QUEUE_SIZE)
         self.loop: asyncio.AbstractEventLoop | None = None
+        self._workers = []
 
         self.msg_received = 0
         self.msg_enqueued = 0
@@ -319,7 +322,7 @@ class Ingestor:
             try:
                 self.pool = await asyncpg.create_pool(
                     host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-                    min_size=1, max_size=5
+                    min_size=2, max_size=10
                 )
                 async with self.pool.acquire() as conn:
                     for stmt in DDL.strip().split(";"):
@@ -399,7 +402,8 @@ class Ingestor:
                 f"influx_ok={self.influx_ok} influx_err={self.influx_err} "
                 f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']} "
                 f"influx_batch_ok={batch_stats['writes_ok']} influx_batch_err={batch_stats['writes_err']} "
-                f"influx_flushes={batch_stats['flushes']} influx_buffer={batch_stats['buffer_depth']}"
+                f"influx_flushes={batch_stats['flushes']} influx_buffer={batch_stats['buffer_depth']} "
+                f"workers={INGEST_WORKER_COUNT} queue_max={INGEST_QUEUE_SIZE} queue_depth={self.queue.qsize()}"
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -631,7 +635,10 @@ class Ingestor:
         await self.batch_writer.start()
 
         asyncio.create_task(self.settings_worker())
-        asyncio.create_task(self.db_worker())
+        self._workers = []
+        for i in range(INGEST_WORKER_COUNT):
+            task = asyncio.create_task(self.db_worker())
+            self._workers.append(task)
         asyncio.create_task(self.stats_worker())
 
         client = mqtt.Client()
