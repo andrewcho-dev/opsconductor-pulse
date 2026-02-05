@@ -2,8 +2,11 @@ import { Outlet } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
+import { useWebSocket } from "@/hooks/use-websocket";
 
 export default function AppShell() {
+  useWebSocket(); // Connect WebSocket on mount
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">

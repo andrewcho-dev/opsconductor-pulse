@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 
 export function AppHeader() {
   const { user, logout } = useAuth();
@@ -14,6 +15,8 @@ export function AppHeader() {
       <Separator orientation="vertical" className="h-6" />
 
       <div className="flex-1" />
+
+      <ConnectionStatus />
 
       {user?.tenantId && (
         <Badge variant="secondary" className="font-mono text-xs">
