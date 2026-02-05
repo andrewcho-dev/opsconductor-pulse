@@ -677,3 +677,108 @@ async def delete_alert_rule(
         rule_id,
     )
     return result.split(" ")[-1] != "0"
+
+
+async def fetch_devices_v2(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Fetch devices with full state JSONB (all dynamic metrics)."""
+    _require_tenant(tenant_id)
+    rows = await conn.fetch(
+        """
+        SELECT tenant_id, device_id, site_id, status, last_seen_at,
+               last_heartbeat_at, last_telemetry_at, state
+        FROM device_state
+        WHERE tenant_id = $1
+        ORDER BY site_id, device_id
+        LIMIT $2 OFFSET $3
+        """,
+        tenant_id,
+        limit,
+        offset,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_device_v2(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    device_id: str,
+) -> Dict[str, Any] | None:
+    """Fetch single device with full state JSONB and all timestamp columns."""
+    _require_tenant(tenant_id)
+    _require_device(device_id)
+    row = await conn.fetchrow(
+        """
+        SELECT tenant_id, device_id, site_id, status,
+               last_heartbeat_at, last_telemetry_at, last_seen_at,
+               last_state_change_at, state
+        FROM device_state
+        WHERE tenant_id = $1 AND device_id = $2
+        """,
+        tenant_id,
+        device_id,
+    )
+    return dict(row) if row else None
+
+
+async def fetch_alerts_v2(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    status: str = "OPEN",
+    alert_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Fetch alerts with full details JSONB and all columns."""
+    _require_tenant(tenant_id)
+    params: list[Any] = [tenant_id, status]
+    where_clauses = ["tenant_id = $1", "status = $2"]
+    idx = 3
+
+    if alert_type:
+        where_clauses.append(f"alert_type = ${idx}")
+        params.append(alert_type)
+        idx += 1
+
+    where_sql = " AND ".join(where_clauses)
+
+    rows = await conn.fetch(
+        f"""
+        SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
+               fingerprint, severity, confidence, summary, details,
+               status, created_at, updated_at, closed_at
+        FROM fleet_alert
+        WHERE {where_sql}
+        ORDER BY created_at DESC
+        LIMIT ${idx} OFFSET ${idx + 1}
+        """,
+        *params,
+        limit,
+        offset,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_alert_v2(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    alert_id: int,
+) -> Dict[str, Any] | None:
+    """Fetch single alert with full details."""
+    _require_tenant(tenant_id)
+    row = await conn.fetchrow(
+        """
+        SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
+               fingerprint, severity, confidence, summary, details,
+               status, created_at, updated_at, closed_at
+        FROM fleet_alert
+        WHERE tenant_id = $1 AND id = $2
+        """,
+        tenant_id,
+        alert_id,
+    )
+    return dict(row) if row else None

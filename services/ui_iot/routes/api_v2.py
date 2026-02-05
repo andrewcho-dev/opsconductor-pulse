@@ -13,6 +13,14 @@ import httpx
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, require_customer, get_tenant_id, get_user
 from db.pool import tenant_connection
+from db.queries import (
+    fetch_devices_v2,
+    fetch_device_v2,
+    fetch_alerts_v2,
+    fetch_alert_v2,
+    fetch_alert_rules,
+    fetch_alert_rule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,3 +97,109 @@ router = APIRouter(
 # Separate router for WebSocket — no HTTP auth dependencies
 # (WebSocket auth is handled inside the endpoint via query param token)
 ws_router = APIRouter()
+
+
+@router.get("/devices")
+async def list_devices(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List all devices for the authenticated tenant with full metric state."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "devices": devices,
+        "count": len(devices),
+        "limit": limit,
+        "offset": offset,
+    }))
+
+
+@router.get("/devices/{device_id}")
+async def get_device(device_id: str):
+    """Get device detail with full state JSONB and timestamps."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        device = await fetch_device_v2(conn, tenant_id, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "device": device,
+    }))
+
+
+@router.get("/alerts")
+async def list_alerts(
+    status: str = Query("OPEN"),
+    alert_type: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List alerts with optional status and alert_type filters."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        alerts = await fetch_alerts_v2(
+            conn, tenant_id, status=status, alert_type=alert_type,
+            limit=limit, offset=offset,
+        )
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "alerts": alerts,
+        "count": len(alerts),
+        "status": status,
+        "alert_type": alert_type,
+        "limit": limit,
+        "offset": offset,
+    }))
+
+
+@router.get("/alerts/{alert_id}")
+async def get_alert(alert_id: int):
+    """Get alert detail with full details JSONB."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        alert = await fetch_alert_v2(conn, tenant_id, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "alert": alert,
+    }))
+
+
+@router.get("/alert-rules")
+async def list_alert_rules(
+    limit: int = Query(100, ge=1, le=500),
+):
+    """List all alert rules for the authenticated tenant."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        rules = await fetch_alert_rules(conn, tenant_id, limit=limit)
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "rules": rules,
+        "count": len(rules),
+    }))
+
+
+@router.get("/alert-rules/{rule_id}")
+async def get_alert_rule(rule_id: str):
+    """Get a single alert rule by ID."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        rule = await fetch_alert_rule(conn, tenant_id, rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    return JSONResponse(jsonable_encoder({
+        "tenant_id": tenant_id,
+        "rule": rule,
+    }))
