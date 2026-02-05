@@ -152,9 +152,9 @@ def _parse_influx_ts(val) -> datetime | None:
 async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list[dict]:
     """Fetch device rollup data from InfluxDB + PG device_registry.
 
-    Returns list of dicts with same keys as fetch_rollup() for compatibility:
+    Returns list of dicts with keys:
     tenant_id, device_id, site_id, registry_status, last_hb, last_tel,
-    last_seen, battery_pct, temp_c, rssi_dbm, snr_db, uplink_ok
+    last_seen, metrics (dict of all available metric fields)
     """
     # Step 1: Get all devices from PG registry
     devices = await pg_conn.fetch(
@@ -204,8 +204,7 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
         # Step 4: Query latest metrics per device
         metrics_rows = await _influx_query(
             http_client, db_name,
-            "SELECT device_id, battery_pct, temp_c, rssi_dbm, snr_db, uplink_ok, time "
-            "FROM telemetry WHERE time > now() - INTERVAL '30 minutes' "
+            "SELECT * FROM telemetry WHERE time > now() - INTERVAL '30 minutes' "
             "ORDER BY time DESC"
         )
         # Deduplicate to latest per device_id
@@ -232,6 +231,17 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
 
             m = metrics_map.get(did, {})
 
+            # Build metrics dict from all available fields, excluding metadata
+            EXCLUDE_KEYS = {"time", "device_id", "site_id", "seq"}
+            device_metrics = {}
+            for key, value in m.items():
+                if key in EXCLUDE_KEYS:
+                    continue
+                if str(key).startswith("iox::"):
+                    continue
+                if value is not None:
+                    device_metrics[key] = value
+
             results.append({
                 "tenant_id": d["tenant_id"],
                 "device_id": did,
@@ -240,11 +250,7 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
                 "last_hb": last_hb,
                 "last_tel": last_tel,
                 "last_seen": last_seen,
-                "battery_pct": m.get("battery_pct"),
-                "temp_c": m.get("temp_c"),
-                "rssi_dbm": m.get("rssi_dbm"),
-                "snr_db": m.get("snr_db"),
-                "uplink_ok": m.get("uplink_ok"),
+                "metrics": device_metrics,
             })
 
     return results
@@ -277,14 +283,7 @@ async def main():
                     age_s = (now_utc() - last_hb).total_seconds()
                     status = "ONLINE" if age_s <= HEARTBEAT_STALE_SECONDS else "STALE"
 
-                state_blob = {
-                    "battery_pct": r["battery_pct"],
-                    "temp_c": r["temp_c"],
-                    "rssi_dbm": r["rssi_dbm"],
-                    "snr_db": r["snr_db"],
-                    "uplink_ok": r["uplink_ok"],
-                }
-                state_blob = {k: v for k, v in state_blob.items() if v is not None}
+                state_blob = r.get("metrics", {})
 
                 await conn.execute(
                     """
