@@ -16,6 +16,7 @@ POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
 HEARTBEAT_STALE_SECONDS = int(os.getenv("HEARTBEAT_STALE_SECONDS", "30"))
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+OPERATOR_SYMBOLS = {"GT": ">", "LT": "<", "GTE": ">=", "LTE": "<="}
 
 DDL = """
 CREATE TABLE IF NOT EXISTS device_state (
@@ -106,6 +107,39 @@ async def close_alert(conn, tenant_id, fingerprint):
         """,
         tenant_id, fingerprint
     )
+
+def evaluate_threshold(value, operator, threshold):
+    """Check if a metric value triggers a threshold rule.
+
+    Returns True if the condition is MET (alert should fire).
+    """
+    if value is None:
+        return False
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False
+    if operator == "GT":
+        return value > threshold
+    elif operator == "LT":
+        return value < threshold
+    elif operator == "GTE":
+        return value >= threshold
+    elif operator == "LTE":
+        return value <= threshold
+    return False
+
+async def fetch_tenant_rules(pg_conn, tenant_id):
+    """Load enabled alert rules for a tenant from PostgreSQL."""
+    rows = await pg_conn.fetch(
+        """
+        SELECT rule_id, name, metric_name, operator, threshold, severity, site_ids
+        FROM alert_rules
+        WHERE tenant_id = $1 AND enabled = true
+        """,
+        tenant_id
+    )
+    return [dict(r) for r in rows]
 
 async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> list[dict]:
     """Execute a SQL query against InfluxDB 3 Core and return list of row dicts."""
@@ -286,6 +320,8 @@ async def main():
     while True:
         async with pool.acquire() as conn:
             rows = await fetch_rollup_influxdb(http_client, conn)
+            # Group devices by tenant for rule loading
+            tenant_rules_cache = {}
 
             for r in rows:
                 tenant_id = r["tenant_id"]
@@ -336,6 +372,52 @@ async def main():
                     )
                 else:
                     await close_alert(conn, tenant_id, fp_nohb)
+
+                # --- Threshold rule evaluation ---
+                if tenant_id not in tenant_rules_cache:
+                    tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
+
+                rules = tenant_rules_cache[tenant_id]
+                metrics = r.get("metrics", {})
+
+                for rule in rules:
+                    rule_id = rule["rule_id"]
+                    metric_name = rule["metric_name"]
+                    operator = rule["operator"]
+                    threshold = rule["threshold"]
+                    rule_severity = rule["severity"]
+                    rule_site_ids = rule.get("site_ids")
+
+                    # Site filter: if rule has site_ids, skip devices not in those sites
+                    if rule_site_ids and site_id not in rule_site_ids:
+                        continue
+
+                    fp_rule = f"RULE:{rule_id}:{device_id}"
+                    metric_value = metrics.get(metric_name)
+
+                    if metric_value is not None and evaluate_threshold(metric_value, operator, threshold):
+                        # Condition MET — open/update alert
+                        op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
+                        await open_or_update_alert(
+                            conn, tenant_id, site_id, device_id,
+                            "THRESHOLD", fp_rule,
+                            rule_severity, 1.0,
+                            f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
+                            {
+                                "rule_id": rule_id,
+                                "rule_name": rule["name"],
+                                "metric_name": metric_name,
+                                "metric_value": metric_value,
+                                "operator": operator,
+                                "threshold": threshold,
+                            }
+                        )
+                    else:
+                        # Condition NOT met (or metric missing) — close alert if open
+                        await close_alert(conn, tenant_id, fp_rule)
+
+            total_rules = sum(len(v) for v in tenant_rules_cache.values())
+            print(f"[evaluator] evaluated {len(rows)} devices, {total_rules} rules across {len(tenant_rules_cache)} tenants")
 
         await asyncio.sleep(POLL_SECONDS)
 
