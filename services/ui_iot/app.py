@@ -12,9 +12,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
+from starlette.middleware.cors import CORSMiddleware
 
 from routes.customer import router as customer_router
 from routes.operator import router as operator_router
+from routes.api_v2 import router as api_v2_router, ws_router as api_v2_ws_router
 from middleware.auth import validate_token
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
@@ -27,13 +29,23 @@ UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
 
 PROVISION_API_URL = os.getenv("PROVISION_API_URL", "http://iot-api:8081")
 PROVISION_ADMIN_KEY = os.getenv("PROVISION_ADMIN_KEY", "change-me-now")
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*")
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOWED_ORIGINS.split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 templates = Jinja2Templates(directory="/app/templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(customer_router)
 app.include_router(operator_router)
+app.include_router(api_v2_router)
+app.include_router(api_v2_ws_router)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -178,6 +190,10 @@ async def get_settings(conn):
 @app.post("/settings")
 async def settings_redirect():
     return RedirectResponse(url="/operator/settings", status_code=307)
+
+@app.get("/api/v2/health")
+async def api_v2_health():
+    return {"status": "ok", "service": "pulse-ui", "api_version": "v2"}
 
 @app.post("/admin/create-device")
 async def admin_create_device(

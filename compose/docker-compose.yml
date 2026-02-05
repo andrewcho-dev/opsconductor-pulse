@@ -196,6 +196,10 @@ services:
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       INFLUXDB_URL: "http://iot-influxdb:8181"
       INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-*}"
+      API_RATE_LIMIT: "${API_RATE_LIMIT:-100}"
+      API_RATE_WINDOW_SECONDS: "${API_RATE_WINDOW_SECONDS:-60}"
+      WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"
     ports:
       - "8080:8080"
     depends_on:
