@@ -539,6 +539,46 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 17: Modern Visualization Dashboard
+
+**Goal**: Interactive Chart.js visualizations, WebSocket live updates, dynamic metric discovery.
+
+**Directory**: `phase17-modern-dashboard/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-chartjs-setup.md` | Chart.js CDN, chart CSS classes | `[x]` | None |
+| 2 | `002-dynamic-device-charts.md` | Replace sparklines with dynamic Chart.js charts | `[x]` | #1 |
+| 3 | `003-websocket-live-dashboard.md` | WebSocket live alerts + stat refresh | `[x]` | #1 |
+| 4 | `004-time-range-controls.md` | Enhanced device list with metric summary | `[x]` | #2 |
+| 5 | `005-tests-and-documentation.md` | Test fixes and documentation | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] Chart.js 4 loaded via CDN on all customer pages
+- [x] Device detail page auto-discovers ALL metrics and creates Chart.js charts
+- [x] Time-range buttons (1h, 6h, 24h, 7d) for historical telemetry
+- [x] Dashboard alerts update in real-time via WebSocket
+- [x] WebSocket connection indicator (Live/Offline)
+- [x] Stat cards refresh every 30s via API v2
+- [x] Device list shows metric count per device
+- [x] Battery column handles both v1 and v2 data formats
+- [x] XSS prevention in all dynamic content
+- [x] All unit tests pass
+
+**Visualization features**:
+- **Dynamic metric charts**: Auto-discovers all metrics from API v2 telemetry data
+- **Interactive Chart.js**: Tooltips, hover, responsive sizing
+- **Time-range selection**: 1h, 6h, 24h, 7d buttons reload chart data
+- **WebSocket live alerts**: Alert table updates without page reload
+- **Connection status**: Visual indicator for WebSocket connectivity
+- **Progressive enhancement**: Server renders initial data, JS enhances
+
+**Architecture note**: No build step required. Chart.js loaded from jsDelivr CDN. WebSocket token passed from server via data attribute (httpOnly cookie not accessible to JS). Falls back to 60s meta-refresh if WebSocket or JS fails.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
