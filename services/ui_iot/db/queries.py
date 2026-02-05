@@ -750,7 +750,7 @@ async def fetch_alerts_v2(
         f"""
         SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
                fingerprint, severity, confidence, summary, details,
-               status, created_at, updated_at, closed_at
+               status, created_at, closed_at
         FROM fleet_alert
         WHERE {where_sql}
         ORDER BY created_at DESC
@@ -774,7 +774,7 @@ async def fetch_alert_v2(
         """
         SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
                fingerprint, severity, confidence, summary, details,
-               status, created_at, updated_at, closed_at
+               status, created_at, closed_at
         FROM fleet_alert
         WHERE tenant_id = $1 AND id = $2
         """,
