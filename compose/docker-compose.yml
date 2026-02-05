@@ -180,6 +180,8 @@ services:
   ui:
     build: ../services/ui_iot
     container_name: iot-ui
+    volumes:
+      - ../frontend/dist:/app/spa:ro
     environment:
       PG_HOST: iot-postgres
       PG_PORT: "5432"
@@ -193,6 +195,7 @@ services:
       KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
+      VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       INFLUXDB_URL: "http://iot-influxdb:8181"
       INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"

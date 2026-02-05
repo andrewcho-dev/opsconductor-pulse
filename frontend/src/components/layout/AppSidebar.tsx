@@ -28,24 +28,24 @@ import {
 } from "@/components/ui/sidebar";
 
 const customerNav = [
-  { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
-  { label: "Devices", href: "/app/devices", icon: Cpu },
-  { label: "Alerts", href: "/app/alerts", icon: Bell },
-  { label: "Alert Rules", href: "/app/alert-rules", icon: ShieldAlert },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Devices", href: "/devices", icon: Cpu },
+  { label: "Alerts", href: "/alerts", icon: Bell },
+  { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
 ];
 
 const integrationNav = [
-  { label: "Webhooks", href: "/app/integrations/webhooks", icon: Webhook },
-  { label: "SNMP", href: "/app/integrations/snmp", icon: Network },
-  { label: "Email", href: "/app/integrations/email", icon: Mail },
-  { label: "MQTT", href: "/app/integrations/mqtt", icon: Radio },
+  { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
+  { label: "SNMP", href: "/integrations/snmp", icon: Network },
+  { label: "Email", href: "/integrations/email", icon: Mail },
+  { label: "MQTT", href: "/integrations/mqtt", icon: Radio },
 ];
 
 const operatorNav = [
-  { label: "Overview", href: "/app/operator", icon: Monitor },
-  { label: "All Devices", href: "/app/operator/devices", icon: Server },
-  { label: "Audit Log", href: "/app/operator/audit-log", icon: FileText },
-  { label: "Settings", href: "/app/operator/settings", icon: Settings },
+  { label: "Overview", href: "/operator", icon: Monitor },
+  { label: "All Devices", href: "/operator/devices", icon: Server },
+  { label: "Audit Log", href: "/operator/audit-log", icon: FileText },
+  { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -53,11 +53,11 @@ export function AppSidebar() {
   const { isOperator } = useAuth();
 
   function isActive(href: string) {
-    if (href === "/app/dashboard") {
+    if (href === "/dashboard") {
       return (
-        location.pathname === "/app/dashboard" ||
-        location.pathname === "/app/" ||
-        location.pathname === "/app"
+        location.pathname === "/dashboard" ||
+        location.pathname === "/" ||
+        location.pathname === ""
       );
     }
     return location.pathname.startsWith(href);
@@ -66,7 +66,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link to="/app/dashboard" className="flex items-center gap-2 no-underline">
+        <Link to="/dashboard" className="flex items-center gap-2 no-underline">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
             <Monitor className="h-4 w-4 text-primary-foreground" />
           </div>

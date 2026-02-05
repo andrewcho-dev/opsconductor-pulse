@@ -6,9 +6,10 @@ import secrets
 import time
 import asyncpg
 import httpx
+from pathlib import Path
 from urllib.parse import urlparse, urlencode
 from fastapi import FastAPI, Form, Query, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
@@ -46,6 +47,25 @@ app.include_router(customer_router)
 app.include_router(operator_router)
 app.include_router(api_v2_router)
 app.include_router(api_v2_ws_router)
+
+# React SPA — serve built frontend if available
+SPA_DIR = Path("/app/spa")
+if SPA_DIR.exists() and (SPA_DIR / "index.html").exists():
+    # Serve static assets (JS, CSS, images) from /app/assets/
+    app.mount("/app/assets", StaticFiles(directory=str(SPA_DIR / "assets")), name="spa-assets")
+
+    @app.get("/app/{path:path}")
+    async def spa_catchall(path: str):
+        """Serve React SPA — all /app/* routes return index.html for client-side routing."""
+        file = SPA_DIR / path
+        if file.is_file() and ".." not in path:
+            return FileResponse(str(file))
+        return FileResponse(str(SPA_DIR / "index.html"))
+
+    @app.get("/app")
+    async def spa_root():
+        """Serve React SPA root."""
+        return FileResponse(str(SPA_DIR / "index.html"))
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

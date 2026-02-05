@@ -65,7 +65,7 @@ export default function DeviceListPage() {
                   <TableRow key={d.device_id}>
                     <TableCell>
                       <Link
-                        to={`/app/devices/${d.device_id}`}
+                        to={`/devices/${d.device_id}`}
                         className="font-mono text-sm text-primary hover:underline"
                       >
                         {d.device_id}
