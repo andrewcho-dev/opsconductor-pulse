@@ -49,6 +49,11 @@ def _escape_tag_value(v: str) -> str:
     return v.replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
 
 
+def _escape_field_key(key):
+    """Escape field key for InfluxDB line protocol."""
+    return str(key).replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
+
+
 def _build_line_protocol(msg_type: str, device_id: str, site_id: str, payload: dict, event_ts) -> str:
     """Build InfluxDB line protocol string for a heartbeat or telemetry event."""
     escaped_device = _escape_tag_value(device_id)
@@ -69,19 +74,18 @@ def _build_line_protocol(msg_type: str, device_id: str, site_id: str, payload: d
         seq = payload.get("seq", 0)
         fields.append(f"seq={seq}i")
 
-        if metrics.get("battery_pct") is not None:
-            fields.append(f"battery_pct={metrics['battery_pct']}")
-        if metrics.get("temp_c") is not None:
-            fields.append(f"temp_c={metrics['temp_c']}")
-        if metrics.get("rssi_dbm") is not None:
-            fields.append(f"rssi_dbm={metrics['rssi_dbm']}i")
-        if metrics.get("snr_db") is not None:
-            fields.append(f"snr_db={metrics['snr_db']}")
-        if metrics.get("uplink_ok") is not None:
-            fields.append(f"uplink_ok={str(metrics['uplink_ok']).lower()}")
-
-        if not fields:
-            return ""
+        for key, value in metrics.items():
+            if value is None:
+                continue
+            escaped_key = _escape_field_key(key)
+            if isinstance(value, bool):
+                fields.append(f"{escaped_key}={'true' if value else 'false'}")
+            elif isinstance(value, int):
+                fields.append(f"{escaped_key}={value}i")
+            elif isinstance(value, float):
+                fields.append(f"{escaped_key}={value}")
+            elif isinstance(value, str):
+                continue
 
         field_str = ",".join(fields)
         return f"telemetry,device_id={escaped_device},site_id={escaped_site} {field_str} {ns_ts}"
