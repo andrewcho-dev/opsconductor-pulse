@@ -3,51 +3,43 @@
 {% block title %}Device {{ device_id }} - OpsConductor Pulse{% endblock %}
 
 {% block head %}
-<meta http-equiv="refresh" content="{{ refresh }}">
+<script src="/static/js/device_charts.js" defer></script>
 {% endblock %}
 
 {% block content %}
+<div id="device-page" data-device-id="{{ device_id }}">
+
 <div class="breadcrumb">
   <a href="/customer/dashboard">Dashboard</a> &gt;
   <a href="/customer/devices">Devices</a> &gt;
   {{ device_id }}
 </div>
 
-<div class="small">Auto-refresh: {{ refresh }}s</div>
-
 {% if dev %}
-  <div class="pill">Site: <b>{{ dev.site_id }}</b></div>
-  <div class="pill {{ dev.status }}">Status: <b>{{ dev.status }}</b></div>
-  <div class="pill">Last Seen: <b>{{ dev.last_seen_at }}</b></div>
-  <div class="pill">Battery: <b>{{ dev.battery_pct }}</b></div>
-  <div class="pill">Temp: <b>{{ dev.temp_c }}</b></div>
-  <div class="pill">RSSI: <b>{{ dev.rssi_dbm }}</b></div>
-  <div class="pill">SNR: <b>{{ dev.snr_db }}</b></div>
+  <div class="metric-pills">
+    <div class="pill">Site: <b>{{ dev.site_id }}</b></div>
+    <div class="pill {{ dev.status }}">Status: <b>{{ dev.status }}</b></div>
+    <div class="pill">Last Seen: <b>{{ dev.last_seen_at }}</b></div>
+    {% if dev.battery_pct is not none %}<div class="pill">Battery: <b>{{ dev.battery_pct }}%</b></div>{% endif %}
+    {% if dev.temp_c is not none %}<div class="pill">Temp: <b>{{ dev.temp_c }}°C</b></div>{% endif %}
+    {% if dev.rssi_dbm is not none %}<div class="pill">RSSI: <b>{{ dev.rssi_dbm }} dBm</b></div>{% endif %}
+    {% if dev.snr_db is not none %}<div class="pill">SNR: <b>{{ dev.snr_db }} dB</b></div>{% endif %}
+  </div>
 {% else %}
   <div class="small">No device_state row found yet for {{ device_id }}.</div>
 {% endif %}
 
-<h2>Charts (last ~120 accepted telemetry points)</h2>
+<h2>Telemetry Charts</h2>
 
-<div class="chartbox">
-  <div class="small"><b>Battery%</b></div>
-  <svg width="540" height="70">
-    <polyline fill="none" stroke="#8ab4f8" stroke-width="2" points="{{ charts.battery_pts }}"></polyline>
-  </svg>
+<div class="time-range-controls">
+  <button data-range="1h">1h</button>
+  <button data-range="6h">6h</button>
+  <button data-range="24h">24h</button>
+  <button data-range="7d">7d</button>
 </div>
 
-<div class="chartbox">
-  <div class="small"><b>Temp C</b></div>
-  <svg width="540" height="70">
-    <polyline fill="none" stroke="#2a9d8f" stroke-width="2" points="{{ charts.temp_pts }}"></polyline>
-  </svg>
-</div>
-
-<div class="chartbox">
-  <div class="small"><b>RSSI (dBm)</b></div>
-  <svg width="540" height="70">
-    <polyline fill="none" stroke="#e76f51" stroke-width="2" points="{{ charts.rssi_pts }}"></polyline>
-  </svg>
+<div id="metric-charts" class="metric-charts">
+  <div class="small">Loading charts...</div>
 </div>
 
 <h2>Last 50 Events</h2>
@@ -77,4 +69,6 @@
   </tbody>
 </table>
 {% endif %}
+
+</div>
 {% endblock %}
