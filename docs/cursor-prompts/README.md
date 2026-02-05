@@ -494,6 +494,51 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 16: REST + WebSocket API Layer
+
+**Goal**: Clean JSON REST API and WebSocket endpoint for programmatic device data consumption.
+
+**Directory**: `phase16-rest-websocket-api/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-cors-api-router.md` | CORS middleware, API v2 router, rate limiting | `[x]` | None |
+| 2 | `002-rest-devices-alerts.md` | REST endpoints for devices, alerts, alert rules | `[x]` | #1 |
+| 3 | `003-dynamic-telemetry-api.md` | Dynamic InfluxDB telemetry queries + REST endpoints | `[x]` | #1 |
+| 4 | `004-websocket-live-data.md` | WebSocket for live telemetry + alert streaming | `[x]` | #1, #3 |
+| 5 | `005-tests-and-documentation.md` | Unit tests and documentation | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] CORS middleware with configurable origins
+- [x] REST API at /api/v2/ with JWT auth and tenant scoping
+- [x] In-memory per-tenant rate limiting
+- [x] GET endpoints for devices (full state JSONB), alerts (with details), alert rules
+- [x] Dynamic telemetry queries returning all metric columns
+- [x] Time-range filtering and latest-reading endpoints
+- [x] WebSocket at /api/v2/ws with JWT auth via query param
+- [x] Client subscribe/unsubscribe for device telemetry and alerts
+- [x] Server-push at configurable interval (WS_POLL_SECONDS)
+- [x] Unit tests for extract_metrics, ConnectionManager, rate limiter
+- [x] Health check at /api/v2/health (no auth)
+
+**API endpoints**:
+- `GET /api/v2/health` — health check (no auth)
+- `GET /api/v2/devices` — list devices with full state JSONB
+- `GET /api/v2/devices/{device_id}` — device detail
+- `GET /api/v2/devices/{device_id}/telemetry` — time-range telemetry (all metrics)
+- `GET /api/v2/devices/{device_id}/telemetry/latest` — most recent readings
+- `GET /api/v2/alerts` — list alerts with status/type filters
+- `GET /api/v2/alerts/{alert_id}` — alert detail with JSONB details
+- `GET /api/v2/alert-rules` — list alert rules
+- `GET /api/v2/alert-rules/{rule_id}` — alert rule detail
+- `WS /api/v2/ws?token=JWT` — live telemetry + alert streaming
+
+**Architecture note**: The API is hosted in the existing `ui_iot` FastAPI app (no new service). WebSocket uses a polling-bridge pattern: the server polls InfluxDB/PostgreSQL at regular intervals and pushes updates to subscribed clients. Dynamic telemetry uses `SELECT *` from InfluxDB with the same metadata-key filter as the evaluator.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
