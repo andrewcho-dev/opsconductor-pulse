@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import re
 from collections import defaultdict, deque
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,7 @@ from db.queries import (
     fetch_alert_rules,
     fetch_alert_rule,
 )
+from db.influx_queries import fetch_device_telemetry_dynamic
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,26 @@ async def enforce_rate_limit():
             status_code=429,
             detail=f"Rate limit exceeded ({API_RATE_LIMIT} requests per {API_RATE_WINDOW}s)",
         )
+
+
+_ISO8601_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+
+def _validate_timestamp(value: str | None, param_name: str) -> str | None:
+    """Validate and sanitize an ISO 8601 timestamp for use in InfluxDB SQL.
+
+    Returns None if value is None. Raises 400 if format is invalid.
+    """
+    if value is None:
+        return None
+    if not _ISO8601_PATTERN.match(value):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {param_name}: expected ISO 8601 format (e.g., 2024-01-15T10:30:00Z)",
+        )
+    # Sanitize: only allow expected characters to prevent SQL injection
+    clean = re.sub(r"[^0-9A-Za-z\-:T.Z+]", "", value)
+    return clean
 
 
 router = APIRouter(
@@ -202,4 +224,68 @@ async def get_alert_rule(rule_id: str):
     return JSONResponse(jsonable_encoder({
         "tenant_id": tenant_id,
         "rule": rule,
+    }))
+
+
+@router.get("/devices/{device_id}/telemetry")
+async def get_device_telemetry(
+    device_id: str,
+    start: str | None = Query(None, description="ISO 8601 start time"),
+    end: str | None = Query(None, description="ISO 8601 end time"),
+    limit: int = Query(120, ge=1, le=1000),
+):
+    """Fetch device telemetry with all dynamic metrics.
+
+    Returns all metric columns (battery_pct, temp_c, pressure_psi, etc.)
+    rather than a hardcoded set. Supports time-range filtering.
+    """
+    tenant_id = get_tenant_id()
+
+    # Validate timestamp parameters
+    clean_start = _validate_timestamp(start, "start")
+    clean_end = _validate_timestamp(end, "end")
+
+    # Verify device exists and belongs to tenant (prevents InfluxDB injection)
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        device = await fetch_device_v2(conn, tenant_id, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    ic = _get_influx_client()
+    data = await fetch_device_telemetry_dynamic(
+        ic, tenant_id, device_id,
+        start=clean_start, end=clean_end, limit=limit,
+    )
+    return JSONResponse(jsonable_encoder({
+        "device_id": device_id,
+        "telemetry": data,
+        "count": len(data),
+    }))
+
+
+@router.get("/devices/{device_id}/telemetry/latest")
+async def get_device_telemetry_latest(
+    device_id: str,
+    count: int = Query(1, ge=1, le=10),
+):
+    """Fetch the most recent telemetry readings for a device.
+
+    Defaults to 1 (the latest reading). Max 10.
+    """
+    tenant_id = get_tenant_id()
+
+    # Verify device exists and belongs to tenant
+    p = await get_pool()
+    async with tenant_connection(p, tenant_id) as conn:
+        device = await fetch_device_v2(conn, tenant_id, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    ic = _get_influx_client()
+    data = await fetch_device_telemetry_dynamic(ic, tenant_id, device_id, limit=count)
+    return JSONResponse(jsonable_encoder({
+        "device_id": device_id,
+        "telemetry": data,
+        "count": len(data),
     }))

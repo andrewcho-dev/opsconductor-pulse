@@ -11,6 +11,8 @@ import httpx
 
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+# Columns that are NOT device metrics — same set as evaluator's skip_keys
+TELEMETRY_METADATA_KEYS = {"time", "device_id", "site_id", "seq"}
 
 
 def _parse_influx_ts(val) -> datetime | None:
@@ -31,6 +33,21 @@ def _parse_influx_ts(val) -> datetime | None:
         except Exception:
             return None
     return None
+
+
+def extract_metrics(row: dict) -> dict:
+    """Extract metric columns from an InfluxDB row, filtering out metadata.
+
+    Filters time, device_id, site_id, seq, and InfluxDB internal columns (iox::*).
+    Returns only actual device metrics like battery_pct, temp_c, pressure_psi, etc.
+    """
+    metrics = {}
+    for k, v in row.items():
+        if k in TELEMETRY_METADATA_KEYS or k.startswith("iox::"):
+            continue
+        if v is not None:
+            metrics[k] = v
+    return metrics
 
 
 async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> list[dict]:
@@ -159,3 +176,42 @@ async def fetch_device_events_influx(
         reverse=True,
     )
     return all_events[:limit]
+
+
+async def fetch_device_telemetry_dynamic(
+    http_client: httpx.AsyncClient,
+    tenant_id: str,
+    device_id: str,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 120,
+) -> list[dict]:
+    """Fetch device telemetry with ALL metric columns dynamically.
+
+    Unlike fetch_device_telemetry_influx (which hardcodes 3 metrics), this
+    uses SELECT * and filters metadata columns, returning all device metrics.
+
+    Returns: [{"timestamp": "2024-...", "metrics": {"battery_pct": 87.5, ...}}, ...]
+    """
+    db_name = f"telemetry_{tenant_id}"
+
+    where_parts = [f"device_id = '{device_id}'"]
+    if start:
+        where_parts.append(f"time >= '{start}'")
+    if end:
+        where_parts.append(f"time <= '{end}'")
+
+    where_sql = " AND ".join(where_parts)
+    sql = f"SELECT * FROM telemetry WHERE {where_sql} ORDER BY time DESC LIMIT {limit}"
+
+    rows = await _influx_query(http_client, db_name, sql)
+
+    results = []
+    for row in rows:
+        ts = _parse_influx_ts(row.get("time"))
+        metrics = extract_metrics(row)
+        results.append({
+            "timestamp": ts.isoformat() if ts else None,
+            "metrics": metrics,
+        })
+    return results
