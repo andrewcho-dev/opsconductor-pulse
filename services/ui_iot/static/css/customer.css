@@ -52,3 +52,17 @@ th { background: #2a2a4e; }
 .list-body { margin-top: 12px; }
 .form-section { border-top: 1px solid #333; padding-top: 10px; margin-top: 12px; }
 .form-section h4 { margin: 0 0 8px; font-size: 14px; color: #bbb; }
+.chart-wrapper { background: #2a2a4e; border: 1px solid #333; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+.chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.chart-label { font-size: 14px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+.chart-value { font-size: 18px; font-weight: bold; color: #8ab4f8; }
+.chart-container { position: relative; height: 200px; }
+.metric-charts { margin: 20px 0; }
+.time-range-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+.time-range-controls button { padding: 6px 14px; border: 1px solid #555; background: #2a2a4e; color: #eee; border-radius: 6px; cursor: pointer; font-family: monospace; font-size: 12px; }
+.time-range-controls button.active { background: #8ab4f8; color: #1a1a2e; border-color: #8ab4f8; }
+.ws-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #1a1a2e; border: 1px solid #333; }
+.ws-indicator.connected { color: #4caf50; border-color: #4caf50; }
+.ws-indicator.disconnected { color: #f44336; border-color: #f44336; }
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+.metric-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
