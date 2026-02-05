@@ -52,7 +52,7 @@ from db.queries import (
     fetch_delivery_attempts,
     fetch_device,
     fetch_device_count,
-    fetch_devices,
+    fetch_devices_v2,
     fetch_integration,
     fetch_integration_route,
     fetch_integration_routes,
@@ -65,6 +65,9 @@ from db.influx_queries import fetch_device_telemetry_influx, fetch_device_events
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 from services.email_sender import send_alert_email
 from services.mqtt_sender import publish_alert
+
+# Compatibility shim for tests expecting fetch_devices in this module.
+fetch_devices = fetch_devices_v2
 
 logger = logging.getLogger(__name__)
 
@@ -307,7 +310,7 @@ async def customer_dashboard(request: Request):
         p = await get_pool()
         async with tenant_connection(p, tenant_id) as conn:
             device_counts = await fetch_device_count(conn, tenant_id)
-            devices = await fetch_devices(conn, tenant_id, limit=50, offset=0)
+            devices = await fetch_devices_v2(conn, tenant_id, limit=50, offset=0)
             alerts = await fetch_alerts(conn, tenant_id, limit=20)
             delivery_attempts = await fetch_delivery_attempts(conn, tenant_id, limit=10)
     except Exception:
@@ -381,7 +384,7 @@ async def list_devices(
     try:
         p = await get_pool()
         async with tenant_connection(p, tenant_id) as conn:
-            devices = await fetch_devices(conn, tenant_id, limit=limit, offset=offset)
+            devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
     except Exception:
         logger.exception("Failed to fetch tenant devices")
         raise HTTPException(status_code=500, detail="Internal server error")

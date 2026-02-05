@@ -54,7 +54,7 @@
             <td>{{ d.site_id }}</td>
             <td class="status-{{ d.status|lower }}">{{ d.status }}</td>
             <td>{{ d.last_seen_at }}</td>
-            <td>{{ d.battery_pct }}%</td>
+            <td>{% if d.state and d.state.battery_pct is not none %}{{ d.state.battery_pct }}%{% elif d.battery_pct is not none %}{{ d.battery_pct }}%{% else %}-{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

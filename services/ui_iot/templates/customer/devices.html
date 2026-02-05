@@ -4,6 +4,7 @@
 
 {% block content %}
 <h2>Devices</h2>
+
 <table>
     <thead>
         <tr>
@@ -12,6 +13,7 @@
             <th>Status</th>
             <th>Last Seen</th>
             <th>Battery</th>
+            <th>Metrics</th>
         </tr>
     </thead>
     <tbody>
@@ -21,7 +23,22 @@
             <td>{{ d.site_id }}</td>
             <td class="status-{{ d.status|lower }}">{{ d.status }}</td>
             <td>{{ d.last_seen_at }}</td>
-            <td>{% if d.battery_pct is not none %}{{ d.battery_pct }}%{% else %}-{% endif %}</td>
+            <td>
+                {% if d.state and d.state.battery_pct is not none %}
+                    {{ d.state.battery_pct }}%
+                {% elif d.battery_pct is not none %}
+                    {{ d.battery_pct }}%
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td class="small">
+                {% if d.state %}
+                    {{ d.state|length }} metrics
+                {% else %}
+                    -
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
