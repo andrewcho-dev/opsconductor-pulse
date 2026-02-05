@@ -515,7 +515,7 @@ async def fetch_quarantine_events(
         ORDER BY ingested_at DESC
         LIMIT $2
         """,
-        minutes,
+        str(minutes),
         limit,
     )
     return [dict(r) for r in rows]

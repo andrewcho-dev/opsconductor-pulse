@@ -579,6 +579,37 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 18: React SPA Foundation
+
+**Goal**: Scaffold the React SPA with Vite, TypeScript, TailwindCSS, shadcn/ui, Keycloak auth, and Docker deployment.
+
+**Directory**: `phase18-react-foundation/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-vite-react-scaffold.md` | Vite + React + TypeScript + TailwindCSS + shadcn/ui setup | `[x]` | None |
+| 2 | `002-auth-integration.md` | keycloak-js integration, AuthProvider, protected routes | `[x]` | #1 |
+| 3 | `003-app-shell.md` | Sidebar layout, header, role-based navigation | `[x]` | #1, #2 |
+| 4 | `004-api-client-queries.md` | API client, TanStack Query hooks, type definitions | `[x]` | #1 |
+| 5 | `005-docker-deployment.md` | Volume-mount dist/ into ui_iot, SPA serving route | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] Vite + React + TypeScript project scaffolded at `frontend/`
+- [x] TailwindCSS + shadcn/ui configured with dark theme
+- [x] keycloak-js authentication with PKCE
+- [x] App shell with sidebar navigation and header
+- [x] API client with Bearer token injection
+- [x] TanStack Query provider and initial hooks
+- [x] Built SPA served at `/app/` by ui_iot FastAPI backend
+- [x] Volume mount `frontend/dist` → `/app/spa` in Docker Compose
+- [x] npm run build succeeds
+
+**Architecture note**: The SPA uses keycloak-js for direct browser-to-Keycloak OIDC (PKCE) authentication. No server-side OAuth flow. The built SPA is volume-mounted into the container (not baked into the Docker image), allowing frontend rebuilds without container rebuilds.
+
+---
+
 ## Phase 19: Real-Time Dashboard + WebSocket Integration
 
 **Goal**: Live-updating dashboard via WebSocket, Zustand state management, isolated widget components.
@@ -715,6 +746,13 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 | 2 | `002-remove-legacy-files.md` | Delete template HTML and static JS/CSS, update Dockerfile | `[x]` | #1 |
 | 3 | `003-fix-tests.md` | Fix broken tests, remove template assertions | `[x]` | #1-#2 |
 | 4 | `004-deploy-and-docs.md` | Update Vite proxy, rebuild frontend, documentation | `[x]` | #1-#3 |
+| 5 | `005-fix-keycloak-url.md` | Fix Keycloak URL to use runtime hostname detection | `[x]` | #4 |
+| 6 | `006-https-reverse-proxy.md` | Add Caddy HTTPS reverse proxy for Web Crypto API | `[x]` | #5 |
+| 7 | `007-fix-alerts-query.md` | Remove non-existent `updated_at` from fleet_alert queries | `[x]` | #6 |
+| 8 | `008-fix-alert-rules-permissions.md` | Grant pulse_app/operator access to alert_rules table | `[x]` | #7 |
+| 9 | `009-fix-sidebar-colors.md` | Fix sidebar dark theme (white text on white background) | `[x]` | #6 |
+| 10 | `010-fix-operator-routing.md` | Hide customer pages from operators, role-based redirect | `[x]` | #9 |
+| 11 | `011-fix-quarantine-and-websocket.md` | Fix quarantine query type error, WebSocket operator access | `[x]` | #10 |
 
 **Exit Criteria**:
 - [x] Root `/` redirects to `/app/` (React SPA)
@@ -729,12 +767,24 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 - [x] Vite dev proxy covers /api, /customer, /operator
 - [x] npm run build succeeds
 - [x] All backend tests pass
+- [x] Keycloak URL uses `window.location.origin` (same origin via Caddy)
+- [x] Caddy HTTPS reverse proxy running on ports 80/443
+- [x] HTTPS eliminates Web Crypto API restriction for keycloak-js PKCE
+- [x] `fleet_alert` queries fixed (removed non-existent `updated_at` column)
+- [x] `alert_rules` table has RLS policy and pulse_app/operator grants
+- [x] `ALTER DEFAULT PRIVILEGES` prevents future permission gaps
+- [x] Sidebar dark theme renders correctly (dark background, light text)
+- [x] Operators see only operator nav; customers see only customer nav
+- [x] Index route redirects to role-appropriate dashboard
+- [x] Quarantine query type error fixed (`str(minutes)`)
+- [x] WebSocket accepts operator role connections
 
 **Architecture decisions**:
 - **SPA stays at /app/ base path**: Keeps the SPA at `/app/` to avoid route conflicts with backend API paths. Root `/` redirects to `/app/`. This is simpler than moving the SPA to `/` which would require careful catchall route ordering.
 - **Auth routes kept (unused)**: `/login`, `/callback`, `/logout` kept in app.py even though the SPA uses keycloak-js directly. They're harmless and might be useful for API-only clients or debugging.
 - **JSON-only customer routes**: Routes like `/customer/devices` that previously served both HTML and JSON now only return JSON. The `format` query param is removed.
-- **get_settings and _load_dashboard_context removed**: These operator.py functions were only used by template-rendering routes and had no JSON API consumers.
+- **Caddy single-origin proxy**: Caddy puts the SPA and Keycloak behind one HTTPS origin, eliminating CORS issues and enabling Web Crypto API for PKCE. Path-based routing: `/realms/*` to Keycloak, everything else to ui_iot.
+- **Self-signed TLS**: Caddy generates internal self-signed certificates. Browser shows a one-time warning. Production should use real certificates via ACME or manual cert mount.
 
 ---
 

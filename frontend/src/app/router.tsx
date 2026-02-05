@@ -13,6 +13,12 @@ import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
+import { useAuth } from "@/services/auth/AuthProvider";
+
+function HomeRedirect() {
+  const { isOperator } = useAuth();
+  return <Navigate to={isOperator ? "/operator" : "/dashboard"} replace />;
+}
 
 export const router = createBrowserRouter(
   [
@@ -20,7 +26,7 @@ export const router = createBrowserRouter(
       path: "/",
       element: <AppShell />,
       children: [
-        { index: true, element: <Navigate to="/dashboard" replace /> },
+        { index: true, element: <HomeRedirect /> },
         { path: "dashboard", element: <DashboardPage /> },
         { path: "devices", element: <DeviceListPage /> },
         { path: "devices/:deviceId", element: <DeviceDetailPage /> },

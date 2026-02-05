@@ -50,7 +50,7 @@ const operatorNav = [
 
 export function AppSidebar() {
   const location = useLocation();
-  const { isOperator } = useAuth();
+  const { isOperator, isCustomer } = useAuth();
 
   function isActive(href: string) {
     if (href === "/dashboard") {
@@ -60,13 +60,19 @@ export function AppSidebar() {
         location.pathname === ""
       );
     }
+    if (href === "/operator") {
+      return location.pathname === "/operator";
+    }
     return location.pathname.startsWith(href);
   }
 
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link to="/dashboard" className="flex items-center gap-2 no-underline">
+        <Link
+          to={isOperator ? "/operator" : "/dashboard"}
+          className="flex items-center gap-2 no-underline"
+        >
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
             <Monitor className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -78,41 +84,45 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {customerNav.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link to={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {isCustomer && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {customerNav.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                      <Link to={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Integrations</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {integrationNav.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link to={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {isCustomer && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Integrations</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {integrationNav.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                      <Link to={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {isOperator && (
           <SidebarGroup>

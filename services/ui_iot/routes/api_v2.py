@@ -376,9 +376,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
 
     tenant_id = payload.get("tenant_id")
     role = payload.get("role", "")
-    if not tenant_id or role not in ("customer_admin", "customer_viewer"):
+    valid_roles = ("customer_admin", "customer_viewer", "operator", "operator_admin")
+    if role not in valid_roles:
         await websocket.close(code=4003, reason="Unauthorized")
         return
+    # Operators have no tenant_id — use a placeholder for the WS connection
+    if not tenant_id:
+        tenant_id = "__operator__"
 
     conn = await ws_manager.connect(websocket, tenant_id, payload)
     push_task = asyncio.create_task(_ws_push_loop(conn))
