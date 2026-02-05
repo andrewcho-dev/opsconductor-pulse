@@ -458,6 +458,42 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Phase 15: Custom Alert Rules Engine
+
+**Goal**: Customer-defined threshold alert rules evaluated against any device metric.
+
+**Directory**: `phase15-alert-rules-engine/`
+
+**Status**: COMPLETE
+
+| # | File | Description | Status | Dependencies |
+|---|------|-------------|--------|--------------|
+| 1 | `001-alert-rules-schema.md` | alert_rules table in evaluator DDL | `[x]` | None |
+| 2 | `002-alert-rules-crud-api.md` | CRUD API + database query functions | `[x]` | #1 |
+| 3 | `003-alert-rules-ui.md` | Customer UI page with modal form | `[x]` | #2 |
+| 4 | `004-rule-evaluation-engine.md` | Evaluator loads and evaluates rules | `[x]` | #1 |
+| 5 | `005-tests-and-documentation.md` | Unit tests and documentation | `[x]` | #1-#4 |
+
+**Exit Criteria**:
+- [x] alert_rules table stores customer-defined threshold rules
+- [x] CRUD API for alert rules (create, read, update, delete)
+- [x] Customer UI page for managing alert rules
+- [x] Evaluator evaluates threshold rules against device metrics
+- [x] THRESHOLD alerts generated and auto-closed through existing fleet_alert lifecycle
+- [x] Alerts flow through existing dispatcher → delivery pipeline
+- [x] Unit tests for evaluate_threshold function
+- [x] Nav link added to customer sidebar
+
+**Alert rule types supported**:
+- `GT`: metric > threshold (e.g., temp_c > 85)
+- `LT`: metric < threshold (e.g., battery_pct < 20)
+- `GTE`: metric >= threshold
+- `LTE`: metric <= threshold
+
+**Architecture note**: Rules are stored in PostgreSQL and loaded per-tenant per evaluator cycle. Generated THRESHOLD alerts use the same fleet_alert table, dispatcher routing, and delivery pipeline as NO_HEARTBEAT alerts. No changes needed to dispatcher or delivery_worker.
+
+---
+
 ## How to Use These Prompts
 
 1. Open the task file in order
