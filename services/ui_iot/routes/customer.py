@@ -17,6 +17,10 @@ from starlette.requests import Request
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
+import httpx
+INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
+INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 from utils.url_validator import validate_webhook_url
 from utils.snmp_validator import validate_snmp_host
 from utils.email_validator import validate_email_integration
@@ -57,6 +61,7 @@ from db.queries import (
     update_integration,
     update_integration_route,
 )
+from db.influx_queries import fetch_device_telemetry_influx, fetch_device_events_influx
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 from services.email_sender import send_alert_email
 from services.mqtt_sender import publish_alert
@@ -73,6 +78,14 @@ UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
 
 templates = Jinja2Templates(directory="/app/templates")
 pool: asyncpg.Pool | None = None
+_influx_client: httpx.AsyncClient | None = None
+
+
+def _get_influx_client() -> httpx.AsyncClient:
+    global _influx_client
+    if _influx_client is None:
+        _influx_client = httpx.AsyncClient(timeout=10.0)
+    return _influx_client
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -380,8 +393,13 @@ async def get_device_detail(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
-            telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
+            if INFLUXDB_READ_ENABLED:
+                ic = _get_influx_client()
+                events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
+                telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
+            else:
+                events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
+                telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
     except HTTPException:
         raise
     except Exception:

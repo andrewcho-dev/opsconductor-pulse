@@ -17,6 +17,10 @@ from middleware.tenant import (
     require_operator_admin,
     is_operator,
 )
+import httpx
+INFLUXDB_READ_ENABLED = os.getenv("INFLUXDB_READ_ENABLED", "1") == "1"
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
+INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 from db.queries import (
     fetch_alerts,
     fetch_all_alerts,
@@ -31,6 +35,7 @@ from db.queries import (
     fetch_integrations,
     fetch_quarantine_events,
 )
+from db.influx_queries import fetch_device_telemetry_influx, fetch_device_events_influx
 from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
 
@@ -46,6 +51,14 @@ UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
 
 templates = Jinja2Templates(directory="/app/templates")
 pool: asyncpg.Pool | None = None
+_influx_client: httpx.AsyncClient | None = None
+
+
+def _get_influx_client() -> httpx.AsyncClient:
+    global _influx_client
+    if _influx_client is None:
+        _influx_client = httpx.AsyncClient(timeout=10.0)
+    return _influx_client
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -372,8 +385,13 @@ async def view_device(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
-            telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
+            if INFLUXDB_READ_ENABLED:
+                ic = _get_influx_client()
+                events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
+                telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
+            else:
+                events = await fetch_device_events(conn, tenant_id, device_id, limit=50)
+                telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, limit=120)
     except HTTPException:
         raise
     except Exception:
