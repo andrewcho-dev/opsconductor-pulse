@@ -77,6 +77,8 @@ services:
       LOG_STATS_EVERY_SECONDS: "30"
       INFLUXDB_URL: "http://iot-influxdb:8181"
       INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+      AUTH_CACHE_TTL_SECONDS: "${AUTH_CACHE_TTL_SECONDS:-60}"
+      AUTH_CACHE_MAX_SIZE: "${AUTH_CACHE_MAX_SIZE:-10000}"
     depends_on:
       mqtt:
         condition: service_started

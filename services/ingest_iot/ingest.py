@@ -27,6 +27,8 @@ SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
 LOG_STATS_EVERY_SECONDS = int(os.getenv("LOG_STATS_EVERY_SECONDS", "30"))
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
+AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -159,6 +161,45 @@ class TokenBucket:
         self.tokens = 0.0
         self.updated = time.time()
 
+
+class DeviceAuthCache:
+    def __init__(self, ttl_seconds=60, max_size=10000):
+        self._ttl = ttl_seconds
+        self._max_size = max_size
+        self._cache = {}
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, tenant_id, device_id):
+        key = (tenant_id, device_id)
+        entry = self._cache.get(key)
+        if entry and time.time() - entry["cached_at"] < self._ttl:
+            self._hits += 1
+            return entry
+        self._misses += 1
+        if entry:
+            del self._cache[key]
+        return None
+
+    def put(self, tenant_id, device_id, token_hash, site_id, status):
+        if self._max_size > 0 and len(self._cache) >= self._max_size:
+            evict_count = max(1, int(len(self._cache) * 0.1))
+            oldest = sorted(self._cache.items(), key=lambda item: item[1]["cached_at"])
+            for key, _ in oldest[:evict_count]:
+                del self._cache[key]
+        self._cache[(tenant_id, device_id)] = {
+            "token_hash": token_hash,
+            "site_id": site_id,
+            "status": status,
+            "cached_at": time.time(),
+        }
+
+    def invalidate(self, tenant_id, device_id):
+        self._cache.pop((tenant_id, device_id), None)
+
+    def stats(self):
+        return {"size": len(self._cache), "hits": self._hits, "misses": self._misses}
+
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
@@ -182,6 +223,7 @@ class Ingestor:
         self.influx_client: httpx.AsyncClient | None = None
         self.influx_ok = 0
         self.influx_err = 0
+        self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
 
     async def init_db(self):
         for attempt in range(60):
@@ -252,11 +294,13 @@ class Ingestor:
     async def stats_worker(self):
         while True:
             await asyncio.sleep(LOG_STATS_EVERY_SECONDS)
+            cache_stats = self.auth_cache.stats()
             print(
                 f"[stats] received={self.msg_received} enqueued={self.msg_enqueued} dropped={self.msg_dropped} "
                 f"qsize={self.queue.qsize()} mode={self.mode} store_rejects={int(self.store_rejects)} mirror_rejects={int(self.mirror_rejects)} "
                 f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst} "
-                f"influx_ok={self.influx_ok} influx_err={self.influx_err}"
+                f"influx_ok={self.influx_ok} influx_err={self.influx_err} "
+                f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']}"
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -376,48 +420,65 @@ class Ingestor:
                 token = payload.get("provision_token") or None
                 token_hash = sha256_hex(str(token)) if token is not None else None
 
-                assert self.pool is not None
-                async with self.pool.acquire() as conn:
-                    reg = await conn.fetchrow(
-                        """
-                        SELECT site_id, status, provision_token_hash
-                        FROM device_registry
-                        WHERE tenant_id=$1 AND device_id=$2
-                        """,
-                        tenant_id, device_id
+                cached = self.auth_cache.get(tenant_id, device_id)
+                reg = None
+                if cached:
+                    reg = {
+                        "site_id": cached["site_id"],
+                        "status": cached["status"],
+                        "provision_token_hash": cached["token_hash"],
+                    }
+                else:
+                    assert self.pool is not None
+                    async with self.pool.acquire() as conn:
+                        reg = await conn.fetchrow(
+                            """
+                            SELECT site_id, status, provision_token_hash
+                            FROM device_registry
+                            WHERE tenant_id=$1 AND device_id=$2
+                            """,
+                            tenant_id, device_id
+                        )
+
+                        if reg is None:
+                            if AUTO_PROVISION:
+                                await conn.execute(
+                                    """
+                                    INSERT INTO device_registry (tenant_id, device_id, site_id, status)
+                                    VALUES ($1,$2,$3,'ACTIVE')
+                                    """,
+                                    tenant_id, device_id, site_id
+                                )
+                            await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "UNREGISTERED_DEVICE", payload, event_ts)
+                            continue
+
+                    self.auth_cache.put(
+                        tenant_id,
+                        device_id,
+                        reg["provision_token_hash"],
+                        reg["site_id"],
+                        reg["status"],
                     )
 
-                    if reg is None:
-                        if AUTO_PROVISION:
-                            await conn.execute(
-                                """
-                                INSERT INTO device_registry (tenant_id, device_id, site_id, status)
-                                VALUES ($1,$2,$3,'ACTIVE')
-                                """,
-                                tenant_id, device_id, site_id
-                            )
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "UNREGISTERED_DEVICE", payload, event_ts)
-                        continue
+                if reg["status"] != "ACTIVE":
+                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "DEVICE_REVOKED", payload, event_ts)
+                    continue
 
-                    if reg["status"] != "ACTIVE":
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "DEVICE_REVOKED", payload, event_ts)
-                        continue
+                if str(reg["site_id"]) != str(site_id):
+                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "SITE_MISMATCH_REGISTRY_VS_PAYLOAD", payload, event_ts)
+                    continue
 
-                    if str(reg["site_id"]) != str(site_id):
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "SITE_MISMATCH_REGISTRY_VS_PAYLOAD", payload, event_ts)
+                if REQUIRE_TOKEN:
+                    expected = reg["provision_token_hash"]
+                    if expected is None:
+                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_NOT_SET_IN_REGISTRY", payload, event_ts)
                         continue
-
-                    if REQUIRE_TOKEN:
-                        expected = reg["provision_token_hash"]
-                        if expected is None:
-                            await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_NOT_SET_IN_REGISTRY", payload, event_ts)
-                            continue
-                        if token is None:
-                            await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_MISSING", payload, event_ts)
-                            continue
-                        if token_hash != expected:
-                            await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
-                            continue
+                    if token is None:
+                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_MISSING", payload, event_ts)
+                        continue
+                    if token_hash != expected:
+                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
+                        continue
 
                 # Primary write: InfluxDB
                 await self._write_influxdb(tenant_id, device_id, site_id, msg_type, payload, event_ts)
