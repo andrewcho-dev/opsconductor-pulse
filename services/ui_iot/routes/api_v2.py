@@ -2,17 +2,21 @@ import os
 import time
 import logging
 import re
+import asyncio
 from collections import defaultdict, deque
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import asyncpg
 import httpx
 
 from middleware.auth import JWTBearer
+from middleware.auth import validate_token
 from middleware.tenant import inject_tenant_context, require_customer, get_tenant_id, get_user
+from ws_manager import manager as ws_manager
 from db.pool import tenant_connection
 from db.queries import (
     fetch_devices_v2,
@@ -21,6 +25,7 @@ from db.queries import (
     fetch_alert_v2,
     fetch_alert_rules,
     fetch_alert_rule,
+    fetch_alerts,
 )
 from db.influx_queries import fetch_device_telemetry_dynamic
 
@@ -34,6 +39,7 @@ PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 API_RATE_LIMIT = int(os.getenv("API_RATE_LIMIT", "100"))
 API_RATE_WINDOW = int(os.getenv("API_RATE_WINDOW_SECONDS", "60"))
+WS_POLL_SECONDS = int(os.getenv("WS_POLL_SECONDS", "5"))
 
 
 pool: asyncpg.Pool | None = None
@@ -289,3 +295,147 @@ async def get_device_telemetry_latest(
         "telemetry": data,
         "count": len(data),
     }))
+
+
+async def _ws_push_loop(conn):
+    """Background task that polls DB and pushes data to a WebSocket connection.
+
+    Runs until the connection closes or an error occurs.
+    """
+    from db.influx_queries import fetch_device_telemetry_dynamic
+
+    while True:
+        try:
+            await asyncio.sleep(WS_POLL_SECONDS)
+
+            # Push telemetry for subscribed devices
+            if conn.device_subscriptions:
+                ic = _get_influx_client()
+                for device_id in list(conn.device_subscriptions):
+                    try:
+                        data = await fetch_device_telemetry_dynamic(
+                            ic, conn.tenant_id, device_id, limit=1,
+                        )
+                        if data:
+                            await conn.websocket.send_json({
+                                "type": "telemetry",
+                                "device_id": device_id,
+                                "data": data[0],
+                            })
+                    except Exception:
+                        logger.debug("[ws] telemetry push failed for %s", device_id)
+
+            # Push alerts
+            if conn.alert_subscription:
+                try:
+                    p = await get_pool()
+                    async with tenant_connection(p, conn.tenant_id) as db_conn:
+                        alerts = await fetch_alerts(db_conn, conn.tenant_id, status="OPEN", limit=100)
+                    await conn.websocket.send_json({
+                        "type": "alerts",
+                        "alerts": jsonable_encoder(alerts),
+                    })
+                except Exception:
+                    logger.debug("[ws] alert push failed")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[ws] push loop error, closing")
+            break
+
+
+@ws_router.websocket("/api/v2/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    """WebSocket endpoint for live telemetry and alert streaming.
+
+    Auth: Pass JWT as query param: ws://host/api/v2/ws?token=JWT_TOKEN
+
+    Client messages (JSON):
+        {"action": "subscribe", "type": "device", "device_id": "dev-0001"}
+        {"action": "subscribe", "type": "alerts"}
+        {"action": "unsubscribe", "type": "device", "device_id": "dev-0001"}
+        {"action": "unsubscribe", "type": "alerts"}
+
+    Server messages (JSON):
+        {"type": "telemetry", "device_id": "dev-0001", "data": {"timestamp": "...", "metrics": {...}}}
+        {"type": "alerts", "alerts": [...]}
+        {"type": "subscribed", "channel": "device", "device_id": "dev-0001"}
+        {"type": "subscribed", "channel": "alerts"}
+        {"type": "error", "message": "..."}
+    """
+    if not token:
+        await websocket.close(code=4001, reason="Missing token parameter")
+        return
+
+    try:
+        payload = await validate_token(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
+    tenant_id = payload.get("tenant_id")
+    role = payload.get("role", "")
+    if not tenant_id or role not in ("customer_admin", "customer_viewer"):
+        await websocket.close(code=4003, reason="Unauthorized")
+        return
+
+    conn = await ws_manager.connect(websocket, tenant_id, payload)
+    push_task = asyncio.create_task(_ws_push_loop(conn))
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action")
+            sub_type = data.get("type")
+
+            if action == "subscribe":
+                if sub_type == "device":
+                    device_id = data.get("device_id")
+                    if device_id:
+                        ws_manager.subscribe_device(conn, device_id)
+                        await websocket.send_json({
+                            "type": "subscribed",
+                            "channel": "device",
+                            "device_id": device_id,
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "device_id required for device subscription",
+                        })
+                elif sub_type == "alerts":
+                    ws_manager.subscribe_alerts(conn)
+                    await websocket.send_json({
+                        "type": "subscribed",
+                        "channel": "alerts",
+                    })
+
+            elif action == "unsubscribe":
+                if sub_type == "device":
+                    device_id = data.get("device_id")
+                    if device_id:
+                        ws_manager.unsubscribe_device(conn, device_id)
+                        await websocket.send_json({
+                            "type": "unsubscribed",
+                            "channel": "device",
+                            "device_id": device_id,
+                        })
+                elif sub_type == "alerts":
+                    ws_manager.unsubscribe_alerts(conn)
+                    await websocket.send_json({
+                        "type": "unsubscribed",
+                        "channel": "alerts",
+                    })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception("[ws] error in WebSocket handler")
+    finally:
+        push_task.cancel()
+        try:
+            await push_task
+        except asyncio.CancelledError:
+            pass
+        await ws_manager.disconnect(conn)
