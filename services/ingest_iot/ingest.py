@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 from dateutil import parser as dtparser
 import asyncpg
+import httpx
 import paho.mqtt.client as mqtt
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
@@ -24,6 +25,9 @@ REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
 COUNTERS_ENABLED = os.getenv("COUNTERS_ENABLED", "1") == "1"
 SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
 LOG_STATS_EVERY_SECONDS = int(os.getenv("LOG_STATS_EVERY_SECONDS", "30"))
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
+INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+INFLUXDB_WRITE_ENABLED = os.getenv("INFLUXDB_WRITE_ENABLED", "1") == "1"
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -38,6 +42,50 @@ def parse_ts(v):
 
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+def _escape_tag_value(v: str) -> str:
+    """Escape commas, equals, and spaces in InfluxDB line protocol tag values."""
+    return v.replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
+
+
+def _build_line_protocol(msg_type: str, device_id: str, site_id: str, payload: dict, event_ts) -> str:
+    """Build InfluxDB line protocol string for a heartbeat or telemetry event."""
+    escaped_device = _escape_tag_value(device_id)
+    escaped_site = _escape_tag_value(site_id)
+
+    if event_ts is not None:
+        ns_ts = int(event_ts.timestamp() * 1_000_000_000)
+    else:
+        ns_ts = int(time.time() * 1_000_000_000)
+
+    if msg_type == "heartbeat":
+        seq = payload.get("seq", 0)
+        return f"heartbeat,device_id={escaped_device},site_id={escaped_site} seq={seq}i {ns_ts}"
+
+    elif msg_type == "telemetry":
+        metrics = payload.get("metrics") or {}
+        fields = []
+        seq = payload.get("seq", 0)
+        fields.append(f"seq={seq}i")
+
+        if metrics.get("battery_pct") is not None:
+            fields.append(f"battery_pct={metrics['battery_pct']}")
+        if metrics.get("temp_c") is not None:
+            fields.append(f"temp_c={metrics['temp_c']}")
+        if metrics.get("rssi_dbm") is not None:
+            fields.append(f"rssi_dbm={metrics['rssi_dbm']}i")
+        if metrics.get("snr_db") is not None:
+            fields.append(f"snr_db={metrics['snr_db']}")
+        if metrics.get("uplink_ok") is not None:
+            fields.append(f"uplink_ok={str(metrics['uplink_ok']).lower()}")
+
+        if not fields:
+            return ""
+
+        field_str = ",".join(fields)
+        return f"telemetry,device_id={escaped_device},site_id={escaped_site} {field_str} {ns_ts}"
+
+    return ""
 
 def topic_extract(topic: str):
     parts = topic.split("/")
@@ -147,6 +195,9 @@ class Ingestor:
 
         # per-device buckets
         self.buckets: dict[tuple[str, str], TokenBucket] = {}
+        self.influx_client: httpx.AsyncClient | None = None
+        self.influx_ok = 0
+        self.influx_err = 0
 
     async def init_db(self):
         for attempt in range(60):
@@ -220,7 +271,8 @@ class Ingestor:
             print(
                 f"[stats] received={self.msg_received} enqueued={self.msg_enqueued} dropped={self.msg_dropped} "
                 f"qsize={self.queue.qsize()} mode={self.mode} store_rejects={int(self.store_rejects)} mirror_rejects={int(self.mirror_rejects)} "
-                f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst}"
+                f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst} "
+                f"influx_ok={self.influx_ok} influx_err={self.influx_err}"
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -295,6 +347,32 @@ class Ingestor:
                 """,
                 event_ts, topic, tenant_id, site_id, device_id, msg_type, json.dumps(payload)
             )
+
+    async def _write_influxdb(self, tenant_id, device_id, site_id, msg_type, payload, event_ts):
+        """Write event to InfluxDB. Best-effort: failures are counted but don't raise."""
+        if not INFLUXDB_WRITE_ENABLED or self.influx_client is None:
+            return
+
+        line = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
+        if not line:
+            return
+
+        db_name = f"telemetry_{tenant_id}"
+        try:
+            resp = await self.influx_client.post(
+                f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
+                content=line,
+                headers={
+                    "Authorization": f"Bearer {INFLUXDB_TOKEN}",
+                    "Content-Type": "text/plain",
+                },
+            )
+            if resp.status_code < 300:
+                self.influx_ok += 1
+            else:
+                self.influx_err += 1
+        except Exception:
+            self.influx_err += 1
 
     async def db_worker(self):
         while True:
@@ -380,6 +458,7 @@ class Ingestor:
                             continue
 
                 await self._insert_raw(event_ts, topic, tenant_id, site_id, device_id, msg_type, payload)
+                await self._write_influxdb(tenant_id, device_id, site_id, msg_type, payload, event_ts)
 
             except Exception as e:
                 await self._insert_quarantine(
@@ -420,6 +499,8 @@ class Ingestor:
     async def run(self):
         await self.init_db()
         self.loop = asyncio.get_running_loop()
+        if INFLUXDB_WRITE_ENABLED:
+            self.influx_client = httpx.AsyncClient(timeout=10.0)
 
         asyncio.create_task(self.settings_worker())
         asyncio.create_task(self.db_worker())
