@@ -12,6 +12,7 @@ import {
   Server,
   FileText,
   Settings,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
 import {
@@ -44,6 +45,7 @@ const integrationNav = [
 const operatorNav = [
   { label: "Overview", href: "/operator", icon: Monitor },
   { label: "All Devices", href: "/operator/devices", icon: Server },
+  { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Audit Log", href: "/operator/audit-log", icon: FileText },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];

@@ -50,6 +50,8 @@ services:
       - iot-node
       - --object-store
       - file
+      - --query-file-limit
+      - "1000"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -H \"Authorization: Bearer $$INFLUXDB3_AUTH_TOKEN\" http://localhost:8181/health"]
       interval: 5s

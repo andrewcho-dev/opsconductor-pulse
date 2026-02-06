@@ -11,6 +11,8 @@ import EmailPage from "@/features/integrations/EmailPage";
 import MqttPage from "@/features/integrations/MqttPage";
 import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
+import OperatorTenantsPage from "@/features/operator/OperatorTenantsPage";
+import OperatorTenantDetailPage from "@/features/operator/OperatorTenantDetailPage";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
 import { useAuth } from "@/services/auth/AuthProvider";
@@ -39,6 +41,11 @@ export const router = createBrowserRouter(
         // Operator routes
         { path: "operator", element: <OperatorDashboard /> },
         { path: "operator/devices", element: <OperatorDevices /> },
+        { path: "operator/tenants", element: <OperatorTenantsPage /> },
+        {
+          path: "operator/tenants/:tenantId",
+          element: <OperatorTenantDetailPage />,
+        },
         { path: "operator/audit-log", element: <AuditLogPage /> },
         { path: "operator/settings", element: <SettingsPage /> },
       ],
