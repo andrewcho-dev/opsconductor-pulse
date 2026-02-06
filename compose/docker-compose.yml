@@ -256,6 +256,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  seed:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ../scripts:/app/scripts:ro
+    environment:
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      INFLUXDB_URL: "http://iot-influxdb:8181"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+    depends_on:
+      - postgres
+      - influxdb
+    command: >
+      sh -c "pip install asyncpg httpx && python scripts/seed_demo_data.py"
+    profiles:
+      - seed
+
   webhook_receiver:
     build: ../services/webhook_receiver
     container_name: iot-webhook-receiver
