@@ -143,6 +143,45 @@ Cross-tenant Overview, All Devices (with tenant filter), Audit Log (admin only),
 
 ## API Endpoints
 
+## HTTP Telemetry Ingestion
+
+Alternative to MQTT for devices that prefer HTTP.
+
+### Single Message
+
+```bash
+curl -X POST "https://<host>/ingest/v1/tenant/{tenant_id}/device/{device_id}/telemetry" \
+  -H "Content-Type: application/json" \
+  -H "X-Provision-Token: tok-xxxxx" \
+  -d '{"site_id": "lab-1", "seq": 1, "metrics": {"temp_c": 25.5, "humidity_pct": 60}}'
+```
+
+Response: `202 Accepted`
+
+### Batch (up to 100 messages)
+
+```bash
+curl -X POST "https://<host>/ingest/v1/batch" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"tenant_id": "t1", "device_id": "d1", "msg_type": "telemetry", "provision_token": "tok-xxx", "site_id": "lab-1", "seq": 1, "metrics": {"temp_c": 25}},
+      {"tenant_id": "t1", "device_id": "d2", "msg_type": "heartbeat", "provision_token": "tok-yyy", "site_id": "lab-1", "seq": 1, "metrics": {}}
+    ]
+  }'
+```
+
+Response: `202 Accepted` with `{"accepted": 2, "rejected": 0, "results": [...]}`
+
+### Error Codes
+
+| Code | Meaning |
+|------|---------|
+| 400 | Invalid msg_type, payload too large, site mismatch |
+| 401 | Invalid or missing provision token |
+| 403 | Device revoked or unregistered |
+| 429 | Rate limited |
+
 ### REST API v2 (JWT Bearer required)
 
 | Method | Path | Description |

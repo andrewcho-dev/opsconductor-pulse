@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.insert(0, "/app")
 import base64
 import hashlib
 import logging
@@ -17,13 +19,22 @@ from starlette.middleware.cors import CORSMiddleware
 from routes.customer import router as customer_router
 from routes.operator import router as operator_router
 from routes.api_v2 import router as api_v2_router, ws_router as api_v2_ws_router
+from routes.ingest import router as ingest_router
 from middleware.auth import validate_token
+from shared.ingest_core import DeviceAuthCache, InfluxBatchWriter
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
+INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
+AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
+INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "500"))
+INFLUX_FLUSH_INTERVAL_MS = int(os.getenv("INFLUX_FLUSH_INTERVAL_MS", "1000"))
+REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "1") == "1"
 
 UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
 
@@ -42,6 +53,7 @@ app.include_router(customer_router)
 app.include_router(operator_router)
 app.include_router(api_v2_router)
 app.include_router(api_v2_ws_router)
+app.include_router(ingest_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
@@ -108,6 +120,21 @@ async def get_pool():
 async def startup():
     await get_pool()
 
+    # Initialize HTTP ingest infrastructure
+    app.state.get_pool = get_pool
+    app.state.http_client = httpx.AsyncClient(timeout=10.0)
+    app.state.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL)
+    app.state.batch_writer = InfluxBatchWriter(
+        app.state.http_client, INFLUXDB_URL, INFLUXDB_TOKEN,
+        INFLUX_BATCH_SIZE, INFLUX_FLUSH_INTERVAL_MS
+    )
+    await app.state.batch_writer.start()
+    app.state.rate_buckets = {}
+    app.state.max_payload_bytes = 8192
+    app.state.rps = 5.0
+    app.state.burst = 20.0
+    app.state.require_token = REQUIRE_TOKEN
+
     # Log URL configuration for debugging OAuth issues
     keycloak_public = _get_keycloak_public_url()
     keycloak_internal = _get_keycloak_internal_url()
@@ -125,6 +152,14 @@ async def startup():
             "Set KEYCLOAK_URL and UI_BASE_URL to use the same hostname.",
             kc_host, ui_host,
         )
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    if hasattr(app.state, "batch_writer"):
+        await app.state.batch_writer.stop()
+    if hasattr(app.state, "http_client"):
+        await app.state.http_client.aclose()
 
 async def get_settings(conn):
     rows = await conn.fetch(

@@ -7,6 +7,10 @@
 		on_demand
 	}
 
+	handle /ingest/* {
+		reverse_proxy iot-ui:8080
+	}
+
 	# Keycloak auth/admin routes
 	handle /realms/* {
 		reverse_proxy pulse-keycloak:8080

@@ -160,6 +160,18 @@ Operators have `tenant_id: ""` (empty) and use `operator_connection` (BYPASSRLS)
 
 ## Core Flows
 
+### Telemetry Ingestion Paths
+
+```
+Device → MQTT → ingest_iot → InfluxDB
+Device → HTTP POST → ui_iot/ingest → InfluxDB
+```
+
+Both paths use shared validation (`services/shared/ingest_core.py`):
+- DeviceAuthCache for credential caching
+- InfluxBatchWriter for batched writes
+- TokenBucket for per-device rate limiting
+
 ### Device Telemetry/Heartbeat Flow
 ```
 Device → MQTT → ingest_iot → auth cache → validation → InfluxDB (batched writes)

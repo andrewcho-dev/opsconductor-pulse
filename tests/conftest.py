@@ -29,6 +29,7 @@ ui_root = os.path.join(repo_root, "services", "ui_iot")
 sys.path.insert(0, repo_root)
 sys.path.insert(0, ui_root)
 services_path = Path(repo_root) / "services"
+sys.path.insert(0, str(services_path))
 sys.path.insert(0, str(services_path / "dispatcher"))
 sys.path.insert(0, str(services_path / "delivery_worker"))
 
