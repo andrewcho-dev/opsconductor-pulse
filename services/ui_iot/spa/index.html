@@ -5,8 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
-    <script type="module" crossorigin src="/app/assets/index-CUrlLRxP.js"></script>
-    <link rel="stylesheet" crossorigin href="/app/assets/index-CAGgr2U7.css">
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('pulse-ui-store');
+          if (stored) {
+            var data = JSON.parse(stored);
+            var theme = data.state?.theme || 'system';
+            var dark = theme === 'dark' ||
+              (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (dark) document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/app/assets/index-KTQxXLu_.js"></script>
+    <link rel="stylesheet" crossorigin href="/app/assets/index-CwmsIgHK.css">
   </head>
   <body>
     <div id="root"></div>

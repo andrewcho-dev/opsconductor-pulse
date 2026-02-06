@@ -1,19 +1,15 @@
 import * as echarts from "echarts";
 import { CHART_COLORS } from "./colors";
 
-/** ECharts theme name — use this when initializing charts */
-export const ECHARTS_THEME = "pulse-dark";
+export const ECHARTS_DARK_THEME = "pulse-dark";
+export const ECHARTS_LIGHT_THEME = "pulse-light";
 
-/**
- * Register the Pulse dark theme with ECharts.
- * Call this once at app startup.
- */
-export function registerPulseDarkTheme(): void {
-  echarts.registerTheme(ECHARTS_THEME, {
+export function registerPulseThemes(): void {
+  echarts.registerTheme(ECHARTS_DARK_THEME, {
     color: [...CHART_COLORS],
     backgroundColor: "transparent",
     textStyle: {
-      color: "#a1a1aa", // zinc-400
+      color: "#a1a1aa",
     },
     title: {
       textStyle: { color: "#fafafa" },
@@ -22,7 +18,7 @@ export function registerPulseDarkTheme(): void {
     gauge: {
       axisLine: {
         lineStyle: {
-          color: [[1, "#27272a"]], // zinc-800
+          color: [[1, "#27272a"]],
         },
       },
       axisTick: { lineStyle: { color: "#52525b" } },
@@ -56,4 +52,56 @@ export function registerPulseDarkTheme(): void {
       textStyle: { color: "#fafafa" },
     },
   });
+
+  echarts.registerTheme(ECHARTS_LIGHT_THEME, {
+    color: [...CHART_COLORS],
+    backgroundColor: "transparent",
+    textStyle: {
+      color: "#52525b",
+    },
+    title: {
+      textStyle: { color: "#18181b" },
+      subtextStyle: { color: "#52525b" },
+    },
+    gauge: {
+      axisLine: {
+        lineStyle: {
+          color: [[1, "#e4e4e7"]],
+        },
+      },
+      axisTick: { lineStyle: { color: "#d4d4d8" } },
+      splitLine: { lineStyle: { color: "#d4d4d8" } },
+      axisLabel: { color: "#52525b" },
+      detail: {
+        color: "#18181b",
+      },
+      title: {
+        color: "#52525b",
+      },
+    },
+    categoryAxis: {
+      axisLine: { lineStyle: { color: "#d4d4d8" } },
+      axisTick: { lineStyle: { color: "#d4d4d8" } },
+      axisLabel: { color: "#52525b" },
+      splitLine: { lineStyle: { color: "#e4e4e7" } },
+    },
+    valueAxis: {
+      axisLine: { lineStyle: { color: "#d4d4d8" } },
+      axisTick: { lineStyle: { color: "#d4d4d8" } },
+      axisLabel: { color: "#52525b" },
+      splitLine: { lineStyle: { color: "#e4e4e7" } },
+    },
+    legend: {
+      textStyle: { color: "#52525b" },
+    },
+    tooltip: {
+      backgroundColor: "#ffffff",
+      borderColor: "#e4e4e7",
+      textStyle: { color: "#18181b" },
+    },
+  });
+}
+
+export function registerPulseDarkTheme(): void {
+  registerPulseThemes();
 }

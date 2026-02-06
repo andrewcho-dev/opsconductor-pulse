@@ -42,10 +42,10 @@ export function ConnectionStatus() {
             className={cn(
               "flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border",
               isConnected
-                ? "text-green-400 border-green-700/50"
+                ? "text-green-700 border-green-200 dark:text-green-400 dark:border-green-700/50"
                 : isConnecting
-                ? "text-yellow-400 border-yellow-700/50"
-                : "text-red-400 border-red-700/50"
+                ? "text-yellow-700 border-yellow-200 dark:text-yellow-400 dark:border-yellow-700/50"
+                : "text-red-700 border-red-200 dark:text-red-400 dark:border-red-700/50"
             )}
           >
             <span className={cn("w-2 h-2 rounded-full", dotClass)} />

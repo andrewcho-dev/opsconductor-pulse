@@ -1,26 +1,32 @@
+# Phase 27.2: Add Theme State to Store
+
+## Task
+
+Add theme state to the Zustand store with localStorage persistence.
+
+## Modify ui-store.ts
+
+**File:** `frontend/src/stores/ui-store.ts`
+
+```typescript
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type WsStatus = "connecting" | "connected" | "disconnected" | "error";
-export type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark" | "system";
 
 interface UIStoreState {
-  /** WebSocket connection status */
-  wsStatus: WsStatus;
-  /** Number of reconnection attempts */
+  // Existing WebSocket state
+  wsStatus: "connected" | "connecting" | "disconnected";
   wsRetryCount: number;
-  /** Last WebSocket error message */
   wsError: string | null;
-
-  setWsStatus: (status: WsStatus) => void;
+  setWsStatus: (status: "connected" | "connecting" | "disconnected") => void;
   setWsRetryCount: (count: number) => void;
   setWsError: (error: string | null) => void;
 
-  /** Selected theme */
+  // New theme state
   theme: Theme;
-  /** Resolved theme (system -> light/dark) */
-  resolvedTheme: "light" | "dark";
   setTheme: (theme: Theme) => void;
+  resolvedTheme: "light" | "dark";  // Actual applied theme (resolves "system")
 }
 
 function getSystemTheme(): "light" | "dark" {
@@ -43,15 +49,16 @@ function applyTheme(theme: "light" | "dark") {
 
 export const useUIStore = create<UIStoreState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      // Existing WebSocket state
       wsStatus: "disconnected",
       wsRetryCount: 0,
       wsError: null,
+      setWsStatus: (status) => set({ wsStatus: status }),
+      setWsRetryCount: (count) => set({ wsRetryCount: count }),
+      setWsError: (error) => set({ wsError: error }),
 
-      setWsStatus: (wsStatus) => set({ wsStatus }),
-      setWsRetryCount: (wsRetryCount) => set({ wsRetryCount }),
-      setWsError: (wsError) => set({ wsError }),
-
+      // Theme state
       theme: "system",
       resolvedTheme: getSystemTheme(),
       setTheme: (theme) => {
@@ -62,8 +69,9 @@ export const useUIStore = create<UIStoreState>()(
     }),
     {
       name: "pulse-ui-store",
-      partialize: (state) => ({ theme: state.theme }),
+      partialize: (state) => ({ theme: state.theme }),  // Only persist theme
       onRehydrateStorage: () => (state) => {
+        // Apply theme after rehydration
         if (state) {
           const resolved = resolveTheme(state.theme);
           applyTheme(resolved);
@@ -74,6 +82,7 @@ export const useUIStore = create<UIStoreState>()(
   )
 );
 
+// Listen for system theme changes
 if (typeof window !== "undefined") {
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
     const state = useUIStore.getState();
@@ -84,3 +93,16 @@ if (typeof window !== "undefined") {
     }
   });
 }
+```
+
+## Verification
+
+```bash
+cd /home/opsconductor/simcloud/frontend && npm run build
+```
+
+## Files
+
+| Action | File |
+|--------|------|
+| MODIFY | `frontend/src/stores/ui-store.ts` |

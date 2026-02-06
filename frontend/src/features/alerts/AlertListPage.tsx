@@ -114,8 +114,8 @@ export default function AlertListPage() {
                         variant="outline"
                         className={
                           a.status === "OPEN"
-                            ? "text-orange-400 border-orange-700"
-                            : "text-green-400 border-green-700"
+                            ? "text-orange-700 border-orange-200 dark:text-orange-400 dark:border-orange-700"
+                            : "text-green-700 border-green-200 dark:text-green-400 dark:border-green-700"
                         }
                       >
                         {a.status}

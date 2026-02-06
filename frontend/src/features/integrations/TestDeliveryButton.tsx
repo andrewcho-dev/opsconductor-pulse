@@ -86,7 +86,7 @@ export function TestDeliveryButton({ onTest, disabled }: TestDeliveryButtonProps
         )}
       </Button>
       {status === "success" && (
-        <span className="text-xs text-green-400">{message}</span>
+        <span className="text-xs text-green-700 dark:text-green-400">{message}</span>
       )}
       {status === "error" && (
         <span className="text-xs text-destructive">{message}</span>

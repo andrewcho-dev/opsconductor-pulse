@@ -5,6 +5,7 @@ import { toUPlotData } from "./transforms";
 import { getMetricConfig } from "./metric-config";
 import { getSeriesColor } from "./colors";
 import type { TelemetryPoint } from "@/services/api/types";
+import { useUIStore } from "@/stores/ui-store";
 
 interface TimeSeriesChartProps {
   metricName: string;
@@ -21,6 +22,10 @@ function TimeSeriesChartInner({
   height = 200,
   className,
 }: TimeSeriesChartProps) {
+  const resolvedTheme = useUIStore((s) => s.resolvedTheme);
+  const axisColor = resolvedTheme === "dark" ? "#71717a" : "#52525b";
+  const gridColor = resolvedTheme === "dark" ? "#27272a" : "#e4e4e7";
+  const tickColor = resolvedTheme === "dark" ? "#3f3f46" : "#d4d4d8";
   const config = useMemo(
     () => getMetricConfig(metricName),
     [metricName]
@@ -40,15 +45,15 @@ function TimeSeriesChartInner({
       axes: [
         {
           // X-axis (time)
-          stroke: "#71717a",
-          grid: { stroke: "#27272a", width: 1 },
-          ticks: { stroke: "#3f3f46", width: 1 },
+          stroke: axisColor,
+          grid: { stroke: gridColor, width: 1 },
+          ticks: { stroke: tickColor, width: 1 },
         },
         {
           // Y-axis (values)
-          stroke: "#71717a",
-          grid: { stroke: "#27272a", width: 1 },
-          ticks: { stroke: "#3f3f46", width: 1 },
+          stroke: axisColor,
+          grid: { stroke: gridColor, width: 1 },
+          ticks: { stroke: tickColor, width: 1 },
           label: `${config.label}${config.unit ? ` (${config.unit})` : ""}`,
           labelSize: 16,
           labelFont: "11px system-ui",
@@ -69,7 +74,7 @@ function TimeSeriesChartInner({
         },
       ],
     }),
-    [config, colorIndex]
+    [config, colorIndex, axisColor, gridColor, tickColor]
   );
 
   if (data[0].length === 0) {

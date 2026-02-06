@@ -33,7 +33,7 @@ function TelemetryChartsSectionInner({
           {isLive && (
             <Badge
               variant="outline"
-              className="text-[10px] text-green-400 border-green-700/50"
+              className="text-[10px] text-green-700 border-green-200 dark:text-green-400 dark:border-green-700/50"
             >
               LIVE ({liveCount})
             </Badge>

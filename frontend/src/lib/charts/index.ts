@@ -19,7 +19,12 @@ export {
 } from "./transforms";
 
 // ECharts theme
-export { ECHARTS_THEME, registerPulseDarkTheme } from "./theme";
+export {
+  ECHARTS_DARK_THEME,
+  ECHARTS_LIGHT_THEME,
+  registerPulseThemes,
+  registerPulseDarkTheme,
+} from "./theme";
 
 // Chart components
 export { EChartWrapper } from "./EChartWrapper";

@@ -5,10 +5,18 @@ import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { useDevices } from "@/hooks/use-devices";
 import { PieChart } from "lucide-react";
 import type { EChartsOption } from "echarts";
+import { useUIStore } from "@/stores/ui-store";
 
 function DeviceStatusWidgetInner() {
   const { data, isLoading } = useDevices(500, 0);
   const devices = data?.devices || [];
+  const resolvedTheme = useUIStore((s) => s.resolvedTheme);
+  const isDark = resolvedTheme === "dark";
+  const legendColor = isDark ? "#a1a1aa" : "#52525b";
+  const borderColor = isDark ? "#18181b" : "#e4e4e7";
+  const labelColor = isDark ? "#fafafa" : "#18181b";
+  const onlineColor = isDark ? "#22c55e" : "#16a34a";
+  const staleColor = isDark ? "#f97316" : "#ea580c";
 
   const statusCounts = useMemo(() => {
     let online = 0;
@@ -27,7 +35,7 @@ function DeviceStatusWidgetInner() {
     },
     legend: {
       bottom: 0,
-      textStyle: { color: "#a1a1aa" },
+      textStyle: { color: legendColor },
     },
     series: [
       {
@@ -37,7 +45,7 @@ function DeviceStatusWidgetInner() {
         avoidLabelOverlap: false,
         itemStyle: {
           borderRadius: 4,
-          borderColor: "#18181b",
+          borderColor,
           borderWidth: 2,
         },
         label: {
@@ -46,17 +54,25 @@ function DeviceStatusWidgetInner() {
           formatter: () => `${devices.length}\nDevices`,
           fontSize: 16,
           fontWeight: "bold",
-          color: "#fafafa",
+          color: labelColor,
           lineHeight: 22,
         },
         labelLine: { show: false },
         data: [
-          { value: statusCounts.online, name: "Online", itemStyle: { color: "#22c55e" } },
-          { value: statusCounts.stale, name: "Stale", itemStyle: { color: "#f97316" } },
+          { value: statusCounts.online, name: "Online", itemStyle: { color: onlineColor } },
+          { value: statusCounts.stale, name: "Stale", itemStyle: { color: staleColor } },
         ],
       },
     ],
-  }), [devices.length, statusCounts]);
+  }), [
+    devices.length,
+    statusCounts,
+    legendColor,
+    borderColor,
+    labelColor,
+    onlineColor,
+    staleColor,
+  ]);
 
   if (isLoading) {
     return (

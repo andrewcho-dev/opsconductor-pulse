@@ -158,7 +158,11 @@ export default function SettingsPage() {
             </div>
 
             {error && <div className="text-sm text-destructive">{error}</div>}
-            {success && <div className="text-sm text-green-400">{success}</div>}
+            {success && (
+              <div className="text-sm text-green-700 dark:text-green-400">
+                {success}
+              </div>
+            )}
 
             <Button type="submit" disabled={isSaving}>
               {isSaving ? "Saving..." : "Save"}

@@ -68,21 +68,21 @@ function StatCardsWidgetInner() {
         value={onlineDevices}
         icon={Wifi}
         loading={devicesLoading}
-        className="text-green-400"
+        className="text-green-700 dark:text-green-400"
       />
       <StatCard
         title="Stale"
         value={staleDevices}
         icon={AlertTriangle}
         loading={devicesLoading}
-        className="text-orange-400"
+        className="text-orange-700 dark:text-orange-400"
       />
       <StatCard
         title="Open Alerts"
         value={openAlerts}
         icon={Bell}
         loading={!alertsReady}
-        className="text-red-400"
+        className="text-red-700 dark:text-red-400"
       />
     </div>
   );

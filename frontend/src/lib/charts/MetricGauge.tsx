@@ -2,6 +2,7 @@ import { useMemo, memo } from "react";
 import { EChartWrapper } from "./EChartWrapper";
 import { getMetricConfig } from "./metric-config";
 import type { EChartsOption } from "echarts";
+import { useUIStore } from "@/stores/ui-store";
 
 interface MetricGaugeProps {
   metricName: string;
@@ -17,6 +18,11 @@ function MetricGaugeInner({
   allValues,
   className,
 }: MetricGaugeProps) {
+  const resolvedTheme = useUIStore((s) => s.resolvedTheme);
+  const textColor = resolvedTheme === "dark" ? "#fafafa" : "#18181b";
+  const mutedColor = resolvedTheme === "dark" ? "#a1a1aa" : "#71717a";
+  const axisLabelColor = resolvedTheme === "dark" ? "#71717a" : "#52525b";
+  const lineColor = resolvedTheme === "dark" ? "#52525b" : "#d4d4d8";
   const config = useMemo(
     () => getMetricConfig(metricName, allValues),
     [metricName, allValues]
@@ -51,12 +57,12 @@ function MetricGaugeInner({
           axisTick: { show: false },
           splitLine: {
             length: 8,
-            lineStyle: { width: 1, color: "#52525b" },
+            lineStyle: { width: 1, color: lineColor },
           },
           axisLabel: {
             distance: 16,
             fontSize: 10,
-            color: "#71717a",
+            color: axisLabelColor,
             formatter: (v: number) => {
               if (v === config.min || v === config.max) {
                 return `${v}`;
@@ -74,20 +80,20 @@ function MetricGaugeInner({
             size: 8,
             itemStyle: {
               borderWidth: 2,
-              borderColor: "#52525b",
+              borderColor: lineColor,
             },
           },
           title: {
             offsetCenter: [0, "70%"],
             fontSize: 12,
-            color: "#a1a1aa",
+            color: mutedColor,
           },
           detail: {
             valueAnimation: true,
             offsetCenter: [0, "45%"],
             fontSize: 20,
             fontWeight: "bold",
-            color: "#fafafa",
+            color: textColor,
             formatter: (v: number) => {
               if (v == null) return "—";
               return `${v.toFixed(config.precision)}${config.unit}`;
@@ -102,7 +108,14 @@ function MetricGaugeInner({
         },
       ],
     };
-  }, [value, config]);
+  }, [
+    value,
+    config,
+    textColor,
+    mutedColor,
+    axisLabelColor,
+    lineColor,
+  ]);
 
   return (
     <EChartWrapper

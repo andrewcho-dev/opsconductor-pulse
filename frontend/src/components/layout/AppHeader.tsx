@@ -2,9 +2,49 @@ import { useAuth } from "@/services/auth/AuthProvider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { LogOut, Sun, Moon, Monitor } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
+import { useUIStore } from "@/stores/ui-store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+function ThemeToggle() {
+  const { theme, setTheme, resolvedTheme } = useUIStore();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8">
+          {resolvedTheme === "dark" ? (
+            <Moon className="h-4 w-4" />
+          ) : (
+            <Sun className="h-4 w-4" />
+          )}
+          <span className="sr-only">Toggle theme ({theme})</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setTheme("light")}>
+          <Sun className="mr-2 h-4 w-4" />
+          Light
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("dark")}>
+          <Moon className="mr-2 h-4 w-4" />
+          Dark
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("system")}>
+          <Monitor className="mr-2 h-4 w-4" />
+          System
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function AppHeader() {
   const { user, logout } = useAuth();
@@ -16,7 +56,10 @@ export function AppHeader() {
 
       <div className="flex-1" />
 
-      <ConnectionStatus />
+      <div className="flex items-center gap-2">
+        <ConnectionStatus />
+        <ThemeToggle />
+      </div>
 
       {user?.tenantId && (
         <Badge variant="secondary" className="font-mono text-xs">

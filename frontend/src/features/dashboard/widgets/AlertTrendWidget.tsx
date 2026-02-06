@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
@@ -6,6 +6,7 @@ import { fetchAlertTrend } from "@/services/api/alerts";
 import { UPlotChart } from "@/lib/charts/UPlotChart";
 import { TrendingUp } from "lucide-react";
 import type uPlot from "uplot";
+import { useUIStore } from "@/stores/ui-store";
 
 function AlertTrendWidgetInner() {
   const { data, isLoading } = useQuery({
@@ -13,6 +14,9 @@ function AlertTrendWidgetInner() {
     queryFn: () => fetchAlertTrend(24),
     refetchInterval: 60000,
   });
+  const resolvedTheme = useUIStore((s) => s.resolvedTheme);
+  const axisStroke = resolvedTheme === "dark" ? "#71717a" : "#52525b";
+  const gridStroke = resolvedTheme === "dark" ? "#27272a" : "#e4e4e7";
 
   const chartData = data?.trend || [];
 
@@ -22,19 +26,22 @@ function AlertTrendWidgetInner() {
     chartData.map((p) => p.closed),
   ];
 
-  const options: Omit<uPlot.Options, "width" | "height"> = {
-    scales: { x: { time: true }, y: {} },
-    axes: [
-      { stroke: "#71717a", grid: { stroke: "#27272a" } },
-      { stroke: "#71717a", grid: { stroke: "#27272a" }, size: 50 },
-    ],
-    series: [
-      {},
-      { label: "Opened", stroke: "#ef4444", width: 2, points: { show: false } },
-      { label: "Closed", stroke: "#22c55e", width: 2, points: { show: false } },
-    ],
-    legend: { show: true },
-  };
+  const options = useMemo<Omit<uPlot.Options, "width" | "height">>(
+    () => ({
+      scales: { x: { time: true }, y: {} },
+      axes: [
+        { stroke: axisStroke, grid: { stroke: gridStroke } },
+        { stroke: axisStroke, grid: { stroke: gridStroke }, size: 50 },
+      ],
+      series: [
+        {},
+        { label: "Opened", stroke: "#ef4444", width: 2, points: { show: false } },
+        { label: "Closed", stroke: "#22c55e", width: 2, points: { show: false } },
+      ],
+      legend: { show: true },
+    }),
+    [axisStroke, gridStroke]
+  );
 
   if (isLoading) {
     return (
