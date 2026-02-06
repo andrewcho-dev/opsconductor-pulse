@@ -277,6 +277,30 @@ services:
     profiles:
       - seed
 
+  simulator:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ../scripts:/app/scripts:ro
+    environment:
+      INGEST_URL: "http://ui:8080"
+      PG_HOST: iot-postgres
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      NUM_DEVICES_PER_TENANT: "3"
+      TELEMETRY_INTERVAL: "10"
+      HEARTBEAT_INTERVAL: "30"
+    depends_on:
+      - ui
+      - postgres
+    command: >
+      sh -c "pip install asyncpg httpx && python scripts/device_simulator.py"
+    restart: unless-stopped
+    profiles:
+      - simulator
+
   webhook_receiver:
     build: ../services/webhook_receiver
     container_name: iot-webhook-receiver

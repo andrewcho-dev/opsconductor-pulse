@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useTelemetry } from "./use-telemetry";
 import { wsManager } from "@/services/websocket/manager";
 import { messageBus } from "@/services/websocket/message-bus";
@@ -54,12 +54,6 @@ export function useDeviceTelemetry(deviceId: string): UseDeviceTelemetryResult {
     setLiveCount(0);
   }, [timeRange]);
 
-  // Ref for latest REST data (avoid stale closures in WS handler)
-  const restPointsRef = useRef<TelemetryPoint[]>([]);
-  useEffect(() => {
-    restPointsRef.current = restData?.telemetry || [];
-  }, [restData]);
-
   // WebSocket subscription for live telemetry
   useEffect(() => {
     if (!deviceId) return;
@@ -102,7 +96,7 @@ export function useDeviceTelemetry(deviceId: string): UseDeviceTelemetryResult {
 
   // Merge REST + WS points, deduplicate by timestamp, sort chronologically
   const points = useMemo(() => {
-    const restPoints = restPointsRef.current;
+    const restPoints = restData?.telemetry ?? [];
 
     if (wsPoints.length === 0) return restPoints;
 

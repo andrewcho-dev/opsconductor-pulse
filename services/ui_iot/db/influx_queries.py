@@ -4,7 +4,7 @@ These replace the PostgreSQL event-table queries with InfluxDB equivalents.
 Return formats match the PG versions exactly for template compatibility.
 """
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import httpx
 
@@ -65,14 +65,15 @@ async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> li
             return []
 
         data = resp.json()
+        rows: list[dict] = []
         if isinstance(data, list):
-            return data
+            rows = data
         if isinstance(data, dict):
             if "results" in data:
-                return data["results"]
+                rows = data["results"]
             if "data" in data:
-                return data["data"]
-        return []
+                rows = data["data"]
+        return rows
     except Exception:
         return []
 
@@ -196,6 +197,8 @@ async def fetch_device_telemetry_dynamic(
     db_name = f"telemetry_{tenant_id}"
 
     where_parts = [f"device_id = '{device_id}'"]
+    if not start:
+        start = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
     if start:
         where_parts.append(f"time >= '{start}'")
     if end:
@@ -203,7 +206,6 @@ async def fetch_device_telemetry_dynamic(
 
     where_sql = " AND ".join(where_parts)
     sql = f"SELECT * FROM telemetry WHERE {where_sql} ORDER BY time DESC LIMIT {limit}"
-
     rows = await _influx_query(http_client, db_name, sql)
 
     results = []

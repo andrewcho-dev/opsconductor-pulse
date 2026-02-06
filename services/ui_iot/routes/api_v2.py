@@ -1,11 +1,12 @@
 import os
+import json
 import time
 import logging
 import re
 import asyncio
 from collections import defaultdict, deque
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -137,6 +138,19 @@ async def list_devices(
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
         devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
+    for device in devices:
+        state = device.get("state")
+        if isinstance(state, dict):
+            device["state"] = state
+        elif state is None:
+            device["state"] = {}
+        elif isinstance(state, str):
+            try:
+                device["state"] = json.loads(state)
+            except json.JSONDecodeError:
+                device["state"] = {}
+        else:
+            device["state"] = state
     return JSONResponse(jsonable_encoder({
         "tenant_id": tenant_id,
         "devices": devices,
@@ -155,6 +169,18 @@ async def get_device(device_id: str):
         device = await fetch_device_v2(conn, tenant_id, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    state = device.get("state")
+    if isinstance(state, dict):
+        device["state"] = state
+    elif state is None:
+        device["state"] = {}
+    elif isinstance(state, str):
+        try:
+            device["state"] = json.loads(state)
+        except json.JSONDecodeError:
+            device["state"] = {}
+    else:
+        device["state"] = state
     return JSONResponse(jsonable_encoder({
         "tenant_id": tenant_id,
         "device": device,
@@ -185,6 +211,60 @@ async def list_alerts(
         "limit": limit,
         "offset": offset,
     }))
+
+
+@router.get("/alerts/trend")
+async def get_alert_trend(
+    request: Request,
+    hours: int = Query(24, ge=1, le=168),
+):
+    """
+    Get hourly alert counts for the last N hours.
+    Returns [{hour: ISO timestamp, opened: count, closed: count}, ...]
+    """
+    pool = await get_pool()
+    tenant_id = get_tenant_id()
+
+    async with pool.acquire() as conn:
+        # Set tenant context for RLS
+        await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
+
+        rows = await conn.fetch("""
+            WITH hours AS (
+                SELECT generate_series(
+                    date_trunc('hour', now() - interval '1 hour' * $1),
+                    date_trunc('hour', now()),
+                    interval '1 hour'
+                ) AS hour
+            ),
+            opened AS (
+                SELECT date_trunc('hour', created_at) AS hour, COUNT(*) AS cnt
+                FROM fleet_alert
+                WHERE created_at >= now() - interval '1 hour' * $1
+                GROUP BY 1
+            ),
+            closed AS (
+                SELECT date_trunc('hour', closed_at) AS hour, COUNT(*) AS cnt
+                FROM fleet_alert
+                WHERE closed_at >= now() - interval '1 hour' * $1
+                GROUP BY 1
+            )
+            SELECT
+                h.hour,
+                COALESCE(o.cnt, 0) AS opened,
+                COALESCE(c.cnt, 0) AS closed
+            FROM hours h
+            LEFT JOIN opened o ON o.hour = h.hour
+            LEFT JOIN closed c ON c.hour = h.hour
+            ORDER BY h.hour
+        """, hours)
+
+    return {
+        "trend": [
+            {"hour": row["hour"].isoformat(), "opened": row["opened"], "closed": row["closed"]}
+            for row in rows
+        ]
+    }
 
 
 @router.get("/alerts/{alert_id}")
@@ -263,11 +343,14 @@ async def get_device_telemetry(
         ic, tenant_id, device_id,
         start=clean_start, end=clean_end, limit=limit,
     )
-    return JSONResponse(jsonable_encoder({
+
+    response = {
+        "tenant_id": tenant_id,
         "device_id": device_id,
         "telemetry": data,
         "count": len(data),
-    }))
+    }
+    return JSONResponse(jsonable_encoder(response))
 
 
 @router.get("/devices/{device_id}/telemetry/latest")

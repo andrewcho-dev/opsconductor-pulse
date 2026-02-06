@@ -233,7 +233,7 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
         hb_rows = await _influx_query(
             http_client, db_name,
             "SELECT device_id, MAX(time) AS last_hb FROM heartbeat "
-            "WHERE time > now() - INTERVAL '30 minutes' GROUP BY device_id"
+            "WHERE time > now() - INTERVAL '6 hours' GROUP BY device_id"
         )
         hb_map = {}
         for row in hb_rows:
@@ -245,7 +245,7 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
         tel_rows = await _influx_query(
             http_client, db_name,
             "SELECT device_id, MAX(time) AS last_tel FROM telemetry "
-            "WHERE time > now() - INTERVAL '30 minutes' GROUP BY device_id"
+            "WHERE time > now() - INTERVAL '6 hours' GROUP BY device_id"
         )
         tel_map = {}
         for row in tel_rows:
@@ -256,7 +256,7 @@ async def fetch_rollup_influxdb(http_client: httpx.AsyncClient, pg_conn) -> list
         # Step 4: Query latest metrics per device
         metrics_rows = await _influx_query(
             http_client, db_name,
-            "SELECT * FROM telemetry WHERE time > now() - INTERVAL '30 minutes' "
+            "SELECT * FROM telemetry WHERE time > now() - INTERVAL '6 hours' "
             "ORDER BY time DESC"
         )
         # Deduplicate to latest per device_id
@@ -351,7 +351,10 @@ async def main():
                       last_heartbeat_at = EXCLUDED.last_heartbeat_at,
                       last_telemetry_at = EXCLUDED.last_telemetry_at,
                       last_seen_at = EXCLUDED.last_seen_at,
-                      state = EXCLUDED.state,
+                      state = CASE
+                        WHEN EXCLUDED.state = '{}'::jsonb THEN device_state.state
+                        ELSE EXCLUDED.state
+                      END,
                       status = EXCLUDED.status,
                       last_state_change_at = CASE
                         WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN now()
