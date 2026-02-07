@@ -351,11 +351,6 @@ export function SystemDashboard() {
               icon={Database}
               health={health?.components.postgres}
             />
-            <ServiceHealthCard
-              name="InfluxDB"
-              icon={Database}
-              health={health?.components.influxdb}
-            />
             <ServiceHealthCard name="MQTT" icon={Wifi} health={health?.components.mqtt} />
             <ServiceHealthCard
               name="Keycloak"

@@ -13,7 +13,6 @@ export interface SystemHealth {
   status: "healthy" | "degraded";
   components: {
     postgres: ComponentHealth;
-    influxdb: ComponentHealth;
     mqtt: ComponentHealth;
     keycloak: ComponentHealth;
     ingest: ComponentHealth;
@@ -57,10 +56,9 @@ export interface SystemCapacity {
     connections_pct: number;
     top_tables: { name: string; total_mb: number; data_mb?: number; index_mb?: number }[];
   };
-  influxdb: {
-    file_limit: number;
-    database_count: number;
-    databases?: string[];
+  timescaledb?: {
+    hypertables: number;
+    compression_enabled: boolean;
   };
   disk: {
     volumes: Record<

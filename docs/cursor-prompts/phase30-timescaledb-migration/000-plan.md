@@ -40,17 +40,22 @@ Dashboard ← single database, SQL joins
 
 ## Migration Tasks
 
-| # | Prompt | Description |
-|---|--------|-------------|
-| 1 | `001-timescaledb-extension.md` | Enable TimescaleDB extension in PostgreSQL |
-| 2 | `002-telemetry-hypertable.md` | Create telemetry hypertable with RLS |
-| 3 | `003-system-metrics-table.md` | Create system_metrics hypertable for dashboard |
-| 4 | `004-update-ingest-writer.md` | Update ingest service to write to TimescaleDB |
-| 5 | `005-update-queries.md` | Update API endpoints to query TimescaleDB |
-| 6 | `006-update-metrics-collector.md` | Update dashboard metrics collector |
-| 7 | `007-compression-retention.md` | Add compression and retention policies |
-| 8 | `008-remove-influxdb.md` | Remove InfluxDB from docker-compose |
-| 9 | `009-verification.md` | End-to-end verification and performance test |
+| # | Prompt | Description | Status |
+|---|--------|-------------|--------|
+| 1 | `001-timescaledb-extension.md` | Enable TimescaleDB extension in PostgreSQL | ✅ Done |
+| 2 | `002-telemetry-hypertable.md` | Create telemetry hypertable with RLS | ✅ Done |
+| 3 | `003-system-metrics-table.md` | Create system_metrics hypertable for dashboard | ✅ Done |
+| 4 | `004-update-ingest-writer.md` | Update ingest service to write to TimescaleDB | ✅ Done |
+| 5 | `005-update-queries.md` | Update API endpoints to query TimescaleDB | ✅ Done |
+| 6 | `006-update-metrics-collector.md` | Update dashboard metrics collector | ✅ Done |
+| 7 | `007-compression-retention.md` | Add compression and retention policies | ✅ Done |
+| 8 | `008-remove-influxdb.md` | Remove InfluxDB from docker-compose | ✅ Done |
+| 9 | `009-verification.md` | End-to-end verification and performance test | ✅ Done |
+| 10 | `010-update-evaluator.md` | Update evaluator to query TimescaleDB | Pending |
+| 11 | `011-cleanup-provision-api.md` | Remove InfluxDB from provision API | Pending |
+| 12 | `012-cleanup-ingest-core.md` | Remove line protocol helpers from ingest_core | Pending |
+| 13 | `013-cleanup-tests-scripts.md` | Delete obsolete InfluxDB tests and scripts | Pending |
+| 14 | `014-update-documentation.md` | Update README, ARCHITECTURE, PROJECT_MAP | Pending |
 
 ---
 
@@ -198,3 +203,33 @@ timescaledb.max_background_workers = 8
 | `services/ui_iot/routes/*.py` | Query PostgreSQL |
 | `services/ui_iot/metrics_collector.py` | Write to PostgreSQL |
 | `services/evaluator_iot/evaluator.py` | Query PostgreSQL |
+| `services/provision_api/app.py` | Remove InfluxDB provisioning |
+| `services/shared/ingest_core.py` | Remove line protocol helpers |
+| `tests/unit/test_influxdb_*.py` | Delete obsolete tests |
+| `scripts/init_influxdb_tenants.py` | Delete obsolete script |
+| `README.md` | Update with TimescaleDB architecture |
+| `docs/ARCHITECTURE.md` | Update with TimescaleDB architecture |
+| `docs/PROJECT_MAP.md` | Update with TimescaleDB architecture |
+
+---
+
+## Cleanup Phase (Prompts 010-014)
+
+After the core migration (001-009), clean up remaining InfluxDB references:
+
+### Code Cleanup
+- **evaluator_iot**: Replace `_influx_query()` and `fetch_rollup_influxdb()` with TimescaleDB queries
+- **provision_api**: Remove `_ensure_influx_db()` function and InfluxDB env vars
+- **ingest_core**: Remove `_build_line_protocol()`, `_escape_tag_value()`, `_escape_field_key()`
+
+### Test/Script Cleanup
+- Delete `tests/unit/test_influxdb_helpers.py`
+- Delete `tests/integration/test_influxdb_write.py`
+- Delete `scripts/init_influxdb_tenants.py`
+- Update test mocks that reference InfluxDB
+
+### Documentation Cleanup
+- Update README.md (7 InfluxDB mentions)
+- Update docs/ARCHITECTURE.md (12+ InfluxDB mentions)
+- Update docs/PROJECT_MAP.md (5 InfluxDB mentions)
+- Update all diagrams and service descriptions

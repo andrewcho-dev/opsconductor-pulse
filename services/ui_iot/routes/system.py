@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import shutil
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -305,7 +306,7 @@ async def get_metrics_history(
                 FROM system_metrics
                 WHERE metric_name = $1
                   AND service = $2
-                  AND time > now() - make_interval(mins => $3)
+                  AND time > now() - ($3::int * interval '1 minute')
                 ORDER BY time ASC
                 """,
                 metric,
@@ -318,7 +319,7 @@ async def get_metrics_history(
                 SELECT time, value
                 FROM system_metrics
                 WHERE metric_name = $1
-                  AND time > now() - make_interval(mins => $3)
+                  AND time > now() - ($2::int * interval '1 minute')
                 ORDER BY time ASC
                 """,
                 metric,
@@ -567,7 +568,7 @@ async def get_system_errors(
                 ) as details
             FROM delivery_jobs
             WHERE status = 'FAILED'
-              AND created_at >= now() - make_interval(hours := $1)
+              AND created_at >= now() - ($1::int * interval '1 hour')
             ORDER BY created_at DESC
             LIMIT $2
             """,
@@ -590,7 +591,7 @@ async def get_system_errors(
                         'topic', topic
                     ) as details
                 FROM quarantine_events
-                WHERE ingested_at >= now() - make_interval(hours := $1)
+                WHERE ingested_at >= now() - ($1::int * interval '1 hour')
                 ORDER BY ingested_at DESC
                 LIMIT $2
                 """,
@@ -612,7 +613,7 @@ async def get_system_errors(
                 ) as details
             FROM operator_audit_log
             WHERE (action LIKE '%fail%' OR action LIKE '%denied%')
-              AND created_at >= now() - make_interval(hours := $1)
+              AND created_at >= now() - ($1::int * interval '1 hour')
             ORDER BY created_at DESC
             LIMIT $2
             """,
@@ -634,7 +635,7 @@ async def get_system_errors(
                         'count', event_count
                     ) as details
                 FROM rate_limit_events
-                WHERE created_at >= now() - make_interval(hours := $1)
+                WHERE created_at >= now() - ($1::int * interval '1 hour')
                 ORDER BY created_at DESC
                 LIMIT $2
                 """,
@@ -648,7 +649,7 @@ async def get_system_errors(
             """
             SELECT COUNT(*) FROM delivery_jobs
             WHERE status = 'FAILED'
-              AND created_at >= now() - make_interval(hours := $1)
+              AND created_at >= now() - ($1::int * interval '1 hour')
             """,
             hours,
         )
@@ -664,12 +665,24 @@ async def get_system_errors(
             quarantined_count = await conn.fetchval(
                 """
                 SELECT COUNT(*) FROM quarantine_events
-                WHERE ingested_at >= now() - make_interval(hours := $1)
+                WHERE ingested_at >= now() - ($1::int * interval '1 hour')
                 """,
                 hours,
             )
 
     all_errors = []
+
+    def _coerce_details(value):
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return {}
+        return {}
 
     for row in delivery_failures:
         all_errors.append(
@@ -678,7 +691,7 @@ async def get_system_errors(
                 "error_type": row["error_type"],
                 "timestamp": row["timestamp"].isoformat() + "Z",
                 "tenant_id": row["tenant_id"],
-                "details": dict(row["details"]) if row["details"] else {},
+                "details": _coerce_details(row["details"]),
             }
         )
 
@@ -689,7 +702,7 @@ async def get_system_errors(
                 "error_type": row["error_type"],
                 "timestamp": row["timestamp"].isoformat() + "Z",
                 "tenant_id": row["tenant_id"],
-                "details": dict(row["details"]) if row["details"] else {},
+                "details": _coerce_details(row["details"]),
             }
         )
 
@@ -700,7 +713,7 @@ async def get_system_errors(
                 "error_type": row["error_type"],
                 "timestamp": row["timestamp"].isoformat() + "Z",
                 "tenant_id": row["tenant_id"],
-                "details": dict(row["details"]) if row["details"] else {},
+                "details": _coerce_details(row["details"]),
             }
         )
 
@@ -711,7 +724,7 @@ async def get_system_errors(
                 "error_type": row["error_type"],
                 "timestamp": row["timestamp"].isoformat() + "Z",
                 "tenant_id": row["tenant_id"],
-                "details": dict(row["details"]) if row["details"] else {},
+                "details": _coerce_details(row["details"]),
             }
         )
 
