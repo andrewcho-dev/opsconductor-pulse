@@ -14,9 +14,11 @@ Browser ──► https://HOST (Caddy, ports 80/443)
               ├── /api/v2/*     ──► ui_iot (REST API + WebSocket)
               ├── /customer/*   ──► ui_iot (customer JSON APIs)
               ├── /operator/*   ──► ui_iot (operator JSON APIs)
+              ├── /ingest/*     ──► ui_iot (HTTP telemetry ingestion)
               └── /*            ──► ui_iot (catch-all)
 
 IoT Devices ──► MQTT (1883) ──► ingest_iot ──► TimescaleDB (telemetry)
+            └── HTTP POST ──► ui_iot/ingest ──► TimescaleDB (telemetry)
                                                     │
                                               evaluator_iot
                                                     │
@@ -96,7 +98,7 @@ The frontend is a React SPA built with Vite and TypeScript, served at `/app/` by
 
 ### Page Structure
 - **Customer pages**: Dashboard, Device List, Device Detail (telemetry charts + gauges), Alerts, Alert Rules CRUD, Webhook/SNMP/Email/MQTT integration management
-- **Operator pages**: Cross-tenant Overview, All Devices (with tenant filter), Audit Log (admin only), System Settings (admin only)
+- **Operator pages**: Cross-tenant Overview, All Devices (with tenant filter), System Dashboard (health, metrics, capacity), Audit Log (admin only), System Settings (admin only)
 - **Role-based routing**: Operators see only operator nav; customers see only customer nav. Index redirects to role-appropriate dashboard.
 
 ### Data Flow
@@ -123,12 +125,20 @@ Transactional data store for all non-telemetry data:
 - `rate_limits` — Per-device rate limiting
 
 ### TimescaleDB (PostgreSQL Extension)
-Time-series telemetry stored in a single `telemetry` hypertable:
+Time-series data stored in hypertables:
+
+**telemetry** — Device telemetry and heartbeats:
 - Automatic time-based partitioning (chunks)
 - Compression policies for older data
 - All metrics stored as JSONB in `metrics` column
 - Tenant isolation via `tenant_id` column with application-level filtering
 - Supports 20,000+ msg/sec with batched COPY inserts
+
+**system_metrics** — Platform metrics for System Dashboard:
+- Service health counters (ingest, evaluator, dispatcher, delivery)
+- Platform aggregates (devices online/stale, alerts open, deliveries pending)
+- Database metrics (connections, size)
+- Collected every 5 seconds by metrics_collector
 
 ## Authentication Model
 
@@ -165,9 +175,13 @@ Operators have `tenant_id: ""` (empty) and use `operator_connection` (BYPASSRLS)
 ### Telemetry Ingestion Paths
 
 ```
-Device → MQTT → ingest_iot → TimescaleDB
-Device → HTTP POST → ui_iot/ingest → TimescaleDB
+Device → MQTT (1883) → ingest_iot → TimescaleDB
+Device → HTTP POST /ingest/v1/* → ui_iot → TimescaleDB
 ```
+
+**MQTT Path**: High-throughput ingestion via Mosquitto broker. Multi-worker async pipeline with auth caching.
+
+**HTTP Path**: REST alternative for devices/gateways that prefer HTTP. Single-message and batch endpoints with same validation.
 
 Both paths use shared validation (`services/shared/ingest_core.py`):
 - DeviceAuthCache for credential caching
@@ -244,6 +258,37 @@ Customer-provided URLs (webhooks, SNMP destinations, SMTP hosts) are validated:
 - Loopback addresses blocked
 - Cloud metadata endpoints blocked
 - DNS resolution validated
+
+## Operator System Dashboard
+
+The System Dashboard (`/app/operator/system`) provides real-time visibility into platform health and performance.
+
+### Components
+
+| Section | Data Source | Refresh |
+|---------|-------------|---------|
+| Service Health | Health endpoints on each service | 10s |
+| Metric Sparklines | system_metrics hypertable | 10s |
+| Time-series Charts | system_metrics with rate calculation | 10s |
+| Platform Totals | PostgreSQL aggregates | 15s |
+| Capacity Gauges | pg_stat + disk_usage | 30s |
+| Recent Errors | delivery_jobs + quarantine_events | 15s |
+
+### Metrics Collection
+
+The `MetricsCollector` in `ui_iot` polls service health endpoints every 5 seconds and writes to `system_metrics`:
+- `messages_received`, `messages_written`, `queue_depth` (ingest)
+- `rules_evaluated`, `alerts_created` (evaluator)
+- `alerts_processed`, `routes_matched` (dispatcher)
+- `jobs_succeeded`, `jobs_failed`, `jobs_pending` (delivery)
+- `connections`, `db_size_bytes` (postgres)
+- `devices_online`, `devices_stale`, `alerts_open` (platform)
+
+### Rate Calculation
+
+Counter metrics (like `messages_written`) are cumulative. The `/operator/system/metrics/history` endpoint supports a `rate=true` parameter that computes the derivative (delta/time) between consecutive samples to show actual throughput rates.
+
+---
 
 ## Operational Knobs
 

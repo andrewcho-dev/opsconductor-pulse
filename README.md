@@ -90,7 +90,7 @@ frontend/                # React SPA (Vite + TypeScript + TailwindCSS)
 docs/                    # Architecture and design documentation
   cursor-prompts/      # Phase-by-phase implementation prompts
 db/
-  migrations/           # PostgreSQL migrations (001-017)
+  migrations/           # PostgreSQL + TimescaleDB migrations (001-025)
 services/
   ingest_iot/           # MQTT device ingestion, auth cache, batched TimescaleDB writes
   evaluator_iot/        # State evaluation, alert generation, threshold rule engine
@@ -138,7 +138,7 @@ The frontend is a React SPA served at `/app/` by the `ui_iot` FastAPI backend.
 Dashboard, Device List, Device Detail (with telemetry charts), Alerts, Alert Rules, Webhook/SNMP/Email/MQTT Integration Management.
 
 ### Operator Pages
-Cross-tenant Overview, All Devices (with tenant filter), Audit Log (admin only), System Settings (admin only).
+Cross-tenant Overview, All Devices (with tenant filter), System Dashboard (health, metrics, capacity), Audit Log (admin only), System Settings (admin only).
 
 ## API Endpoints
 
@@ -229,6 +229,12 @@ Response: `202 Accepted` with `{"accepted": 2, "rejected": 0, "results": [...]}`
 | GET | `/operator/integrations` | All integrations |
 | GET | `/operator/audit-log` | Operator audit log (admin only) |
 | POST | `/operator/settings` | Update system settings (admin only) |
+| GET | `/operator/system/health` | Service health status (Postgres, MQTT, Keycloak, services) |
+| GET | `/operator/system/metrics` | Throughput, queue depth, last activity |
+| GET | `/operator/system/metrics/history` | Historical time-series (supports rate calculation) |
+| GET | `/operator/system/capacity` | Disk, DB connections, table sizes |
+| GET | `/operator/system/aggregates` | Platform totals (tenants, devices, alerts) |
+| GET | `/operator/system/errors` | Recent errors and failures |
 
 ### Admin Endpoints (X-Admin-Key required)
 
