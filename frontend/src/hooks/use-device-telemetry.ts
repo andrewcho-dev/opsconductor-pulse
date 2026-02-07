@@ -47,9 +47,8 @@ export function useDeviceTelemetry(deviceId: string): UseDeviceTelemetryResult {
     500 // higher limit for chart data
   );
 
-  // Reset WS buffer when time range changes
+  // Reset live status when time range changes
   useEffect(() => {
-    setWsPoints([]);
     setIsLive(false);
     setLiveCount(0);
   }, [timeRange]);
@@ -65,6 +64,9 @@ export function useDeviceTelemetry(deviceId: string): UseDeviceTelemetryResult {
         timestamp: string;
         metrics: Record<string, number | boolean>;
       };
+      if (!msg.metrics || Object.keys(msg.metrics).length === 0) {
+        return;
+      }
       const point: TelemetryPoint = {
         timestamp: msg.timestamp,
         metrics: msg.metrics,
@@ -98,6 +100,7 @@ export function useDeviceTelemetry(deviceId: string): UseDeviceTelemetryResult {
   const points = useMemo(() => {
     const restPoints = restData?.telemetry ?? [];
 
+    if (restPoints.length === 0 && wsPoints.length === 0) return [];
     if (wsPoints.length === 0) return restPoints;
 
     // Use a Map to deduplicate by timestamp
