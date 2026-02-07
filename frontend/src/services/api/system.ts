@@ -159,11 +159,17 @@ export async function fetchSystemErrors(hours = 1): Promise<SystemErrors> {
 
 export async function fetchMetricHistory(
   metric: string,
-  minutes = 15
+  minutes = 15,
+  rate = false
 ): Promise<MetricHistory> {
-  return apiGet<MetricHistory>(
-    `/operator/system/metrics/history?metric=${metric}&minutes=${minutes}`
-  );
+  const params = new URLSearchParams({
+    metric,
+    minutes: minutes.toString(),
+  });
+  if (rate) {
+    params.set("rate", "true");
+  }
+  return apiGet<MetricHistory>(`/operator/system/metrics/history?${params}`);
 }
 
 export async function fetchMetricHistoryBatch(

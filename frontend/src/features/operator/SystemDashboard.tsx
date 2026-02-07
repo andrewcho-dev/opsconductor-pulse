@@ -122,16 +122,19 @@ function MetricTimeSeriesChart({
   minutes = 60,
   color = "#3b82f6",
   refreshInterval,
+  rate = false,
 }: {
   title: string;
   metric: string;
   minutes?: number;
   color?: string;
   refreshInterval: number;
+  /** Set to true for counter metrics to compute rate (derivative) */
+  rate?: boolean;
 }) {
   const { data } = useQuery({
-    queryKey: ["metric-history", metric, minutes],
-    queryFn: () => fetchMetricHistory(metric, minutes),
+    queryKey: ["metric-history", metric, minutes, rate],
+    queryFn: () => fetchMetricHistory(metric, minutes, rate),
     refetchInterval: refreshInterval,
   });
 
@@ -386,6 +389,7 @@ export function SystemDashboard() {
           color="#22c55e"
           minutes={15}
           refreshInterval={refreshInterval}
+          rate={true}
         />
         <MetricChartCard
           title="Queue Depth"
@@ -455,6 +459,7 @@ export function SystemDashboard() {
           minutes={60}
           color="#22c55e"
           refreshInterval={refreshInterval}
+          rate={true}
         />
         <MetricTimeSeriesChart
           title="Queue Depth (Last Hour)"

@@ -13,6 +13,8 @@ interface MetricChartCardProps {
   color?: string;
   minutes?: number;
   refreshInterval?: number;
+  /** Set to true for counter metrics to compute rate (derivative) */
+  rate?: boolean;
 }
 
 export function MetricChartCard({
@@ -23,10 +25,11 @@ export function MetricChartCard({
   color,
   minutes = 15,
   refreshInterval = 10000,
+  rate = false,
 }: MetricChartCardProps) {
   const { data, isLoading } = useQuery({
-    queryKey: ["metric-history", metric, minutes],
-    queryFn: () => fetchMetricHistory(metric, minutes),
+    queryKey: ["metric-history", metric, minutes, rate],
+    queryFn: () => fetchMetricHistory(metric, minutes, rate),
     refetchInterval: refreshInterval,
   });
 

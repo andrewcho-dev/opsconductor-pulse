@@ -294,8 +294,14 @@ async def get_metrics_history(
     metric: str = Query(..., description="Metric name"),
     minutes: int = Query(15, ge=1, le=1440),
     service: Optional[str] = Query(None, description="Filter by service"),
+    rate: bool = Query(False, description="Compute rate (derivative) for counter metrics"),
 ):
-    """Get historical time-series for a metric."""
+    """Get historical time-series for a metric.
+
+    When rate=True, computes the derivative (change per second) between
+    consecutive data points. Use this for cumulative counter metrics like
+    messages_written to show actual throughput rates.
+    """
     pool = await get_pool()
 
     async with pool.acquire() as conn:
@@ -326,16 +332,36 @@ async def get_metrics_history(
                 minutes,
             )
 
-    points = [
-        {"time": row["time"].isoformat(), "value": row["value"]}
-        for row in rows
-    ]
+    if rate and len(rows) >= 2:
+        # Compute rate (derivative) between consecutive points
+        points = []
+        for i in range(1, len(rows)):
+            prev_row = rows[i - 1]
+            curr_row = rows[i]
+
+            time_delta = (curr_row["time"] - prev_row["time"]).total_seconds()
+            if time_delta > 0:
+                value_delta = curr_row["value"] - prev_row["value"]
+                # Handle counter resets (value decreased means service restarted)
+                if value_delta < 0:
+                    value_delta = curr_row["value"]
+                rate_per_sec = round(value_delta / time_delta, 2)
+                points.append({
+                    "time": curr_row["time"].isoformat(),
+                    "value": rate_per_sec,
+                })
+    else:
+        points = [
+            {"time": row["time"].isoformat(), "value": row["value"]}
+            for row in rows
+        ]
 
     return {
         "metric": metric,
         "service": service,
         "points": points,
         "minutes": minutes,
+        "rate": rate,
     }
 
 
