@@ -5,10 +5,10 @@ OpsConductor-Pulse is an edge telemetry, health, and signaling platform for mana
 ## Features
 
 - **React SPA frontend** — TypeScript + Vite + TailwindCSS + shadcn/ui with role-based views
-- **Multi-tenant isolation** — JWT claims + database RLS + per-tenant InfluxDB databases
+- **Multi-tenant isolation** — JWT claims + database RLS + tenant_id column filtering
 - **Real-time device monitoring** — Heartbeat tracking, stale detection, WebSocket live updates
 - **Flexible telemetry** — Arbitrary numeric/boolean metrics accepted without schema changes
-- **InfluxDB time-series** — InfluxDB 3 Core with per-tenant databases, batched writes
+- **TimescaleDB time-series** — PostgreSQL with TimescaleDB extension, hypertables, compression, batched writes
 - **Custom alert rules** — Customer-defined threshold rules (GT/LT/GTE/LTE) on any metric
 - **Alert generation** — Automatic NO_HEARTBEAT and THRESHOLD alerts with deduplication
 - **REST API (v2)** — JSON API at `/api/v2/` with JWT auth, rate limiting, dynamic telemetry
@@ -38,7 +38,6 @@ docker compose logs -f
 # Provisioning API:   http://localhost:8081
 # MQTT Broker:        localhost:1883
 # PostgreSQL:         localhost:5432
-# InfluxDB:           localhost:8181
 ```
 
 All traffic goes through a Caddy reverse proxy on ports 80/443. Port 80 redirects to HTTPS. Caddy generates a self-signed certificate (browser will show a warning on first visit).
@@ -93,7 +92,7 @@ docs/                    # Architecture and design documentation
 db/
   migrations/           # PostgreSQL migrations (001-017)
 services/
-  ingest_iot/           # MQTT device ingestion, auth cache, batched InfluxDB writes
+  ingest_iot/           # MQTT device ingestion, auth cache, batched TimescaleDB writes
   evaluator_iot/        # State evaluation, alert generation, threshold rule engine
   ui_iot/               # FastAPI backend — JSON APIs, SPA serving, WebSocket
   provision_api/        # Device provisioning and admin APIs
@@ -111,8 +110,8 @@ scripts/                 # Utility scripts (coverage, test DB setup)
 | Service | Purpose |
 |---------|---------|
 | **caddy** | HTTPS reverse proxy — TLS termination, path-based routing to UI and Keycloak |
-| **ingest_iot** | MQTT device ingress with auth caching, multi-worker pipeline, batched InfluxDB writes |
-| **evaluator_iot** | Device state tracking, NO_HEARTBEAT alerts, threshold rule evaluation from InfluxDB |
+| **ingest_iot** | MQTT device ingress with auth caching, multi-worker pipeline, batched TimescaleDB writes |
+| **evaluator_iot** | Device state tracking, NO_HEARTBEAT alerts, threshold rule evaluation from TimescaleDB |
 | **ui_iot** | FastAPI backend — serves React SPA, JSON APIs (`/api/v2/`, `/customer/`, `/operator/`), WebSocket |
 | **provision_api** | Device registration, activation codes, admin operations (X-Admin-Key) |
 | **dispatcher** | Matches open alerts to integration routes, creates delivery jobs |
@@ -258,7 +257,7 @@ Publish to customer topics with configurable QoS and retain settings, topic temp
 
 - **Keycloak OIDC** — Browser-native PKCE authentication via keycloak-js
 - **JWT + RLS** — Application-level tenant filtering backed by database row-level security
-- **InfluxDB isolation** — Per-tenant databases for telemetry data
+- **TimescaleDB isolation** — Tenant filtering via tenant_id column with application-level enforcement
 - **SSRF prevention** — Webhook URLs and SNMP/SMTP hosts validated (blocks private IPs, loopback, cloud metadata)
 - **HTTPS** — Caddy TLS termination with self-signed certificates (production should use real certs)
 - **Audit logging** — All operator cross-tenant access logged with IP and user agent

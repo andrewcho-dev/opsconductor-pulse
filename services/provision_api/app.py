@@ -6,7 +6,6 @@ from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
 import asyncpg
-import httpx
 import logging
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -21,11 +20,6 @@ PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 ADMIN_KEY = os.getenv("ADMIN_KEY", "change-me-now")
 ACTIVATION_TTL_MINUTES = int(os.getenv("ACTIVATION_TTL_MINUTES", "60"))
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
-
-_influx_tenants: set[str] = set()
-
 app = FastAPI(title="IoT Provisioning API", version="0.1")
 
 pool: asyncpg.Pool | None = None
@@ -204,35 +198,6 @@ class AdminRouteResponse(BaseModel):
 # Admin endpoints
 # -------------------------
 
-async def _ensure_influx_db(tenant_id: str) -> None:
-    """Best-effort: write a dummy point to auto-create the InfluxDB database."""
-    if tenant_id in _influx_tenants:
-        return
-    db_name = f"telemetry_{tenant_id}"
-    line = "_init,source=provisioning value=1i"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
-                content=line,
-                headers={
-                    "Authorization": f"Bearer {INFLUXDB_TOKEN}",
-                    "Content-Type": "text/plain",
-                },
-            )
-            if resp.status_code < 300:
-                _influx_tenants.add(tenant_id)
-            else:
-                logger.warning(
-                    "InfluxDB DB create failed for %s: %s %s",
-                    db_name,
-                    resp.status_code,
-                    resp.text,
-                )
-    except Exception:
-        logger.warning("InfluxDB DB create failed for %s", db_name, exc_info=True)
-
-
 @app.post("/api/admin/devices", response_model=AdminCreateDeviceResponse)
 async def admin_create_device(payload: AdminCreateDevice, x_admin_key: str | None = Header(default=None)):
     require_admin(x_admin_key)
@@ -266,12 +231,6 @@ async def admin_create_device(payload: AdminCreateDevice, x_admin_key: str | Non
             """,
             payload.tenant_id, payload.device_id, activation_hash, payload.site_id, expires_at
         )
-
-    # Best-effort: ensure InfluxDB database exists for this tenant
-    try:
-        await _ensure_influx_db(payload.tenant_id)
-    except Exception:
-        logger.warning("Failed to ensure InfluxDB DB for tenant %s", payload.tenant_id)
 
     return AdminCreateDeviceResponse(
         tenant_id=payload.tenant_id,

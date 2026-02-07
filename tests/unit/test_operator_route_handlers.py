@@ -187,8 +187,8 @@ async def test_operator_view_device_json(client, monkeypatch):
     _mock_operator_deps(monkeypatch, conn, role="operator")
     monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
     monkeypatch.setattr(operator_routes, "fetch_device", AsyncMock(return_value={"device_id": "d1"}))
-    monkeypatch.setattr(operator_routes, "fetch_device_events_influx", AsyncMock(return_value=[]))
-    monkeypatch.setattr(operator_routes, "fetch_device_telemetry_influx", AsyncMock(return_value=[]))
+    monkeypatch.setattr(operator_routes, "fetch_device_events", AsyncMock(return_value=[]))
+    monkeypatch.setattr(operator_routes, "fetch_device_telemetry", AsyncMock(return_value=[]))
 
     resp = await client.get("/operator/tenants/tenant-a/devices/d1", headers=_auth_header())
     assert resp.status_code == 200

@@ -26,55 +26,6 @@ def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def _escape_tag_value(v: str) -> str:
-    """Escape commas, equals, and spaces in InfluxDB line protocol tag values."""
-    return v.replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
-
-
-def _escape_field_key(key):
-    """Escape field key for InfluxDB line protocol."""
-    return str(key).replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
-
-
-def _build_line_protocol(msg_type: str, device_id: str, site_id: str, payload: dict, event_ts) -> str:
-    """Build InfluxDB line protocol string for a heartbeat or telemetry event."""
-    escaped_device = _escape_tag_value(device_id)
-    escaped_site = _escape_tag_value(site_id)
-
-    if event_ts is not None:
-        ns_ts = int(event_ts.timestamp() * 1_000_000_000)
-    else:
-        ns_ts = int(time.time() * 1_000_000_000)
-
-    if msg_type == "heartbeat":
-        seq = payload.get("seq", 0)
-        return f"heartbeat,device_id={escaped_device},site_id={escaped_site} seq={seq}i {ns_ts}"
-
-    elif msg_type == "telemetry":
-        metrics = payload.get("metrics") or {}
-        fields = []
-        seq = payload.get("seq", 0)
-        fields.append(f"seq={seq}i")
-
-        for key, value in metrics.items():
-            if value is None:
-                continue
-            escaped_key = _escape_field_key(key)
-            if isinstance(value, bool):
-                fields.append(f"{escaped_key}={'true' if value else 'false'}")
-            elif isinstance(value, int):
-                fields.append(f"{escaped_key}={value}i")
-            elif isinstance(value, float):
-                fields.append(f"{escaped_key}={value}")
-            elif isinstance(value, str):
-                continue
-
-        field_str = ",".join(fields)
-        return f"telemetry,device_id={escaped_device},site_id={escaped_site} {field_str} {ns_ts}"
-
-    return ""
-
-
 class TokenBucket:
     def __init__(self):
         self.tokens = 0.0
@@ -299,7 +250,6 @@ class TimescaleBatchWriter:
 class IngestResult:
     success: bool
     reason: str | None = None
-    line_protocol: str | None = None
 
 
 async def validate_and_prepare(
@@ -372,6 +322,4 @@ async def validate_and_prepare(
         if sha256_hex(str(provision_token)) != expected:
             return IngestResult(False, "TOKEN_INVALID")
 
-    event_ts = parse_ts(payload.get("ts"))
-    line_protocol = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
-    return IngestResult(True, line_protocol=line_protocol)
+    return IngestResult(True)

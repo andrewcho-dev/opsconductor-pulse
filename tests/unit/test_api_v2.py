@@ -37,7 +37,6 @@ if "starlette" not in sys.modules:
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "ui_iot"))
 
-from db.influx_queries import extract_metrics, TELEMETRY_METADATA_KEYS
 from ws_manager import ConnectionManager, WSConnection
 
 # Configure rate limit for tests before importing api_v2
@@ -53,54 +52,6 @@ except Exception:
 from fastapi import HTTPException
 
 pytestmark = [pytest.mark.unit]
-
-
-def test_extract_metrics_basic():
-    row = {"time": "t", "device_id": "d1", "battery_pct": 87.5, "temp_c": 24.2}
-    assert extract_metrics(row) == {"battery_pct": 87.5, "temp_c": 24.2}
-
-
-def test_extract_metrics_filters_all_metadata():
-    row = {"time": "t", "device_id": "d1", "site_id": "s1", "seq": 42}
-    assert extract_metrics(row) == {}
-
-
-def test_extract_metrics_filters_iox_prefix():
-    row = {"time": "t", "iox::measurement": "telemetry", "battery_pct": 50.0}
-    assert extract_metrics(row) == {"battery_pct": 50.0}
-
-
-def test_extract_metrics_ignores_none_values():
-    row = {"time": "t", "battery_pct": None, "temp_c": 24.2}
-    assert extract_metrics(row) == {"temp_c": 24.2}
-
-
-def test_extract_metrics_empty_row():
-    assert extract_metrics({}) == {}
-
-
-def test_extract_metrics_preserves_types():
-    row = {"time": "t", "count": 42, "ratio": 0.75, "active": True}
-    assert extract_metrics(row) == {"count": 42, "ratio": 0.75, "active": True}
-
-
-def test_extract_metrics_many_dynamic_keys():
-    row = {
-        "time": "t",
-        "device_id": "d1",
-        "pressure_psi": 14.7,
-        "humidity_pct": 65.2,
-        "vibration_g": 0.03,
-    }
-    assert extract_metrics(row) == {
-        "pressure_psi": 14.7,
-        "humidity_pct": 65.2,
-        "vibration_g": 0.03,
-    }
-
-
-def test_metadata_keys_constant():
-    assert TELEMETRY_METADATA_KEYS == {"time", "device_id", "site_id", "seq"}
 
 
 class MockWebSocket:

@@ -4,12 +4,12 @@
 ```
 Browser → Caddy (HTTPS :443) → ui_iot (React SPA + JSON APIs)
                                → Keycloak (OIDC auth)
-Devices → MQTT (:1883) → ingest_iot → InfluxDB (telemetry)
+Devices → MQTT (:1883) → ingest_iot → TimescaleDB (telemetry)
 Admin → provision_api (:8081)
 ```
 
 ## Device Flow
-device → MQTT → ingest_iot (auth cache, batched writes) → InfluxDB (telemetry)
+device → MQTT → ingest_iot (auth cache, batched writes) → TimescaleDB (telemetry)
 → evaluator_iot → device_state / fleet_alert (NO_HEARTBEAT + THRESHOLD)
 → dispatcher → delivery_worker → webhook / SNMP / email / MQTT
 
@@ -28,7 +28,7 @@ device → activate → provision_token
 - tenant_id is the isolation boundary (JWT claim)
 - customers only see their tenant (RLS via pulse_app role)
 - operators see all tenants (BYPASSRLS via pulse_operator role, audited)
-- InfluxDB uses per-tenant databases for telemetry isolation
+- TimescaleDB uses tenant_id column filtering for telemetry isolation
 
 ## Alert Types
 - NO_HEARTBEAT — device missed heartbeat window
@@ -41,8 +41,7 @@ device → activate → provision_token
 - MQTT (publish to customer-configured topics)
 
 ## Data Stores
-- **PostgreSQL**: device_state, fleet_alert, alert_rules, integrations, integration_routes, delivery_jobs, delivery_attempts, delivery_log, quarantine_events, operator_audit_log, app_settings, rate_limits
-- **InfluxDB 3 Core**: Per-tenant telemetry databases (heartbeat + dynamic metrics)
+- **PostgreSQL + TimescaleDB**: All tables including telemetry hypertable. Core tables: device_state, fleet_alert, alert_rules, integrations, integration_routes, delivery_jobs, delivery_attempts, delivery_log, quarantine_events, operator_audit_log, app_settings, rate_limits, telemetry (hypertable), system_metrics (hypertable)
 
 ## API Layers
 - `/api/v2/*` — REST API + WebSocket (customer-scoped, JWT Bearer)
@@ -54,7 +53,7 @@ device → activate → provision_token
 | Service | Container | Purpose |
 |---------|-----------|---------|
 | caddy | iot-caddy | HTTPS reverse proxy |
-| ingest_iot | iot-ingest | MQTT ingestion + InfluxDB writes |
+| ingest_iot | iot-ingest | MQTT ingestion + TimescaleDB writes |
 | evaluator_iot | iot-evaluator | State tracking + alert generation |
 | ui_iot | iot-ui | FastAPI backend + SPA serving |
 | provision_api | iot-api | Device provisioning |

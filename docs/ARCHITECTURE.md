@@ -16,7 +16,7 @@ Browser ──► https://HOST (Caddy, ports 80/443)
               ├── /operator/*   ──► ui_iot (operator JSON APIs)
               └── /*            ──► ui_iot (catch-all)
 
-IoT Devices ──► MQTT (1883) ──► ingest_iot ──► InfluxDB (telemetry)
+IoT Devices ──► MQTT (1883) ──► ingest_iot ──► TimescaleDB (telemetry)
                                                     │
                                               evaluator_iot
                                                     │
@@ -41,7 +41,6 @@ All browser traffic goes through a **Caddy** reverse proxy that terminates TLS w
 | 8081 | provision_api | Admin API (direct, no proxy) |
 | 1883 | Mosquitto | MQTT device ingestion |
 | 5432 | PostgreSQL | Database (internal) |
-| 8181 | InfluxDB | Time-series (internal) |
 
 ## Services and Responsibilities
 
@@ -49,15 +48,15 @@ All browser traffic goes through a **Caddy** reverse proxy that terminates TLS w
 HTTPS reverse proxy. Terminates TLS with internally generated self-signed certificate. Routes `/realms/*`, `/resources/*`, `/admin/*`, `/js/*` to Keycloak and everything else to `ui_iot`. Port 80 redirects to HTTPS.
 
 ### services/ingest_iot
-Device ingress, authentication, validation, and quarantine. Handles MQTT device connections, validates provision tokens via a TTL-based auth cache (eliminates per-message PG lookups), enforces rate limits, and writes accepted telemetry to InfluxDB using batched line protocol writes. Multi-worker async pipeline processes ~2000 msg/sec per instance. Supports arbitrary numeric/boolean metrics without schema changes.
+Device ingress, authentication, validation, and quarantine. Handles MQTT device connections, validates provision tokens via a TTL-based auth cache (eliminates per-message PG lookups), enforces rate limits, and writes accepted telemetry to TimescaleDB using batched writes. Multi-worker async pipeline processes ~20,000 msg/sec per instance. Supports arbitrary numeric/boolean metrics without schema changes.
 
 ### services/evaluator_iot
-Heartbeat tracking, state management, alert generation, and threshold rule evaluation. Reads telemetry from InfluxDB to maintain `device_state`, detects stale devices (NO_HEARTBEAT alerts), and evaluates customer-defined threshold rules against latest device metrics (THRESHOLD alerts). Rules support GT, LT, GTE, LTE operators on any metric. Creates and manages `alert_rules` table DDL on startup.
+Heartbeat tracking, state management, alert generation, and threshold rule evaluation. Reads telemetry from TimescaleDB to maintain `device_state`, detects stale devices (NO_HEARTBEAT alerts), and evaluates customer-defined threshold rules against latest device metrics (THRESHOLD alerts). Rules support GT, LT, GTE, LTE operators on any metric. Creates and manages `alert_rules` table DDL on startup.
 
 ### services/ui_iot
 FastAPI backend serving the React SPA and providing JSON APIs. Three API layers:
 
-- **`/api/v2/*`** — REST API with JWT Bearer auth, per-tenant rate limiting, dynamic InfluxDB telemetry queries, and WebSocket live data streaming. Customer-scoped (RLS-enforced).
+- **`/api/v2/*`** — REST API with JWT Bearer auth, per-tenant rate limiting, TimescaleDB telemetry queries, and WebSocket live data streaming. Customer-scoped (RLS-enforced).
 - **`/customer/*`** — Customer JSON APIs for integrations, alert rules, devices, and alerts. Customer-scoped (RLS-enforced).
 - **`/operator/*`** — Operator JSON APIs for cross-tenant views (BYPASSRLS), quarantine, audit log, and system settings. All access audited.
 
@@ -123,10 +122,13 @@ Transactional data store for all non-telemetry data:
 - `app_settings` — System configuration
 - `rate_limits` — Per-device rate limiting
 
-### InfluxDB 3 Core
-Time-series telemetry store with per-tenant databases (`telemetry_{tenant_id}`):
-- Heartbeat measurements (device presence)
-- Telemetry measurements (all dynamic metrics: battery_pct, temp_c, pressure_psi, etc.)
+### TimescaleDB (PostgreSQL Extension)
+Time-series telemetry stored in a single `telemetry` hypertable:
+- Automatic time-based partitioning (chunks)
+- Compression policies for older data
+- All metrics stored as JSONB in `metrics` column
+- Tenant isolation via `tenant_id` column with application-level filtering
+- Supports 20,000+ msg/sec with batched COPY inserts
 
 ## Authentication Model
 
@@ -163,22 +165,22 @@ Operators have `tenant_id: ""` (empty) and use `operator_connection` (BYPASSRLS)
 ### Telemetry Ingestion Paths
 
 ```
-Device → MQTT → ingest_iot → InfluxDB
-Device → HTTP POST → ui_iot/ingest → InfluxDB
+Device → MQTT → ingest_iot → TimescaleDB
+Device → HTTP POST → ui_iot/ingest → TimescaleDB
 ```
 
 Both paths use shared validation (`services/shared/ingest_core.py`):
 - DeviceAuthCache for credential caching
-- InfluxBatchWriter for batched writes
+- TimescaleBatchWriter for batched writes (COPY for large batches, executemany for small)
 - TokenBucket for per-device rate limiting
 
 ### Device Telemetry/Heartbeat Flow
 ```
-Device → MQTT → ingest_iot → auth cache → validation → InfluxDB (batched writes)
+Device → MQTT → ingest_iot → auth cache → validation → TimescaleDB (batched writes)
                                                               ↓
                                                       evaluator_iot → device_state + fleet_alert
                                                               ↓
-                                       ui_iot (REST API reads from InfluxDB + PG)
+ui_iot (REST API reads from TimescaleDB)
                                                               ↓
                                        React SPA (charts, gauges, WebSocket live updates)
 ```
@@ -217,7 +219,7 @@ Device → ingest_iot → provision_token validation → accepted telemetry
 1. **JWT-based identity**: tenant_id extracted from validated JWT claims only
 2. **Application enforcement**: All queries include tenant_id in WHERE clause
 3. **RLS defense-in-depth**: PostgreSQL row-level security as backup layer
-4. **InfluxDB isolation**: Per-tenant databases for telemetry data
+4. **TimescaleDB isolation**: Tenant filtering via tenant_id column with application-level enforcement
 5. **Audit logging**: All operator cross-tenant access is logged with IP and user agent
 
 ### RLS Configuration
@@ -252,8 +254,8 @@ Customer-provided URLs (webhooks, SNMP destinations, SMTP hosts) are validated:
 ### Ingestion Performance
 - `INGEST_WORKER_COUNT`: Async worker count (default: 4)
 - `INGEST_QUEUE_SIZE`: Processing queue depth (default: 50000)
-- `INFLUX_BATCH_SIZE`: InfluxDB write batch size (default: 500)
-- `INFLUX_FLUSH_INTERVAL_MS`: Max batch wait time (default: 1000)
+- `TIMESCALE_BATCH_SIZE`: TimescaleDB write batch size (default: 500)
+- `TIMESCALE_FLUSH_INTERVAL_MS`: Max batch wait time (default: 1000)
 - `AUTH_CACHE_TTL_SECONDS`: Device auth cache TTL (default: 60)
 
 ### Delivery Configuration
