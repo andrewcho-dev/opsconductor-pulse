@@ -98,17 +98,6 @@ def route_matches(alert: dict, route: dict) -> bool:
     if min_sev is not None and alert["severity"] < min_sev:
         return False
 
-    severities = route.get("severities")
-    if severities:
-        alert_severity_int = alert["severity"]
-        severity_str = None
-        for name, val in SEVERITY_MAP.items():
-            if val == alert_severity_int:
-                severity_str = name
-                break
-        if severity_str and severity_str not in severities:
-            return False
-
     alert_types = route["alert_types"] or []
     if alert_types and alert["alert_type"] not in alert_types:
         return False
@@ -156,8 +145,7 @@ async def fetch_routes(conn: asyncpg.Connection, tenant_id: str) -> list[asyncpg
     return await conn.fetch(
         """
         SELECT ir.tenant_id, ir.route_id, ir.integration_id, ir.min_severity,
-               ir.alert_types, ir.site_ids, ir.device_prefixes, ir.deliver_on,
-               ir.severities
+               ir.alert_types, ir.site_ids, ir.device_prefixes, ir.deliver_on
         FROM integration_routes ir
         JOIN integrations i ON ir.integration_id = i.integration_id AND ir.tenant_id = i.tenant_id
         WHERE ir.tenant_id=$1
