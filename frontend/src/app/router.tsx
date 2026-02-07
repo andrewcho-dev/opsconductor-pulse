@@ -13,6 +13,7 @@ import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
 import OperatorTenantsPage from "@/features/operator/OperatorTenantsPage";
 import OperatorTenantDetailPage from "@/features/operator/OperatorTenantDetailPage";
+import { SystemDashboard } from "@/features/operator/SystemDashboard";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
 import { useAuth } from "@/services/auth/AuthProvider";
@@ -46,6 +47,7 @@ export const router = createBrowserRouter(
           path: "operator/tenants/:tenantId",
           element: <OperatorTenantDetailPage />,
         },
+        { path: "operator/system", element: <SystemDashboard /> },
         { path: "operator/audit-log", element: <AuditLogPage /> },
         { path: "operator/settings", element: <SettingsPage /> },
       ],

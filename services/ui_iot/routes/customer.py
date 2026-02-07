@@ -14,7 +14,6 @@ from starlette.requests import Request
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
-import httpx
 from utils.url_validator import validate_webhook_url
 from utils.snmp_validator import validate_snmp_host
 from utils.email_validator import validate_email_integration
@@ -57,7 +56,7 @@ from db.queries import (
     update_integration,
     update_integration_route,
 )
-from db.influx_queries import fetch_device_telemetry_influx, fetch_device_events_influx
+from db.telemetry_queries import fetch_device_telemetry, fetch_device_events
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 from services.email_sender import send_alert_email
 from services.mqtt_sender import publish_alert
@@ -74,14 +73,6 @@ PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 pool: asyncpg.Pool | None = None
-_influx_client: httpx.AsyncClient | None = None
-
-
-def _get_influx_client() -> httpx.AsyncClient:
-    global _influx_client
-    if _influx_client is None:
-        _influx_client = httpx.AsyncClient(timeout=10.0)
-    return _influx_client
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -273,9 +264,8 @@ async def get_device_detail(device_id: str):
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            ic = _get_influx_client()
-            events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
-            telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
+            events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
+            telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
     except HTTPException:
         raise
     except Exception:

@@ -24,11 +24,6 @@ export interface TenantStats {
     last_device_activity: string | null;
     last_alert: string | null;
   };
-  influxdb?: {
-    exists: boolean | null;
-    telemetry_count: number | null;
-    error?: string;
-  };
 }
 
 export interface TenantSummary {
@@ -93,8 +88,3 @@ export async function deleteTenant(tenantId: string): Promise<void> {
   await apiDelete(`/operator/tenants/${tenantId}`);
 }
 
-export async function provisionTenantInfluxdb(
-  tenantId: string
-): Promise<{ tenant_id: string; influxdb_provisioned: boolean }> {
-  return apiPost(`/operator/tenants/${tenantId}/provision-influxdb`, {});
-}

@@ -8,6 +8,7 @@ import {
   Network,
   Mail,
   Radio,
+  Activity,
   Monitor,
   Server,
   FileText,
@@ -46,6 +47,7 @@ const operatorNav = [
   { label: "Overview", href: "/operator", icon: Monitor },
   { label: "All Devices", href: "/operator/devices", icon: Server },
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
+  { label: "System", href: "/operator/system", icon: Activity },
   { label: "Audit Log", href: "/operator/audit-log", icon: FileText },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];

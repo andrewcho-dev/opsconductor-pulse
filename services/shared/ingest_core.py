@@ -2,9 +2,15 @@ import asyncio
 import hashlib
 import time
 import json
+import logging
 from datetime import datetime, timezone
 from dateutil import parser as dtparser
 from dataclasses import dataclass
+from typing import Optional
+
+import asyncpg
+
+logger = logging.getLogger(__name__)
 
 
 def parse_ts(v):
@@ -114,85 +120,178 @@ class DeviceAuthCache:
         return {"size": len(self._cache), "hits": self._hits, "misses": self._misses}
 
 
-class InfluxBatchWriter:
-    def __init__(self, http_client, influx_url, influx_token, batch_size=500, flush_interval_ms=1000):
-        self._http = http_client
-        self._influx_url = influx_url
-        self._influx_token = influx_token
-        self._batch_size = batch_size
-        self._flush_interval_ms = flush_interval_ms
-        self._buffers = {}
-        self._flush_task = None
-        self.writes_ok = 0
-        self.writes_err = 0
-        self.flushes = 0
+@dataclass
+class TelemetryRecord:
+    """A single telemetry record to be written."""
+    time: datetime
+    tenant_id: str
+    device_id: str
+    site_id: Optional[str]
+    msg_type: str
+    seq: int
+    metrics: dict
+
+
+class TimescaleBatchWriter:
+    """
+    Batched writer for TimescaleDB telemetry table.
+    Collects records and flushes periodically or when batch is full.
+    """
+
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        batch_size: int = 500,
+        flush_interval_ms: int = 1000,
+    ):
+        self.pool = pool
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval_ms / 1000.0
+        self.batch: list[TelemetryRecord] = []
+        self._lock = asyncio.Lock()
+        self._flush_task: Optional[asyncio.Task] = None
+        self._running = False
+
+        # Metrics
+        self.records_written = 0
+        self.batches_flushed = 0
+        self.write_errors = 0
+        self.last_flush_time: Optional[datetime] = None
+        self.last_flush_latency_ms: float = 0
 
     async def start(self):
-        self._flush_task = asyncio.create_task(self._periodic_flush())
+        """Start the background flush loop."""
+        if self._running:
+            return
+        self._running = True
+        self._flush_task = asyncio.create_task(self._flush_loop())
+        logger.info(
+            "TimescaleBatchWriter started (batch_size=%d, flush_interval=%.1fs)",
+            self.batch_size,
+            self.flush_interval,
+        )
 
     async def stop(self):
+        """Stop the flush loop and flush remaining records."""
+        self._running = False
         if self._flush_task:
             self._flush_task.cancel()
             try:
                 await self._flush_task
             except asyncio.CancelledError:
                 pass
-        await self.flush_all()
+        await self._flush()
+        logger.info("TimescaleBatchWriter stopped")
 
-    async def add(self, tenant_id, line):
-        self._buffers.setdefault(tenant_id, []).append(line)
-        if len(self._buffers[tenant_id]) >= self._batch_size:
-            lines = self._buffers[tenant_id]
-            self._buffers[tenant_id] = []
-            await self._write_batch(tenant_id, lines)
+    async def add(self, record: TelemetryRecord):
+        """Add a record to the batch."""
+        async with self._lock:
+            self.batch.append(record)
+            if len(self.batch) >= self.batch_size:
+                await self._flush_locked()
 
-    async def _periodic_flush(self):
-        while True:
-            try:
-                await asyncio.sleep(self._flush_interval_ms / 1000.0)
-                await self.flush_all()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[ingest] InfluxDB batch flush error: {e}")
+    async def add_many(self, records: list[TelemetryRecord]):
+        """Add multiple records to the batch."""
+        async with self._lock:
+            self.batch.extend(records)
+            if len(self.batch) >= self.batch_size:
+                await self._flush_locked()
 
-    async def flush_all(self):
-        to_flush = self._buffers
-        self._buffers = {}
-        for tenant_id, lines in to_flush.items():
-            if lines:
-                await self._write_batch(tenant_id, lines)
+    async def _flush_loop(self):
+        """Background loop that flushes periodically."""
+        while self._running:
+            await asyncio.sleep(self.flush_interval)
+            await self._flush()
 
-    async def _write_batch(self, tenant_id, lines):
-        db_name = f"telemetry_{tenant_id}"
-        body = "\n".join(lines)
-        headers = {
-            "Authorization": f"Bearer {self._influx_token}",
-            "Content-Type": "text/plain",
-        }
-        for attempt in range(2):
-            try:
-                resp = await self._http.post(
-                    f"{self._influx_url}/api/v3/write_lp?db={db_name}",
-                    content=body,
-                    headers=headers,
+    async def _flush(self):
+        """Flush the current batch."""
+        async with self._lock:
+            await self._flush_locked()
+
+    async def _flush_locked(self):
+        """Flush while holding the lock."""
+        if not self.batch:
+            return
+
+        records_to_write = self.batch
+        self.batch = []
+
+        start_time = time.time()
+        try:
+            async with self.pool.acquire() as conn:
+                if len(records_to_write) > 100:
+                    await self._copy_insert(conn, records_to_write)
+                else:
+                    await self._batch_insert(conn, records_to_write)
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            self.records_written += len(records_to_write)
+            self.batches_flushed += 1
+            self.last_flush_time = datetime.utcnow()
+            self.last_flush_latency_ms = elapsed_ms
+
+            if elapsed_ms > 100:
+                logger.warning(
+                    "Slow batch flush: %d records in %.1fms",
+                    len(records_to_write),
+                    elapsed_ms,
                 )
-                if resp.status_code < 300:
-                    self.writes_ok += len(lines)
-                    self.flushes += 1
-                    return
-                print(f"[ingest] InfluxDB batch write failed ({attempt + 1}/2): {resp.status_code} {resp.text}")
-            except Exception as e:
-                print(f"[ingest] InfluxDB batch write exception ({attempt + 1}/2): {e}")
-        self.writes_err += len(lines)
 
-    def stats(self):
-        buffer_depth = sum(len(v) for v in self._buffers.values())
+        except Exception as e:
+            self.write_errors += 1
+            logger.error("Batch write failed: %s", e)
+
+    async def _batch_insert(self, conn: asyncpg.Connection, records: list[TelemetryRecord]):
+        """Insert using executemany (good for small batches)."""
+        await conn.executemany(
+            """
+            INSERT INTO telemetry (time, tenant_id, device_id, site_id, msg_type, seq, metrics)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+            """,
+            [
+                (
+                    r.time,
+                    r.tenant_id,
+                    r.device_id,
+                    r.site_id,
+                    r.msg_type,
+                    r.seq,
+                    json.dumps(r.metrics),
+                )
+                for r in records
+            ],
+        )
+
+    async def _copy_insert(self, conn: asyncpg.Connection, records: list[TelemetryRecord]):
+        """Insert using COPY (best for large batches)."""
+        rows = [
+            (
+                r.time,
+                r.tenant_id,
+                r.device_id,
+                r.site_id,
+                r.msg_type,
+                r.seq,
+                json.dumps(r.metrics),
+            )
+            for r in records
+        ]
+
+        await conn.copy_records_to_table(
+            "telemetry",
+            records=rows,
+            columns=["time", "tenant_id", "device_id", "site_id", "msg_type", "seq", "metrics"],
+        )
+
+    def get_stats(self) -> dict:
+        """Get writer statistics."""
         return {
-            "writes_ok": self.writes_ok,
-            "writes_err": self.writes_err,
-            "flushes": self.flushes,
-            "buffer_depth": buffer_depth,
+            "records_written": self.records_written,
+            "batches_flushed": self.batches_flushed,
+            "write_errors": self.write_errors,
+            "pending_records": len(self.batch),
+            "last_flush_time": self.last_flush_time.isoformat() if self.last_flush_time else None,
+            "last_flush_latency_ms": self.last_flush_latency_ms,
         }
 
 

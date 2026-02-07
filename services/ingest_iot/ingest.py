@@ -3,18 +3,17 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from typing import Optional
 import asyncpg
-import httpx
 import paho.mqtt.client as mqtt
+from aiohttp import web
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
-    _escape_tag_value,
-    _escape_field_key,
-    _build_line_protocol,
     TokenBucket,
     DeviceAuthCache,
-    InfluxBatchWriter,
+    TimescaleBatchWriter,
+    TelemetryRecord,
 )
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
@@ -33,17 +32,64 @@ REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
 COUNTERS_ENABLED = os.getenv("COUNTERS_ENABLED", "1") == "1"
 SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
 LOG_STATS_EVERY_SECONDS = int(os.getenv("LOG_STATS_EVERY_SECONDS", "30"))
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
-INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "500"))
-INFLUX_FLUSH_INTERVAL_MS = int(os.getenv("INFLUX_FLUSH_INTERVAL_MS", "1000"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
+FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
 INGEST_QUEUE_SIZE = int(os.getenv("INGEST_QUEUE_SIZE", "50000"))
 
+COUNTERS = {
+    "messages_received": 0,
+    "messages_written": 0,
+    "messages_rejected": 0,
+    "queue_depth": 0,
+    "last_write_at": None,
+}
+INGESTOR_REF: Optional["Ingestor"] = None
+
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+def _counter_inc(key: str, delta: int = 1) -> None:
+    if not COUNTERS_ENABLED:
+        return
+    COUNTERS[key] += delta
+
+
+async def health_handler(request):
+    """Health check endpoint with metrics."""
+    if INGESTOR_REF is not None:
+        COUNTERS["messages_received"] = INGESTOR_REF.msg_received
+        COUNTERS["messages_rejected"] = INGESTOR_REF.msg_dropped
+        COUNTERS["queue_depth"] = INGESTOR_REF.queue.qsize()
+        if INGESTOR_REF.batch_writer is not None:
+            stats = INGESTOR_REF.batch_writer.get_stats()
+            COUNTERS["messages_written"] = stats.get("records_written", 0)
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "ingest",
+            "counters": {
+                "messages_received": COUNTERS["messages_received"],
+                "messages_written": COUNTERS["messages_written"],
+                "messages_rejected": COUNTERS["messages_rejected"],
+                "queue_depth": COUNTERS["queue_depth"],
+            },
+            "last_write_at": COUNTERS["last_write_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] ingest health server started on port 8080")
 
 def topic_extract(topic: str):
     parts = topic.split("/")
@@ -134,11 +180,8 @@ class Ingestor:
 
         # per-device buckets
         self.buckets: dict[tuple[str, str], TokenBucket] = {}
-        self.influx_client: httpx.AsyncClient | None = None
-        self.influx_ok = 0
-        self.influx_err = 0
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
-        self.batch_writer: InfluxBatchWriter | None = None
+        self.batch_writer: TimescaleBatchWriter | None = None
 
     async def init_db(self):
         for attempt in range(60):
@@ -211,21 +254,20 @@ class Ingestor:
             await asyncio.sleep(LOG_STATS_EVERY_SECONDS)
             cache_stats = self.auth_cache.stats()
             batch_stats = {
-                "writes_ok": 0,
-                "writes_err": 0,
-                "flushes": 0,
-                "buffer_depth": 0,
+                "records_written": 0,
+                "write_errors": 0,
+                "batches_flushed": 0,
+                "pending_records": 0,
             }
             if self.batch_writer is not None:
-                batch_stats = self.batch_writer.stats()
+                batch_stats = self.batch_writer.get_stats()
             print(
                 f"[stats] received={self.msg_received} enqueued={self.msg_enqueued} dropped={self.msg_dropped} "
                 f"qsize={self.queue.qsize()} mode={self.mode} store_rejects={int(self.store_rejects)} mirror_rejects={int(self.mirror_rejects)} "
                 f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst} "
-                f"influx_ok={self.influx_ok} influx_err={self.influx_err} "
                 f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']} "
-                f"influx_batch_ok={batch_stats['writes_ok']} influx_batch_err={batch_stats['writes_err']} "
-                f"influx_flushes={batch_stats['flushes']} influx_buffer={batch_stats['buffer_depth']} "
+                f"ts_written={batch_stats['records_written']} ts_errors={batch_stats['write_errors']} "
+                f"ts_flushes={batch_stats['batches_flushed']} ts_pending={batch_stats['pending_records']} "
                 f"workers={INGEST_WORKER_COUNT} queue_max={INGEST_QUEUE_SIZE} queue_depth={self.queue.qsize()}"
             )
 
@@ -245,6 +287,7 @@ class Ingestor:
             )
 
     async def _insert_quarantine(self, topic, tenant_id, site_id, device_id, msg_type, reason, payload, event_ts):
+        _counter_inc("messages_rejected")
         await self._inc_counter(tenant_id, reason)
 
         if self.store_rejects:
@@ -276,35 +319,6 @@ class Ingestor:
             b.tokens -= 1.0
             return True
         return False
-
-    async def _write_influxdb(self, tenant_id, device_id, site_id, msg_type, payload, event_ts):
-        """Write event to InfluxDB. Best-effort: failures are counted but don't raise."""
-        if self.influx_client is None:
-            return
-
-        line = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
-        if not line:
-            return
-
-        db_name = f"telemetry_{tenant_id}"
-        headers = {
-            "Authorization": f"Bearer {INFLUXDB_TOKEN}",
-            "Content-Type": "text/plain",
-        }
-        for attempt in range(2):
-            try:
-                resp = await self.influx_client.post(
-                    f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
-                    content=line,
-                    headers=headers,
-                )
-                if resp.status_code < 300:
-                    self.influx_ok += 1
-                    return
-                print(f"[ingest] InfluxDB write failed ({attempt + 1}/2): {resp.status_code} {resp.text}")
-            except Exception as e:
-                print(f"[ingest] InfluxDB write exception ({attempt + 1}/2): {e}")
-        self.influx_err += 1
 
     async def db_worker(self):
         while True:
@@ -406,10 +420,19 @@ class Ingestor:
                         await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
                         continue
 
-                # Primary write: InfluxDB (batched)
-                line = _build_line_protocol(msg_type, device_id, site_id, payload, event_ts)
-                if line:
-                    await self.batch_writer.add(tenant_id, line)
+                # Primary write: TimescaleDB (batched)
+                ts = event_ts or utcnow()
+                record = TelemetryRecord(
+                    time=ts,
+                    tenant_id=tenant_id,
+                    device_id=device_id,
+                    site_id=site_id or payload.get("site_id"),
+                    msg_type=msg_type,
+                    seq=payload.get("seq", 0),
+                    metrics=payload.get("metrics", {}) or {},
+                )
+                COUNTERS["last_write_at"] = utcnow().isoformat()
+                await self.batch_writer.add(record)
 
             except Exception as e:
                 await self._insert_quarantine(
@@ -427,6 +450,7 @@ class Ingestor:
 
     def on_message(self, client, userdata, msg):
         self.msg_received += 1
+        _counter_inc("messages_received")
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
             if "ts" not in payload:
@@ -436,6 +460,7 @@ class Ingestor:
 
         if self.loop is None:
             self.msg_dropped += 1
+            _counter_inc("messages_rejected")
             return
 
         def _enqueue():
@@ -444,16 +469,19 @@ class Ingestor:
                 self.msg_enqueued += 1
             except asyncio.QueueFull:
                 self.msg_dropped += 1
+                _counter_inc("messages_rejected")
 
         self.loop.call_soon_threadsafe(_enqueue)
 
     async def run(self):
         await self.init_db()
+        await start_health_server()
         self.loop = asyncio.get_running_loop()
-        self.influx_client = httpx.AsyncClient(timeout=10.0)
-        self.batch_writer = InfluxBatchWriter(
-            self.influx_client, INFLUXDB_URL, INFLUXDB_TOKEN,
-            INFLUX_BATCH_SIZE, INFLUX_FLUSH_INTERVAL_MS
+        assert self.pool is not None
+        self.batch_writer = TimescaleBatchWriter(
+            pool=self.pool,
+            batch_size=BATCH_SIZE,
+            flush_interval_ms=FLUSH_INTERVAL_MS,
         )
         await self.batch_writer.start()
 
@@ -475,6 +503,8 @@ class Ingestor:
 
 async def main():
     ing = Ingestor()
+    global INGESTOR_REF
+    INGESTOR_REF = ing
     await ing.run()
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
 import httpx
@@ -18,6 +19,43 @@ INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 OPERATOR_SYMBOLS = {"GT": ">", "LT": "<", "GTE": ">=", "LTE": "<="}
 
+COUNTERS = {
+    "rules_evaluated": 0,
+    "alerts_created": 0,
+    "evaluation_errors": 0,
+    "last_evaluation_at": None,
+}
+
+COUNTERS = {
+    "rules_evaluated": 0,
+    "alerts_created": 0,
+    "evaluation_errors": 0,
+    "last_evaluation_at": None,
+}
+
+async def health_handler(request):
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "evaluator",
+            "counters": {
+                "rules_evaluated": COUNTERS["rules_evaluated"],
+                "alerts_created": COUNTERS["alerts_created"],
+                "evaluation_errors": COUNTERS["evaluation_errors"],
+            },
+            "last_evaluation_at": COUNTERS["last_evaluation_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] evaluator health server started on port 8080")
 DDL = """
 CREATE TABLE IF NOT EXISTS device_state (
   tenant_id            TEXT NOT NULL,
@@ -77,6 +115,31 @@ CREATE INDEX IF NOT EXISTS alert_rules_tenant_idx ON alert_rules (tenant_id, ena
 def now_utc():
     return datetime.now(timezone.utc)
 
+
+async def health_handler(request):
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "evaluator",
+            "counters": {
+                "rules_evaluated": COUNTERS["rules_evaluated"],
+                "alerts_created": COUNTERS["alerts_created"],
+                "evaluation_errors": COUNTERS["evaluation_errors"],
+            },
+            "last_evaluation_at": COUNTERS["last_evaluation_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] evaluator health server started on port 8080")
+
 async def ensure_schema(conn):
     for stmt in DDL.strip().split(";"):
         s = stmt.strip()
@@ -84,6 +147,7 @@ async def ensure_schema(conn):
             await conn.execute(s + ";")
 
 async def open_or_update_alert(conn, tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, details):
+    COUNTERS["alerts_created"] += 1
     await conn.execute(
         """
         INSERT INTO fleet_alert (tenant_id, site_id, device_id, alert_type, fingerprint, status, severity, confidence, summary, details)
@@ -153,6 +217,7 @@ async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> li
             },
         )
         if resp.status_code != 200:
+            COUNTERS["evaluation_errors"] += 1
             print(f"[evaluator] InfluxDB query error: {resp.status_code} {resp.text[:200]}")
             return []
 
@@ -177,6 +242,7 @@ async def _influx_query(http_client: httpx.AsyncClient, db: str, sql: str) -> li
                 return rows
         return []
     except Exception as e:
+        COUNTERS["evaluation_errors"] += 1
         print(f"[evaluator] InfluxDB query exception: {e}")
         return []
 
@@ -316,111 +382,118 @@ async def main():
     async with pool.acquire() as conn:
         await ensure_schema(conn)
     http_client = httpx.AsyncClient(timeout=10.0)
+    await start_health_server()
 
     while True:
-        async with pool.acquire() as conn:
-            rows = await fetch_rollup_influxdb(http_client, conn)
-            # Group devices by tenant for rule loading
-            tenant_rules_cache = {}
+        try:
+            async with pool.acquire() as conn:
+                rows = await fetch_rollup_influxdb(http_client, conn)
+                # Group devices by tenant for rule loading
+                tenant_rules_cache = {}
 
-            for r in rows:
-                tenant_id = r["tenant_id"]
-                device_id = r["device_id"]
-                site_id = r["site_id"]
-                registry_status = r["registry_status"]
-                last_hb = r["last_hb"]
-                last_tel = r["last_tel"]
-                last_seen = r["last_seen"]
+                for r in rows:
+                    tenant_id = r["tenant_id"]
+                    device_id = r["device_id"]
+                    site_id = r["site_id"]
+                    registry_status = r["registry_status"]
+                    last_hb = r["last_hb"]
+                    last_tel = r["last_tel"]
+                    last_seen = r["last_seen"]
 
-                status = "STALE"
-                if registry_status == "ACTIVE" and last_hb is not None:
-                    age_s = (now_utc() - last_hb).total_seconds()
-                    status = "ONLINE" if age_s <= HEARTBEAT_STALE_SECONDS else "STALE"
+                    status = "STALE"
+                    if registry_status == "ACTIVE" and last_hb is not None:
+                        age_s = (now_utc() - last_hb).total_seconds()
+                        status = "ONLINE" if age_s <= HEARTBEAT_STALE_SECONDS else "STALE"
 
-                state_blob = r.get("metrics", {})
+                    state_blob = r.get("metrics", {})
 
-                await conn.execute(
-                    """
-                    INSERT INTO device_state
-                      (tenant_id, site_id, device_id, status, last_heartbeat_at, last_telemetry_at, last_seen_at, last_state_change_at, state)
-                    VALUES
-                      ($1,$2,$3,$4,$5,$6,$7, now(), $8::jsonb)
-                    ON CONFLICT (tenant_id, device_id)
-                    DO UPDATE SET
-                      site_id = EXCLUDED.site_id,
-                      last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-                      last_telemetry_at = EXCLUDED.last_telemetry_at,
-                      last_seen_at = EXCLUDED.last_seen_at,
-                      state = CASE
-                        WHEN EXCLUDED.state = '{}'::jsonb THEN device_state.state
-                        ELSE EXCLUDED.state
-                      END,
-                      status = EXCLUDED.status,
-                      last_state_change_at = CASE
-                        WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN now()
-                        ELSE device_state.last_state_change_at
-                      END
-                    """,
-                    tenant_id, site_id, device_id, status, last_hb, last_tel, last_seen, json.dumps(state_blob)
-                )
-
-                fp_nohb = f"NO_HEARTBEAT:{device_id}"
-                if status == "STALE":
-                    await open_or_update_alert(
-                        conn, tenant_id, site_id, device_id,
-                        "NO_HEARTBEAT", fp_nohb,
-                        4, 0.9,
-                        f"{site_id}: {device_id} heartbeat missing/stale",
-                        {"last_heartbeat_at": str(last_hb) if last_hb else None}
+                    await conn.execute(
+                        """
+                        INSERT INTO device_state
+                          (tenant_id, site_id, device_id, status, last_heartbeat_at, last_telemetry_at, last_seen_at, last_state_change_at, state)
+                        VALUES
+                          ($1,$2,$3,$4,$5,$6,$7, now(), $8::jsonb)
+                        ON CONFLICT (tenant_id, device_id)
+                        DO UPDATE SET
+                          site_id = EXCLUDED.site_id,
+                          last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+                          last_telemetry_at = EXCLUDED.last_telemetry_at,
+                          last_seen_at = EXCLUDED.last_seen_at,
+                          state = CASE
+                            WHEN EXCLUDED.state = '{}'::jsonb THEN device_state.state
+                            ELSE EXCLUDED.state
+                          END,
+                          status = EXCLUDED.status,
+                          last_state_change_at = CASE
+                            WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN now()
+                            ELSE device_state.last_state_change_at
+                          END
+                        """,
+                        tenant_id, site_id, device_id, status, last_hb, last_tel, last_seen, json.dumps(state_blob)
                     )
-                else:
-                    await close_alert(conn, tenant_id, fp_nohb)
 
-                # --- Threshold rule evaluation ---
-                if tenant_id not in tenant_rules_cache:
-                    tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
-
-                rules = tenant_rules_cache[tenant_id]
-                metrics = r.get("metrics", {})
-
-                for rule in rules:
-                    rule_id = rule["rule_id"]
-                    metric_name = rule["metric_name"]
-                    operator = rule["operator"]
-                    threshold = rule["threshold"]
-                    rule_severity = rule["severity"]
-                    rule_site_ids = rule.get("site_ids")
-
-                    # Site filter: if rule has site_ids, skip devices not in those sites
-                    if rule_site_ids and site_id not in rule_site_ids:
-                        continue
-
-                    fp_rule = f"RULE:{rule_id}:{device_id}"
-                    metric_value = metrics.get(metric_name)
-
-                    if metric_value is not None and evaluate_threshold(metric_value, operator, threshold):
-                        # Condition MET — open/update alert
-                        op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
+                    fp_nohb = f"NO_HEARTBEAT:{device_id}"
+                    if status == "STALE":
                         await open_or_update_alert(
                             conn, tenant_id, site_id, device_id,
-                            "THRESHOLD", fp_rule,
-                            rule_severity, 1.0,
-                            f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
-                            {
-                                "rule_id": rule_id,
-                                "rule_name": rule["name"],
-                                "metric_name": metric_name,
-                                "metric_value": metric_value,
-                                "operator": operator,
-                                "threshold": threshold,
-                            }
+                            "NO_HEARTBEAT", fp_nohb,
+                            4, 0.9,
+                            f"{site_id}: {device_id} heartbeat missing/stale",
+                            {"last_heartbeat_at": str(last_hb) if last_hb else None}
                         )
                     else:
-                        # Condition NOT met (or metric missing) — close alert if open
-                        await close_alert(conn, tenant_id, fp_rule)
+                        await close_alert(conn, tenant_id, fp_nohb)
 
-            total_rules = sum(len(v) for v in tenant_rules_cache.values())
-            print(f"[evaluator] evaluated {len(rows)} devices, {total_rules} rules across {len(tenant_rules_cache)} tenants")
+                    # --- Threshold rule evaluation ---
+                    if tenant_id not in tenant_rules_cache:
+                        tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
+
+                    rules = tenant_rules_cache[tenant_id]
+                    metrics = r.get("metrics", {})
+
+                    for rule in rules:
+                        COUNTERS["rules_evaluated"] += 1
+                        rule_id = rule["rule_id"]
+                        metric_name = rule["metric_name"]
+                        operator = rule["operator"]
+                        threshold = rule["threshold"]
+                        rule_severity = rule["severity"]
+                        rule_site_ids = rule.get("site_ids")
+
+                        # Site filter: if rule has site_ids, skip devices not in those sites
+                        if rule_site_ids and site_id not in rule_site_ids:
+                            continue
+
+                        fp_rule = f"RULE:{rule_id}:{device_id}"
+                        metric_value = metrics.get(metric_name)
+
+                        if metric_value is not None and evaluate_threshold(metric_value, operator, threshold):
+                            # Condition MET — open/update alert
+                            op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
+                            await open_or_update_alert(
+                                conn, tenant_id, site_id, device_id,
+                                "THRESHOLD", fp_rule,
+                                rule_severity, 1.0,
+                                f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
+                                {
+                                    "rule_id": rule_id,
+                                    "rule_name": rule["name"],
+                                    "metric_name": metric_name,
+                                    "metric_value": metric_value,
+                                    "operator": operator,
+                                    "threshold": threshold,
+                                }
+                            )
+                        else:
+                            # Condition NOT met (or metric missing) — close alert if open
+                            await close_alert(conn, tenant_id, fp_rule)
+
+                total_rules = sum(len(v) for v in tenant_rules_cache.values())
+                print(f"[evaluator] evaluated {len(rows)} devices, {total_rules} rules across {len(tenant_rules_cache)} tenants")
+                COUNTERS["last_evaluation_at"] = now_utc().isoformat()
+        except Exception as exc:
+            COUNTERS["evaluation_errors"] += 1
+            print(f"[evaluator] error={type(exc).__name__} {exc}")
 
         await asyncio.sleep(POLL_SECONDS)
 

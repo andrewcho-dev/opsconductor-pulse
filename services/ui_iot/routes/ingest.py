@@ -1,10 +1,17 @@
 import sys
 sys.path.insert(0, "/app")
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from shared.ingest_core import validate_and_prepare, IngestResult, sha256_hex
+from shared.ingest_core import (
+    validate_and_prepare,
+    IngestResult,
+    sha256_hex,
+    parse_ts,
+    TelemetryRecord,
+)
 
 router = APIRouter(prefix="/ingest/v1", tags=["ingest"])
 
@@ -111,8 +118,17 @@ async def ingest_single(
         status = status_map.get(result.reason, 400)
         raise HTTPException(status_code=status, detail=result.reason)
 
-    # Write to InfluxDB
-    await batch_writer.add(tenant_id, result.line_protocol)
+    event_ts = parse_ts(payload.ts) or datetime.now(timezone.utc)
+    record = TelemetryRecord(
+        time=event_ts,
+        tenant_id=tenant_id,
+        device_id=device_id,
+        site_id=payload.site_id,
+        msg_type=msg_type,
+        seq=payload.seq,
+        metrics=payload.metrics,
+    )
+    await batch_writer.add(record)
 
     return JSONResponse(
         status_code=202,
@@ -185,7 +201,17 @@ async def ingest_batch(request: Request, batch: BatchRequest):
         )
 
         if result.success:
-            await batch_writer.add(msg.tenant_id, result.line_protocol)
+            event_ts = parse_ts(msg.ts) or datetime.now(timezone.utc)
+            record = TelemetryRecord(
+                time=event_ts,
+                tenant_id=msg.tenant_id,
+                device_id=msg.device_id,
+                site_id=msg.site_id,
+                msg_type=msg.msg_type,
+                seq=msg.seq,
+                metrics=msg.metrics,
+            )
+            await batch_writer.add(record)
             results.append(BatchResultItem(
                 index=idx,
                 status="accepted",

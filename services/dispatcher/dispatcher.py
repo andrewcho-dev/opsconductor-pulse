@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from aiohttp import web
 from datetime import datetime, timezone
 
 import asyncpg
@@ -22,9 +23,71 @@ SEVERITY_MAP = {
     "INFO": 1,
 }
 
+COUNTERS = {
+    "alerts_processed": 0,
+    "routes_matched": 0,
+    "jobs_queued": 0,
+    "last_dispatch_at": None,
+}
+
+COUNTERS = {
+    "alerts_processed": 0,
+    "routes_matched": 0,
+    "jobs_queued": 0,
+    "last_dispatch_at": None,
+}
+
+async def health_handler(request):
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "dispatcher",
+            "counters": {
+                "alerts_processed": COUNTERS["alerts_processed"],
+                "routes_matched": COUNTERS["routes_matched"],
+                "jobs_queued": COUNTERS["jobs_queued"],
+            },
+            "last_dispatch_at": COUNTERS["last_dispatch_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] dispatcher health server started on port 8080")
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def health_handler(request):
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "dispatcher",
+            "counters": {
+                "alerts_processed": COUNTERS["alerts_processed"],
+                "routes_matched": COUNTERS["routes_matched"],
+                "jobs_queued": COUNTERS["jobs_queued"],
+            },
+            "last_dispatch_at": COUNTERS["last_dispatch_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] dispatcher health server started on port 8080")
 
 
 def route_matches(alert: dict, route: dict) -> bool:
@@ -128,6 +191,8 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
     if not alerts:
         return 0
 
+    COUNTERS["alerts_processed"] += len(alerts)
+
     alerts_by_tenant: dict[str, list[asyncpg.Record]] = {}
     for alert in alerts:
         alerts_by_tenant.setdefault(alert["tenant_id"], []).append(alert)
@@ -156,6 +221,7 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
             for route in routes:
                 if not route_matches(alert_dict, route):
                     continue
+                COUNTERS["routes_matched"] += 1
 
                 row = await conn.fetchrow(
                     """
@@ -175,6 +241,7 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
                 )
                 if row is not None:
                     created += 1
+                    COUNTERS["jobs_queued"] += 1
                     int_type = integration_types.get(route["integration_id"], "webhook")
                     if int_type == "snmp":
                         created_snmp += 1
@@ -185,12 +252,14 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
         print(
             f"[dispatcher] created_jobs={created} webhook={created_webhook} snmp={created_snmp} ts={now_utc().isoformat()}"
         )
+    COUNTERS["last_dispatch_at"] = now_utc().isoformat()
 
     return created
 
 
 async def main() -> None:
     pool = await get_pool()
+    await start_health_server()
 
     while True:
         try:

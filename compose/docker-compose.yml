@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16
+    image: timescale/timescaledb:latest-pg16
     container_name: iot-postgres
     environment:
       POSTGRES_DB: iotcloud
@@ -30,38 +30,10 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  influxdb:
-    image: influxdb:3-core
-    container_name: iot-influxdb
-    environment:
-      INFLUXDB3_HTTP_BIND_ADDR: "0.0.0.0:8181"
-      INFLUXDB3_DB_DIR: /var/lib/influxdb3
-      INFLUXDB3_NODE_IDENTIFIER_PREFIX: "iot-node"
-      INFLUXDB3_OBJECT_STORE: "file"
-      INFLUXDB3_AUTH_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
-    ports:
-      - "8181:8181"
-    volumes:
-      - ../data/influxdb3:/var/lib/influxdb3:z
-    command:
-      - influxdb3
-      - serve
-      - --node-id
-      - iot-node
-      - --object-store
-      - file
-      - --query-file-limit
-      - "1000"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf -H \"Authorization: Bearer $$INFLUXDB3_AUTH_TOKEN\" http://localhost:8181/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    restart: unless-stopped
-
   ingest:
-    build: ../services/ingest_iot
+    build:
+      context: ../services
+      dockerfile: ingest_iot/Dockerfile
     container_name: iot-ingest
     environment:
       MQTT_HOST: iot-mqtt
@@ -77,20 +49,23 @@ services:
       COUNTERS_ENABLED: "1"
       SETTINGS_POLL_SECONDS: "5"
       LOG_STATS_EVERY_SECONDS: "30"
-      INFLUXDB_URL: "http://iot-influxdb:8181"
-      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
       AUTH_CACHE_TTL_SECONDS: "${AUTH_CACHE_TTL_SECONDS:-60}"
       AUTH_CACHE_MAX_SIZE: "${AUTH_CACHE_MAX_SIZE:-10000}"
-      INFLUX_BATCH_SIZE: "${INFLUX_BATCH_SIZE:-500}"
-      INFLUX_FLUSH_INTERVAL_MS: "${INFLUX_FLUSH_INTERVAL_MS:-1000}"
+      BATCH_SIZE: "${BATCH_SIZE:-500}"
+      FLUSH_INTERVAL_MS: "${FLUSH_INTERVAL_MS:-1000}"
       INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-4}"
       INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-50000}"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       mqtt:
         condition: service_started
       postgres:
-        condition: service_healthy
-      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -105,12 +80,15 @@ services:
       PG_PASS: iot_dev
       POLL_SECONDS: "5"
       HEARTBEAT_STALE_SECONDS: "30"
-      INFLUXDB_URL: "http://iot-influxdb:8181"
-      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       postgres:
-        condition: service_healthy
-      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -127,6 +105,13 @@ services:
       ALERT_LOOKBACK_MINUTES: "30"
       ALERT_LIMIT: "200"
       ROUTE_LIMIT: "500"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +134,13 @@ services:
       WORKER_BACKOFF_BASE_SECONDS: "30"
       WORKER_BACKOFF_MAX_SECONDS: "7200"
       STUCK_JOB_MINUTES: "5"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,11 +207,14 @@ services:
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
       VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
-      INFLUXDB_URL: "http://iot-influxdb:8181"
-      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      INGEST_HEALTH_URL: "http://iot-ingest:8080"
+      EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
+      DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
+      DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
+      METRICS_COLLECTION_INTERVAL: "5"
       AUTH_CACHE_TTL_SECONDS: "60"
-      INFLUX_BATCH_SIZE: "500"
-      INFLUX_FLUSH_INTERVAL_MS: "1000"
       REQUIRE_TOKEN: "1"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-*}"
       API_RATE_LIMIT: "${API_RATE_LIMIT:-100}"
@@ -232,8 +227,6 @@ services:
         condition: service_healthy
       api:
         condition: service_started
-      influxdb:
-        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -247,14 +240,10 @@ services:
       PG_PASS: iot_dev
       ADMIN_KEY: "change-me-now"
       ACTIVATION_TTL_MINUTES: "60"
-      INFLUXDB_URL: "http://iot-influxdb:8181"
-      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     ports:
       - "8081:8081"
     depends_on:
       postgres:
-        condition: service_healthy
-      influxdb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -269,11 +258,8 @@ services:
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
-      INFLUXDB_URL: "http://iot-influxdb:8181"
-      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN:-influx-dev-token-change-me}"
     depends_on:
       - postgres
-      - influxdb
     command: >
       sh -c "pip install asyncpg httpx && python scripts/seed_demo_data.py"
     profiles:

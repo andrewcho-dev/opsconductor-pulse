@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   fetchTenant,
   fetchTenantStats,
-  provisionTenantInfluxdb,
   type Tenant,
 } from "@/services/api/tenants";
 import { EditTenantDialog } from "./EditTenantDialog";
@@ -20,7 +19,6 @@ import {
   Bell,
   Link as LinkIcon,
   Clock,
-  Database,
   Pencil,
 } from "lucide-react";
 
@@ -28,7 +26,6 @@ export default function OperatorTenantDetailPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const [showEdit, setShowEdit] = useState(false);
   const [fullTenant, setFullTenant] = useState<Tenant | null>(null);
-  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["tenant-stats", tenantId],
@@ -44,13 +41,6 @@ export default function OperatorTenantDetailPage() {
     setShowEdit(true);
   };
 
-  const provisionMutation = useMutation({
-    mutationFn: () => provisionTenantInfluxdb(tenantId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tenant-stats", tenantId] });
-    },
-  });
-
   if (isLoading) {
     return <Skeleton className="h-96" />;
   }
@@ -59,7 +49,7 @@ export default function OperatorTenantDetailPage() {
     return <div>Tenant not found</div>;
   }
 
-  const { stats, influxdb } = data;
+  const { stats } = data;
 
   return (
     <div className="space-y-6">
@@ -188,60 +178,6 @@ export default function OperatorTenantDetailPage() {
           </CardContent>
         </Card>
 
-        {influxdb && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5" />
-                InfluxDB
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span>Database</span>
-                  <Badge variant={influxdb.exists ? "default" : "destructive"}>
-                    {influxdb.exists ? "Provisioned" : "Not Found"}
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span>Telemetry Points</span>
-                  <span className="font-medium">
-                    {influxdb.telemetry_count == null
-                      ? "Unknown"
-                      : influxdb.telemetry_count.toLocaleString()}
-                  </span>
-                </div>
-                {influxdb.error && (
-                  <div className="text-xs text-muted-foreground">
-                    {influxdb.error}
-                  </div>
-                )}
-                {influxdb.exists !== true && (
-                  <div className="pt-2">
-                    <Button
-                      size="sm"
-                      onClick={() => provisionMutation.mutate()}
-                      disabled={provisionMutation.isPending}
-                    >
-                      {provisionMutation.isPending
-                        ? "Provisioning..."
-                        : "Provision InfluxDB"}
-                    </Button>
-                    {provisionMutation.isError && (
-                      <div className="text-xs text-destructive mt-2">
-                        {(provisionMutation.error as any)?.body?.detail ||
-                          (provisionMutation.error as any)?.response?.data?.detail ||
-                          (provisionMutation.error as Error).message ||
-                          "Failed to provision InfluxDB"}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
       <EditTenantDialog
         tenant={fullTenant}

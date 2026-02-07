@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from aiohttp import web
 import socket
 import time
 from datetime import datetime, timezone
@@ -40,6 +41,38 @@ BLOCKED_NETWORKS = [
 ]
 BLOCKED_IPS = {ip_address("169.254.169.254")}
 
+COUNTERS = {
+    "jobs_processed": 0,
+    "jobs_succeeded": 0,
+    "jobs_failed": 0,
+    "jobs_pending": 0,
+    "last_delivery_at": None,
+}
+
+async def health_handler(request):
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "delivery_worker",
+            "counters": {
+                "jobs_processed": COUNTERS["jobs_processed"],
+                "jobs_succeeded": COUNTERS["jobs_succeeded"],
+                "jobs_failed": COUNTERS["jobs_failed"],
+                "jobs_pending": COUNTERS["jobs_pending"],
+            },
+            "last_delivery_at": COUNTERS["last_delivery_at"],
+        }
+    )
+
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("[health] delivery worker health server started on port 8080")
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -310,6 +343,7 @@ async def update_job_failed(conn: asyncpg.Connection, job_id: int, attempt_no: i
 
 
 async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
+    COUNTERS["jobs_processed"] += 1
     job_id = job["job_id"]
     tenant_id = job["tenant_id"]
     integration_id = job["integration_id"]
@@ -339,6 +373,7 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
 
     finished_at = now_utc()
     latency_ms = int((finished_at - started_at).total_seconds() * 1000)
+    COUNTERS["last_delivery_at"] = finished_at.isoformat()
 
     await record_attempt(
         conn,
@@ -354,10 +389,12 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
     )
 
     if ok:
+        COUNTERS["jobs_succeeded"] += 1
         await update_job_success(conn, job_id, attempt_no)
         return
 
     if attempt_no >= WORKER_MAX_ATTEMPTS:
+        COUNTERS["jobs_failed"] += 1
         await update_job_failed(conn, job_id, attempt_no, error or "failed")
         return
 
@@ -550,6 +587,7 @@ async def deliver_mqtt(integration: dict, job: asyncpg.Record) -> tuple[bool, st
 async def run_worker() -> None:
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
+    await start_health_server()
     print(
         "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={} mqtt_available={}".format(
             MODE,
@@ -568,6 +606,7 @@ async def run_worker() -> None:
                     print(f"[worker] requeued_stuck={stuck} ts={now_utc().isoformat()}")
 
                 jobs = await fetch_jobs(conn)
+                COUNTERS["jobs_pending"] = len(jobs)
                 if not jobs:
                     await asyncio.sleep(WORKER_POLL_SECONDS)
                     continue

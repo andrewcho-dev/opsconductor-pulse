@@ -18,7 +18,6 @@ from middleware.tenant import (
     require_operator,
     require_operator_admin,
 )
-import httpx
 from db.queries import (
     fetch_alerts,
     fetch_all_alerts,
@@ -30,7 +29,7 @@ from db.queries import (
     fetch_integrations,
     fetch_quarantine_events,
 )
-from db.influx_queries import fetch_device_telemetry_influx, fetch_device_events_influx
+from db.telemetry_queries import fetch_device_telemetry, fetch_device_events
 from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
 
@@ -41,11 +40,8 @@ PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://iot-influxdb:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 
 pool: asyncpg.Pool | None = None
-_influx_client: httpx.AsyncClient | None = None
 
 
 class TenantCreate(BaseModel):
@@ -73,13 +69,6 @@ class TenantResponse(BaseModel):
     metadata: dict
     created_at: datetime
     updated_at: datetime
-
-
-def _get_influx_client() -> httpx.AsyncClient:
-    global _influx_client
-    if _influx_client is None:
-        _influx_client = httpx.AsyncClient(timeout=10.0)
-    return _influx_client
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -137,93 +126,6 @@ router = APIRouter(
         Depends(require_operator),
     ],
 )
-
-
-async def provision_tenant_influxdb(tenant_id: str) -> bool:
-    """
-    Create InfluxDB database for tenant.
-
-    InfluxDB 3 auto-creates databases on first write,
-    so we write a dummy point to ensure it exists.
-    """
-    db_name = f"telemetry_{tenant_id}"
-    line_protocol = (
-        f"_init,tenant={tenant_id} initialized=1i {int(time.time() * 1_000_000_000)}"
-    )
-    headers = {
-        "Authorization": f"Bearer {INFLUXDB_TOKEN}",
-        "Content-Type": "text/plain",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}",
-                content=line_protocol,
-                headers=headers,
-            )
-
-            if resp.status_code < 300:
-                logger.info(
-                    "Created InfluxDB database %s for tenant %s",
-                    db_name,
-                    tenant_id,
-                )
-                return True
-            logger.error(
-                "Failed to create InfluxDB database %s: %s %s",
-                db_name,
-                resp.status_code,
-                resp.text,
-            )
-            return False
-    except Exception as exc:
-        logger.error("InfluxDB provisioning error for %s: %s", tenant_id, exc)
-        return False
-
-
-async def check_tenant_influxdb(tenant_id: str) -> dict:
-    """
-    Check if tenant InfluxDB database exists.
-    Avoids expensive telemetry scans.
-    """
-    db_name = f"telemetry_{tenant_id}"
-    headers = {
-        "Authorization": f"Bearer {INFLUXDB_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Check if database exists with a simple query
-            resp = await client.post(
-                f"{INFLUXDB_URL}/api/v3/query_sql",
-                json={
-                    "db": db_name,
-                    "q": "SELECT 1",
-                    "format": "json",
-                },
-                headers=headers,
-            )
-
-            body = resp.text.lower()
-
-            if resp.status_code == 404 or "database" in body:
-                return {"exists": False, "telemetry_count": 0}
-
-            if resp.status_code == 400 and ("table" in body or "relation" in body):
-                # Database exists but no telemetry table yet
-                return {"exists": True, "telemetry_count": 0}
-
-            if resp.status_code == 400 and ("file limit" in body or "parquet" in body):
-                return {"exists": True, "telemetry_count": None}
-
-            if resp.status_code == 200:
-                return {"exists": True, "telemetry_count": None}
-
-            return {"exists": None, "error": resp.text}
-    except Exception as exc:
-        return {"exists": None, "error": str(exc)}
 
 
 @router.get("/tenants")
@@ -421,8 +323,6 @@ async def create_tenant(
             json.dumps(tenant.metadata),
         )
 
-    influx_ok = await provision_tenant_influxdb(tenant.tenant_id)
-
     async with pool.acquire() as conn:
         await log_operator_access(
             conn,
@@ -437,7 +337,6 @@ async def create_tenant(
     return {
         "tenant_id": tenant.tenant_id,
         "status": "created",
-        "influxdb_provisioned": influx_ok,
     }
 
 
@@ -591,8 +490,6 @@ async def get_tenant_stats(request: Request, tenant_id: str):
             rls_bypassed=True,
         )
 
-    influx_status = await check_tenant_influxdb(tenant_id)
-
     return {
         "tenant_id": tenant_id,
         "name": tenant["name"],
@@ -625,45 +522,6 @@ async def get_tenant_stats(request: Request, tenant_id: str):
             if stats["last_alert_created"]
             else None,
         },
-        "influxdb": influx_status,
-    }
-
-
-@router.post("/tenants/{tenant_id}/provision-influxdb")
-async def provision_influxdb(
-    request: Request,
-    tenant_id: str,
-    _: None = Depends(require_operator_admin),
-):
-    """Manually provision InfluxDB for existing tenant."""
-    user = get_user()
-    ip, user_agent = get_request_metadata(request)
-    pool = await get_pool()
-
-    async with operator_connection(pool) as conn:
-        exists = await conn.fetchval(
-            "SELECT 1 FROM tenants WHERE tenant_id = $1",
-            tenant_id,
-        )
-        if not exists:
-            raise HTTPException(404, "Tenant not found")
-
-    success = await provision_tenant_influxdb(tenant_id)
-
-    async with pool.acquire() as conn:
-        await log_operator_access(
-            conn,
-            user_id=user["sub"],
-            action="provision_influxdb",
-            tenant_filter=tenant_id,
-            ip_address=ip,
-            user_agent=user_agent,
-            rls_bypassed=True,
-        )
-
-    return {
-        "tenant_id": tenant_id,
-        "influxdb_provisioned": success,
     }
 
 
@@ -757,9 +615,8 @@ async def view_device(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            ic = _get_influx_client()
-            events = await fetch_device_events_influx(ic, tenant_id, device_id, limit=50)
-            telemetry = await fetch_device_telemetry_influx(ic, tenant_id, device_id, limit=120)
+            events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
+            telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
     except HTTPException:
         raise
     except Exception:

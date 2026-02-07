@@ -2,7 +2,6 @@ import os
 import json
 import time
 import logging
-import re
 import asyncio
 from collections import defaultdict, deque
 
@@ -12,7 +11,6 @@ from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import asyncpg
-import httpx
 
 from middleware.auth import JWTBearer
 from middleware.auth import validate_token
@@ -28,7 +26,12 @@ from db.queries import (
     fetch_alert_rule,
     fetch_alerts,
 )
-from db.influx_queries import fetch_device_telemetry_dynamic
+from db.telemetry_queries import (
+    fetch_device_telemetry,
+    fetch_device_telemetry_latest,
+    fetch_fleet_telemetry_summary,
+    fetch_telemetry_time_series,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +47,6 @@ WS_POLL_SECONDS = int(os.getenv("WS_POLL_SECONDS", "5"))
 
 
 pool: asyncpg.Pool | None = None
-_influx_client: httpx.AsyncClient | None = None
-
-
-def _get_influx_client() -> httpx.AsyncClient:
-    global _influx_client
-    if _influx_client is None:
-        _influx_client = httpx.AsyncClient(timeout=10.0)
-    return _influx_client
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -90,26 +85,6 @@ async def enforce_rate_limit():
             status_code=429,
             detail=f"Rate limit exceeded ({API_RATE_LIMIT} requests per {API_RATE_WINDOW}s)",
         )
-
-
-_ISO8601_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
-
-
-def _validate_timestamp(value: str | None, param_name: str) -> str | None:
-    """Validate and sanitize an ISO 8601 timestamp for use in InfluxDB SQL.
-
-    Returns None if value is None. Raises 400 if format is invalid.
-    """
-    if value is None:
-        return None
-    if not _ISO8601_PATTERN.match(value):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid {param_name}: expected ISO 8601 format (e.g., 2024-01-15T10:30:00Z)",
-        )
-    # Sanitize: only allow expected characters to prevent SQL injection
-    clean = re.sub(r"[^0-9A-Za-z\-:T.Z+]", "", value)
-    return clean
 
 
 router = APIRouter(
@@ -316,39 +291,26 @@ async def get_alert_rule(rule_id: str):
 @router.get("/devices/{device_id}/telemetry")
 async def get_device_telemetry(
     device_id: str,
-    start: str | None = Query(None, description="ISO 8601 start time"),
-    end: str | None = Query(None, description="ISO 8601 end time"),
-    limit: int = Query(120, ge=1, le=1000),
+    hours: int = Query(6, ge=1, le=168),
+    limit: int = Query(500, ge=1, le=2000),
 ):
-    """Fetch device telemetry with all dynamic metrics.
-
-    Returns all metric columns (battery_pct, temp_c, pressure_psi, etc.)
-    rather than a hardcoded set. Supports time-range filtering.
-    """
+    """Get telemetry for a device."""
     tenant_id = get_tenant_id()
 
-    # Validate timestamp parameters
-    clean_start = _validate_timestamp(start, "start")
-    clean_end = _validate_timestamp(end, "end")
-
-    # Verify device exists and belongs to tenant (prevents InfluxDB injection)
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
         device = await fetch_device_v2(conn, tenant_id, device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    ic = _get_influx_client()
-    data = await fetch_device_telemetry_dynamic(
-        ic, tenant_id, device_id,
-        start=clean_start, end=clean_end, limit=limit,
-    )
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        data = await fetch_device_telemetry(
+            conn, tenant_id, device_id, hours=hours, limit=limit
+        )
 
     response = {
         "tenant_id": tenant_id,
         "device_id": device_id,
         "telemetry": data,
-        "count": len(data),
+        "hours": hours,
     }
     return JSONResponse(jsonable_encoder(response))
 
@@ -364,15 +326,16 @@ async def get_device_telemetry_latest(
     """
     tenant_id = get_tenant_id()
 
-    # Verify device exists and belongs to tenant
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
         device = await fetch_device_v2(conn, tenant_id, device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    ic = _get_influx_client()
-    data = await fetch_device_telemetry_dynamic(ic, tenant_id, device_id, limit=count)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        if count == 1:
+            latest = await fetch_device_telemetry_latest(conn, tenant_id, device_id)
+            data = [latest] if latest else []
+        else:
+            data = await fetch_device_telemetry(conn, tenant_id, device_id, hours=168, limit=count)
     return JSONResponse(jsonable_encoder({
         "device_id": device_id,
         "telemetry": data,
@@ -380,33 +343,85 @@ async def get_device_telemetry_latest(
     }))
 
 
+@router.get("/telemetry/summary")
+async def get_fleet_telemetry_summary(
+    request: Request,
+    hours: int = Query(1, ge=1, le=24),
+):
+    """Get fleet-wide telemetry summary for dashboard."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+
+    async with tenant_connection(p, tenant_id) as conn:
+        summary = await fetch_fleet_telemetry_summary(
+            conn,
+            tenant_id,
+            metric_keys=["battery_pct", "temp_c", "signal_dbm"],
+            hours=hours,
+        )
+
+    return summary
+
+
+@router.get("/telemetry/chart")
+async def get_telemetry_chart(
+    request: Request,
+    metric: str = Query(..., description="Metric key to chart"),
+    device_id: str | None = Query(None),
+    hours: int = Query(6, ge=1, le=168),
+    bucket_minutes: int = Query(5, ge=1, le=60),
+):
+    """Get time-series data for charting."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+
+    async with tenant_connection(p, tenant_id) as conn:
+        series = await fetch_telemetry_time_series(
+            conn,
+            tenant_id,
+            device_id=device_id,
+            metric_key=metric,
+            hours=hours,
+            bucket_minutes=bucket_minutes,
+        )
+
+    return {
+        "metric": metric,
+        "device_id": device_id,
+        "series": series,
+        "hours": hours,
+    }
+
+
 async def _ws_push_loop(conn):
     """Background task that polls DB and pushes data to a WebSocket connection.
 
     Runs until the connection closes or an error occurs.
     """
-    from db.influx_queries import fetch_device_telemetry_dynamic
-
     while True:
         try:
             await asyncio.sleep(WS_POLL_SECONDS)
 
             # Push telemetry for subscribed devices
             if conn.device_subscriptions:
-                ic = _get_influx_client()
-                for device_id in list(conn.device_subscriptions):
-                    try:
-                        data = await fetch_device_telemetry_dynamic(
-                            ic, conn.tenant_id, device_id, limit=1,
-                        )
-                        if data:
-                            await conn.websocket.send_json({
-                                "type": "telemetry",
-                                "device_id": device_id,
-                                "data": data[0],
-                            })
-                    except Exception:
-                        logger.debug("[ws] telemetry push failed for %s", device_id)
+                try:
+                    p = await get_pool()
+                    async with tenant_connection(p, conn.tenant_id) as db_conn:
+                        for device_id in list(conn.device_subscriptions):
+                            try:
+                                latest = await fetch_device_telemetry_latest(
+                                    db_conn, conn.tenant_id, device_id
+                                )
+                                if latest:
+                                    await conn.websocket.send_json({
+                                        "type": "telemetry",
+                                        "device_id": device_id,
+                                        "data": latest,
+                                    })
+                            except Exception:
+                                logger.debug("[ws] telemetry push failed for %s", device_id)
+                except Exception:
+                    logger.debug("[ws] telemetry push failed")
 
             # Push alerts
             if conn.alert_subscription:
@@ -441,7 +456,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         {"action": "unsubscribe", "type": "alerts"}
 
     Server messages (JSON):
-        {"type": "telemetry", "device_id": "dev-0001", "data": {"timestamp": "...", "metrics": {...}}}
+        {"type": "telemetry", "device_id": "dev-0001", "data": {"time": "...", "metrics": {...}}}
         {"type": "alerts", "alerts": [...]}
         {"type": "subscribed", "channel": "device", "device_id": "dev-0001"}
         {"type": "subscribed", "channel": "alerts"}

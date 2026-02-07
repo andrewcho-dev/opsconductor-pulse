@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py /app/app.py
+COPY metrics_collector.py /app/metrics_collector.py
 COPY ws_manager.py /app/ws_manager.py
 COPY middleware /app/middleware
 COPY db /app/db
