@@ -10,15 +10,12 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import asyncpg
-import httpx
 
 PG_HOST = os.getenv("PG_HOST", "localhost")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://localhost:8181")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "influx-dev-token-change-me")
 
 TENANTS = ["tenant-a", "tenant-b"]
 SITES = {
@@ -219,62 +216,94 @@ async def seed_fleet_alerts(pool, devices, stale, low_battery, rule_ids):
                 )
 
 
-def _line_protocol(device_id, site_id, seq, battery, temp, rssi, humidity, ts_ns):
-    return (
-        f"telemetry,device_id={device_id},site_id={site_id} "
-        f"seq={seq}i,battery_pct={battery:.1f},temp_c={temp:.1f},"
-        f"rssi_dbm={int(rssi)}i,humidity_pct={humidity:.1f} {ts_ns}"
-    )
-
-
-def _heartbeat_line(device_id, site_id, seq, ts_ns):
-    return f"heartbeat,device_id={device_id},site_id={site_id} seq={seq}i {ts_ns}"
-
-
-async def write_lines(http_client, db_name, lines):
-    if not lines:
-        return
-    headers = {"Authorization": f"Bearer {INFLUXDB_TOKEN}", "Content-Type": "text/plain"}
-    body = "\n".join(lines)
-    resp = await http_client.post(f"{INFLUXDB_URL}/api/v3/write_lp?db={db_name}", content=body, headers=headers)
-    if resp.status_code >= 300:
-        raise RuntimeError(f"InfluxDB write failed: {resp.status_code} {resp.text[:200]}")
-
-
-async def seed_influxdb(devices):
+async def seed_timescaledb(pool, devices):
+    """Seed 7 days of telemetry data into TimescaleDB."""
     start = now_utc() - timedelta(days=7)
     interval = timedelta(minutes=5)
     points_per_device = int((7 * 24 * 60) / 5)
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        for tenant_id in TENANTS:
-            db_name = f"telemetry_{tenant_id}"
-            lines = []
-            for t_id, site_id, device_id in devices:
-                if t_id != tenant_id:
-                    continue
-                battery = 100.0
-                rssi = -65.0
-                seq = 0
-                ts = start
-                for _ in range(points_per_device):
-                    seq += 1
-                    battery -= 0.5 / 12
-                    if battery < 5 or random.random() < 0.005:
-                        battery = 100.0
-                    daily_phase = (ts.hour + ts.minute / 60) / 24.0
-                    temp = 22 + (4 * (1 + math.sin(daily_phase * 2 * math.pi)) / 2) + random.uniform(-2, 2)
-                    rssi += random.uniform(-2, 2)
-                    rssi = max(-100, min(-30, rssi))
-                    humidity = 50 + random.uniform(-10, 10)
-                    ts_ns = int(ts.timestamp() * 1_000_000_000)
-                    lines.append(_line_protocol(device_id, site_id, seq, battery, temp, rssi, humidity, ts_ns))
-                    lines.append(_heartbeat_line(device_id, site_id, seq, ts_ns))
-                    if len(lines) >= 5000:
-                        await write_lines(client, db_name, lines)
-                        lines = []
-                    ts += interval
-            if lines:
-                await write_lines(client, db_name, lines)
+    batch_size = 1000
+
+    print(f"  Generating {points_per_device} points per device ({len(devices)} devices)...")
+
+    async with pool.acquire() as conn:
+        batch = []
+        total_written = 0
+
+        for tenant_id, site_id, device_id in devices:
+            battery = 100.0
+            rssi = -65.0
+            seq = 0
+            ts = start
+
+            for _ in range(points_per_device):
+                seq += 1
+                battery -= 0.5 / 12
+                if battery < 5 or random.random() < 0.005:
+                    battery = 100.0
+                daily_phase = (ts.hour + ts.minute / 60) / 24.0
+                temp = 22 + (4 * (1 + math.sin(daily_phase * 2 * math.pi)) / 2) + random.uniform(-2, 2)
+                rssi += random.uniform(-2, 2)
+                rssi = max(-100, min(-30, rssi))
+                humidity = 50 + random.uniform(-10, 10)
+
+                metrics = {
+                    "battery_pct": round(battery, 1),
+                    "temp_c": round(temp, 1),
+                    "rssi_dbm": int(rssi),
+                    "humidity_pct": round(humidity, 1),
+                }
+
+                # Telemetry record
+                batch.append((
+                    ts,
+                    tenant_id,
+                    device_id,
+                    site_id,
+                    "telemetry",
+                    seq,
+                    json.dumps(metrics),
+                ))
+
+                # Heartbeat record
+                batch.append((
+                    ts,
+                    tenant_id,
+                    device_id,
+                    site_id,
+                    "heartbeat",
+                    seq,
+                    json.dumps({"seq": seq}),
+                ))
+
+                if len(batch) >= batch_size:
+                    await conn.executemany(
+                        """
+                        INSERT INTO telemetry (time, tenant_id, device_id, site_id, msg_type, seq, metrics)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        batch,
+                    )
+                    total_written += len(batch)
+                    batch = []
+                    if total_written % 10000 == 0:
+                        print(f"  Written {total_written} records...")
+
+                ts += interval
+
+        # Write remaining batch
+        if batch:
+            await conn.executemany(
+                """
+                INSERT INTO telemetry (time, tenant_id, device_id, site_id, msg_type, seq, metrics)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                ON CONFLICT DO NOTHING
+                """,
+                batch,
+            )
+            total_written += len(batch)
+
+        print(f"  Total: {total_written} telemetry records written")
 
 
 async def main():
@@ -304,8 +333,8 @@ async def main():
     print("Seeding fleet_alert...")
     await seed_fleet_alerts(pool, devices, stale, low_battery, rule_ids)
 
-    print("Seeding InfluxDB telemetry (7 days)...")
-    await seed_influxdb(devices)
+    print("Seeding TimescaleDB telemetry (7 days)...")
+    await seed_timescaledb(pool, devices)
 
     print("Done!")
     await pool.close()
