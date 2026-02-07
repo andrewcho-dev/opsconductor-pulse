@@ -312,6 +312,7 @@ export interface OperatorDevicesResponse {
   tenant_filter: string | null;
   limit: number;
   offset: number;
+  total: number;
 }
 
 export interface OperatorAlertsResponse {

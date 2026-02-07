@@ -17,8 +17,9 @@ import { Server } from "lucide-react";
 export default function OperatorDevices() {
   const [tenantFilterInput, setTenantFilterInput] = useState("");
   const [tenantFilter, setTenantFilter] = useState<string | undefined>(undefined);
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState(1);
   const limit = 50;
+  const offset = (page - 1) * limit;
 
   const { data, isLoading, error } = useOperatorDevices(
     tenantFilter,
@@ -27,6 +28,9 @@ export default function OperatorDevices() {
   );
 
   const devices = data?.devices || [];
+  const total = data?.total ?? 0;
+  const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+  const canGoNext = total > 0 ? offset + devices.length < total : devices.length === limit;
 
   return (
     <div className="space-y-6">
@@ -46,7 +50,7 @@ export default function OperatorDevices() {
           variant="outline"
           onClick={() => {
             setTenantFilter(tenantFilterInput.trim() || undefined);
-            setOffset(0);
+            setPage(1);
           }}
         >
           Filter
@@ -56,7 +60,7 @@ export default function OperatorDevices() {
           onClick={() => {
             setTenantFilterInput("");
             setTenantFilter(undefined);
-            setOffset(0);
+            setPage(1);
           }}
         >
           Clear
@@ -122,22 +126,25 @@ export default function OperatorDevices() {
 
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              Showing {offset + 1}–{offset + devices.length}
+              Showing {offset + 1}–{offset + devices.length} of {total}
             </span>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setOffset(Math.max(0, offset - limit))}
-                disabled={offset === 0}
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
               >
                 Previous
               </Button>
+              <span className="flex items-center px-2 text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setOffset(offset + limit)}
-                disabled={devices.length < limit}
+                onClick={() => setPage((prev) => prev + 1)}
+                disabled={!canGoNext}
               >
                 Next
               </Button>

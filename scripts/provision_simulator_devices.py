@@ -4,7 +4,7 @@ import os
 import urllib.request
 import urllib.error
 
-TENANT_ID = os.getenv("TENANT_ID", "enabled")
+TENANT_ID = os.getenv("TENANT_ID", "tenant-a")
 SITE_PREFIX = os.getenv("SITE_PREFIX", "sim-site")
 SITES_COUNT = int(os.getenv("SITES_COUNT", "5"))
 DEVICE_COUNT = int(os.getenv("DEVICE_COUNT", "100"))

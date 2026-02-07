@@ -549,8 +549,13 @@ async def list_devices(
         async with operator_connection(p) as conn:
             if tenant_filter:
                 devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
+                total = await conn.fetchval(
+                    "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
+                    tenant_filter,
+                )
             else:
                 devices = await fetch_all_devices(conn, limit=limit, offset=offset)
+                total = await conn.fetchval("SELECT COUNT(*) FROM device_state")
     except Exception:
         logger.exception("Failed to fetch operator devices")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -560,6 +565,7 @@ async def list_devices(
         "tenant_filter": tenant_filter,
         "limit": limit,
         "offset": offset,
+        "total": total or 0,
     }
 
 

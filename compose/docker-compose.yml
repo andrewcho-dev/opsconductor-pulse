@@ -156,7 +156,7 @@ services:
     environment:
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
-      TENANT_ID: enabled
+      TENANT_ID: tenant-a
       SITE_PREFIX: sim-site
       SITES_COUNT: "5"
       DEVICE_COUNT: "500"
