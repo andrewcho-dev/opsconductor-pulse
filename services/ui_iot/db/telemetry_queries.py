@@ -3,8 +3,9 @@ Telemetry queries using TimescaleDB.
 Replaces InfluxDB queries.
 """
 
+import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import asyncpg
@@ -12,37 +13,66 @@ import asyncpg
 logger = logging.getLogger(__name__)
 
 
+def _coerce_metrics(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        if not value:
+            return {}
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 async def fetch_device_telemetry(
     conn: asyncpg.Connection,
     tenant_id: str,
     device_id: str,
-    hours: int = 6,
+    hours: int | None = 6,
     limit: int = 500,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> list[dict]:
     """
     Fetch recent telemetry for a device.
     Returns list of {time, metrics} dicts.
     """
+    now = datetime.now(timezone.utc)
+    if start is None:
+        if hours is None:
+            hours = 6
+        end = end or now
+        start = end - timedelta(hours=hours)
+    else:
+        end = end or now
+
     rows = await conn.fetch(
         """
         SELECT time, metrics, seq, msg_type
         FROM telemetry
         WHERE tenant_id = $1
           AND device_id = $2
-          AND time > now() - make_interval(hours => $3)
+          AND time >= $3
+          AND time <= $4
         ORDER BY time DESC
-        LIMIT $4
+        LIMIT $5
         """,
         tenant_id,
         device_id,
-        hours,
+        start,
+        end,
         limit,
     )
 
     return [
         {
-            "time": row["time"].isoformat(),
-            "metrics": dict(row["metrics"]) if row["metrics"] else {},
+            "timestamp": row["time"].isoformat(),
+            "metrics": _coerce_metrics(row["metrics"]),
             "seq": row["seq"],
             "msg_type": row["msg_type"],
         }
@@ -72,8 +102,8 @@ async def fetch_device_telemetry_latest(
         return None
 
     return {
-        "time": row["time"].isoformat(),
-        "metrics": dict(row["metrics"]) if row["metrics"] else {},
+        "timestamp": row["time"].isoformat(),
+        "metrics": _coerce_metrics(row["metrics"]),
         "seq": row["seq"],
     }
 
@@ -105,9 +135,9 @@ async def fetch_device_events(
 
     return [
         {
-            "time": row["time"].isoformat(),
+            "timestamp": row["time"].isoformat(),
             "msg_type": row["msg_type"],
-            "metrics": dict(row["metrics"]) if row["metrics"] else {},
+            "metrics": _coerce_metrics(row["metrics"]),
             "seq": row["seq"],
         }
         for row in rows

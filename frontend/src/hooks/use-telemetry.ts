@@ -11,6 +11,7 @@ export function useTelemetry(
     queryKey: ["telemetry", deviceId, start, end, limit],
     queryFn: () => fetchTelemetry(deviceId, start, end, limit),
     enabled: !!deviceId,
+    placeholderData: (prev) => prev,
   });
 }
 

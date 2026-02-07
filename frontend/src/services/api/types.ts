@@ -22,6 +22,7 @@ export interface DeviceListResponse {
   tenant_id: string;
   devices: Device[];
   count: number;
+  total: number;
   limit: number;
   offset: number;
 }

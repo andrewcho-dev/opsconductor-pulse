@@ -9,17 +9,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/shared";
 import { useDevices } from "@/hooks/use-devices";
 import { Cpu } from "lucide-react";
 
 export default function DeviceListPage() {
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState(1);
   const limit = 50;
+  const offset = (page - 1) * limit;
   const { data, isLoading, error } = useDevices(limit, offset);
 
   const devices = data?.devices || [];
-  const totalCount = data?.count || 0;
+  const totalCount = data?.total ?? data?.count ?? 0;
+  const totalPages = totalCount > 0 ? Math.ceil(totalCount / limit) : 1;
+  const canGoNext =
+    totalCount > 0 ? offset + devices.length < totalCount : devices.length === limit;
 
   return (
     <div className="space-y-6">
@@ -93,30 +98,32 @@ export default function DeviceListPage() {
           </div>
 
           {/* Pagination */}
-          {totalCount > limit && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                Showing {offset + 1}–{Math.min(offset + limit, totalCount)} of{" "}
-                {totalCount}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              Showing {offset + 1}–{offset + devices.length} of {totalCount}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <span className="flex items-center px-2 text-muted-foreground">
+                Page {page} of {totalPages}
               </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setOffset(Math.max(0, offset - limit))}
-                  disabled={offset === 0}
-                  className="px-3 py-1 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setOffset(offset + limit)}
-                  disabled={offset + limit >= totalCount}
-                  className="px-3 py-1 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((prev) => prev + 1)}
+                disabled={!canGoNext}
+              >
+                Next
+              </Button>
             </div>
-          )}
+          </div>
         </>
       )}
     </div>

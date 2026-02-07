@@ -3,6 +3,7 @@ import json
 import time
 import logging
 import asyncio
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -112,6 +113,10 @@ async def list_devices(
     tenant_id = get_tenant_id()
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
+            tenant_id,
+        )
         devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
     for device in devices:
         state = device.get("state")
@@ -130,6 +135,7 @@ async def list_devices(
         "tenant_id": tenant_id,
         "devices": devices,
         "count": len(devices),
+        "total": total or 0,
         "limit": limit,
         "offset": offset,
     }))
@@ -291,11 +297,37 @@ async def get_alert_rule(rule_id: str):
 @router.get("/devices/{device_id}/telemetry")
 async def get_device_telemetry(
     device_id: str,
-    hours: int = Query(6, ge=1, le=168),
+    hours: int | None = Query(None, ge=1, le=168),
     limit: int = Query(500, ge=1, le=2000),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
 ):
     """Get telemetry for a device."""
     tenant_id = get_tenant_id()
+
+    start_dt: datetime | None = None
+    end_dt: datetime | None = None
+    if start:
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            end_dt = (
+                datetime.fromisoformat(end.replace("Z", "+00:00"))
+                if end
+                else datetime.now(timezone.utc)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid start/end timestamp") from exc
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        if start_dt > end_dt:
+            raise HTTPException(status_code=400, detail="Start must be before end")
+    else:
+        if hours is None:
+            hours = 24
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(hours=hours)
 
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
@@ -303,7 +335,13 @@ async def get_device_telemetry(
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
         data = await fetch_device_telemetry(
-            conn, tenant_id, device_id, hours=hours, limit=limit
+            conn,
+            tenant_id,
+            device_id,
+            hours=None,
+            limit=limit,
+            start=start_dt,
+            end=end_dt,
         )
 
     response = {
@@ -311,6 +349,8 @@ async def get_device_telemetry(
         "device_id": device_id,
         "telemetry": data,
         "hours": hours,
+        "start": start_dt.isoformat() if start_dt else None,
+        "end": end_dt.isoformat() if end_dt else None,
     }
     return JSONResponse(jsonable_encoder(response))
 
