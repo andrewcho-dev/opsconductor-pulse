@@ -157,19 +157,22 @@ services:
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
       TENANT_ID: enabled
-      SITE_ID: lab-1
-      DEVICE_COUNT: "25"
-      HEARTBEAT_SECONDS: "5"
-      TELEMETRY_SECONDS: "10"
-      UPLINK_DROP_PERIOD: "60"
-      UPLINK_DROP_DURATION: "20"
+      SITE_PREFIX: sim-site
+      SITES_COUNT: "5"
+      DEVICE_COUNT: "500"
+      PROVISION_API_URL: "http://iot-api:8081"
+      PROVISION_ADMIN_KEY: "change-me-now"
+      SENSOR_PROFILE_MIX: "temperature_sensor:20,door_sensor:10,energy_meter:10,pressure_sensor:10,motion_sensor:10,hvac_controller:10,water_meter:10,air_quality:5,vibration_sensor:10,gps_tracker:5"
+      INTERVAL_JITTER_PCT: "0.1"
       BATTERY_FLOOR: "10"
-      DRAIN_PER_TELEM_MEAN: "0.02"
-      DRAIN_PER_TELEM_JITTER: "0.02"
-      RECHARGE_CHANCE_PER_TELEM: "0.002"
+      BATTERY_DRAIN_MEAN: "0.02"
+      BATTERY_DRAIN_JITTER: "0.02"
+      RECHARGE_CHANCE: "0.002"
       RECHARGE_BOOST_MIN: "5"
       RECHARGE_BOOST_MAX: "15"
-      SIM_EXTRA_METRICS: "${SIM_EXTRA_METRICS:-1}"
+      FAILURE_DOWNTIME_MIN_SECONDS: "30"
+      FAILURE_DOWNTIME_MAX_SECONDS: "300"
+      LOG_STATS_SECONDS: "30"
     depends_on:
       mqtt:
         condition: service_started

@@ -59,6 +59,21 @@ def pick_special_devices(devices):
     return stale, low_battery, high_temp, weak_signal
 
 
+async def seed_tenants(pool):
+    async with pool.acquire() as conn:
+        for tenant_id in TENANTS:
+            name = tenant_id.replace("-", " ").title()
+            await conn.execute(
+                """
+                INSERT INTO tenants (tenant_id, name, status)
+                VALUES ($1,$2,'ACTIVE')
+                ON CONFLICT (tenant_id) DO NOTHING
+                """,
+                tenant_id,
+                name,
+            )
+
+
 async def seed_device_registry(pool, devices):
     async with pool.acquire() as conn:
         for tenant_id, site_id, device_id in devices:
@@ -320,6 +335,9 @@ async def main():
         min_size=1,
         max_size=5,
     )
+
+    print("Seeding tenants...")
+    await seed_tenants(pool)
 
     print("Seeding device_registry...")
     await seed_device_registry(pool, devices)
