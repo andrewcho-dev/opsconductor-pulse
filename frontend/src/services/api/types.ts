@@ -32,6 +32,18 @@ export interface DeviceDetailResponse {
   device: Device;
 }
 
+export interface FleetSummary {
+  total_devices: number;
+  online: number;
+  stale: number;
+  offline: number;
+  alerts_open: number;
+  alerts_new_1h: number;
+  low_battery_count: number;
+  low_battery_threshold: number;
+  low_battery_devices: string[];
+}
+
 // Alert types
 export interface Alert {
   alert_id: number;

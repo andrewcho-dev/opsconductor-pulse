@@ -141,6 +141,78 @@ async def list_devices(
     }))
 
 
+@router.get("/fleet/summary")
+async def get_fleet_summary():
+    """Fleet health summary for dashboard widget."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+
+    low_battery_threshold = 20
+
+    async with tenant_connection(p, tenant_id) as conn:
+        device_counts = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'ONLINE') AS online,
+                COUNT(*) FILTER (WHERE status = 'STALE') AS stale,
+                COUNT(*) FILTER (WHERE status = 'OFFLINE') AS offline
+            FROM device_state
+            WHERE tenant_id = $1
+            """,
+            tenant_id,
+        )
+
+        alert_counts = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) AS open_alerts,
+                COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 hour') AS new_1h
+            FROM fleet_alert
+            WHERE tenant_id = $1 AND status = 'OPEN'
+            """,
+            tenant_id,
+        )
+
+        low_battery_count = await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM device_state
+            WHERE tenant_id = $1
+              AND (state->>'battery_pct') ~ '^[0-9]+(\\.[0-9]+)?$'
+              AND (state->>'battery_pct')::float < $2
+            """,
+            tenant_id,
+            low_battery_threshold,
+        )
+
+        low_battery_devices = await conn.fetch(
+            """
+            SELECT device_id
+            FROM device_state
+            WHERE tenant_id = $1
+              AND (state->>'battery_pct') ~ '^[0-9]+(\\.[0-9]+)?$'
+              AND (state->>'battery_pct')::float < $2
+            ORDER BY device_id
+            LIMIT 10
+            """,
+            tenant_id,
+            low_battery_threshold,
+        )
+
+    return JSONResponse(jsonable_encoder({
+        "total_devices": device_counts["total"] or 0,
+        "online": device_counts["online"] or 0,
+        "stale": device_counts["stale"] or 0,
+        "offline": device_counts["offline"] or 0,
+        "alerts_open": alert_counts["open_alerts"] or 0,
+        "alerts_new_1h": alert_counts["new_1h"] or 0,
+        "low_battery_count": low_battery_count or 0,
+        "low_battery_threshold": low_battery_threshold,
+        "low_battery_devices": [row["device_id"] for row in low_battery_devices],
+    }))
+
+
 @router.get("/devices/{device_id}")
 async def get_device(device_id: str):
     """Get device detail with full state JSONB and timestamps."""

@@ -28,3 +28,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# local artifacts
+dashboard.png
+docs/cursor-prompts/

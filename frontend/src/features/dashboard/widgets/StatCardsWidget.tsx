@@ -1,10 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDevices } from "@/hooks/use-devices";
-import { useAlertStore } from "@/stores/alert-store";
-import { useAlerts } from "@/hooks/use-alerts";
 import { Cpu, Wifi, AlertTriangle, Bell } from "lucide-react";
 import { memo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { fetchFleetSummary } from "@/services/api/devices";
 
 function StatCard({
   title,
@@ -39,21 +38,16 @@ function StatCard({
 }
 
 function StatCardsWidgetInner() {
-  const { data: deviceData, isLoading: devicesLoading } = useDevices(500, 0);
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ["fleet-summary"],
+    queryFn: fetchFleetSummary,
+    refetchInterval: 10_000,
+  });
 
-  // For alert count, prefer live WS data if available, fallback to REST
-  const hasWsData = useAlertStore((s) => s.hasWsData);
-  const liveAlerts = useAlertStore((s) => s.liveAlerts);
-  const { data: alertData, isLoading: alertsLoading } = useAlerts("OPEN", 100, 0);
-
-  const devices = deviceData?.devices || [];
-  const totalDevices = devices.length;
-  const onlineDevices = devices.filter((d) => d.status === "ONLINE").length;
-  const staleDevices = devices.filter((d) => d.status === "STALE").length;
-
-  // Use WS alert count if available, otherwise REST
-  const openAlerts = hasWsData ? liveAlerts.length : (alertData?.alerts?.length || 0);
-  const alertsReady = hasWsData || !alertsLoading;
+  const totalDevices = summary?.total_devices ?? 0;
+  const onlineDevices = summary?.online ?? 0;
+  const staleDevices = summary?.stale ?? 0;
+  const openAlerts = summary?.alerts_open ?? 0;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -61,27 +55,27 @@ function StatCardsWidgetInner() {
         title="Total Devices"
         value={totalDevices}
         icon={Cpu}
-        loading={devicesLoading}
+        loading={isLoading}
       />
       <StatCard
         title="Online"
         value={onlineDevices}
         icon={Wifi}
-        loading={devicesLoading}
+        loading={isLoading}
         className="text-green-700 dark:text-green-400"
       />
       <StatCard
         title="Stale"
         value={staleDevices}
         icon={AlertTriangle}
-        loading={devicesLoading}
+        loading={isLoading}
         className="text-orange-700 dark:text-orange-400"
       />
       <StatCard
         title="Open Alerts"
         value={openAlerts}
         icon={Bell}
-        loading={!alertsReady}
+        loading={isLoading}
         className="text-red-700 dark:text-red-400"
       />
     </div>
