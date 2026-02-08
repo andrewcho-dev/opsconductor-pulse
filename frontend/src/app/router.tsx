@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
@@ -23,6 +23,12 @@ function HomeRedirect() {
   return <Navigate to={isOperator ? "/operator" : "/dashboard"} replace />;
 }
 
+function RequireOperator() {
+  const { isOperator } = useAuth();
+  if (!isOperator) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
 export const router = createBrowserRouter(
   [
     {
@@ -40,16 +46,19 @@ export const router = createBrowserRouter(
         { path: "integrations/email", element: <EmailPage /> },
         { path: "integrations/mqtt", element: <MqttPage /> },
         // Operator routes
-        { path: "operator", element: <OperatorDashboard /> },
-        { path: "operator/devices", element: <OperatorDevices /> },
-        { path: "operator/tenants", element: <OperatorTenantsPage /> },
         {
-          path: "operator/tenants/:tenantId",
-          element: <OperatorTenantDetailPage />,
+          path: "operator",
+          element: <RequireOperator />,
+          children: [
+            { index: true, element: <OperatorDashboard /> },
+            { path: "devices", element: <OperatorDevices /> },
+            { path: "tenants", element: <OperatorTenantsPage /> },
+            { path: "tenants/:tenantId", element: <OperatorTenantDetailPage /> },
+            { path: "system", element: <SystemDashboard /> },
+            { path: "audit-log", element: <AuditLogPage /> },
+            { path: "settings", element: <SettingsPage /> },
+          ],
         },
-        { path: "operator/system", element: <SystemDashboard /> },
-        { path: "operator/audit-log", element: <AuditLogPage /> },
-        { path: "operator/settings", element: <SettingsPage /> },
       ],
     },
   ],
