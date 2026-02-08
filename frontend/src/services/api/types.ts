@@ -131,6 +131,14 @@ export interface AlertRuleUpdate {
   enabled?: boolean;
 }
 
+export interface MetricReference {
+  name: string;
+  description: string;
+  unit: string;
+  range: string;
+  type: "float" | "bool";
+}
+
 // Webhook integration types
 export interface WebhookIntegration {
   integration_id: string;

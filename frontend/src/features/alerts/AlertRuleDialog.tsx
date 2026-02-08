@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -23,8 +24,14 @@ import {
   useCreateAlertRule,
   useUpdateAlertRule,
 } from "@/hooks/use-alert-rules";
-import type { AlertRule, AlertRuleCreate, AlertRuleUpdate } from "@/services/api/types";
+import type {
+  AlertRule,
+  AlertRuleCreate,
+  AlertRuleUpdate,
+  MetricReference,
+} from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
+import { fetchMetricReference } from "@/services/api/alert-rules";
 
 type OperatorValue = "GT" | "LT" | "GTE" | "LTE";
 
@@ -52,6 +59,11 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const isEditing = !!rule;
   const createMutation = useCreateAlertRule();
   const updateMutation = useUpdateAlertRule();
+  const { data: metricReference, isLoading: metricsLoading } = useQuery({
+    queryKey: ["metric-reference"],
+    queryFn: fetchMetricReference,
+    enabled: open,
+  });
 
   const [name, setName] = useState("");
   const [metricName, setMetricName] = useState("");
@@ -86,10 +98,17 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     return formatError(createMutation.error || updateMutation.error);
   }, [createMutation.error, updateMutation.error]);
 
+  const metricOptions = useMemo<MetricReference[]>(() => metricReference ?? [], [metricReference]);
+  const selectedMetric = useMemo(
+    () => metricOptions.find((metric) => metric.name === metricName),
+    [metricName, metricOptions]
+  );
+
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!metricName.trim()) return;
     const thresholdValue = Number(threshold);
     if (Number.isNaN(thresholdValue)) return;
     const normalizedDescription = description.trim() || null;
@@ -157,14 +176,46 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
           <div className="grid gap-2">
             <Label htmlFor="metric-name">Metric Name</Label>
-            <Input
-              id="metric-name"
-              value={metricName}
-              onChange={(e) => setMetricName(e.target.value)}
-              required
-              placeholder="battery_pct"
-            />
+            <Select value={metricName || undefined} onValueChange={setMetricName}>
+              <SelectTrigger id="metric-name" className="w-full" disabled={metricsLoading}>
+                <SelectValue placeholder={metricsLoading ? "Loading metrics..." : "Select metric"} />
+              </SelectTrigger>
+              <SelectContent>
+                {metricOptions.map((metric) => (
+                  <SelectItem key={metric.name} value={metric.name}>
+                    {metric.name} — {metric.description}
+                  </SelectItem>
+                ))}
+                {metricName && !selectedMetric && (
+                  <SelectItem value={metricName}>Custom: {metricName}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            {selectedMetric ? (
+              <p className="text-xs text-muted-foreground">
+                {selectedMetric.description} · {selectedMetric.unit} · {selectedMetric.range} ·{" "}
+                {selectedMetric.type}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {metricsLoading ? "Loading metric reference..." : "Select a metric to see details."}
+              </p>
+            )}
           </div>
+
+          {metricOptions.length > 0 && (
+            <div className="grid gap-2">
+              <Label>Metric Reference</Label>
+              <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
+                {metricOptions.map((metric) => (
+                  <div key={metric.name}>
+                    <span className="font-medium text-foreground">{metric.name}</span> —{" "}
+                    {metric.description} ({metric.unit}, {metric.range}, {metric.type})
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-2">
             <Label>Operator</Label>

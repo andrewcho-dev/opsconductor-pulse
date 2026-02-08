@@ -18,7 +18,7 @@ import type {
 
 // --- Webhook ---
 export async function fetchWebhooks(): Promise<WebhookListResponse> {
-  return apiGet("/customer/integrations");
+  return apiGet("/customer/integrations?type=webhook");
 }
 
 export async function createWebhook(

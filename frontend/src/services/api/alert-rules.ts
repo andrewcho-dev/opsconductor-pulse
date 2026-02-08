@@ -4,6 +4,7 @@ import type {
   AlertRuleListResponse,
   AlertRuleCreate,
   AlertRuleUpdate,
+  MetricReference,
 } from "./types";
 
 export async function fetchAlertRules(limit = 100): Promise<AlertRuleListResponse> {
@@ -27,4 +28,8 @@ export async function updateAlertRule(
 
 export async function deleteAlertRule(ruleId: string): Promise<void> {
   return apiDelete(`/customer/alert-rules/${encodeURIComponent(ruleId)}`);
+}
+
+export async function fetchMetricReference(): Promise<MetricReference[]> {
+  return apiGet("/api/v2/metrics/reference");
 }

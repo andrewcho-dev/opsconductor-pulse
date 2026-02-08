@@ -131,20 +131,36 @@ async def fetch_integrations(
     conn: asyncpg.Connection,
     tenant_id: str,
     limit: int = 50,
+    integration_type: str | None = None,
 ) -> List[Dict[str, Any]]:
     _require_tenant(tenant_id)
-    rows = await conn.fetch(
-        """
-        SELECT tenant_id, integration_id, name, enabled,
-               config_json->>'url' AS url, created_at
-        FROM integrations
-        WHERE tenant_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        """,
-        tenant_id,
-        limit,
-    )
+    if integration_type:
+        rows = await conn.fetch(
+            """
+            SELECT tenant_id, integration_id, name, enabled,
+                   config_json->>'url' AS url, created_at
+            FROM integrations
+            WHERE tenant_id = $1 AND type = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+            """,
+            tenant_id,
+            integration_type,
+            limit,
+        )
+    else:
+        rows = await conn.fetch(
+            """
+            SELECT tenant_id, integration_id, name, enabled,
+                   config_json->>'url' AS url, created_at
+            FROM integrations
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            limit,
+        )
     return [dict(r) for r in rows]
 
 

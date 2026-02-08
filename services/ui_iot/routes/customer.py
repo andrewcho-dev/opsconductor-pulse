@@ -324,12 +324,12 @@ async def get_alert(alert_id: str):
 
 
 @router.get("/integrations")
-async def list_integrations():
+async def list_integrations(type: str | None = Query(None)):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
         async with tenant_connection(p, tenant_id) as conn:
-            rows = await fetch_integrations(conn, tenant_id, limit=50)
+            rows = await fetch_integrations(conn, tenant_id, limit=50, integration_type=type)
     except Exception:
         logger.exception("Failed to fetch tenant integrations")
         raise HTTPException(status_code=500, detail="Internal server error")
