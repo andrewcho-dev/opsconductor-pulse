@@ -80,7 +80,7 @@ export function AppSidebar() {
           className="flex items-center gap-3 no-underline"
         >
           <img
-            src="/opsconductor_logo_clean_PROPER.svg"
+            src="/app/opsconductor_logo_clean_PROPER.svg"
             alt="OpsConductor Pulse"
             className="h-10 w-auto"
           />
