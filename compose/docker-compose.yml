@@ -323,6 +323,7 @@ services:
     command: start-dev --import-realm
     volumes:
       - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json
+      - ./keycloak/themes/opsconductor:/opt/keycloak/themes/opsconductor:ro
     expose:
       - "8080"
     depends_on:

@@ -1,7 +1,7 @@
 {
   "realm": "pulse",
   "enabled": true,
-  "loginTheme": "keycloak",
+  "loginTheme": "opsconductor",
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 1800,
   "clients": [
