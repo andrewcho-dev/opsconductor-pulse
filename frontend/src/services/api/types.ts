@@ -225,7 +225,7 @@ export interface SnmpIntegration {
   name: string;
   snmp_host: string;
   snmp_port: number;
-  snmp_version: "2c" | "3";
+  snmp_version: "1" | "2c" | "3";
   snmp_oid_prefix: string;
   enabled: boolean;
   created_at: string;
@@ -236,9 +236,14 @@ export interface SnmpIntegrationCreate {
   name: string;
   snmp_host: string;
   snmp_port?: number;
-  snmp_config: SnmpV2cConfig | SnmpV3Config;
+  snmp_config: SnmpV1Config | SnmpV2cConfig | SnmpV3Config;
   snmp_oid_prefix?: string;
   enabled?: boolean;
+}
+
+export interface SnmpV1Config {
+  version: "1";
+  community: string;
 }
 
 export interface SnmpV2cConfig {
@@ -259,7 +264,7 @@ export interface SnmpIntegrationUpdate {
   name?: string;
   snmp_host?: string;
   snmp_port?: number;
-  snmp_config?: SnmpV2cConfig | SnmpV3Config;
+  snmp_config?: SnmpV1Config | SnmpV2cConfig | SnmpV3Config;
   snmp_oid_prefix?: string;
   enabled?: boolean;
 }

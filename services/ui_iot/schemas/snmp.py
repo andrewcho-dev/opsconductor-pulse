@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SNMPVersion(str, Enum):
+    V1 = "1"
     V2C = "2c"
     V3 = "3"
 
@@ -23,6 +24,13 @@ class SNMPPrivProtocol(str, Enum):
     AES = "AES"
     AES192 = "AES192"
     AES256 = "AES256"
+
+
+class SNMPv1Config(BaseModel):
+    """SNMPv1 configuration with community string."""
+
+    version: Literal["1"] = "1"
+    community: str = Field(..., min_length=1, max_length=64)
 
 
 class SNMPv2cConfig(BaseModel):
@@ -56,7 +64,7 @@ class SNMPIntegrationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     snmp_host: str = Field(..., min_length=1, max_length=255)
     snmp_port: int = Field(default=162, ge=1, le=65535)
-    snmp_config: SNMPv2cConfig | SNMPv3Config
+    snmp_config: SNMPv1Config | SNMPv2cConfig | SNMPv3Config
     snmp_oid_prefix: str = Field(default="1.3.6.1.4.1.99999", pattern=r"^[0-9.]+$")
     enabled: bool = True
 
@@ -67,7 +75,7 @@ class SNMPIntegrationUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=128)
     snmp_host: Optional[str] = Field(None, min_length=1, max_length=255)
     snmp_port: Optional[int] = Field(None, ge=1, le=65535)
-    snmp_config: Optional[SNMPv2cConfig | SNMPv3Config] = None
+    snmp_config: Optional[SNMPv1Config | SNMPv2cConfig | SNMPv3Config] = None
     snmp_oid_prefix: Optional[str] = Field(None, pattern=r"^[0-9.]+$")
     enabled: Optional[bool] = None
 

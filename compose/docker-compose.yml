@@ -71,7 +71,9 @@ services:
     restart: unless-stopped
 
   evaluator:
-    build: ../services/evaluator_iot
+    build:
+      context: ../services
+      dockerfile: evaluator_iot/Dockerfile
     container_name: iot-evaluator
     environment:
       PG_HOST: iot-postgres
@@ -95,7 +97,9 @@ services:
     restart: unless-stopped
 
   dispatcher:
-    build: ../services/dispatcher
+    build:
+      context: ../services
+      dockerfile: dispatcher/Dockerfile
     container_name: iot-dispatcher
     environment:
       PG_HOST: iot-postgres
@@ -121,7 +125,9 @@ services:
     restart: unless-stopped
 
   delivery_worker:
-    build: ../services/delivery_worker
+    build:
+      context: ../services
+      dockerfile: delivery_worker/Dockerfile
     container_name: iot-delivery-worker
     environment:
       PG_HOST: iot-postgres

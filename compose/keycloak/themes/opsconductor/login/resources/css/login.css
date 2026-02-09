@@ -1,0 +1,51 @@
+/* OpsConductor Pulse Login Theme */
+
+/* Logo in header */
+.login-pf-brand {
+    background-image: url("../img/opsconductor_logo.svg");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    height: 80px;
+    width: 200px;
+    margin: 0 auto 20px;
+}
+
+/* Hide default Keycloak logo text */
+.login-pf-brand-name {
+    display: none;
+}
+
+/* Page title styling */
+.login-pf-page-header h1 {
+    color: #1e293b;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+/* Card styling */
+.card-pf {
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.btn-primary:hover {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+
+/* Footer */
+.login-pf-page .login-pf-footer {
+    text-align: center;
+    color: #64748b;
+}
+
+.login-pf-page .login-pf-footer::after {
+    content: "OpsConductor Pulse";
+}

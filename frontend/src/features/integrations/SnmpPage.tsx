@@ -35,6 +35,7 @@ import type {
   SnmpIntegration,
   SnmpIntegrationCreate,
   SnmpIntegrationUpdate,
+  SnmpV1Config,
   SnmpV2cConfig,
   SnmpV3Config,
 } from "@/services/api/types";
@@ -42,7 +43,7 @@ import { ApiError } from "@/services/api/client";
 import { DeleteIntegrationDialog } from "./DeleteIntegrationDialog";
 import { TestDeliveryButton } from "./TestDeliveryButton";
 
-type SnmpVersion = "2c" | "3";
+type SnmpVersion = "1" | "2c" | "3";
 type AuthProtocol = "MD5" | "SHA" | "SHA256";
 type PrivProtocol = "DES" | "AES" | "AES256";
 
@@ -129,7 +130,9 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
     if (Number.isNaN(portValue)) return;
 
     const snmpConfig = (
-      version === "2c"
+      version === "1"
+        ? { version: "1", community }
+        : version === "2c"
         ? { version: "2c", community }
         : {
             version: "3",
@@ -139,7 +142,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
             priv_protocol: privPassword ? privProtocol : undefined,
             priv_password: privPassword || undefined,
           }
-    ) as SnmpV2cConfig | SnmpV3Config;
+    ) as SnmpV1Config | SnmpV2cConfig | SnmpV3Config;
 
     if (!isEditing) {
       const payload: SnmpIntegrationCreate = {
@@ -218,8 +221,9 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
                   <SelectValue placeholder="Select version" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="1">v1 (legacy)</SelectItem>
                   <SelectItem value="2c">v2c</SelectItem>
-                  <SelectItem value="3">v3</SelectItem>
+                  <SelectItem value="3">v3 (secure)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -234,7 +238,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
             </div>
           </div>
 
-          {version === "2c" ? (
+          {version === "1" || version === "2c" ? (
             <div className="grid gap-2">
               <Label htmlFor="snmp-community">Community String</Label>
               <Input
@@ -242,6 +246,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
                 value={community}
                 onChange={(e) => setCommunity(e.target.value)}
                 required
+                placeholder={version === "1" ? "public" : ""}
               />
             </div>
           ) : (

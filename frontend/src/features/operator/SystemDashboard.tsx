@@ -12,16 +12,6 @@ import {
   type SystemAggregates,
   type SystemErrors,
 } from "@/services/api/system";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import {
   Database,
@@ -32,577 +22,310 @@ import {
   Send,
   Truck,
   Activity,
-  Users,
   Radio,
   Bell,
-  Zap,
   RefreshCw,
   Pause,
   Play,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
-import { MetricChartCard } from "./components/MetricChartCard";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-function formatRelativeTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
+function StatusDot({ status }: { status: string }) {
+  const color = { healthy: "bg-green-500", degraded: "bg-yellow-500", down: "bg-red-500", unknown: "bg-gray-400" }[status] || "bg-gray-400";
+  return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const variant = {
-    healthy: "default",
-    degraded: "secondary",
-    down: "destructive",
-    unknown: "outline",
-  }[status] as "default" | "secondary" | "destructive" | "outline";
-
-  const icon = {
-    healthy: "🟢",
-    degraded: "🟡",
-    down: "🔴",
-    unknown: "⚪",
-  }[status];
-
+function ServiceChip({ name, icon: Icon, health }: { name: string; icon: React.ElementType; health?: ComponentHealth }) {
+  const status = health?.status || "unknown";
+  const isDown = status === "down";
+  const isDegraded = status === "degraded";
   return (
-    <Badge variant={variant} className="gap-1">
-      <span>{icon}</span>
-      <span className="capitalize">{status}</span>
-    </Badge>
+    <div
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs border ${
+        isDown ? "border-red-400 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-400"
+        : isDegraded ? "border-yellow-400 bg-yellow-50 dark:bg-yellow-950/50 text-yellow-700"
+        : "border-border text-muted-foreground"
+      }`}
+      title={health?.error || (health?.latency_ms !== undefined ? `${name}: ${health.latency_ms}ms` : name)}
+    >
+      <StatusDot status={status} />
+      <Icon className="h-3 w-3" />
+      <span>{name}</span>
+      {health?.latency_ms !== undefined && !isDown && (
+        <span className="text-[10px] opacity-60">{health.latency_ms}ms</span>
+      )}
+    </div>
   );
 }
 
-function ServiceHealthCard({
-  name,
-  icon: Icon,
-  health,
+function Sparkline({ data, color, height = 32 }: { data: number[]; color: string; height?: number }) {
+  if (data.length < 2) return <div style={{ height }} className="w-full bg-muted/30 rounded" />;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  // Use viewBox for responsive scaling
+  const w = 100;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = height - 2 - ((v - min) / range) * (height - 4);
+    return `${x},${y}`;
+  }).join(" ");
+  const areaPoints = `0,${height} ${points} ${w},${height}`;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full block" style={{ height }}>
+      <polygon points={areaPoints} fill={color} opacity={0.15} />
+      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function MetricCard({
+  label, value, unit, color, trend, sparkData, icon: Icon
 }: {
-  name: string;
+  label: string;
+  value: number;
+  unit?: string;
+  color: string;
+  trend?: "up" | "down" | null;
+  sparkData: number[];
   icon: React.ElementType;
-  health?: ComponentHealth;
 }) {
+  const formatValue = (n: number) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+    return n.toFixed(n % 1 === 0 ? 0 : 1);
+  };
+
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Icon className="h-5 w-5 text-muted-foreground" />
-            <span className="font-medium">{name}</span>
-          </div>
-          <StatusBadge status={health?.status || "unknown"} />
+    <div className="border border-border rounded px-2 py-1.5 bg-card">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Icon className="h-3 w-3" />
+          <span>{label}</span>
         </div>
-        {health?.latency_ms !== undefined && (
-          <p className="text-xs text-muted-foreground mt-2">
-            Latency: {health.latency_ms}ms
-          </p>
-        )}
-        {health?.connections !== undefined && (
-          <p className="text-xs text-muted-foreground">
-            Connections: {health.connections}/{health.max_connections}
-          </p>
-        )}
-        {health?.error && (
-          <p className="text-xs text-destructive mt-2">{health.error}</p>
-        )}
-      </CardContent>
-    </Card>
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-semibold tabular-nums" style={{ color }}>{formatValue(value)}{unit}</span>
+          {trend === "up" && <TrendingUp className="h-3 w-3 text-green-500" />}
+          {trend === "down" && <TrendingDown className="h-3 w-3 text-red-500" />}
+        </div>
+      </div>
+      <Sparkline data={sparkData} color={color} height={24} />
+    </div>
   );
 }
 
-function MetricTimeSeriesChart({
-  title,
-  metric,
-  minutes = 60,
-  color = "#3b82f6",
-  refreshInterval,
-  rate = false,
-}: {
-  title: string;
-  metric: string;
-  minutes?: number;
-  color?: string;
-  refreshInterval: number;
-  /** Set to true for counter metrics to compute rate (derivative) */
-  rate?: boolean;
-}) {
+function useMetric(metric: string, refreshInterval: number, rate = false) {
   const { data } = useQuery({
-    queryKey: ["metric-history", metric, minutes, rate],
-    queryFn: () => fetchMetricHistory(metric, minutes, rate),
+    queryKey: ["metric-history", metric, 30, rate],
+    queryFn: () => fetchMetricHistory(metric, 30, rate),
     refetchInterval: refreshInterval,
   });
 
-  const chartData = useMemo(() => {
-    if (!data?.points) return [];
-    return data.points.map((p) => ({
-      time: new Date(p.time).toLocaleTimeString(),
-      value: p.value,
-    }));
-  }, [data?.points]);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={chartData}>
-            <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} width={40} />
-            <Tooltip />
-            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  );
+  return useMemo(() => {
+    if (!data?.points?.length) return { value: 0, trend: null as "up" | "down" | null, spark: [] as number[] };
+    const values = data.points.map(p => p.value);
+    const current = values[values.length - 1] || 0;
+    const recent = values.slice(-6);
+    const older = values.slice(-12, -6);
+    let trend: "up" | "down" | null = null;
+    if (recent.length && older.length) {
+      const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+      const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
+      const change = ((recentAvg - olderAvg) / (olderAvg || 1)) * 100;
+      if (Math.abs(change) > 10) trend = change > 0 ? "up" : "down";
+    }
+    return { value: current, trend, spark: values };
+  }, [data]);
 }
 
-function CapacityGauge({
-  label,
-  used,
-  max,
-  unit,
-}: {
-  label: string;
-  used: number;
-  max: number;
-  unit: string;
-}) {
-  const pct = max > 0 ? Math.round((used / max) * 100) : 0;
-
+function CapacityBar({ label, pct, detail }: { label: string; pct: number; detail?: string }) {
+  const isHigh = pct > 80;
+  const isCrit = pct > 95;
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-sm">
-        <span>{label}</span>
-        <span className="text-muted-foreground">
-          {used.toFixed(1)} / {max.toFixed(1)} {unit} ({pct}%)
-        </span>
-      </div>
-      <div className="h-2 w-full rounded bg-muted">
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-muted-foreground w-12">{label}</span>
+      <div className="flex-1 h-2 bg-muted rounded overflow-hidden max-w-32">
         <div
-          className="h-2 rounded bg-primary transition-all"
-          style={{ width: `${pct}%` }}
+          className={`h-full transition-all ${isCrit ? "bg-red-500" : isHigh ? "bg-yellow-500" : "bg-green-500"}`}
+          style={{ width: `${Math.min(100, pct)}%` }}
         />
       </div>
+      <span className={`tabular-nums w-10 text-right ${isCrit ? "text-red-600 font-medium" : isHigh ? "text-yellow-600" : ""}`}>
+        {pct}%
+      </span>
+      {detail && <span className="text-muted-foreground text-[10px]">{detail}</span>}
     </div>
   );
 }
 
 export function SystemDashboard() {
-  const [refreshInterval, setRefreshInterval] = useState<number>(10000);
+  const [refreshInterval, setRefreshInterval] = useState(10000);
   const [isPaused, setIsPaused] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [staleThreshold] = useState(60000);
   const queryClient = useQueryClient();
   const isOnline = useOnlineStatus();
 
-  const { data: health, isFetching: healthFetching } = useQuery<SystemHealth>({
+  const { data: health, isFetching } = useQuery<SystemHealth>({
     queryKey: ["system-health"],
     queryFn: fetchSystemHealth,
     refetchInterval: isPaused ? false : refreshInterval,
   });
 
-  const { data: capacity, isFetching: capacityFetching } = useQuery<SystemCapacity>({
+  const { data: capacity } = useQuery<SystemCapacity>({
     queryKey: ["system-capacity"],
     queryFn: fetchSystemCapacity,
     refetchInterval: isPaused ? false : refreshInterval * 3,
   });
 
-  const { data: aggregates, isFetching: aggregatesFetching } = useQuery<SystemAggregates>({
+  const { data: aggregates } = useQuery<SystemAggregates>({
     queryKey: ["system-aggregates"],
     queryFn: fetchSystemAggregates,
     refetchInterval: isPaused ? false : refreshInterval * 1.5,
   });
 
-  const { data: errors, isFetching: errorsFetching } = useQuery<SystemErrors>({
+  const { data: errors } = useQuery<SystemErrors>({
     queryKey: ["system-errors"],
     queryFn: () => fetchSystemErrors(1),
     refetchInterval: isPaused ? false : refreshInterval * 1.5,
   });
 
-  const isAnyFetching =
-    healthFetching ||
-    capacityFetching ||
-    aggregatesFetching ||
-    errorsFetching;
+  const ingest = useMetric("messages_written", isPaused ? 0 : refreshInterval, true);
+  const queue = useMetric("queue_depth", isPaused ? 0 : refreshInterval);
+  const pending = useMetric("jobs_pending", isPaused ? 0 : refreshInterval);
+  const failed = useMetric("jobs_failed", isPaused ? 0 : refreshInterval);
+  const online = useMetric("devices_online", isPaused ? 0 : refreshInterval);
+  const stale = useMetric("devices_stale", isPaused ? 0 : refreshInterval);
+  const alertsOpen = useMetric("alerts_open", isPaused ? 0 : refreshInterval);
+  const dbConn = useMetric("connections", isPaused ? 0 : refreshInterval);
 
-  const isDataStale =
-    lastRefresh && Date.now() - lastRefresh.getTime() > staleThreshold;
-
-  const handleRefreshAll = () => {
+  const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["system-health"] });
-    queryClient.invalidateQueries({ queryKey: ["system-metrics"] });
     queryClient.invalidateQueries({ queryKey: ["system-capacity"] });
     queryClient.invalidateQueries({ queryKey: ["system-aggregates"] });
     queryClient.invalidateQueries({ queryKey: ["system-errors"] });
+    queryClient.invalidateQueries({ queryKey: ["metric-history"] });
   };
 
   useEffect(() => {
-    if (health?.checked_at) {
-      setLastRefresh(new Date(health.checked_at));
-    }
-  }, [health?.checked_at]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "r" && !e.metaKey && !e.ctrlKey) {
-        handleRefreshAll();
-      }
-      if (e.key === " " && e.target === document.body) {
-        e.preventDefault();
-        setIsPaused((prev) => !prev);
-      }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "r" && !e.metaKey && !e.ctrlKey) handleRefresh();
+      if (e.key === " " && e.target === document.body) { e.preventDefault(); setIsPaused(p => !p); }
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const diskPct = capacity?.disk?.volumes?.root
+    ? Math.round((capacity.disk.volumes.root.used_gb / capacity.disk.volumes.root.total_gb) * 100) : 0;
+  const connPct = capacity?.postgres
+    ? Math.round((capacity.postgres.connections_used / capacity.postgres.connections_max) * 100) : 0;
+  const errCount = (errors?.counts?.delivery_failures || 0) + (errors?.counts?.quarantined || 0);
+
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">System Dashboard</h1>
-          <p className="text-muted-foreground">Platform health and performance overview</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={health?.status || "unknown"} />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="relative h-4 w-4">
-              <RefreshCw
-                className={`h-4 w-4 transition-opacity ${
-                  isAnyFetching ? "animate-spin text-primary opacity-100" : "opacity-0"
-                }`}
-              />
-              <span
-                className={`absolute inset-0 m-auto h-2 w-2 rounded-full bg-green-500 transition-opacity ${
-                  isAnyFetching ? "opacity-0" : "opacity-100"
-                }`}
-              />
-            </span>
-            <span className="hidden sm:inline min-w-[5.5rem] text-right">
-              {formatRelativeTime(lastRefresh.toISOString())}
-            </span>
+    <div className="p-2 space-y-2">
+      {/* Header: Status + Services + Controls */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <StatusDot status={health?.status || "unknown"} />
+            <span className="font-semibold">System</span>
+            {!isOnline && <span className="text-xs text-red-600 font-medium ml-2">OFFLINE</span>}
           </div>
-          <Select
-            value={refreshInterval.toString()}
-            onValueChange={(v) => setRefreshInterval(parseInt(v, 10))}
-          >
-            <SelectTrigger className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="5000">5s</SelectItem>
-              <SelectItem value="10000">10s</SelectItem>
-              <SelectItem value="30000">30s</SelectItem>
-              <SelectItem value="60000">60s</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant={isPaused ? "default" : "outline"}
-            size="icon"
-            onClick={() => setIsPaused(!isPaused)}
-            title={isPaused ? "Resume auto-refresh" : "Pause auto-refresh"}
-          >
-            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleRefreshAll}
-            disabled={isAnyFetching}
-            title="Refresh now (R)"
-          >
-            <RefreshCw className={`h-4 w-4 ${isAnyFetching ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
-
-      {!isOnline && (
-        <div className="bg-destructive/10 text-destructive p-3 rounded-md flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5" />
-          <span>Connection lost. Updates paused.</span>
-        </div>
-      )}
-
-      {isDataStale && !isPaused && isOnline && (
-        <div className="bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 p-3 rounded-md flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5" />
-          <span>Data may be stale. Last updated over 1 minute ago.</span>
-          <Button variant="ghost" size="sm" onClick={handleRefreshAll}>
-            Refresh
-          </Button>
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Service Health</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <ServiceHealthCard
-              name="PostgreSQL"
-              icon={Database}
-              health={health?.components.postgres}
-            />
-            <ServiceHealthCard name="MQTT" icon={Wifi} health={health?.components.mqtt} />
-            <ServiceHealthCard
-              name="Keycloak"
-              icon={Shield}
-              health={health?.components.keycloak}
-            />
-            <ServiceHealthCard name="Ingest" icon={Upload} health={health?.components.ingest} />
-            <ServiceHealthCard
-              name="Evaluator"
-              icon={AlertTriangle}
-              health={health?.components.evaluator}
-            />
-            <ServiceHealthCard
-              name="Dispatcher"
-              icon={Send}
-              health={health?.components.dispatcher}
-            />
-            <ServiceHealthCard
-              name="Delivery"
-              icon={Truck}
-              health={health?.components.delivery}
-            />
+          <div className="flex items-center gap-1 flex-wrap">
+            <ServiceChip name="Postgres" icon={Database} health={health?.components.postgres} />
+            <ServiceChip name="MQTT" icon={Wifi} health={health?.components.mqtt} />
+            <ServiceChip name="Keycloak" icon={Shield} health={health?.components.keycloak} />
+            <ServiceChip name="Ingest" icon={Upload} health={health?.components.ingest} />
+            <ServiceChip name="Evaluator" icon={AlertTriangle} health={health?.components.evaluator} />
+            <ServiceChip name="Dispatcher" icon={Send} health={health?.components.dispatcher} />
+            <ServiceChip name="Delivery" icon={Truck} health={health?.components.delivery} />
           </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricChartCard
-          title="Ingest Rate"
-          metric="messages_written"
-          unit="/s"
-          icon={Activity}
-          color="#22c55e"
-          minutes={15}
-          refreshInterval={refreshInterval}
-          rate={true}
-        />
-        <MetricChartCard
-          title="Queue Depth"
-          metric="queue_depth"
-          icon={Upload}
-          color="#3b82f6"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
-        <MetricChartCard
-          title="Pending Deliveries"
-          metric="jobs_pending"
-          icon={Send}
-          color="#f59e0b"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
-        <MetricChartCard
-          title="Failed Deliveries"
-          metric="jobs_failed"
-          icon={AlertTriangle}
-          color="#ef4444"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={refreshInterval}
+            onChange={e => setRefreshInterval(Number(e.target.value))}
+            className="h-7 text-xs border border-border rounded bg-background px-2"
+          >
+            <option value={5000}>5s</option>
+            <option value={10000}>10s</option>
+            <option value={30000}>30s</option>
+          </select>
+          <button
+            onClick={() => setIsPaused(p => !p)}
+            className={`p-1.5 rounded border ${isPaused ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+            title={isPaused ? "Resume" : "Pause"}
+          >
+            {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={isFetching}
+            className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-50"
+            title="Refresh (R)"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricChartCard
-          title="DB Connections"
-          metric="connections"
-          icon={Database}
-          color="#8b5cf6"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
-        <MetricChartCard
-          title="Devices Online"
-          metric="devices_online"
-          icon={Radio}
-          color="#22c55e"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
-        <MetricChartCard
-          title="Devices Stale"
-          metric="devices_stale"
-          icon={Radio}
-          color="#f59e0b"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
-        <MetricChartCard
-          title="Open Alerts"
-          metric="alerts_open"
-          icon={Bell}
-          color="#ef4444"
-          minutes={15}
-          refreshInterval={refreshInterval}
-        />
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <MetricCard label="Ingest Rate" value={ingest.value} unit="/s" color="#22c55e" trend={ingest.trend} sparkData={ingest.spark} icon={Activity} />
+        <MetricCard label="Queue Depth" value={queue.value} color={queue.value > 1000 ? "#ef4444" : "#3b82f6"} trend={queue.trend} sparkData={queue.spark} icon={Upload} />
+        <MetricCard label="Pending Jobs" value={pending.value} color={pending.value > 100 ? "#f59e0b" : "#6b7280"} trend={pending.trend} sparkData={pending.spark} icon={Send} />
+        <MetricCard label="Failed Jobs" value={failed.value} color={failed.value > 0 ? "#ef4444" : "#6b7280"} trend={failed.trend} sparkData={failed.spark} icon={AlertTriangle} />
+        <MetricCard label="Devices Online" value={online.value} color="#22c55e" trend={online.trend} sparkData={online.spark} icon={Radio} />
+        <MetricCard label="Devices Stale" value={stale.value} color={stale.value > 10 ? "#f59e0b" : "#6b7280"} trend={stale.trend} sparkData={stale.spark} icon={Radio} />
+        <MetricCard label="Open Alerts" value={alertsOpen.value} color={alertsOpen.value > 0 ? "#ef4444" : "#6b7280"} trend={alertsOpen.trend} sparkData={alertsOpen.spark} icon={Bell} />
+        <MetricCard label="DB Connections" value={dbConn.value} color="#8b5cf6" trend={dbConn.trend} sparkData={dbConn.spark} icon={Database} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <MetricTimeSeriesChart
-          title="Ingest Rate (Last Hour)"
-          metric="messages_written"
-          minutes={60}
-          color="#22c55e"
-          refreshInterval={refreshInterval}
-          rate={true}
-        />
-        <MetricTimeSeriesChart
-          title="Queue Depth (Last Hour)"
-          metric="queue_depth"
-          minutes={60}
-          color="#3b82f6"
-          refreshInterval={refreshInterval}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Platform Totals</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">{aggregates?.tenants.active || 0}</p>
-                  <p className="text-xs text-muted-foreground">Active Tenants</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Radio className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">
-                    {aggregates?.devices.online || 0} / {aggregates?.devices.registered || 0}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Devices Online</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Bell className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">{aggregates?.alerts.open || 0}</p>
-                  <p className="text-xs text-muted-foreground">Open Alerts</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">
-                    {aggregates?.integrations.active || 0} / {aggregates?.integrations.total || 0}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Integrations</p>
-                </div>
-              </div>
+      {/* Stats + Capacity Row */}
+      <div className="flex items-start gap-2 flex-wrap">
+        <div className="flex items-center gap-4 text-xs border border-border rounded px-2 py-1.5">
+          <div><span className="font-semibold text-sm">{aggregates?.tenants.active || 0}</span> <span className="text-muted-foreground">tenants</span></div>
+          <div><span className="font-semibold text-sm">{aggregates?.devices.online || 0}</span><span className="text-muted-foreground">/{aggregates?.devices.registered || 0} devices</span></div>
+          <div><span className="font-semibold text-sm">{aggregates?.integrations.active || 0}</span><span className="text-muted-foreground">/{aggregates?.integrations.total || 0} integrations</span></div>
+        </div>
+        <div className="flex items-center gap-3 border border-border rounded px-2 py-1.5">
+          <CapacityBar label="Disk" pct={diskPct} detail={capacity?.disk?.volumes?.root ? `${capacity.disk.volumes.root.used_gb.toFixed(0)}/${capacity.disk.volumes.root.total_gb.toFixed(0)}GB` : undefined} />
+          <CapacityBar label="Conn" pct={connPct} detail={capacity?.postgres ? `${capacity.postgres.connections_used}/${capacity.postgres.connections_max}` : undefined} />
+          {capacity?.postgres?.db_size_mb && (
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-muted-foreground">DB</span>
+              <span className="font-medium">{capacity.postgres.db_size_mb.toFixed(0)}MB</span>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Capacity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {capacity?.disk?.volumes?.root && (
-              <CapacityGauge
-                label="Disk Usage"
-                used={capacity.disk.volumes.root.used_gb}
-                max={capacity.disk.volumes.root.total_gb}
-                unit="GB"
-              />
-            )}
-            {capacity?.postgres && (
-              <CapacityGauge
-                label="DB Connections"
-                used={capacity.postgres.connections_used}
-                max={capacity.postgres.connections_max}
-                unit=""
-              />
-            )}
-            {capacity?.postgres?.db_size_mb && (
-              <div className="flex justify-between text-sm">
-                <span>Database Size</span>
-                <span className="text-muted-foreground">
-                  {capacity.postgres.db_size_mb.toFixed(1)} MB
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center justify-between">
-            <span>Recent Errors</span>
-            <div className="flex gap-2 text-sm font-normal">
-              {errors?.counts && (
-                <>
-                  <Badge variant="destructive">
-                    {errors.counts.delivery_failures} delivery failures
-                  </Badge>
-                  <Badge variant="secondary">{errors.counts.quarantined} quarantined</Badge>
-                </>
-              )}
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {errors?.errors && errors.errors.length > 0 ? (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {errors.errors.slice(0, 10).map((error, idx) => {
-                const details = (error.details || {}) as {
-                  device_id?: string;
-                  last_error?: string;
-                  reason?: string;
-                };
-                return (
-                  <div
-                    key={idx}
-                    className="flex items-start gap-3 p-2 rounded bg-muted/50 text-sm"
-                  >
-                    <span className="text-muted-foreground whitespace-nowrap">
-                      {new Date(error.timestamp).toLocaleTimeString()}
-                    </span>
-                    <Badge variant="outline">{error.source}</Badge>
-                    <span className="font-medium">{error.error_type}</span>
-                    <span className="text-muted-foreground truncate">
-                      {error.tenant_id && `[${error.tenant_id}]`}
-                      {details.device_id && ` ${details.device_id}`}
-                      {details.last_error && ` - ${details.last_error}`}
-                      {details.reason && ` - ${details.reason}`}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-4">
-              No errors in the last hour
-            </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <p className="text-xs text-muted-foreground text-center mt-4">
-        Keyboard: <kbd className="px-1 bg-muted rounded">R</kbd> refresh,
-        <kbd className="px-1 bg-muted rounded ml-1">Space</kbd> pause/resume
-      </p>
+      {/* Errors Section */}
+      {errCount > 0 && (
+        <div className="border border-border rounded px-2 py-1.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-muted-foreground">Errors</span>
+            <div className="flex gap-2 text-[11px]">
+              <span className="text-red-600">{errors?.counts?.delivery_failures || 0} failed</span>
+              <span className="text-yellow-600">{errors?.counts?.quarantined || 0} quarantined</span>
+            </div>
+          </div>
+          <div className="space-y-0.5 max-h-24 overflow-y-auto">
+            {errors?.errors?.slice(0, 6).map((err, i) => {
+              const d = err.details as { device_id?: string; reason?: string } | null;
+              return (
+                <div key={i} className="flex items-center gap-2 text-[11px]">
+                  <span className="text-muted-foreground tabular-nums">{new Date(err.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="font-medium text-red-600">{err.error_type}</span>
+                  <span className="text-muted-foreground truncate">{err.tenant_id && `[${err.tenant_id}]`} {d?.device_id} {d?.reason}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
