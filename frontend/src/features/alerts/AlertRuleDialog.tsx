@@ -21,6 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   useCreateAlertRule,
   useUpdateAlertRule,
 } from "@/hooks/use-alert-rules";
@@ -152,7 +158,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Alert Rule" : "Create Alert Rule"}</DialogTitle>
           <DialogDescription>
@@ -176,46 +182,47 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
           <div className="grid gap-2">
             <Label htmlFor="metric-name">Metric Name</Label>
-            <Select value={metricName || undefined} onValueChange={setMetricName}>
-              <SelectTrigger id="metric-name" className="w-full" disabled={metricsLoading}>
-                <SelectValue placeholder={metricsLoading ? "Loading metrics..." : "Select metric"} />
-              </SelectTrigger>
-              <SelectContent>
-                {metricOptions.map((metric) => (
-                  <SelectItem key={metric.name} value={metric.name}>
-                    {metric.name} — {metric.description}
-                  </SelectItem>
-                ))}
-                {metricName && !selectedMetric && (
-                  <SelectItem value={metricName}>Custom: {metricName}</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            {selectedMetric ? (
-              <p className="text-xs text-muted-foreground">
-                {selectedMetric.description} · {selectedMetric.unit} · {selectedMetric.range} ·{" "}
-                {selectedMetric.type}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {metricsLoading ? "Loading metric reference..." : "Select a metric to see details."}
-              </p>
-            )}
-          </div>
-
-          {metricOptions.length > 0 && (
-            <div className="grid gap-2">
-              <Label>Metric Reference</Label>
-              <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
-                {metricOptions.map((metric) => (
-                  <div key={metric.name}>
-                    <span className="font-medium text-foreground">{metric.name}</span> —{" "}
-                    {metric.description} ({metric.unit}, {metric.range}, {metric.type})
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-2">
+              <Select value={metricName || undefined} onValueChange={setMetricName}>
+                <SelectTrigger id="metric-name" className="w-full" disabled={metricsLoading}>
+                  <SelectValue placeholder={metricsLoading ? "Loading metrics..." : "Select metric"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {metricOptions.map((metric) => (
+                    <SelectItem key={metric.name} value={metric.name}>
+                      {metric.name} — {metric.description}
+                    </SelectItem>
+                  ))}
+                  {metricName && !selectedMetric && (
+                    <SelectItem value={metricName}>Custom: {metricName}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {selectedMetric && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-xs text-muted-foreground">
+                        i
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      <div className="space-y-1">
+                        <div className="font-medium">{selectedMetric.name}</div>
+                        <div>
+                          {selectedMetric.description} · {selectedMetric.unit} ·{" "}
+                          {selectedMetric.range} · {selectedMetric.type}
+                        </div>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
-          )}
+            <p className="text-xs text-muted-foreground">
+              {metricsLoading ? "Loading metric reference..." : "Select a metric to see details."}
+            </p>
+          </div>
 
           <div className="grid gap-2">
             <Label>Operator</Label>
