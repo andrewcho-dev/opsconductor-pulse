@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, RefreshCcw } from "lucide-react";
+import { Activity, Plus, RefreshCcw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -9,52 +9,43 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { useMetrics } from "@/hooks/use-metrics";
-import type { MetricReference } from "@/services/api/types";
-import MetricEditDialog from "./MetricEditDialog";
+import { useMetricReference } from "@/hooks/use-metrics";
+import type { NormalizedMetricReference } from "@/services/api/types";
+import NormalizedMetricDialog from "./NormalizedMetricDialog";
+import MapMetricDialog from "./MapMetricDialog";
 
 export default function MetricsPage() {
   const { user } = useAuth();
   const canEdit = user?.role === "customer_admin";
-  const { data, isLoading, error, refetch, isFetching } = useMetrics();
-  const [search, setSearch] = useState("");
-  const [selectedMetric, setSelectedMetric] = useState<MetricReference | null>(null);
+  const { data, isLoading, error, refetch, isFetching } = useMetricReference();
+  const [selectedNormalized, setSelectedNormalized] =
+    useState<NormalizedMetricReference | null>(null);
+  const [createNormalizedOpen, setCreateNormalizedOpen] = useState(false);
+  const [mapRawMetric, setMapRawMetric] = useState<string | null>(null);
 
-  const metrics = useMemo(() => data ?? [], [data]);
-  const filteredMetrics = useMemo(() => {
-    const trimmed = search.trim().toLowerCase();
-    if (!trimmed) return metrics;
-    return metrics.filter((metric) => metric.name.toLowerCase().includes(trimmed));
-  }, [metrics, search]);
+  const normalizedMetrics = useMemo(
+    () =>
+      Array.isArray(data?.normalized_metrics) ? data.normalized_metrics : [],
+    [data]
+  );
+  const unmapped = useMemo(
+    () => (Array.isArray(data?.unmapped) ? data.unmapped : []),
+    [data]
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Metrics"
         description={
-          isLoading ? "Loading..." : `${metrics.length} metrics discovered from your devices`
-        }
-        action={
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
+          isLoading
+            ? "Loading..."
+            : `${normalizedMetrics.length} normalized metrics configured`
         }
       />
-
-      <div className="flex items-center gap-2">
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search metrics"
-          className="max-w-sm"
-        />
-      </div>
-
       {error ? (
         <div className="text-destructive">
           Failed to load metrics: {(error as Error).message}
@@ -65,56 +56,148 @@ export default function MetricsPage() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : filteredMetrics.length === 0 ? (
-        <EmptyState
-          title="No metrics found"
-          description="Metrics will appear after devices send telemetry."
-          icon={<Activity className="h-12 w-12" />}
-        />
       ) : (
-        <div className="rounded-md border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Metric Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Range</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredMetrics.map((metric) => (
-                <TableRow key={metric.name}>
-                  <TableCell className="font-mono text-sm">{metric.name}</TableCell>
-                  <TableCell>{metric.description || "—"}</TableCell>
-                  <TableCell>{metric.unit || "—"}</TableCell>
-                  <TableCell>{metric.range || "—"}</TableCell>
-                  <TableCell className="text-right">
-                    {canEdit ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedMetric(metric)}
-                      >
-                        Edit
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Read-only</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-8">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold">Normalized Metrics</h2>
+                <p className="text-sm text-muted-foreground">
+                  Canonical metrics used in alert rules.
+                </p>
+              </div>
+              {canEdit && (
+                <Button size="sm" onClick={() => setCreateNormalizedOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create New
+                </Button>
+              )}
+            </div>
+            {normalizedMetrics.length === 0 ? (
+              <EmptyState
+                title="No normalized metrics yet"
+                description="Create a normalized metric to group raw telemetry values."
+                icon={<Activity className="h-12 w-12" />}
+              />
+            ) : (
+              <div className="rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead>Mapped From</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {normalizedMetrics.map((metric) => (
+                      <TableRow key={metric.name}>
+                        <TableCell>{metric.name}</TableCell>
+                        <TableCell>{metric.display_unit || "—"}</TableCell>
+                        <TableCell>
+                          {metric.mapped_from.length > 0
+                            ? metric.mapped_from.join(", ")
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {canEdit ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedNormalized(metric)}
+                            >
+                              Edit
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Read-only</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold">
+                  Unmapped Raw Metrics ({unmapped.length} discovered)
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Map raw telemetry metrics to normalized names.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
+            {unmapped.length === 0 ? (
+              <EmptyState
+                title="No unmapped metrics"
+                description="All discovered metrics are mapped."
+                icon={<Activity className="h-12 w-12" />}
+              />
+            ) : (
+              <div className="rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Raw Metric</TableHead>
+                      <TableHead>Map To</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unmapped.map((metricName) => (
+                      <TableRow key={metricName}>
+                        <TableCell className="font-mono text-sm">{metricName}</TableCell>
+                        <TableCell>
+                          {canEdit ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setMapRawMetric(metricName)}
+                            >
+                              Map to...
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Read-only</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      <MetricEditDialog
-        open={!!selectedMetric}
-        metric={selectedMetric}
-        onClose={() => setSelectedMetric(null)}
-        canEdit={canEdit}
+      <NormalizedMetricDialog
+        open={createNormalizedOpen}
+        metric={null}
+        onClose={() => setCreateNormalizedOpen(false)}
+      />
+      <NormalizedMetricDialog
+        open={!!selectedNormalized}
+        metric={selectedNormalized}
+        onClose={() => setSelectedNormalized(null)}
+      />
+      <MapMetricDialog
+        open={!!mapRawMetric}
+        rawMetric={mapRawMetric}
+        normalizedMetrics={normalizedMetrics}
+        onClose={() => setMapRawMetric(null)}
       />
     </div>
   );

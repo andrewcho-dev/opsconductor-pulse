@@ -131,12 +131,24 @@ export interface AlertRuleUpdate {
   enabled?: boolean;
 }
 
-export interface MetricReference {
+export interface RawMetricReference {
   name: string;
+  mapped_to: string | null;
+}
+
+export interface NormalizedMetricReference {
+  name: string;
+  display_unit: string | null;
   description: string | null;
-  unit: string | null;
-  range: string | null;
-  type: "float" | "bool" | null;
+  expected_min: number | null;
+  expected_max: number | null;
+  mapped_from: string[];
+}
+
+export interface MetricReferenceResponse {
+  raw_metrics: RawMetricReference[];
+  normalized_metrics: NormalizedMetricReference[];
+  unmapped: string[];
 }
 
 export interface MetricCatalogEntry {
@@ -155,6 +167,28 @@ export interface MetricCatalogUpsert {
   unit?: string | null;
   expected_min?: number | null;
   expected_max?: number | null;
+}
+
+export interface NormalizedMetricCreate {
+  normalized_name: string;
+  display_unit?: string | null;
+  description?: string | null;
+  expected_min?: number | null;
+  expected_max?: number | null;
+}
+
+export interface NormalizedMetricUpdate {
+  display_unit?: string | null;
+  description?: string | null;
+  expected_min?: number | null;
+  expected_max?: number | null;
+}
+
+export interface MetricMappingCreate {
+  raw_metric: string;
+  normalized_name: string;
+  multiplier?: number | null;
+  offset_value?: number | null;
 }
 
 // Webhook integration types

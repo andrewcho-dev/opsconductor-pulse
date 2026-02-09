@@ -507,53 +507,72 @@ async def get_telemetry_chart(
 
 @router.get("/metrics/reference")
 async def get_metrics_reference():
-    """Return discovered metric names from recent telemetry."""
+    """Return discovered raw metrics, mappings, and normalized metrics."""
     tenant_id = get_tenant_id()
     p = await get_pool()
 
     async with tenant_connection(p, tenant_id) as conn:
-        rows = await conn.fetch(
+        raw_rows = await conn.fetch(
             """
-            SELECT
-                d.metric_name AS name,
-                c.description,
-                c.unit,
-                CASE
-                    WHEN c.expected_min IS NOT NULL AND c.expected_max IS NOT NULL
-                        THEN c.expected_min::text || '-' || c.expected_max::text
-                    WHEN c.expected_min IS NOT NULL AND c.expected_max IS NULL
-                        THEN c.expected_min::text || '-'
-                    WHEN c.expected_min IS NULL AND c.expected_max IS NOT NULL
-                        THEN '-' || c.expected_max::text
-                    ELSE NULL
-                END AS range
-            FROM (
-                SELECT DISTINCT key AS metric_name
-                FROM telemetry
-                CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
-                WHERE tenant_id = $1
-                  AND time > NOW() - INTERVAL '7 days'
-                  AND metrics IS NOT NULL
-                  AND jsonb_typeof(metrics) = 'object'
-            ) d
-            LEFT JOIN metric_catalog c
-              ON c.tenant_id = $1 AND c.metric_name = d.metric_name
-            ORDER BY d.metric_name
-            LIMIT 100
+            SELECT DISTINCT key AS metric_name
+            FROM telemetry
+            CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
+            WHERE tenant_id = $1
+              AND time > NOW() - INTERVAL '7 days'
+              AND metrics IS NOT NULL
+              AND jsonb_typeof(metrics) = 'object'
+            ORDER BY metric_name
+            LIMIT 200
+            """,
+            tenant_id,
+        )
+        mapping_rows = await conn.fetch(
+            """
+            SELECT raw_metric, normalized_name
+            FROM metric_mappings
+            WHERE tenant_id = $1
+            """,
+            tenant_id,
+        )
+        normalized_rows = await conn.fetch(
+            """
+            SELECT normalized_name, display_unit, description, expected_min, expected_max
+            FROM normalized_metrics
+            WHERE tenant_id = $1
+            ORDER BY normalized_name
             """,
             tenant_id,
         )
 
-    return [
+    raw_metrics = [r["metric_name"] for r in raw_rows]
+    mapping_by_raw = {r["raw_metric"]: r["normalized_name"] for r in mapping_rows}
+    mapped_from: dict[str, list[str]] = {}
+    for row in mapping_rows:
+        mapped_from.setdefault(row["normalized_name"], []).append(row["raw_metric"])
+
+    normalized_metrics = [
         {
-            "name": row["name"],
+            "name": row["normalized_name"],
+            "display_unit": row["display_unit"],
             "description": row["description"],
-            "unit": row["unit"],
-            "range": row["range"],
-            "type": None,
+            "expected_min": row["expected_min"],
+            "expected_max": row["expected_max"],
+            "mapped_from": sorted(mapped_from.get(row["normalized_name"], [])),
         }
-        for row in rows
+        for row in normalized_rows
     ]
+
+    raw_metrics_response = [
+        {"name": name, "mapped_to": mapping_by_raw.get(name)}
+        for name in raw_metrics
+    ]
+    unmapped = [name for name in raw_metrics if name not in mapping_by_raw]
+
+    return {
+        "raw_metrics": raw_metrics_response,
+        "normalized_metrics": normalized_metrics,
+        "unmapped": unmapped,
+    }
 
 
 async def _ws_push_loop(conn):

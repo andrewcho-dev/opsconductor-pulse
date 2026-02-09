@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -31,15 +32,15 @@ import {
   useCreateAlertRule,
   useUpdateAlertRule,
 } from "@/hooks/use-alert-rules";
-import { useAuth } from "@/services/auth/AuthProvider";
 import type {
   AlertRule,
   AlertRuleCreate,
   AlertRuleUpdate,
-  MetricReference,
+  NormalizedMetricReference,
+  RawMetricReference,
 } from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
-import { fetchMetricReference, upsertMetricCatalog } from "@/services/api/alert-rules";
+import { fetchMetricReference } from "@/services/api/metrics";
 
 type OperatorValue = "GT" | "LT" | "GTE" | "LTE";
 
@@ -67,12 +68,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const isEditing = !!rule;
   const createMutation = useCreateAlertRule();
   const updateMutation = useUpdateAlertRule();
-  const catalogMutation = useMutation({
-    mutationFn: upsertMetricCatalog,
-  });
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const isCustomerAdmin = user?.role === "customer_admin";
   const { data: metricReference, isLoading: metricsLoading } = useQuery({
     queryKey: ["metric-reference"],
     queryFn: fetchMetricReference,
@@ -86,12 +81,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [severity, setSeverity] = useState("3");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [editCatalogOpen, setEditCatalogOpen] = useState(false);
-  const [catalogDescription, setCatalogDescription] = useState("");
-  const [catalogUnit, setCatalogUnit] = useState("");
-  const [catalogMin, setCatalogMin] = useState("");
-  const [catalogMax, setCatalogMax] = useState("");
-  const [catalogError, setCatalogError] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -103,8 +92,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setSeverity(String(rule.severity ?? 3));
       setDescription(rule.description ?? "");
       setEnabled(rule.enabled);
-      setEditCatalogOpen(false);
-      setCatalogError("");
     } else {
       setName("");
       setMetricName("");
@@ -113,8 +100,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setSeverity("3");
       setDescription("");
       setEnabled(true);
-      setEditCatalogOpen(false);
-      setCatalogError("");
     }
   }, [open, rule]);
 
@@ -122,48 +107,36 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     return formatError(createMutation.error || updateMutation.error);
   }, [createMutation.error, updateMutation.error]);
 
-  const metricOptions = useMemo<MetricReference[]>(() => metricReference ?? [], [metricReference]);
-  const selectedMetric = useMemo(
-    () => metricOptions.find((metric) => metric.name === metricName),
-    [metricName, metricOptions]
+  const normalizedMetrics = useMemo<NormalizedMetricReference[]>(
+    () =>
+      Array.isArray(metricReference?.normalized_metrics)
+        ? metricReference.normalized_metrics
+        : [],
+    [metricReference]
   );
-  const metricDetailParts = useMemo(() => {
-    if (!selectedMetric) return [];
-    return [
-      selectedMetric.description,
-      selectedMetric.unit,
-      selectedMetric.range,
-      selectedMetric.type,
-    ].filter(Boolean) as string[];
-  }, [selectedMetric]);
+  const rawMetrics = useMemo<RawMetricReference[]>(
+    () =>
+      Array.isArray(metricReference?.raw_metrics) ? metricReference.raw_metrics : [],
+    [metricReference]
+  );
+  const selectedNormalized = useMemo(
+    () => normalizedMetrics.find((metric) => metric.name === metricName),
+    [metricName, normalizedMetrics]
+  );
+  const selectedRaw = useMemo(
+    () => rawMetrics.find((metric) => metric.name === metricName),
+    [metricName, rawMetrics]
+  );
 
-  useEffect(() => {
-    if (!selectedMetric) {
-      setCatalogDescription("");
-      setCatalogUnit("");
-      setCatalogMin("");
-      setCatalogMax("");
-      if (!metricName) {
-        setEditCatalogOpen(false);
-      }
-      return;
+  const normalizedRange = useMemo(() => {
+    if (!selectedNormalized) return null;
+    if (selectedNormalized.expected_min == null && selectedNormalized.expected_max == null) {
+      return null;
     }
-    setCatalogDescription(selectedMetric.description ?? "");
-    setCatalogUnit(selectedMetric.unit ?? "");
-    if (selectedMetric.range) {
-      const parts = selectedMetric.range.split("-");
-      if (parts.length === 2) {
-        setCatalogMin(parts[0].trim());
-        setCatalogMax(parts[1].trim());
-      } else {
-        setCatalogMin("");
-        setCatalogMax("");
-      }
-    } else {
-      setCatalogMin("");
-      setCatalogMax("");
-    }
-  }, [selectedMetric]);
+    const min = selectedNormalized.expected_min ?? "";
+    const max = selectedNormalized.expected_max ?? "";
+    return `${min}-${max}`;
+  }, [selectedNormalized]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
@@ -211,45 +184,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     onClose();
   }
 
-  async function handleCatalogSave() {
-    if (!metricName.trim()) return;
-    setCatalogError("");
-    const normalizedMin = catalogMin.trim();
-    const normalizedMax = catalogMax.trim();
-    const expectedMin = normalizedMin ? Number(normalizedMin) : null;
-    const expectedMax = normalizedMax ? Number(normalizedMax) : null;
-    if (normalizedMin && Number.isNaN(expectedMin)) {
-      setCatalogError("Expected minimum must be a number.");
-      return;
-    }
-    if (normalizedMax && Number.isNaN(expectedMax)) {
-      setCatalogError("Expected maximum must be a number.");
-      return;
-    }
-    if (
-      expectedMin !== null &&
-      expectedMax !== null &&
-      expectedMin > expectedMax
-    ) {
-      setCatalogError("Expected minimum must be less than or equal to maximum.");
-      return;
-    }
-
-    try {
-      await catalogMutation.mutateAsync({
-        metric_name: metricName,
-        description: catalogDescription.trim() || null,
-        unit: catalogUnit.trim() || null,
-        expected_min: expectedMin,
-        expected_max: expectedMax,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["metric-reference"] });
-      setEditCatalogOpen(false);
-    } catch (error) {
-      setCatalogError(formatError(error));
-    }
-  }
-
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
@@ -282,18 +216,39 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   <SelectValue placeholder={metricsLoading ? "Loading metrics..." : "Select metric"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {metricOptions.map((metric) => (
-                    <SelectItem key={metric.name} value={metric.name}>
-                      {metric.name}
-                      {metric.description ? ` — ${metric.description}` : ""}
-                    </SelectItem>
-                  ))}
-                  {metricName && !selectedMetric && (
-                    <SelectItem value={metricName}>Custom: {metricName}</SelectItem>
-                  )}
+                  <SelectGroup>
+                    <SelectLabel>Normalized</SelectLabel>
+                    {normalizedMetrics.length === 0 ? (
+                      <SelectItem value="__no_normalized" disabled>
+                        No normalized metrics
+                      </SelectItem>
+                    ) : (
+                      normalizedMetrics.map((metric) => (
+                        <SelectItem key={metric.name} value={metric.name}>
+                          {metric.name}
+                          {metric.display_unit ? ` (${metric.display_unit})` : ""}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Raw</SelectLabel>
+                    {rawMetrics.length === 0 ? (
+                      <SelectItem value="__no_raw" disabled>
+                        No raw metrics
+                      </SelectItem>
+                    ) : (
+                      rawMetrics.map((metric) => (
+                        <SelectItem key={metric.name} value={metric.name}>
+                          {metric.name}
+                          {metric.mapped_to ? ` → ${metric.mapped_to}` : ""}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
-              {selectedMetric && (
+              {(selectedNormalized || selectedRaw) && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -303,97 +258,46 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                     </TooltipTrigger>
                     <TooltipContent side="right">
                       <div className="space-y-1">
-                        <div className="font-medium">{selectedMetric.name}</div>
-                        {metricDetailParts.length > 0 ? (
-                          <div>{metricDetailParts.join(" · ")}</div>
+                        <div className="font-medium">
+                          {selectedNormalized?.name || selectedRaw?.name}
+                        </div>
+                        {selectedNormalized ? (
+                          <div className="space-y-1">
+                            {selectedNormalized.description && (
+                              <div>{selectedNormalized.description}</div>
+                            )}
+                            {selectedNormalized.display_unit && (
+                              <div>Unit: {selectedNormalized.display_unit}</div>
+                            )}
+                            {normalizedRange && <div>Range: {normalizedRange}</div>}
+                            {selectedNormalized.mapped_from.length > 0 ? (
+                              <div>
+                                Includes: {selectedNormalized.mapped_from.join(", ")}
+                              </div>
+                            ) : (
+                              <div>No raw metrics mapped.</div>
+                            )}
+                          </div>
                         ) : (
-                          <div>No metadata available.</div>
+                          <div>
+                            {selectedRaw?.mapped_to
+                              ? `Mapped to: ${selectedRaw.mapped_to}`
+                              : "Unmapped raw metric"}
+                          </div>
                         )}
                       </div>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {isCustomerAdmin && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setEditCatalogOpen((prev) => !prev)}
-                  disabled={!metricName}
-                  aria-label="Edit metric details"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              )}
             </div>
-            {isCustomerAdmin && editCatalogOpen && (
-              <div className="rounded-md border border-border bg-muted/40 p-3">
-                <div className="grid gap-3">
-                  <div className="grid gap-2">
-                    <Label htmlFor="metric-description">Description</Label>
-                    <Input
-                      id="metric-description"
-                      value={catalogDescription}
-                      onChange={(e) => setCatalogDescription(e.target.value)}
-                      placeholder="Room temperature sensor"
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
-                    <div className="grid gap-2">
-                      <Label htmlFor="metric-unit">Unit</Label>
-                      <Input
-                        id="metric-unit"
-                        value={catalogUnit}
-                        onChange={(e) => setCatalogUnit(e.target.value)}
-                        placeholder="°C"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Expected Range</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={catalogMin}
-                          onChange={(e) => setCatalogMin(e.target.value)}
-                          placeholder="Min"
-                        />
-                        <span className="text-xs text-muted-foreground">to</span>
-                        <Input
-                          value={catalogMax}
-                          onChange={(e) => setCatalogMax(e.target.value)}
-                          placeholder="Max"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  {catalogError && (
-                    <p className="text-xs text-destructive">{catalogError}</p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      onClick={handleCatalogSave}
-                      disabled={catalogMutation.isPending || !metricName}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setEditCatalogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
             <p className="text-xs text-muted-foreground">
               {metricsLoading
                 ? "Loading metric reference..."
-                : metricOptions.length === 0
+                : normalizedMetrics.length === 0 && rawMetrics.length === 0
                 ? "No metrics found. Metrics will appear after devices send telemetry."
+                : selectedNormalized
+                ? `Includes: ${selectedNormalized.mapped_from.join(", ") || "none"}`
                 : "Select a metric to see details."}
             </p>
           </div>

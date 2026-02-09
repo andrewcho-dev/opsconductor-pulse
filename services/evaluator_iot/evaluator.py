@@ -173,6 +173,24 @@ def evaluate_threshold(value, operator, threshold):
         return value <= threshold
     return False
 
+
+def normalize_value(raw_value, multiplier, offset_value):
+    if raw_value is None:
+        return None
+    try:
+        numeric_value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        mult = float(multiplier)
+    except (TypeError, ValueError):
+        mult = 1.0
+    try:
+        offset = float(offset_value)
+    except (TypeError, ValueError):
+        offset = 0.0
+    return (numeric_value * mult) + offset
+
 async def fetch_tenant_rules(pg_conn, tenant_id):
     """Load enabled alert rules for a tenant from PostgreSQL."""
     rows = await pg_conn.fetch(
@@ -184,6 +202,27 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
         tenant_id
     )
     return [dict(r) for r in rows]
+
+
+async def fetch_metric_mappings(pg_conn, tenant_id):
+    rows = await pg_conn.fetch(
+        """
+        SELECT raw_metric, normalized_name, multiplier, offset_value
+        FROM metric_mappings
+        WHERE tenant_id = $1
+        """,
+        tenant_id,
+    )
+    mapping_by_normalized: dict[str, list[dict]] = {}
+    for row in rows:
+        mapping_by_normalized.setdefault(row["normalized_name"], []).append(
+            {
+                "raw_metric": row["raw_metric"],
+                "multiplier": row["multiplier"],
+                "offset_value": row["offset_value"],
+            }
+        )
+    return mapping_by_normalized
 
 async def fetch_rollup_timescaledb(pg_conn) -> list[dict]:
     """Fetch device rollup data from TimescaleDB telemetry table + device_registry.
@@ -282,6 +321,7 @@ async def main():
                 rows = await fetch_rollup_timescaledb(conn)
                 # Group devices by tenant for rule loading
                 tenant_rules_cache = {}
+                tenant_mapping_cache = {}
 
                 for r in rows:
                     tenant_id = r["tenant_id"]
@@ -339,9 +379,12 @@ async def main():
                     # --- Threshold rule evaluation ---
                     if tenant_id not in tenant_rules_cache:
                         tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
+                    if tenant_id not in tenant_mapping_cache:
+                        tenant_mapping_cache[tenant_id] = await fetch_metric_mappings(conn, tenant_id)
 
                     rules = tenant_rules_cache[tenant_id]
                     metrics = r.get("metrics", {})
+                    mappings_by_normalized = tenant_mapping_cache[tenant_id]
 
                     for rule in rules:
                         COUNTERS["rules_evaluated"] += 1
@@ -357,28 +400,79 @@ async def main():
                             continue
 
                         fp_rule = f"RULE:{rule_id}:{device_id}"
-                        metric_value = metrics.get(metric_name)
+                        op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
 
-                        if metric_value is not None and evaluate_threshold(metric_value, operator, threshold):
-                            # Condition MET — open/update alert
-                            op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
-                            await open_or_update_alert(
-                                conn, tenant_id, site_id, device_id,
-                                "THRESHOLD", fp_rule,
-                                rule_severity, 1.0,
-                                f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
-                                {
-                                    "rule_id": rule_id,
-                                    "rule_name": rule["name"],
-                                    "metric_name": metric_name,
-                                    "metric_value": metric_value,
-                                    "operator": operator,
-                                    "threshold": threshold,
-                                }
-                            )
+                        if metric_name in mappings_by_normalized:
+                            triggered = False
+                            triggered_details = None
+                            for mapping in mappings_by_normalized[metric_name]:
+                                raw_metric = mapping["raw_metric"]
+                                raw_value = metrics.get(raw_metric)
+                                normalized_value = normalize_value(
+                                    raw_value, mapping["multiplier"], mapping["offset_value"]
+                                )
+                                if normalized_value is None:
+                                    continue
+                                if evaluate_threshold(normalized_value, operator, threshold):
+                                    triggered = True
+                                    triggered_details = {
+                                        "raw_metric": raw_metric,
+                                        "raw_value": raw_value,
+                                        "normalized_name": metric_name,
+                                        "normalized_value": normalized_value,
+                                        "multiplier": mapping["multiplier"],
+                                        "offset": mapping["offset_value"],
+                                    }
+                                    break
+
+                            if triggered and triggered_details:
+                                await open_or_update_alert(
+                                    conn, tenant_id, site_id, device_id,
+                                    "THRESHOLD", fp_rule,
+                                    rule_severity, 1.0,
+                                    (
+                                        f"{site_id}: {device_id} {metric_name} "
+                                        f"({triggered_details['normalized_value']}) "
+                                        f"{op_symbol} {threshold} "
+                                        f"(raw {triggered_details['raw_metric']}="
+                                        f"{triggered_details['raw_value']})"
+                                    ),
+                                    {
+                                        "rule_id": rule_id,
+                                        "rule_name": rule["name"],
+                                        "metric_name": metric_name,
+                                        "metric_value": triggered_details["normalized_value"],
+                                        "raw_metric": triggered_details["raw_metric"],
+                                        "raw_value": triggered_details["raw_value"],
+                                        "multiplier": triggered_details["multiplier"],
+                                        "offset": triggered_details["offset"],
+                                        "operator": operator,
+                                        "threshold": threshold,
+                                    }
+                                )
+                            else:
+                                await close_alert(conn, tenant_id, fp_rule)
                         else:
-                            # Condition NOT met (or metric missing) — close alert if open
-                            await close_alert(conn, tenant_id, fp_rule)
+                            metric_value = metrics.get(metric_name)
+                            if metric_value is not None and evaluate_threshold(
+                                metric_value, operator, threshold
+                            ):
+                                await open_or_update_alert(
+                                    conn, tenant_id, site_id, device_id,
+                                    "THRESHOLD", fp_rule,
+                                    rule_severity, 1.0,
+                                    f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
+                                    {
+                                        "rule_id": rule_id,
+                                        "rule_name": rule["name"],
+                                        "metric_name": metric_name,
+                                        "metric_value": metric_value,
+                                        "operator": operator,
+                                        "threshold": threshold,
+                                    }
+                                )
+                            else:
+                                await close_alert(conn, tenant_id, fp_rule)
 
                 total_rules = sum(len(v) for v in tenant_rules_cache.values())
                 print(f"[evaluator] evaluated {len(rows)} devices, {total_rules} rules across {len(tenant_rules_cache)} tenants")
