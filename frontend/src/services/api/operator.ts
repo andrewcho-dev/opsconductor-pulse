@@ -46,10 +46,12 @@ export async function fetchAuditLog(
   userId?: string,
   action?: string,
   since?: string,
-  limit = 100
+  limit = 100,
+  offset = 0
 ): Promise<AuditLogResponse> {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
+  params.set("offset", String(offset));
   if (userId) params.set("user_id", userId);
   if (action) params.set("action", action);
   if (since) params.set("since", since);

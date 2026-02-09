@@ -46,8 +46,21 @@ async def fetch_operator_audit_log(
     action: str | None = None,
     since: datetime | None = None,
     limit: int = 100,
-) -> list[dict]:
-    """Fetch audit log entries for compliance review."""
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Fetch audit log entries for compliance review. Returns (entries, total)."""
+    total = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM operator_audit_log
+        WHERE ($1::text IS NULL OR user_id = $1)
+          AND ($2::text IS NULL OR action = $2)
+          AND ($3::timestamptz IS NULL OR created_at >= $3)
+        """,
+        user_id,
+        action,
+        since,
+    )
     rows = await conn.fetch(
         """
         SELECT id, user_id, action, tenant_filter, resource_type,
@@ -57,11 +70,12 @@ async def fetch_operator_audit_log(
           AND ($2::text IS NULL OR action = $2)
           AND ($3::timestamptz IS NULL OR created_at >= $3)
         ORDER BY created_at DESC
-        LIMIT $4
+        LIMIT $4 OFFSET $5
         """,
         user_id,
         action,
         since,
         limit,
+        offset,
     )
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows], total or 0

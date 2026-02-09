@@ -31,10 +31,11 @@ export function useAuditLog(
   userId?: string,
   action?: string,
   since?: string,
-  limit = 100
+  limit = 100,
+  offset = 0
 ) {
   return useQuery({
-    queryKey: ["audit-log", userId, action, since, limit],
-    queryFn: () => fetchAuditLog(userId, action, since, limit),
+    queryKey: ["audit-log", userId, action, since, limit, offset],
+    queryFn: () => fetchAuditLog(userId, action, since, limit, offset),
   });
 }

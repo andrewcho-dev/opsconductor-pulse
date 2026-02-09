@@ -4,6 +4,7 @@ import os
 from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
+from shared.audit import init_audit_logger, get_audit_logger
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -128,7 +129,7 @@ async def ensure_schema(conn):
 
 async def open_or_update_alert(conn, tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, details):
     COUNTERS["alerts_created"] += 1
-    await conn.execute(
+    row = await conn.fetchrow(
         """
         INSERT INTO fleet_alert (tenant_id, site_id, device_id, alert_type, fingerprint, status, severity, confidence, summary, details)
         VALUES ($1,$2,$3,$4,$5,'OPEN',$6,$7,$8,$9::jsonb)
@@ -138,9 +139,13 @@ async def open_or_update_alert(conn, tenant_id, site_id, device_id, alert_type, 
           confidence = EXCLUDED.confidence,
           summary = EXCLUDED.summary,
           details = EXCLUDED.details
+        RETURNING id, (xmax = 0) AS inserted
         """,
         tenant_id, site_id, device_id, alert_type, fingerprint, severity, confidence, summary, json.dumps(details)
     )
+    if row:
+        return row["id"], row["inserted"]
+    return None, False
 
 async def close_alert(conn, tenant_id, fingerprint):
     await conn.execute(
@@ -314,6 +319,8 @@ async def main():
     async with pool.acquire() as conn:
         await ensure_schema(conn)
     await start_health_server()
+    audit = init_audit_logger(pool, "evaluator")
+    await audit.start()
 
     while True:
         try:
@@ -339,12 +346,18 @@ async def main():
 
                     state_blob = r.get("metrics", {})
 
-                    await conn.execute(
+                    now_ts = now_utc()
+                    row = await conn.fetchrow(
                         """
+                        WITH existing AS (
+                            SELECT status
+                            FROM device_state
+                            WHERE tenant_id = $1 AND device_id = $3
+                        )
                         INSERT INTO device_state
                           (tenant_id, site_id, device_id, status, last_heartbeat_at, last_telemetry_at, last_seen_at, last_state_change_at, state)
                         VALUES
-                          ($1,$2,$3,$4,$5,$6,$7, now(), $8::jsonb)
+                          ($1,$2,$3,$4,$5,$6,$7,$8, $9::jsonb)
                         ON CONFLICT (tenant_id, device_id)
                         DO UPDATE SET
                           site_id = EXCLUDED.site_id,
@@ -357,22 +370,56 @@ async def main():
                           END,
                           status = EXCLUDED.status,
                           last_state_change_at = CASE
-                            WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN now()
+                            WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN $8
                             ELSE device_state.last_state_change_at
                           END
+                        RETURNING
+                          (SELECT status FROM existing) AS previous_status,
+                          status AS new_status,
+                          last_state_change_at
                         """,
-                        tenant_id, site_id, device_id, status, last_hb, last_tel, last_seen, json.dumps(state_blob)
+                        tenant_id,
+                        site_id,
+                        device_id,
+                        status,
+                        last_hb,
+                        last_tel,
+                        last_seen,
+                        now_ts,
+                        json.dumps(state_blob),
                     )
+                    if row:
+                        previous_status = row["previous_status"]
+                        new_status = row["new_status"]
+                        if previous_status and previous_status != new_status:
+                            audit = get_audit_logger()
+                            if audit:
+                                audit.device_state_change(
+                                    tenant_id,
+                                    device_id,
+                                    str(previous_status).lower(),
+                                    str(new_status).lower(),
+                                )
 
                     fp_nohb = f"NO_HEARTBEAT:{device_id}"
                     if status == "STALE":
-                        await open_or_update_alert(
+                        alert_id, inserted = await open_or_update_alert(
                             conn, tenant_id, site_id, device_id,
                             "NO_HEARTBEAT", fp_nohb,
                             4, 0.9,
                             f"{site_id}: {device_id} heartbeat missing/stale",
                             {"last_heartbeat_at": str(last_hb) if last_hb else None}
                         )
+                        if inserted:
+                            audit = get_audit_logger()
+                            if audit:
+                                audit.alert_created(
+                                    tenant_id,
+                                    str(alert_id),
+                                    "NO_HEARTBEAT",
+                                    device_id,
+                                    f"{site_id}: {device_id} heartbeat missing/stale",
+                                )
                     else:
                         await close_alert(conn, tenant_id, fp_nohb)
 
@@ -426,7 +473,7 @@ async def main():
                                     break
 
                             if triggered and triggered_details:
-                                await open_or_update_alert(
+                                alert_id, inserted = await open_or_update_alert(
                                     conn, tenant_id, site_id, device_id,
                                     "THRESHOLD", fp_rule,
                                     rule_severity, 1.0,
@@ -450,6 +497,32 @@ async def main():
                                         "threshold": threshold,
                                     }
                                 )
+                                audit = get_audit_logger()
+                                if audit:
+                                    audit.rule_triggered(
+                                        tenant_id,
+                                        str(rule_id),
+                                        rule["name"],
+                                        device_id,
+                                        metric_name,
+                                        float(triggered_details["normalized_value"]),
+                                        float(threshold),
+                                        operator,
+                                    )
+                                    if inserted:
+                                        audit.alert_created(
+                                            tenant_id,
+                                            str(alert_id),
+                                            "THRESHOLD",
+                                            device_id,
+                                            (
+                                                f"{site_id}: {device_id} {metric_name} "
+                                                f"({triggered_details['normalized_value']}) "
+                                                f"{op_symbol} {threshold} "
+                                                f"(raw {triggered_details['raw_metric']}="
+                                                f"{triggered_details['raw_value']})"
+                                            ),
+                                        )
                             else:
                                 await close_alert(conn, tenant_id, fp_rule)
                         else:
@@ -457,7 +530,7 @@ async def main():
                             if metric_value is not None and evaluate_threshold(
                                 metric_value, operator, threshold
                             ):
-                                await open_or_update_alert(
+                                alert_id, inserted = await open_or_update_alert(
                                     conn, tenant_id, site_id, device_id,
                                     "THRESHOLD", fp_rule,
                                     rule_severity, 1.0,
@@ -471,6 +544,26 @@ async def main():
                                         "threshold": threshold,
                                     }
                                 )
+                                audit = get_audit_logger()
+                                if audit:
+                                    audit.rule_triggered(
+                                        tenant_id,
+                                        str(rule_id),
+                                        rule["name"],
+                                        device_id,
+                                        metric_name,
+                                        float(metric_value),
+                                        float(threshold),
+                                        operator,
+                                    )
+                                    if inserted:
+                                        audit.alert_created(
+                                            tenant_id,
+                                            str(alert_id),
+                                            "THRESHOLD",
+                                            device_id,
+                                            f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
+                                        )
                             else:
                                 await close_alert(conn, tenant_id, fp_rule)
 

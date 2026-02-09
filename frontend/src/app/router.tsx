@@ -5,6 +5,7 @@ import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import AlertListPage from "@/features/alerts/AlertListPage";
 import AlertRulesPage from "@/features/alerts/AlertRulesPage";
+import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
 import WebhookPage from "@/features/integrations/WebhookPage";
 import SnmpPage from "@/features/integrations/SnmpPage";
@@ -42,6 +43,7 @@ export const router = createBrowserRouter(
         { path: "devices/:deviceId", element: <DeviceDetailPage /> },
         { path: "alerts", element: <AlertListPage /> },
         { path: "alert-rules", element: <AlertRulesPage /> },
+        { path: "activity-log", element: <ActivityLogPage /> },
         { path: "metrics", element: <MetricsPage /> },
         { path: "integrations/webhooks", element: <WebhookPage /> },
         { path: "integrations/snmp", element: <SnmpPage /> },

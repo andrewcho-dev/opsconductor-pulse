@@ -14,9 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 def parse_ts(v):
+    """
+    Parse timestamp string to datetime.
+    - Accepts ISO 8601 format (e.g., 2026-02-09T09:15:23.045Z)
+    - If no timezone specified, assumes UTC
+    - Returns None if parsing fails
+    """
     if isinstance(v, str):
         try:
-            return dtparser.isoparse(v)
+            dt = dtparser.isoparse(v)
+            # If naive (no timezone), assume UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
         except Exception:
             return None
     return None

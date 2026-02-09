@@ -23,6 +23,7 @@ from routes.api_v2 import router as api_v2_router, ws_router as api_v2_ws_router
 from routes.ingest import router as ingest_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
+from shared.audit import init_audit_logger
 from metrics_collector import collector
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
@@ -125,12 +126,15 @@ async def startup():
     app.state.get_pool = get_pool
     app.state.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL)
     pool = await get_pool()
+    app.state.pool = pool
     app.state.batch_writer = TimescaleBatchWriter(
         pool=pool,
         batch_size=BATCH_SIZE,
         flush_interval_ms=FLUSH_INTERVAL_MS,
     )
     await app.state.batch_writer.start()
+    app.state.audit = init_audit_logger(pool, "ui_api")
+    await app.state.audit.start()
     app.state.rate_buckets = {}
     app.state.max_payload_bytes = 8192
     app.state.rps = 5.0
@@ -163,6 +167,8 @@ async def shutdown():
     await collector.stop()
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
+    if hasattr(app.state, "audit"):
+        await app.state.audit.stop()
 
 async def get_settings(conn):
     rows = await conn.fetch(

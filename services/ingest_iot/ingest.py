@@ -15,6 +15,7 @@ from shared.ingest_core import (
     TimescaleBatchWriter,
     TelemetryRecord,
 )
+from shared.audit import init_audit_logger, get_audit_logger
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -290,6 +291,15 @@ class Ingestor:
         _counter_inc("messages_rejected")
         await self._inc_counter(tenant_id, reason)
 
+        audit = get_audit_logger()
+        if audit and tenant_id:
+            audit.device_rejected(
+                tenant_id,
+                device_id or "unknown",
+                reason,
+                {"site_id": site_id, "msg_type": msg_type},
+            )
+
         if self.store_rejects:
             assert self.pool is not None
             async with self.pool.acquire() as conn:
@@ -433,6 +443,15 @@ class Ingestor:
                 )
                 COUNTERS["last_write_at"] = utcnow().isoformat()
                 await self.batch_writer.add(record)
+                audit = get_audit_logger()
+                if audit:
+                    metrics = payload.get("metrics", {}) or {}
+                    audit.device_telemetry(
+                        tenant_id,
+                        device_id,
+                        msg_type,
+                        list(metrics.keys()),
+                    )
 
             except Exception as e:
                 await self._insert_quarantine(
@@ -484,6 +503,8 @@ class Ingestor:
             flush_interval_ms=FLUSH_INTERVAL_MS,
         )
         await self.batch_writer.start()
+        audit = init_audit_logger(self.pool, "ingest")
+        await audit.start()
 
         asyncio.create_task(self.settings_worker())
         self._workers = []

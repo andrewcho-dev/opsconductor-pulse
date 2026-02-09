@@ -2212,7 +2212,7 @@ async def get_alert_rule(rule_id: str):
 
 
 @router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
-async def create_alert_rule_endpoint(body: AlertRuleCreate):
+async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate):
     tenant_id = get_tenant_id()
     if body.operator not in VALID_OPERATORS:
         raise HTTPException(status_code=400, detail="Invalid operator value")
@@ -2240,6 +2240,26 @@ async def create_alert_rule_endpoint(body: AlertRuleCreate):
     except Exception:
         logger.exception("Failed to create alert rule")
         raise HTTPException(status_code=500, detail="Internal server error")
+    audit = getattr(request.app.state, "audit", None)
+    if audit:
+        user = get_user()
+        username = (
+            user.get("preferred_username")
+            or user.get("email")
+            or user.get("sub")
+            or "unknown"
+        )
+        audit.config_changed(
+            tenant_id,
+            "rule",
+            rule.get("rule_id"),
+            "create",
+            body.name,
+            user_id=user.get("sub") or "unknown",
+            username=username,
+            ip_address=request.client.host if request.client else None,
+            details={"metric": body.metric_name, "threshold": body.threshold},
+        )
     return JSONResponse(status_code=201, content=jsonable_encoder(rule))
 
 
@@ -2331,3 +2351,91 @@ async def delivery_status(
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"tenant_id": tenant_id, "attempts": attempts}
+
+
+@router.get("/audit-log")
+async def get_audit_log(
+    request: Request,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    category: str | None = Query(None),
+    severity: str | None = Query(None),
+    entity_type: str | None = Query(None),
+    entity_id: str | None = Query(None),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    search: str | None = Query(None),
+):
+    tenant_id = get_tenant_id()
+    pool = request.app.state.pool
+
+    async with pool.acquire() as conn:
+        await conn.execute("SET LOCAL ROLE pulse_app")
+        await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
+
+        where = ["tenant_id = $1"]
+        params = [tenant_id]
+        idx = 2
+
+        if category:
+            where.append(f"category = ${idx}")
+            params.append(category)
+            idx += 1
+
+        if severity:
+            where.append(f"severity = ${idx}")
+            params.append(severity)
+            idx += 1
+
+        if entity_type:
+            where.append(f"entity_type = ${idx}")
+            params.append(entity_type)
+            idx += 1
+
+        if entity_id:
+            where.append(f"entity_id = ${idx}")
+            params.append(entity_id)
+            idx += 1
+
+        if start:
+            where.append(f"timestamp >= ${idx}")
+            params.append(start)
+            idx += 1
+
+        if end:
+            where.append(f"timestamp <= ${idx}")
+            params.append(end)
+            idx += 1
+
+        if search:
+            where.append(f"message ILIKE ${idx}")
+            params.append(f"%{search}%")
+            idx += 1
+
+        where_clause = " AND ".join(where)
+
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM audit_log WHERE {where_clause}",
+            *params
+        )
+
+        rows = await conn.fetch(
+            f"""
+            SELECT timestamp, event_type, category, severity,
+                   entity_type, entity_id, entity_name,
+                   action, message, details,
+                   source_service, actor_type, actor_id, actor_name
+            FROM audit_log
+            WHERE {where_clause}
+            ORDER BY timestamp DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+            """,
+            *params, limit, offset
+        )
+
+    return {
+        "events": [dict(r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }

@@ -13,6 +13,7 @@ import {
   Monitor,
   Server,
   FileText,
+  ScrollText,
   Settings,
   Building2,
 } from "lucide-react";
@@ -35,6 +36,7 @@ const customerNav = [
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
+  { label: "Activity Log", href: "/activity-log", icon: ScrollText },
   { label: "Metrics", href: "/metrics", icon: Gauge },
 ];
 

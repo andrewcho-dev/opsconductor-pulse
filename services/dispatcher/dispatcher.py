@@ -5,6 +5,7 @@ from aiohttp import web
 from datetime import datetime, timezone
 
 import asyncpg
+from shared.audit import init_audit_logger, get_audit_logger
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -219,7 +220,7 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
                     )
                     VALUES ($1,$2,$3,$4,'OPEN','PENDING',0, now(), $5::jsonb)
                     ON CONFLICT (tenant_id, alert_id, route_id, deliver_on_event) DO NOTHING
-                    RETURNING 1
+                    RETURNING job_id
                     """,
                     alert_dict["tenant_id"],
                     alert_dict["id"],
@@ -235,6 +236,14 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
                         created_snmp += 1
                     else:
                         created_webhook += 1
+                    audit = get_audit_logger()
+                    if audit:
+                        audit.delivery_queued(
+                            alert_dict["tenant_id"],
+                            str(row["job_id"]),
+                            str(alert_dict["id"]),
+                            int_type,
+                        )
 
     if created:
         print(
@@ -248,6 +257,8 @@ async def dispatch_once(conn: asyncpg.Connection) -> int:
 async def main() -> None:
     pool = await get_pool()
     await start_health_server()
+    audit = init_audit_logger(pool, "dispatcher")
+    await audit.start()
 
     while True:
         try:

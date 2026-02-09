@@ -374,7 +374,9 @@ export interface AuditLogEntry {
 
 export interface AuditLogResponse {
   entries: AuditLogEntry[];
+  total: number;
   limit: number;
+  offset: number;
   user_id: string | null;
   action: string | null;
   since: string | null;

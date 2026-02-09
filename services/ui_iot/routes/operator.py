@@ -729,15 +729,24 @@ async def list_integrations(
     return {"integrations": integrations, "tenant_filter": tenant_filter}
 
 
-@router.get("/audit-log", dependencies=[Depends(require_operator_admin)])
+@router.get("/audit-log")
 async def get_audit_log(
     request: Request,
     user_id: str | None = None,
     action: str | None = None,
     since: str | None = None,
     limit: int = Query(default=100, le=1000),
+    offset: int = Query(0, ge=0),
+    tenant_id: str | None = None,
+    category: str | None = None,
+    severity: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    search: str | None = None,
 ):
-    """View operator audit log (operator_admin only)."""
+    """View operator audit log (all operators)."""
     user = get_user()
     ip, user_agent = get_request_metadata(request)
     since_dt = None
@@ -749,30 +758,128 @@ async def get_audit_log(
 
     try:
         p = await get_pool()
-        async with p.acquire() as conn:
-            await log_operator_access(
-                conn,
-                user_id=user["sub"],
-                action="view_audit_log",
-                ip_address=ip,
-                user_agent=user_agent,
-                rls_bypassed=True,
-            )
-        async with operator_connection(p) as conn:
-            entries = await fetch_operator_audit_log(
-                conn,
-                user_id=user_id,
-                action=action,
-                since=since_dt,
-                limit=limit,
-            )
+        system_filters_present = any(
+            [
+                tenant_id,
+                category,
+                severity,
+                entity_type,
+                entity_id,
+                start,
+                end,
+                search,
+            ]
+        )
+        if system_filters_present:
+            async with p.acquire() as conn:
+                await log_operator_access(
+                    conn,
+                    user_id=user["sub"],
+                    action="view_system_audit_log",
+                    ip_address=ip,
+                    user_agent=user_agent,
+                    rls_bypassed=True,
+                )
+            async with operator_connection(p) as conn:
+                where = []
+                params = []
+                idx = 1
+
+                if tenant_id:
+                    where.append(f"tenant_id = ${idx}")
+                    params.append(tenant_id)
+                    idx += 1
+
+                if category:
+                    where.append(f"category = ${idx}")
+                    params.append(category)
+                    idx += 1
+
+                if severity:
+                    where.append(f"severity = ${idx}")
+                    params.append(severity)
+                    idx += 1
+
+                if entity_type:
+                    where.append(f"entity_type = ${idx}")
+                    params.append(entity_type)
+                    idx += 1
+
+                if entity_id:
+                    where.append(f"entity_id = ${idx}")
+                    params.append(entity_id)
+                    idx += 1
+
+                if start:
+                    where.append(f"timestamp >= ${idx}")
+                    params.append(start)
+                    idx += 1
+
+                if end:
+                    where.append(f"timestamp <= ${idx}")
+                    params.append(end)
+                    idx += 1
+
+                if search:
+                    where.append(f"message ILIKE ${idx}")
+                    params.append(f"%{search}%")
+                    idx += 1
+
+                where_clause = " AND ".join(where) if where else "TRUE"
+
+                total = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM audit_log WHERE {where_clause}",
+                    *params
+                )
+
+                rows = await conn.fetch(
+                    f"""
+                    SELECT timestamp, tenant_id, event_type, category, severity,
+                           entity_type, entity_id, entity_name,
+                           action, message, details,
+                           source_service, actor_type, actor_id, actor_name
+                    FROM audit_log
+                    WHERE {where_clause}
+                    ORDER BY timestamp DESC
+                    LIMIT ${idx} OFFSET ${idx + 1}
+                    """,
+                    *params, limit, offset
+                )
+
+            return {
+                "events": [dict(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        else:
+            async with p.acquire() as conn:
+                await log_operator_access(
+                    conn,
+                    user_id=user["sub"],
+                    action="view_audit_log",
+                    ip_address=ip,
+                    user_agent=user_agent,
+                    rls_bypassed=True,
+                )
+            async with operator_connection(p) as conn:
+                entries, total = await fetch_operator_audit_log(
+                    conn,
+                    user_id=user_id,
+                    action=action,
+                    since=since_dt,
+                    limit=limit,
+                    offset=offset,
+                )
     except Exception:
         logger.exception("Failed to fetch operator audit log")
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {
         "entries": entries,
+        "total": total,
         "limit": limit,
+        "offset": offset,
         "user_id": user_id,
         "action": action,
         "since": since,

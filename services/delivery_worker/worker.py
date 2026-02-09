@@ -14,6 +14,7 @@ import httpx
 from snmp_sender import send_alert_trap, SNMPTrapResult, PYSNMP_AVAILABLE
 from email_sender import send_alert_email, EmailResult, AIOSMTPLIB_AVAILABLE
 from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
+from shared.audit import init_audit_logger, get_audit_logger
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -361,6 +362,19 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
         error = "integration_disabled"
     else:
         integration_type = integration.get("type", "webhook")
+        destination = "unknown"
+        if integration_type == "webhook":
+            config = normalize_config_json(integration.get("config_json"))
+            destination = config.get("url") or "unknown"
+        elif integration_type == "snmp":
+            snmp_host = integration.get("snmp_host") or "unknown"
+            snmp_port = integration.get("snmp_port") or 162
+            destination = f"{snmp_host}:{snmp_port}"
+        elif integration_type == "email":
+            recipients = normalize_email_config(integration.get("email_recipients"))
+            destination = f"{len(recipients.get('to', []))} recipients"
+        elif integration_type == "mqtt":
+            destination = integration.get("mqtt_topic") or "unknown"
 
         if integration_type == "snmp":
             ok, error = await deliver_snmp(integration, job)
@@ -387,6 +401,25 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
         started_at,
         finished_at,
     )
+
+    audit = get_audit_logger()
+    if audit and integration is not None and integration.get("enabled"):
+        if ok:
+            audit.delivery_succeeded(
+                tenant_id,
+                str(job_id),
+                integration_type,
+                destination,
+                latency_ms,
+            )
+        else:
+            audit.delivery_failed(
+                tenant_id,
+                str(job_id),
+                integration_type,
+                error or "failed",
+                attempt_no,
+            )
 
     if ok:
         COUNTERS["jobs_succeeded"] += 1
@@ -588,6 +621,8 @@ async def run_worker() -> None:
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
     await start_health_server()
+    audit = init_audit_logger(pool, "delivery_worker")
+    await audit.start()
     print(
         "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={} mqtt_available={}".format(
             MODE,
