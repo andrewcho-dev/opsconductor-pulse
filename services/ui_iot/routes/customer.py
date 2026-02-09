@@ -143,6 +143,14 @@ class AlertRuleUpdate(BaseModel):
     site_ids: list[str] | None = None
     enabled: bool | None = None
 
+
+class MetricCatalogUpsert(BaseModel):
+    metric_name: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+    unit: str | None = None
+    expected_min: float | None = None
+    expected_max: float | None = None
+
 async def require_customer_admin(request: Request):
     user = get_user()
     if user.get("role") != "customer_admin":
@@ -337,6 +345,95 @@ async def list_integrations(type: str | None = Query(None)):
     integrations = [dict(r) for r in rows]
 
     return {"tenant_id": tenant_id, "integrations": integrations}
+
+
+@router.get("/metrics/catalog")
+async def list_metric_catalog():
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT metric_name, description, unit, expected_min, expected_max,
+                       created_at, updated_at
+                FROM metric_catalog
+                WHERE tenant_id = $1
+                ORDER BY metric_name
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch metric catalog")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "metrics": [dict(r) for r in rows]}
+
+
+@router.post("/metrics/catalog", dependencies=[Depends(require_customer_admin)])
+async def upsert_metric_catalog(payload: MetricCatalogUpsert):
+    tenant_id = get_tenant_id()
+    metric_name = payload.metric_name.strip()
+    if not metric_name:
+        raise HTTPException(status_code=400, detail="metric_name is required")
+    if payload.expected_min is not None and payload.expected_max is not None:
+        if payload.expected_min > payload.expected_max:
+            raise HTTPException(status_code=400, detail="expected_min must be <= expected_max")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO metric_catalog (
+                    tenant_id, metric_name, description, unit, expected_min, expected_max
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (tenant_id, metric_name)
+                DO UPDATE SET
+                    description = EXCLUDED.description,
+                    unit = EXCLUDED.unit,
+                    expected_min = EXCLUDED.expected_min,
+                    expected_max = EXCLUDED.expected_max,
+                    updated_at = NOW()
+                RETURNING metric_name, description, unit, expected_min, expected_max,
+                          created_at, updated_at
+                """,
+                tenant_id,
+                metric_name,
+                payload.description,
+                payload.unit,
+                payload.expected_min,
+                payload.expected_max,
+            )
+    except Exception:
+        logger.exception("Failed to upsert metric catalog entry")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "metric": dict(row)}
+
+
+@router.delete("/metrics/catalog/{metric_name}", dependencies=[Depends(require_customer_admin)])
+async def delete_metric_catalog(metric_name: str):
+    tenant_id = get_tenant_id()
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM metric_catalog
+                WHERE tenant_id = $1 AND metric_name = $2
+                """,
+                tenant_id,
+                metric_name,
+            )
+    except Exception:
+        logger.exception("Failed to delete metric catalog entry")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if result.endswith("0"):
+        raise HTTPException(status_code=404, detail="Metric not found")
+
+    return Response(status_code=204)
 
 
 @router.get("/integrations/snmp", response_model=list[SNMPIntegrationResponse])

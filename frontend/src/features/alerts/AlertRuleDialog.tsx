@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Pencil } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   useCreateAlertRule,
   useUpdateAlertRule,
 } from "@/hooks/use-alert-rules";
+import { useAuth } from "@/services/auth/AuthProvider";
 import type {
   AlertRule,
   AlertRuleCreate,
@@ -37,7 +39,7 @@ import type {
   MetricReference,
 } from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
-import { fetchMetricReference } from "@/services/api/alert-rules";
+import { fetchMetricReference, upsertMetricCatalog } from "@/services/api/alert-rules";
 
 type OperatorValue = "GT" | "LT" | "GTE" | "LTE";
 
@@ -65,6 +67,12 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const isEditing = !!rule;
   const createMutation = useCreateAlertRule();
   const updateMutation = useUpdateAlertRule();
+  const catalogMutation = useMutation({
+    mutationFn: upsertMetricCatalog,
+  });
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isCustomerAdmin = user?.role === "customer_admin";
   const { data: metricReference, isLoading: metricsLoading } = useQuery({
     queryKey: ["metric-reference"],
     queryFn: fetchMetricReference,
@@ -78,6 +86,12 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [severity, setSeverity] = useState("3");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [editCatalogOpen, setEditCatalogOpen] = useState(false);
+  const [catalogDescription, setCatalogDescription] = useState("");
+  const [catalogUnit, setCatalogUnit] = useState("");
+  const [catalogMin, setCatalogMin] = useState("");
+  const [catalogMax, setCatalogMax] = useState("");
+  const [catalogError, setCatalogError] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +103,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setSeverity(String(rule.severity ?? 3));
       setDescription(rule.description ?? "");
       setEnabled(rule.enabled);
+      setEditCatalogOpen(false);
+      setCatalogError("");
     } else {
       setName("");
       setMetricName("");
@@ -97,6 +113,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setSeverity("3");
       setDescription("");
       setEnabled(true);
+      setEditCatalogOpen(false);
+      setCatalogError("");
     }
   }, [open, rule]);
 
@@ -117,6 +135,34 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       selectedMetric.range,
       selectedMetric.type,
     ].filter(Boolean) as string[];
+  }, [selectedMetric]);
+
+  useEffect(() => {
+    if (!selectedMetric) {
+      setCatalogDescription("");
+      setCatalogUnit("");
+      setCatalogMin("");
+      setCatalogMax("");
+      if (!metricName) {
+        setEditCatalogOpen(false);
+      }
+      return;
+    }
+    setCatalogDescription(selectedMetric.description ?? "");
+    setCatalogUnit(selectedMetric.unit ?? "");
+    if (selectedMetric.range) {
+      const parts = selectedMetric.range.split("-");
+      if (parts.length === 2) {
+        setCatalogMin(parts[0].trim());
+        setCatalogMax(parts[1].trim());
+      } else {
+        setCatalogMin("");
+        setCatalogMax("");
+      }
+    } else {
+      setCatalogMin("");
+      setCatalogMax("");
+    }
   }, [selectedMetric]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -163,6 +209,45 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
     await updateMutation.mutateAsync({ ruleId: String(rule.rule_id), data: updates });
     onClose();
+  }
+
+  async function handleCatalogSave() {
+    if (!metricName.trim()) return;
+    setCatalogError("");
+    const normalizedMin = catalogMin.trim();
+    const normalizedMax = catalogMax.trim();
+    const expectedMin = normalizedMin ? Number(normalizedMin) : null;
+    const expectedMax = normalizedMax ? Number(normalizedMax) : null;
+    if (normalizedMin && Number.isNaN(expectedMin)) {
+      setCatalogError("Expected minimum must be a number.");
+      return;
+    }
+    if (normalizedMax && Number.isNaN(expectedMax)) {
+      setCatalogError("Expected maximum must be a number.");
+      return;
+    }
+    if (
+      expectedMin !== null &&
+      expectedMax !== null &&
+      expectedMin > expectedMax
+    ) {
+      setCatalogError("Expected minimum must be less than or equal to maximum.");
+      return;
+    }
+
+    try {
+      await catalogMutation.mutateAsync({
+        metric_name: metricName,
+        description: catalogDescription.trim() || null,
+        unit: catalogUnit.trim() || null,
+        expected_min: expectedMin,
+        expected_max: expectedMax,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["metric-reference"] });
+      setEditCatalogOpen(false);
+    } catch (error) {
+      setCatalogError(formatError(error));
+    }
   }
 
   return (
@@ -229,7 +314,81 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   </Tooltip>
                 </TooltipProvider>
               )}
+              {isCustomerAdmin && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setEditCatalogOpen((prev) => !prev)}
+                  disabled={!metricName}
+                  aria-label="Edit metric details"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
             </div>
+            {isCustomerAdmin && editCatalogOpen && (
+              <div className="rounded-md border border-border bg-muted/40 p-3">
+                <div className="grid gap-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="metric-description">Description</Label>
+                    <Input
+                      id="metric-description"
+                      value={catalogDescription}
+                      onChange={(e) => setCatalogDescription(e.target.value)}
+                      placeholder="Room temperature sensor"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
+                    <div className="grid gap-2">
+                      <Label htmlFor="metric-unit">Unit</Label>
+                      <Input
+                        id="metric-unit"
+                        value={catalogUnit}
+                        onChange={(e) => setCatalogUnit(e.target.value)}
+                        placeholder="°C"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Expected Range</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={catalogMin}
+                          onChange={(e) => setCatalogMin(e.target.value)}
+                          placeholder="Min"
+                        />
+                        <span className="text-xs text-muted-foreground">to</span>
+                        <Input
+                          value={catalogMax}
+                          onChange={(e) => setCatalogMax(e.target.value)}
+                          placeholder="Max"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {catalogError && (
+                    <p className="text-xs text-destructive">{catalogError}</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={handleCatalogSave}
+                      disabled={catalogMutation.isPending || !metricName}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setEditCatalogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               {metricsLoading
                 ? "Loading metric reference..."

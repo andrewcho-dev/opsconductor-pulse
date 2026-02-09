@@ -139,6 +139,24 @@ export interface MetricReference {
   type: "float" | "bool" | null;
 }
 
+export interface MetricCatalogEntry {
+  metric_name: string;
+  description: string | null;
+  unit: string | null;
+  expected_min: number | null;
+  expected_max: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetricCatalogUpsert {
+  metric_name: string;
+  description?: string | null;
+  unit?: string | null;
+  expected_min?: number | null;
+  expected_max?: number | null;
+}
+
 // Webhook integration types
 export interface WebhookIntegration {
   integration_id: string;

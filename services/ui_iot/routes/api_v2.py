@@ -514,14 +514,31 @@ async def get_metrics_reference():
     async with tenant_connection(p, tenant_id) as conn:
         rows = await conn.fetch(
             """
-            SELECT DISTINCT key AS metric_name
-            FROM telemetry
-            CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
-            WHERE tenant_id = $1
-              AND time > NOW() - INTERVAL '7 days'
-              AND metrics IS NOT NULL
-              AND jsonb_typeof(metrics) = 'object'
-            ORDER BY metric_name
+            SELECT
+                d.metric_name AS name,
+                c.description,
+                c.unit,
+                CASE
+                    WHEN c.expected_min IS NOT NULL AND c.expected_max IS NOT NULL
+                        THEN c.expected_min::text || '-' || c.expected_max::text
+                    WHEN c.expected_min IS NOT NULL AND c.expected_max IS NULL
+                        THEN c.expected_min::text || '-'
+                    WHEN c.expected_min IS NULL AND c.expected_max IS NOT NULL
+                        THEN '-' || c.expected_max::text
+                    ELSE NULL
+                END AS range
+            FROM (
+                SELECT DISTINCT key AS metric_name
+                FROM telemetry
+                CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
+                WHERE tenant_id = $1
+                  AND time > NOW() - INTERVAL '7 days'
+                  AND metrics IS NOT NULL
+                  AND jsonb_typeof(metrics) = 'object'
+            ) d
+            LEFT JOIN metric_catalog c
+              ON c.tenant_id = $1 AND c.metric_name = d.metric_name
+            ORDER BY d.metric_name
             LIMIT 100
             """,
             tenant_id,
@@ -529,10 +546,10 @@ async def get_metrics_reference():
 
     return [
         {
-            "name": row["metric_name"],
-            "description": None,
-            "unit": None,
-            "range": None,
+            "name": row["name"],
+            "description": row["description"],
+            "unit": row["unit"],
+            "range": row["range"],
             "type": None,
         }
         for row in rows
