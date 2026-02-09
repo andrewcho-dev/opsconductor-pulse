@@ -507,22 +507,35 @@ async def get_telemetry_chart(
 
 @router.get("/metrics/reference")
 async def get_metrics_reference():
-    """Return static metric reference data for alert rules."""
+    """Return discovered metric names from recent telemetry."""
+    tenant_id = get_tenant_id()
+    p = await get_pool()
+
+    async with tenant_connection(p, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT key AS metric_name
+            FROM telemetry
+            CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
+            WHERE tenant_id = $1
+              AND time > NOW() - INTERVAL '7 days'
+              AND metrics IS NOT NULL
+              AND jsonb_typeof(metrics) = 'object'
+            ORDER BY metric_name
+            LIMIT 100
+            """,
+            tenant_id,
+        )
+
     return [
-        {"name": "temp_c", "description": "Temperature", "unit": "°C", "range": "10-60", "type": "float"},
-        {"name": "humidity_pct", "description": "Relative Humidity", "unit": "%", "range": "0-100", "type": "float"},
-        {"name": "battery_pct", "description": "Battery Level", "unit": "%", "range": "0-100", "type": "float"},
-        {"name": "pressure_psi", "description": "Pressure", "unit": "psi", "range": "0-150", "type": "float"},
-        {"name": "power_kw", "description": "Power Consumption", "unit": "kW", "range": "0-50", "type": "float"},
-        {"name": "voltage_v", "description": "Voltage", "unit": "V", "range": "110-130", "type": "float"},
-        {"name": "co2_ppm", "description": "CO2 Level", "unit": "ppm", "range": "400-2000", "type": "float"},
-        {"name": "pm25_ugm3", "description": "PM2.5 Particles", "unit": "µg/m³", "range": "0-500", "type": "float"},
-        {"name": "vibration_g", "description": "Vibration", "unit": "g", "range": "0-10", "type": "float"},
-        {"name": "flow_lpm", "description": "Water Flow Rate", "unit": "L/min", "range": "0-100", "type": "float"},
-        {"name": "speed_kmh", "description": "Speed", "unit": "km/h", "range": "0-120", "type": "float"},
-        {"name": "rssi_dbm", "description": "Signal Strength", "unit": "dBm", "range": "-100-0", "type": "float"},
-        {"name": "door_open", "description": "Door State", "unit": "0/1", "range": "0-1", "type": "bool"},
-        {"name": "motion_detected", "description": "Motion Detected", "unit": "0/1", "range": "0-1", "type": "bool"},
+        {
+            "name": row["metric_name"],
+            "description": None,
+            "unit": None,
+            "range": None,
+            "type": None,
+        }
+        for row in rows
     ]
 
 

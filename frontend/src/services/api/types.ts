@@ -133,10 +133,10 @@ export interface AlertRuleUpdate {
 
 export interface MetricReference {
   name: string;
-  description: string;
-  unit: string;
-  range: string;
-  type: "float" | "bool";
+  description: string | null;
+  unit: string | null;
+  range: string | null;
+  type: "float" | "bool" | null;
 }
 
 // Webhook integration types

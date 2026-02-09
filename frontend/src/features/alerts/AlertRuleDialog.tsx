@@ -109,6 +109,15 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     () => metricOptions.find((metric) => metric.name === metricName),
     [metricName, metricOptions]
   );
+  const metricDetailParts = useMemo(() => {
+    if (!selectedMetric) return [];
+    return [
+      selectedMetric.description,
+      selectedMetric.unit,
+      selectedMetric.range,
+      selectedMetric.type,
+    ].filter(Boolean) as string[];
+  }, [selectedMetric]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
@@ -190,7 +199,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                 <SelectContent>
                   {metricOptions.map((metric) => (
                     <SelectItem key={metric.name} value={metric.name}>
-                      {metric.name} — {metric.description}
+                      {metric.name}
+                      {metric.description ? ` — ${metric.description}` : ""}
                     </SelectItem>
                   ))}
                   {metricName && !selectedMetric && (
@@ -209,10 +219,11 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                     <TooltipContent side="right">
                       <div className="space-y-1">
                         <div className="font-medium">{selectedMetric.name}</div>
-                        <div>
-                          {selectedMetric.description} · {selectedMetric.unit} ·{" "}
-                          {selectedMetric.range} · {selectedMetric.type}
-                        </div>
+                        {metricDetailParts.length > 0 ? (
+                          <div>{metricDetailParts.join(" · ")}</div>
+                        ) : (
+                          <div>No metadata available.</div>
+                        )}
                       </div>
                     </TooltipContent>
                   </Tooltip>
@@ -220,7 +231,11 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {metricsLoading ? "Loading metric reference..." : "Select a metric to see details."}
+              {metricsLoading
+                ? "Loading metric reference..."
+                : metricOptions.length === 0
+                ? "No metrics found. Metrics will appear after devices send telemetry."
+                : "Select a metric to see details."}
             </p>
           </div>
 
