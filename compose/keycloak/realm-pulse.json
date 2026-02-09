@@ -1,7 +1,6 @@
 {
   "realm": "pulse",
   "enabled": true,
-  "loginTheme": "opsconductor",
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 1800,
   "clients": [
