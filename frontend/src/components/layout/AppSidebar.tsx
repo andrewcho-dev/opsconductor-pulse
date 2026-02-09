@@ -77,13 +77,17 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <Link
           to={isOperator ? "/operator" : "/dashboard"}
-          className="flex items-center gap-3 no-underline"
+          className="flex items-center gap-2 no-underline"
         >
           <img
             src="/app/opsconductor_logo_clean_PROPER.svg"
             alt="OpsConductor Pulse"
-            className="h-10 w-auto"
+            className="h-8 w-8"
           />
+          <div>
+            <div className="text-sm font-bold text-sidebar-foreground">OpsConductor</div>
+            <div className="text-xs text-muted-foreground">Pulse</div>
+          </div>
         </Link>
       </SidebarHeader>
 
