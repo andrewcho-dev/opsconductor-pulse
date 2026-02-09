@@ -9,6 +9,7 @@ import {
   Mail,
   Radio,
   Activity,
+  Gauge,
   Monitor,
   Server,
   FileText,
@@ -34,6 +35,7 @@ const customerNav = [
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
+  { label: "Metrics", href: "/metrics", icon: Gauge },
 ];
 
 const integrationNav = [
