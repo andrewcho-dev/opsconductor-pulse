@@ -173,6 +173,11 @@ class MetricMappingCreate(BaseModel):
     multiplier: float | None = None
     offset_value: float | None = None
 
+
+class MetricMappingUpdate(BaseModel):
+    multiplier: float | None = None
+    offset_value: float | None = None
+
 async def require_customer_admin(request: Request):
     user = get_user()
     if user.get("role") != "customer_admin":
@@ -592,20 +597,33 @@ async def delete_normalized_metric(name: str):
 
 
 @router.get("/metric-mappings")
-async def list_metric_mappings():
+async def list_metric_mappings(normalized_name: str | None = Query(None)):
     tenant_id = get_tenant_id()
     try:
         p = await get_pool()
         async with tenant_connection(p, tenant_id) as conn:
-            rows = await conn.fetch(
-                """
-                SELECT raw_metric, normalized_name, multiplier, offset_value, created_at
-                FROM metric_mappings
-                WHERE tenant_id = $1
-                ORDER BY raw_metric
-                """,
-                tenant_id,
-            )
+            if normalized_name:
+                normalized_name = _validate_name(normalized_name)
+                rows = await conn.fetch(
+                    """
+                    SELECT raw_metric, normalized_name, multiplier, offset_value, created_at
+                    FROM metric_mappings
+                    WHERE tenant_id = $1 AND normalized_name = $2
+                    ORDER BY raw_metric
+                    """,
+                    tenant_id,
+                    normalized_name,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT raw_metric, normalized_name, multiplier, offset_value, created_at
+                    FROM metric_mappings
+                    WHERE tenant_id = $1
+                    ORDER BY raw_metric
+                    """,
+                    tenant_id,
+                )
     except Exception:
         logger.exception("Failed to fetch metric mappings")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -660,6 +678,41 @@ async def create_metric_mapping(payload: MetricMappingCreate):
     except Exception:
         logger.exception("Failed to create metric mapping")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "mapping": dict(row)}
+
+
+@router.patch("/metric-mappings/{raw_metric}", dependencies=[Depends(require_customer_admin)])
+async def update_metric_mapping(raw_metric: str, payload: MetricMappingUpdate):
+    tenant_id = get_tenant_id()
+    raw_metric = raw_metric.strip()
+    if not METRIC_NAME_PATTERN.match(raw_metric):
+        raise HTTPException(status_code=400, detail="Invalid raw metric name")
+    if payload.multiplier is None and payload.offset_value is None:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    try:
+        p = await get_pool()
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE metric_mappings
+                SET multiplier = COALESCE($3, multiplier),
+                    offset_value = COALESCE($4, offset_value)
+                WHERE tenant_id = $1 AND raw_metric = $2
+                RETURNING raw_metric, normalized_name, multiplier, offset_value, created_at
+                """,
+                tenant_id,
+                raw_metric,
+                payload.multiplier,
+                payload.offset_value,
+            )
+    except Exception:
+        logger.exception("Failed to update metric mapping")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Metric mapping not found")
 
     return {"tenant_id": tenant_id, "mapping": dict(row)}
 

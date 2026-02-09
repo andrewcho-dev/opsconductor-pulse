@@ -40,7 +40,7 @@ export async function deleteNormalizedMetric(name: string) {
   return apiDelete(`/customer/normalized-metrics/${encodeURIComponent(name)}`);
 }
 
-export async function fetchMetricMappings(): Promise<{
+export async function fetchMetricMappings(normalizedName?: string): Promise<{
   tenant_id: string;
   mappings: Array<{
     raw_metric: string;
@@ -50,11 +50,21 @@ export async function fetchMetricMappings(): Promise<{
     created_at: string;
   }>;
 }> {
-  return apiGet("/customer/metric-mappings");
+  const query = normalizedName
+    ? `?normalized_name=${encodeURIComponent(normalizedName)}`
+    : "";
+  return apiGet(`/customer/metric-mappings${query}`);
 }
 
 export async function createMetricMapping(payload: MetricMappingCreate) {
   return apiPost("/customer/metric-mappings", payload);
+}
+
+export async function updateMetricMapping(
+  rawMetric: string,
+  payload: { multiplier?: number | null; offset_value?: number | null }
+) {
+  return apiPatch(`/customer/metric-mappings/${encodeURIComponent(rawMetric)}`, payload);
 }
 
 export async function deleteMetricMapping(rawMetric: string) {

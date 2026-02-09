@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchMetricReference,
+  fetchMetricMappings,
   createNormalizedMetric,
   updateNormalizedMetric,
   deleteNormalizedMetric,
   createMetricMapping,
+  updateMetricMapping,
   deleteMetricMapping,
 } from "@/services/api/metrics";
 import type {
@@ -45,11 +47,35 @@ export function useDeleteNormalizedMetric() {
   });
 }
 
+export function useMetricMappings(normalizedName?: string) {
+  return useQuery({
+    queryKey: ["metric-mappings", normalizedName ?? "all"],
+    queryFn: () => fetchMetricMappings(normalizedName),
+  });
+}
+
 export function useCreateMetricMapping() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: MetricMappingCreate) => createMetricMapping(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["metric-reference"] }),
+  });
+}
+
+export function useUpdateMetricMapping() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rawMetric,
+      payload,
+    }: {
+      rawMetric: string;
+      payload: { multiplier?: number | null; offset_value?: number | null };
+    }) => updateMetricMapping(rawMetric, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metric-reference"] });
+      qc.invalidateQueries({ queryKey: ["metric-mappings"] });
+    },
   });
 }
 
