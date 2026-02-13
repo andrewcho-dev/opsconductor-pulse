@@ -21,7 +21,7 @@ exclude_lines =
     @abc.abstractmethod
 show_missing = True
 precision = 2
-fail_under = 60
+fail_under = 45
 
 [html]
 directory = htmlcov

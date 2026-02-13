@@ -10,7 +10,7 @@ import httpx
 import subprocess
 import sys
 from playwright.async_api._generated import PageAssertions
-from playwright.async_api import async_playwright, Browser, BrowserContext
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
 UI_BASE_URL = os.getenv("UI_BASE_URL")
@@ -59,6 +59,15 @@ def _byte_diff_ratio(baseline: bytes, current: bytes) -> float:
 def record_screenshot_bytes(data: bytes) -> None:
     global _LAST_SCREENSHOT_BYTES
     _LAST_SCREENSHOT_BYTES = data
+
+
+async def csrf_headers(page: Page) -> dict[str, str]:
+    """Return CSRF headers for state-changing requests made via page.request.*."""
+    cookies = await page.context.cookies()
+    token = next((c.get("value") for c in cookies if c.get("name") == "csrf_token"), None)
+    if not token:
+        return {}
+    return {"X-CSRF-Token": token}
 
 
 async def _to_have_screenshot(self, name: str, threshold: float = 0.1, full_page: bool = False):
@@ -199,16 +208,25 @@ async def cleanup_integrations(authenticated_customer_page):
     page = authenticated_customer_page
     created = []
     yield created
+    headers = await csrf_headers(page)
     for int_type, int_id in created:
         try:
             if int_type == "snmp":
-                await page.request.delete(f"/customer/integrations/snmp/{int_id}")
+                await page.request.delete(
+                    f"/customer/integrations/snmp/{int_id}", headers=headers
+                )
             elif int_type == "email":
-                await page.request.delete(f"/customer/integrations/email/{int_id}")
+                await page.request.delete(
+                    f"/customer/integrations/email/{int_id}", headers=headers
+                )
             elif int_type == "mqtt":
-                await page.request.delete(f"/customer/integrations/mqtt/{int_id}")
+                await page.request.delete(
+                    f"/customer/integrations/mqtt/{int_id}", headers=headers
+                )
             else:
-                await page.request.delete(f"/customer/integrations/{int_id}")
+                await page.request.delete(
+                    f"/customer/integrations/{int_id}", headers=headers
+                )
         except Exception:
             pass
 

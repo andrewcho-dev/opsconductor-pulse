@@ -173,14 +173,14 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent id="snmp-modal" className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit SNMP Integration" : "Create SNMP Integration"}</DialogTitle>
           <DialogDescription>
             Configure SNMP trap destinations for alert delivery.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="snmp-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="snmp-name">Name</Label>
             <Input
@@ -217,7 +217,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
             <div className="grid gap-2">
               <Label>SNMP Version</Label>
               <Select value={version} onValueChange={(v) => setVersion(v as SnmpVersion)}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="snmp-version" className="w-full">
                   <SelectValue placeholder="Select version" />
                 </SelectTrigger>
                 <SelectContent>
@@ -239,7 +239,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
           </div>
 
           {version === "1" || version === "2c" ? (
-            <div className="grid gap-2">
+            <div id="v2c-config" className="grid gap-2">
               <Label htmlFor="snmp-community">Community String</Label>
               <Input
                 id="snmp-community"
@@ -250,7 +250,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
               />
             </div>
           ) : (
-            <div className="space-y-4 rounded-md border border-border p-4">
+            <div id="v3-config" className="space-y-4 rounded-md border border-border p-4">
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="snmp-username">Username</Label>
@@ -331,7 +331,7 @@ function SnmpDialog({ open, onClose, integration }: SnmpDialogProps) {
           {errorMessage && <div className="text-sm text-destructive">{errorMessage}</div>}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button id="btn-cancel" type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={isSaving}>
@@ -367,6 +367,7 @@ export default function SnmpPage() {
         action={
           isAdmin ? (
             <Button
+              id="btn-add-snmp"
               onClick={() => {
                 setEditingIntegration(null);
                 setDialogOpen(true);
@@ -383,7 +384,7 @@ export default function SnmpPage() {
           Failed to load SNMP integrations: {(error as Error).message}
         </div>
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="snmp-list" className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -417,7 +418,7 @@ export default function SnmpPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="snmp-list" className="grid gap-4 md:grid-cols-2">
           {integrations.map((integration) => (
             <Card key={integration.id}>
               <CardHeader className="flex flex-row items-center justify-between">

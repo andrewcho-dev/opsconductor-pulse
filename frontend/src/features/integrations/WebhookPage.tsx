@@ -110,14 +110,14 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent>
+      <DialogContent id="webhook-modal">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Webhook" : "Create Webhook"}</DialogTitle>
           <DialogDescription>
             Webhook integrations receive alert payloads via HTTP POST.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="webhook-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="webhook-name">Name</Label>
             <Input
@@ -151,7 +151,7 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
             <div className="text-sm text-destructive">{errorMessage}</div>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button id="btn-cancel" type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={isSaving}>
@@ -189,6 +189,7 @@ export default function WebhookPage() {
         action={
           isAdmin ? (
             <Button
+              id="btn-add-webhook"
               onClick={() => {
                 setEditingWebhook(null);
                 setDialogOpen(true);
@@ -205,7 +206,7 @@ export default function WebhookPage() {
           Failed to load webhooks: {(error as Error).message}
         </div>
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="webhook-list" className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -239,7 +240,7 @@ export default function WebhookPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="webhook-list" className="grid gap-4 md:grid-cols-2">
           {webhooks.map((webhook) => (
             <Card key={webhook.integration_id}>
               <CardHeader className="flex flex-row items-center justify-between">

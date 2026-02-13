@@ -1,6 +1,7 @@
 import pytest
 import uuid
 from playwright.async_api import Page
+from tests.e2e.conftest import csrf_headers
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
 
@@ -20,6 +21,7 @@ class TestIntegrationManagement:
         )
 
         if session_cookie:
+            headers = await csrf_headers(page)
             response = await page.request.post(
                 "/customer/integrations",
                 data={
@@ -27,6 +29,7 @@ class TestIntegrationManagement:
                     "webhook_url": "https://webhook.site/test",
                     "enabled": True,
                 },
+                headers=headers,
             )
             if response.status in (401, 403):
                 pytest.skip("Integration API not authorized for this environment.")

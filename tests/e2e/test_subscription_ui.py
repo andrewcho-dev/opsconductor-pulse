@@ -95,11 +95,10 @@ class TestCustomerSubscriptionUI:
         if await heading.count() == 0:
             pytest.skip("Subscription heading not visible.")
         await expect(heading).to_be_visible()
-        if await page.get_by_text("Plan Details").count() == 0:
-            pytest.skip("Plan Details section not visible.")
-        await expect(page.get_by_text("Plan Details")).to_be_visible()
-        await expect(page.get_by_text("Status")).to_be_visible()
-        await expect(page.get_by_text("Device Usage")).to_be_visible()
+        if await page.get_by_text("No active subscriptions").count() > 0:
+            pytest.skip("No active subscriptions available for this environment.")
+        await expect(page.get_by_text("Total Capacity")).to_be_visible()
+        await expect(page.get_by_text("Active Subscriptions")).to_be_visible()
         await expect(page.get_by_text("Available")).to_be_visible()
 
     async def test_device_list_shows_limit(

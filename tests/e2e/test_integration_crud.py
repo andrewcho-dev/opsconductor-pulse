@@ -3,19 +3,20 @@ import uuid
 
 import pytest
 from playwright.async_api import Page, expect
+from tests.e2e.conftest import csrf_headers
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio]
 
 
 async def _find_row_with_name(page: Page, list_selector: str, name: str):
-    """Find the table row containing the given name and return its Delete button."""
-    rows = page.locator(f"{list_selector} table tbody tr")
-    count = await rows.count()
+    """Find the integration card containing the given name and return its Delete button."""
+    cards = page.locator(f"{list_selector} [data-slot='card']")
+    count = await cards.count()
     for i in range(count):
-        row = rows.nth(i)
-        text = await row.inner_text()
+        card = cards.nth(i)
+        text = await card.inner_text()
         if name in text:
-            return row.locator("button:has-text('Delete')")
+            return card.locator("button:has-text('Delete')")
     return None
 
 
@@ -136,6 +137,7 @@ class TestWebhookCRUD:
 
         # Create integration via API
         name = f"E2E Test Target {uuid.uuid4().hex[:6]}"
+        headers = await csrf_headers(page)
         response = await page.request.post(
             "/customer/integrations",
             data={
@@ -143,6 +145,7 @@ class TestWebhookCRUD:
                 "webhook_url": "https://example.com/test-delivery",
                 "enabled": True,
             },
+            headers=headers,
         )
         if response.status in (401, 403):
             pytest.skip("Integration API not authorized for this environment.")
@@ -172,6 +175,7 @@ class TestWebhookCRUD:
 
         # Create integration via API
         name = f"E2E WH Del {uuid.uuid4().hex[:6]}"
+        headers = await csrf_headers(page)
         response = await page.request.post(
             "/customer/integrations",
             data={
@@ -179,6 +183,7 @@ class TestWebhookCRUD:
                 "webhook_url": "https://example.com/delete-test",
                 "enabled": True,
             },
+            headers=headers,
         )
         if response.status in (401, 403):
             pytest.skip("Integration API not authorized for this environment.")
@@ -325,7 +330,11 @@ class TestSNMPCRUD:
         await name_input.fill(name)
         await host_input.fill("example.com")
         await port_input.fill("162")
-        await version_select.select_option("3")
+        await version_select.click()
+        option_v3 = page.get_by_role("option", name="v3 (secure)")
+        if await option_v3.count() == 0:
+            option_v3 = page.locator("[data-slot='select-item']").filter(has_text="v3").first
+        await option_v3.click()
 
         # v3 fields should now be visible
         v3_config = page.locator("#v3-config")
@@ -388,24 +397,32 @@ class TestSNMPCRUD:
             modal = page.locator("#snmp-modal")
         await expect(modal).to_be_visible()
 
-        # Default: v2c config visible, v3 hidden
+        # Default: v2c config visible; v3 config rendered only when v3 selected
         v2c_config = page.locator("#v2c-config")
-        v3_config = page.locator("#v3-config")
-        if await v2c_config.count() == 0 or await v3_config.count() == 0:
+        if await v2c_config.count() == 0:
             pytest.skip("SNMP config sections not available.")
         await expect(v2c_config).to_be_visible()
-        await expect(v3_config).to_be_hidden()
 
         # Switch to v3
         version_select = page.locator("#snmp-version")
         if await version_select.count() == 0:
             pytest.skip("SNMP version selector not available.")
-        await version_select.select_option("3")
+        await version_select.click()
+        option_v3 = page.get_by_role("option", name="v3 (secure)")
+        if await option_v3.count() == 0:
+            option_v3 = page.locator("[data-slot='select-item']").filter(has_text="v3").first
+        await option_v3.click()
+        v3_config = page.locator("#v3-config")
         await expect(v3_config).to_be_visible()
         await expect(v2c_config).to_be_hidden()
 
         # Switch back to v2c
-        await version_select.select_option("2c")
+        await version_select.click()
+        option_v2c = page.get_by_role("option", name="v2c")
+        if await option_v2c.count() == 0:
+            option_v2c = page.locator("[data-slot='select-item']").filter(has_text="v2c").first
+        await option_v2c.click()
+        v2c_config = page.locator("#v2c-config")
         await expect(v2c_config).to_be_visible()
         await expect(v3_config).to_be_hidden()
 
@@ -423,6 +440,7 @@ class TestSNMPCRUD:
 
         # Create via API with public hostname
         name = f"E2E SNMP Del {uuid.uuid4().hex[:6]}"
+        headers = await csrf_headers(page)
         response = await page.request.post(
             "/customer/integrations/snmp",
             data=json.dumps({
@@ -432,7 +450,7 @@ class TestSNMPCRUD:
                 "snmp_config": {"version": "2c", "community": "public"},
                 "enabled": True,
             }),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **headers},
         )
         if response.status in (401, 403):
             pytest.skip("Integration API not authorized for this environment.")
@@ -518,7 +536,7 @@ class TestEmailCRUD:
         if await submit_btn.count() == 0:
             pytest.skip("Email submit button not available.")
         await submit_btn.scroll_into_view_if_needed()
-        await page.locator("#email-modal .modal").evaluate("el => { el.scrollTop = el.scrollHeight; }")
+        await page.locator("#email-modal").evaluate("el => { el.scrollTop = el.scrollHeight; }")
         await submit_btn.click(force=True)
         await expect(modal).to_be_hidden(timeout=10000)
         await page.wait_for_timeout(500)
@@ -546,6 +564,7 @@ class TestEmailCRUD:
 
         # Create via API with public hostname
         name = f"E2E Email Del {uuid.uuid4().hex[:6]}"
+        headers = await csrf_headers(page)
         response = await page.request.post(
             "/customer/integrations/email",
             data={
@@ -564,6 +583,7 @@ class TestEmailCRUD:
                 },
                 "enabled": True,
             },
+            headers=headers,
         )
         if response.status in (401, 403):
             pytest.skip("Integration API not authorized for this environment.")
@@ -656,6 +676,7 @@ class TestMQTTCRUD:
         page = authenticated_customer_page
 
         name = f"E2E MQTT Del {uuid.uuid4().hex[:6]}"
+        headers = await csrf_headers(page)
         response = await page.request.post(
             "/customer/integrations/mqtt",
             data=json.dumps({
@@ -664,7 +685,7 @@ class TestMQTTCRUD:
                 "mqtt_qos": 1,
                 "enabled": True,
             }),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **headers},
         )
         if response.status in (401, 403):
             pytest.skip("Integration API not authorized for this environment.")

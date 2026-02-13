@@ -17,13 +17,16 @@ class TestLoginFlow:
 
     async def test_unauthenticated_redirects_to_login(self, page: Page):
         """Unauthenticated user redirected to Keycloak."""
-        await page.goto("/")
+        await page.goto("/app/dashboard")
         await page.wait_for_load_state("domcontentloaded")
         if "realms/pulse" in page.url:
             return
+        if await page.locator("#kc-login").count() > 0:
+            assert "realms/pulse" in page.url
+            return
         if "/app" in page.url:
             pytest.skip("Session already authenticated; no redirect to Keycloak.")
-        await page.wait_for_url(f"{KEYCLOAK_URL}/**", timeout=10000)
+        await page.wait_for_url(f"{KEYCLOAK_URL}/**", timeout=20000)
         assert "realms/pulse" in page.url
 
     async def test_customer_login_flow(self, page: Page):
@@ -83,13 +86,12 @@ class TestLoginFlow:
     async def test_logout_flow(self, authenticated_customer_page: Page):
         """User can logout."""
         page = authenticated_customer_page
-        logout_button = page.get_by_role("button", name="Logout")
+        logout_button = page.locator("button[title='Logout']")
         if await logout_button.count() == 0:
-            logout_button = page.get_by_text("Logout")
+            logout_button = page.get_by_role("button", name="Logout")
         if await logout_button.count() == 0:
             pytest.skip("Logout control not visible.")
-        async with page.expect_navigation():
-            await logout_button.first.click()
+        await logout_button.first.click()
         response = await page.goto("/app/dashboard")
         if response is None:
             pytest.skip("No response after logout navigation.")

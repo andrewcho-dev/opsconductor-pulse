@@ -8,6 +8,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [commit]
+      - id: frontend-tests
+        name: Frontend tests
+        entry: bash -c 'cd frontend && npm run test -- --run --reporter=dot'
+        language: system
+        pass_filenames: false
+        files: '^frontend/src/.*\.(ts|tsx)$'
+        stages: [commit]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.9

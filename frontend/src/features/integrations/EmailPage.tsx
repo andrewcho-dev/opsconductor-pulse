@@ -220,14 +220,14 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent id="email-modal" className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Email Integration" : "Create Email Integration"}</DialogTitle>
           <DialogDescription>
             Configure SMTP delivery and recipient lists for alert emails.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="email-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="email-name">Name</Label>
             <Input
@@ -306,9 +306,9 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="to-recipients">To Recipients</Label>
+            <Label htmlFor="recipients-to">To Recipients</Label>
             <Input
-              id="to-recipients"
+              id="recipients-to"
               value={toRecipients}
               onChange={(e) => setToRecipients(e.target.value)}
               required
@@ -379,7 +379,7 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
           {errorMessage && <div className="text-sm text-destructive">{errorMessage}</div>}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button id="btn-cancel" type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={isSaving}>
@@ -415,6 +415,7 @@ export default function EmailPage() {
         action={
           isAdmin ? (
             <Button
+              id="btn-add-email"
               onClick={() => {
                 setEditingIntegration(null);
                 setDialogOpen(true);
@@ -431,7 +432,7 @@ export default function EmailPage() {
           Failed to load email integrations: {(error as Error).message}
         </div>
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="email-list" className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -465,7 +466,7 @@ export default function EmailPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="email-list" className="grid gap-4 md:grid-cols-2">
           {integrations.map((integration) => (
             <Card key={integration.id}>
               <CardHeader className="flex flex-row items-center justify-between">

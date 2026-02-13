@@ -129,14 +129,14 @@ function MqttDialog({ open, onClose, integration }: MqttDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent>
+      <DialogContent id="mqtt-modal">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit MQTT Integration" : "Create MQTT Integration"}</DialogTitle>
           <DialogDescription>
             Configure MQTT topics for alert publishing.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="mqtt-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="mqtt-name">Name</Label>
             <Input
@@ -190,7 +190,7 @@ function MqttDialog({ open, onClose, integration }: MqttDialogProps) {
           </div>
           {errorMessage && <div className="text-sm text-destructive">{errorMessage}</div>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button id="btn-cancel" type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={isSaving}>
@@ -226,6 +226,7 @@ export default function MqttPage() {
         action={
           isAdmin ? (
             <Button
+              id="btn-add-mqtt"
               onClick={() => {
                 setEditingIntegration(null);
                 setDialogOpen(true);
@@ -242,7 +243,7 @@ export default function MqttPage() {
           Failed to load MQTT integrations: {(error as Error).message}
         </div>
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="mqtt-list" className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -276,7 +277,7 @@ export default function MqttPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="mqtt-list" className="grid gap-4 md:grid-cols-2">
           {integrations.map((integration) => (
             <Card key={integration.id}>
               <CardHeader className="flex flex-row items-center justify-between">
