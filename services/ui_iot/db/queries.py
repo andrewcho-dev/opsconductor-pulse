@@ -29,14 +29,28 @@ async def fetch_devices(
     _require_tenant(tenant_id)
     rows = await conn.fetch(
         """
-        SELECT tenant_id, device_id, site_id, status, last_seen_at,
-               state->>'battery_pct' AS battery_pct,
-               state->>'temp_c' AS temp_c,
-               state->>'rssi_dbm' AS rssi_dbm,
-               state->>'snr_db' AS snr_db
-        FROM device_state
-        WHERE tenant_id = $1
-        ORDER BY site_id, device_id
+        SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+               ds.state->>'battery_pct' AS battery_pct,
+               ds.state->>'temp_c' AS temp_c,
+               ds.state->>'rssi_dbm' AS rssi_dbm,
+               ds.state->>'snr_db' AS snr_db,
+               dr.subscription_id,
+               dr.latitude, dr.longitude, dr.address, dr.location_source,
+               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+               COALESCE(
+                   (
+                       SELECT array_agg(dt.tag ORDER BY dt.tag)
+                       FROM device_tags dt
+                       WHERE dt.tenant_id = ds.tenant_id AND dt.device_id = ds.device_id
+                   ),
+                   ARRAY[]::text[]
+               ) AS tags
+        FROM device_state ds
+        LEFT JOIN device_registry dr
+          ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+        WHERE ds.tenant_id = $1
+        ORDER BY ds.site_id, ds.device_id
         LIMIT $2 OFFSET $3
         """,
         tenant_id,
@@ -53,13 +67,26 @@ async def fetch_device(
     _require_device(device_id)
     row = await conn.fetchrow(
         """
-        SELECT tenant_id, device_id, site_id, status, last_seen_at,
-               state->>'battery_pct' AS battery_pct,
-               state->>'temp_c' AS temp_c,
-               state->>'rssi_dbm' AS rssi_dbm,
-               state->>'snr_db' AS snr_db
-        FROM device_state
-        WHERE tenant_id = $1 AND device_id = $2
+        SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+               ds.state->>'battery_pct' AS battery_pct,
+               ds.state->>'temp_c' AS temp_c,
+               ds.state->>'rssi_dbm' AS rssi_dbm,
+               ds.state->>'snr_db' AS snr_db,
+               dr.latitude, dr.longitude, dr.address, dr.location_source,
+               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+               COALESCE(
+                   (
+                       SELECT array_agg(dt.tag ORDER BY dt.tag)
+                       FROM device_tags dt
+                       WHERE dt.tenant_id = ds.tenant_id AND dt.device_id = ds.device_id
+                   ),
+                   ARRAY[]::text[]
+               ) AS tags
+        FROM device_state ds
+        LEFT JOIN device_registry dr
+          ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+        WHERE ds.tenant_id = $1 AND ds.device_id = $2
         """,
         tenant_id,
         device_id,
@@ -104,6 +131,79 @@ async def fetch_alerts(
         limit,
     )
     return [dict(r) for r in rows]
+
+
+def _system_alert_fingerprint(service_name: str) -> str:
+    return f"system-health:{service_name}"
+
+
+async def get_open_system_alert(conn: asyncpg.Connection, service_name: str) -> Dict[str, Any] | None:
+    """Check if there's an open system alert for this service."""
+    fingerprint = _system_alert_fingerprint(service_name)
+    row = await conn.fetchrow(
+        """
+        SELECT id, created_at, tenant_id, alert_type, fingerprint, status, severity, summary, details
+        FROM fleet_alert
+        WHERE tenant_id = '__system__'
+          AND fingerprint = $1
+          AND status = 'OPEN'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        fingerprint,
+    )
+    return dict(row) if row else None
+
+
+async def create_system_alert(conn: asyncpg.Connection, service_name: str, message: str) -> None:
+    """Create a new system health alert with critical severity."""
+    fingerprint = _system_alert_fingerprint(service_name)
+    # Ensure the synthetic system tenant exists for FK integrity.
+    await conn.execute(
+        """
+        INSERT INTO tenants (tenant_id, name, status, metadata)
+        VALUES ('__system__', 'System Alerts', 'ACTIVE', '{"kind":"system"}'::jsonb)
+        ON CONFLICT (tenant_id) DO NOTHING
+        """
+    )
+    await conn.execute(
+        """
+        INSERT INTO fleet_alert (
+            tenant_id, site_id, device_id, alert_type, fingerprint,
+            status, severity, confidence, summary, details
+        )
+        VALUES (
+            '__system__', '__system__', '__system__', 'SYSTEM_HEALTH', $1,
+            'OPEN', 5, 1.0, $2, $3::jsonb
+        )
+        ON CONFLICT DO NOTHING
+        """,
+        fingerprint,
+        message,
+        json.dumps({"service": service_name, "kind": "system_health"}),
+    )
+
+
+async def resolve_system_alert(conn: asyncpg.Connection, service_name: str) -> None:
+    """Close any open system health alerts for this service."""
+    fingerprint = _system_alert_fingerprint(service_name)
+    await conn.execute(
+        """
+        UPDATE fleet_alert
+        SET status = 'CLOSED',
+            closed_at = now(),
+            details = jsonb_set(
+                COALESCE(details, '{}'::jsonb),
+                '{resolved_at}',
+                to_jsonb(now()::text),
+                true
+            )
+        WHERE tenant_id = '__system__'
+          AND fingerprint = $1
+          AND status = 'OPEN'
+        """,
+        fingerprint,
+    )
 
 
 async def fetch_delivery_attempts(
@@ -449,13 +549,16 @@ async def fetch_all_devices(
 ) -> List[Dict[str, Any]]:
     rows = await conn.fetch(
         """
-        SELECT tenant_id, device_id, site_id, status, last_seen_at,
+        SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
                state->>'battery_pct' AS battery_pct,
                state->>'temp_c' AS temp_c,
                state->>'rssi_dbm' AS rssi_dbm,
-               state->>'snr_db' AS snr_db
-        FROM device_state
-        ORDER BY tenant_id, site_id, device_id
+               state->>'snr_db' AS snr_db,
+               dr.subscription_id
+        FROM device_state ds
+        LEFT JOIN device_registry dr
+          ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+        ORDER BY ds.tenant_id, ds.site_id, ds.device_id
         LIMIT $1 OFFSET $2
         """,
         limit,
@@ -705,11 +808,30 @@ async def fetch_devices_v2(
     _require_tenant(tenant_id)
     rows = await conn.fetch(
         """
-        SELECT tenant_id, device_id, site_id, status, last_seen_at,
-               last_heartbeat_at, last_telemetry_at, state
-        FROM device_state
-        WHERE tenant_id = $1
-        ORDER BY site_id, device_id
+        SELECT dr.tenant_id,
+               dr.device_id,
+               dr.site_id,
+               COALESCE(ds.status, dr.status) AS status,
+               ds.last_seen_at,
+               ds.last_heartbeat_at,
+               ds.last_telemetry_at,
+               COALESCE(ds.state, '{}'::jsonb) AS state,
+               dr.latitude, dr.longitude, dr.address, dr.location_source,
+               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+               COALESCE(
+                   (
+                       SELECT array_agg(dt.tag ORDER BY dt.tag)
+                       FROM device_tags dt
+                       WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                   ),
+                   ARRAY[]::text[]
+               ) AS tags
+        FROM device_registry dr
+        LEFT JOIN device_state ds
+          ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+        WHERE dr.tenant_id = $1
+        ORDER BY dr.site_id, dr.device_id
         LIMIT $2 OFFSET $3
         """,
         tenant_id,
@@ -729,11 +851,27 @@ async def fetch_device_v2(
     _require_device(device_id)
     row = await conn.fetchrow(
         """
-        SELECT tenant_id, device_id, site_id, status,
-               last_heartbeat_at, last_telemetry_at, last_seen_at,
-               last_state_change_at, state
-        FROM device_state
-        WHERE tenant_id = $1 AND device_id = $2
+        SELECT dr.tenant_id,
+               dr.device_id,
+               dr.site_id,
+               COALESCE(ds.status, dr.status) AS status,
+               ds.last_heartbeat_at, ds.last_telemetry_at, ds.last_seen_at,
+               ds.last_state_change_at, COALESCE(ds.state, '{}'::jsonb) AS state,
+               dr.latitude, dr.longitude, dr.address, dr.location_source,
+               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+               COALESCE(
+                   (
+                       SELECT array_agg(dt.tag ORDER BY dt.tag)
+                       FROM device_tags dt
+                       WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                   ),
+                   ARRAY[]::text[]
+               ) AS tags
+        FROM device_registry dr
+        LEFT JOIN device_state ds
+          ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+        WHERE dr.tenant_id = $1 AND dr.device_id = $2
         """,
         tenant_id,
         device_id,

@@ -1,7 +1,7 @@
 """Unit tests for SNMP sender."""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import patch, AsyncMock
 
 from services.ui_iot.services.snmp_sender import (
@@ -24,7 +24,7 @@ class TestSNMPSender:
             tenant_id="tenant-a",
             severity="critical",
             message="Test alert",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         varbinds = sender._build_alert_varbinds(alert, "1.3.6.1.4.1.99999")
         assert len(varbinds) == 6
@@ -40,7 +40,7 @@ class TestSNMPSender:
             tenant_id="tenant-a",
             severity="critical",
             message="Test",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         result = await sender.send_trap(
             host="192.0.2.100",
@@ -59,7 +59,7 @@ class TestSNMPSender:
             tenant_id="tenant-a",
             severity="critical",
             message="Test",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         result = await sender.send_trap(
             host="192.0.2.100",

@@ -99,6 +99,7 @@ export default function MapMetricDialog({
       });
       onClose();
     } catch (err) {
+      console.error("Failed to map metric:", err);
       setError(formatError(err));
     }
   }

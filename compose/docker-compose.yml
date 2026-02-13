@@ -156,9 +156,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  subscription-worker:
+    build:
+      context: ../services/subscription_worker
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://iot:iot_dev@postgres:5432/iotcloud
+      WORKER_INTERVAL_SECONDS: "3600"
+      # NOTIFICATION_WEBHOOK_URL: "https://your-webhook.example.com/notify"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Device simulator (500 devices) - opt-in via profile to avoid zombie traffic
   device_sim:
     build: ../simulator/device_sim_iot
     container_name: iot-device-sim
+    profiles:
+      - simulator
     environment:
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
@@ -216,8 +232,10 @@ services:
       PROVISION_ADMIN_KEY: "change-me-now"
       MODE: "${MODE:-DEV}"
       KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
-      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
+      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-https://192.168.10.53}"
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
+      KEYCLOAK_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:-admin_dev}"
       VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       MQTT_HOST: iot-mqtt
@@ -312,7 +330,7 @@ services:
     restart: unless-stopped
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:26.0
     container_name: pulse-keycloak
     environment:
       KEYCLOAK_ADMIN: admin
@@ -321,12 +339,11 @@ services:
       KC_DB_URL: jdbc:postgresql://iot-postgres:5432/iotcloud
       KC_DB_USERNAME: iot
       KC_DB_PASSWORD: iot_dev
-      KC_HOSTNAME_URL: ${KEYCLOAK_URL:-http://localhost:8180}
-      KC_HOSTNAME_ADMIN_URL: ${KEYCLOAK_URL:-http://localhost:8180}
+      KC_HOSTNAME: "192.168.10.53"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: "xforwarded"
-    command: start-dev --import-realm
+    command: start-dev --import-realm --features=organization
     volumes:
       - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json
     expose:

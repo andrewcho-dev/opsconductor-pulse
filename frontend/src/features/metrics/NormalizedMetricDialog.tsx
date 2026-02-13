@@ -144,6 +144,7 @@ export default function NormalizedMetricDialog({
       }
       onClose();
     } catch (err) {
+      console.error("Failed to save normalized metric:", err);
       setError(formatError(err));
     }
   }
@@ -155,6 +156,7 @@ export default function NormalizedMetricDialog({
       await deleteMutation.mutateAsync(metric.name);
       onClose();
     } catch (err) {
+      console.error("Failed to delete normalized metric:", err);
       setError(formatError(err));
     }
   }

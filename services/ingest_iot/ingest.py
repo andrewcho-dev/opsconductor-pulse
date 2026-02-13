@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
@@ -39,6 +40,8 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
 FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
 INGEST_QUEUE_SIZE = int(os.getenv("INGEST_QUEUE_SIZE", "50000"))
+BUCKET_TTL_SECONDS = int(os.getenv("BUCKET_TTL_SECONDS", "3600"))
+BUCKET_CLEANUP_INTERVAL = int(os.getenv("BUCKET_CLEANUP_INTERVAL", "300"))
 
 COUNTERS = {
     "messages_received": 0,
@@ -48,6 +51,7 @@ COUNTERS = {
     "last_write_at": None,
 }
 INGESTOR_REF: Optional["Ingestor"] = None
+logger = logging.getLogger(__name__)
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -130,13 +134,37 @@ CREATE TABLE IF NOT EXISTS device_registry (
   device_pubkey        TEXT NULL,
   fw_version           TEXT NULL,
   metadata             JSONB NOT NULL DEFAULT '{}'::jsonb,
+  latitude             DOUBLE PRECISION NULL,
+  longitude            DOUBLE PRECISION NULL,
+  address              TEXT NULL,
+  location_source      TEXT NULL,
+  mac_address          TEXT NULL,
+  imei                 TEXT NULL,
+  iccid                TEXT NULL,
+  serial_number        TEXT NULL,
+  model                TEXT NULL,
+  manufacturer         TEXT NULL,
+  hw_revision          TEXT NULL,
+  notes                TEXT NULL,
   PRIMARY KEY (tenant_id, device_id)
 );
 
 ALTER TABLE device_registry
   ADD COLUMN IF NOT EXISTS provision_token_hash TEXT,
   ADD COLUMN IF NOT EXISTS device_pubkey TEXT,
-  ADD COLUMN IF NOT EXISTS fw_version TEXT;
+  ADD COLUMN IF NOT EXISTS fw_version TEXT,
+  ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS address TEXT,
+  ADD COLUMN IF NOT EXISTS location_source TEXT,
+  ADD COLUMN IF NOT EXISTS mac_address TEXT,
+  ADD COLUMN IF NOT EXISTS imei TEXT,
+  ADD COLUMN IF NOT EXISTS iccid TEXT,
+  ADD COLUMN IF NOT EXISTS serial_number TEXT,
+  ADD COLUMN IF NOT EXISTS model TEXT,
+  ADD COLUMN IF NOT EXISTS manufacturer TEXT,
+  ADD COLUMN IF NOT EXISTS hw_revision TEXT,
+  ADD COLUMN IF NOT EXISTS notes TEXT;
 
 CREATE TABLE IF NOT EXISTS quarantine_events (
   id          BIGSERIAL PRIMARY KEY,
@@ -160,6 +188,109 @@ CREATE TABLE IF NOT EXISTS quarantine_counters_minute (
 );
 """
 
+
+class DeviceSubscriptionCache:
+    """Cache device subscription status to avoid DB lookups on every message."""
+
+    def __init__(self, ttl_seconds: int = 60, max_size: int = 50000):
+        self.ttl = ttl_seconds
+        self.max_size = max_size
+        self._cache: dict[tuple[str, str], dict] = {}
+        self._lock = asyncio.Lock()
+
+    async def get(self, tenant_id: str, device_id: str) -> dict | None:
+        key = (tenant_id, device_id)
+        entry = self._cache.get(key)
+        if entry and time.time() < entry["expires_at"]:
+            return entry
+        return None
+
+    async def put(
+        self,
+        tenant_id: str,
+        device_id: str,
+        subscription_id: str | None,
+        status: str | None,
+    ) -> None:
+        key = (tenant_id, device_id)
+        async with self._lock:
+            if len(self._cache) >= self.max_size:
+                now = time.time()
+                self._cache = {k: v for k, v in self._cache.items() if v["expires_at"] > now}
+            self._cache[key] = {
+                "subscription_id": subscription_id,
+                "status": status,
+                "expires_at": time.time() + self.ttl,
+            }
+
+    def invalidate(self, tenant_id: str, device_id: str) -> None:
+        self._cache.pop((tenant_id, device_id), None)
+
+    def invalidate_subscription(self, subscription_id: str) -> None:
+        to_remove = [
+            k for k, v in list(self._cache.items())
+            if v.get("subscription_id") == subscription_id
+        ]
+        for key in to_remove:
+            self._cache.pop(key, None)
+
+
+async def auto_provision_device(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    device_id: str,
+    site_id: str | None,
+) -> bool:
+    lock_key = hash(f"{tenant_id}:{device_id}") & 0x7FFFFFFF
+    await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+
+    existing = await conn.fetchval(
+        "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+        tenant_id,
+        device_id,
+    )
+    if existing:
+        return True
+
+    sub = await conn.fetchrow(
+        """
+        SELECT subscription_id, device_limit, active_device_count
+        FROM subscriptions
+        WHERE tenant_id = $1
+          AND status = 'ACTIVE'
+          AND subscription_type = 'MAIN'
+        ORDER BY created_at
+        FOR UPDATE
+        LIMIT 1
+        """,
+        tenant_id,
+    )
+    if not sub:
+        return False
+    if sub["active_device_count"] >= sub["device_limit"]:
+        return False
+
+    await conn.execute(
+        """
+        INSERT INTO device_registry (tenant_id, device_id, site_id, subscription_id, status)
+        VALUES ($1, $2, $3, $4, 'ACTIVE')
+        """,
+        tenant_id,
+        device_id,
+        site_id,
+        sub["subscription_id"],
+    )
+    await conn.execute(
+        """
+        UPDATE subscriptions
+        SET active_device_count = active_device_count + 1, updated_at = now()
+        WHERE subscription_id = $1
+        """,
+        sub["subscription_id"],
+    )
+    return True
+
+
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
@@ -181,8 +312,47 @@ class Ingestor:
 
         # per-device buckets
         self.buckets: dict[tuple[str, str], TokenBucket] = {}
+        self._last_bucket_cleanup = 0.0
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
+        self.device_subscription_cache = DeviceSubscriptionCache(ttl_seconds=60, max_size=50000)
         self.batch_writer: TimescaleBatchWriter | None = None
+
+    async def _get_device_subscription_status(
+        self,
+        tenant_id: str,
+        device_id: str,
+    ) -> tuple[str | None, str | None]:
+        """
+        Get device's subscription status.
+        Returns: (subscription_id, status)
+        Returns (None, None) if device has no subscription (legacy or unassigned).
+        """
+        cached = await self.device_subscription_cache.get(tenant_id, device_id)
+        if cached:
+            return cached["subscription_id"], cached["status"]
+
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT d.subscription_id, s.status
+                FROM device_registry d
+                LEFT JOIN subscriptions s ON d.subscription_id = s.subscription_id
+                WHERE d.tenant_id = $1 AND d.device_id = $2
+                """,
+                tenant_id,
+                device_id,
+            )
+
+        if row:
+            subscription_id = row["subscription_id"]
+            status = row["status"]
+        else:
+            subscription_id = None
+            status = None
+
+        await self.device_subscription_cache.put(tenant_id, device_id, subscription_id, status)
+        return subscription_id, status
 
     async def init_db(self):
         for attempt in range(60):
@@ -312,15 +482,31 @@ class Ingestor:
                 )
 
     def _rate_limit_ok(self, tenant_id: str, device_id: str) -> bool:
+        now = time.time()
+        if now - self._last_bucket_cleanup >= BUCKET_CLEANUP_INTERVAL:
+            cutoff = now - BUCKET_TTL_SECONDS
+            stale_keys = [
+                key
+                for key, bucket in list(self.buckets.items())
+                if getattr(bucket, "last_access", getattr(bucket, "updated", 0.0)) < cutoff
+            ]
+            for key in stale_keys:
+                self.buckets.pop(key, None)
+            if stale_keys:
+                logger.info("Cleaned up %s stale token buckets", len(stale_keys))
+            self._last_bucket_cleanup = now
+
         # token bucket: refill at rps, cap at burst
         key = (tenant_id, device_id)
         b = self.buckets.get(key)
         if b is None:
             b = TokenBucket()
             b.tokens = self.burst
+            b.updated = now
+            b.last_access = now
             self.buckets[key] = b
 
-        now = time.time()
+        b.last_access = now
         elapsed = now - b.updated
         b.updated = now
 
@@ -392,15 +578,48 @@ class Ingestor:
 
                         if reg is None:
                             if AUTO_PROVISION:
-                                await conn.execute(
-                                    """
-                                    INSERT INTO device_registry (tenant_id, device_id, site_id, status)
-                                    VALUES ($1,$2,$3,'ACTIVE')
-                                    """,
-                                    tenant_id, device_id, site_id
+                                async with conn.transaction():
+                                    success = await auto_provision_device(
+                                        conn,
+                                        tenant_id,
+                                        device_id,
+                                        site_id,
+                                    )
+                                    if success:
+                                        self.device_subscription_cache.invalidate(tenant_id, device_id)
+                                        reg = await conn.fetchrow(
+                                            """
+                                            SELECT site_id, status, provision_token_hash
+                                            FROM device_registry
+                                            WHERE tenant_id=$1 AND device_id=$2
+                                            """,
+                                            tenant_id, device_id
+                                        )
+                                    else:
+                                        await self._insert_quarantine(
+                                            topic,
+                                            tenant_id,
+                                            site_id,
+                                            device_id,
+                                            msg_type,
+                                            "NO_SUBSCRIPTION_CAPACITY",
+                                            payload,
+                                            event_ts,
+                                        )
+                                        continue
+
+                            if reg is None:
+                                await self._insert_quarantine(
+                                    topic,
+                                    tenant_id,
+                                    site_id,
+                                    device_id,
+                                    msg_type,
+                                    "UNREGISTERED_DEVICE",
+                                    payload,
+                                    event_ts,
                                 )
-                            await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "UNREGISTERED_DEVICE", payload, event_ts)
-                            continue
+                                continue
 
                     self.auth_cache.put(
                         tenant_id,
@@ -409,6 +628,22 @@ class Ingestor:
                         reg["site_id"],
                         reg["status"],
                     )
+
+                subscription_id, sub_status = await self._get_device_subscription_status(
+                    tenant_id, device_id
+                )
+                if subscription_id and sub_status in ("SUSPENDED", "EXPIRED"):
+                    await self._insert_quarantine(
+                        topic,
+                        tenant_id,
+                        site_id,
+                        device_id,
+                        msg_type,
+                        f"SUBSCRIPTION_{sub_status}",
+                        payload,
+                        event_ts,
+                    )
+                    continue
 
                 if reg["status"] != "ACTIVE":
                     await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "DEVICE_REVOKED", payload, event_ts)
@@ -443,6 +678,38 @@ class Ingestor:
                 )
                 COUNTERS["last_write_at"] = utcnow().isoformat()
                 await self.batch_writer.add(record)
+
+                lat_value = payload.get("lat")
+                if lat_value is None:
+                    lat_value = payload.get("latitude")
+                lng_value = payload.get("lng")
+                if lng_value is None:
+                    lng_value = payload.get("longitude")
+
+                if lat_value is not None and lng_value is not None:
+                    try:
+                        lat = float(lat_value)
+                        lng = float(lng_value)
+                    except (TypeError, ValueError):
+                        lat = None
+                        lng = None
+                    if lat is not None and lng is not None:
+                        assert self.pool is not None
+                        async with self.pool.acquire() as conn:
+                            await conn.execute(
+                                """
+                                UPDATE device_registry
+                                SET latitude = $3,
+                                    longitude = $4,
+                                    location_source = COALESCE(location_source, 'auto')
+                                WHERE tenant_id = $1 AND device_id = $2
+                                  AND (location_source = 'auto' OR location_source IS NULL)
+                                """,
+                                tenant_id,
+                                device_id,
+                                lat,
+                                lng,
+                            )
                 audit = get_audit_logger()
                 if audit:
                     metrics = payload.get("metrics", {}) or {}
@@ -474,8 +741,16 @@ class Ingestor:
             payload = json.loads(msg.payload.decode("utf-8"))
             if "ts" not in payload:
                 payload["ts"] = utcnow().isoformat()
-        except Exception:
-            payload = {"ts": utcnow().isoformat(), "parse_error": True, "raw": msg.payload.decode("utf-8", errors="replace")}
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid JSON in MQTT message: %s", exc)
+            self.msg_dropped += 1
+            _counter_inc("messages_rejected")
+            return
+        except UnicodeDecodeError as exc:
+            logger.warning("Invalid encoding in MQTT message: %s", exc)
+            self.msg_dropped += 1
+            _counter_inc("messages_rejected")
+            return
 
         if self.loop is None:
             self.msg_dropped += 1

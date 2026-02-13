@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { PageHeader } from "@/components/shared";
+import { PageHeader, ErrorMessage } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -20,7 +20,8 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   if (keycloak.authenticated) {
     try {
       await keycloak.updateToken(30);
-    } catch {
+    } catch (error) {
+      console.error("Settings token refresh failed:", error);
       keycloak.login();
       throw new Error("Token expired");
     }
@@ -157,7 +158,7 @@ export default function SettingsPage() {
               />
             </div>
 
-            {error && <div className="text-sm text-destructive">{error}</div>}
+            {error && <ErrorMessage error={error} title="Failed to save settings" />}
             {success && (
               <div className="text-sm text-green-700 dark:text-green-400">
                 {success}

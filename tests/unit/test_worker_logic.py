@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -7,6 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+services_dir = os.path.join(os.path.dirname(__file__), "..", "..", "services", "delivery_worker")
+sys.path.insert(0, services_dir)
+if "worker" in sys.modules:
+    del sys.modules["worker"]
 import worker
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]

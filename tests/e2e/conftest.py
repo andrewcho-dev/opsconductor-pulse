@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import pytest
 import httpx
+import subprocess
+import sys
 from playwright.async_api._generated import PageAssertions
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
@@ -105,7 +107,7 @@ os.environ.setdefault("KEYCLOAK_URL", KEYCLOAK_URL)
 
 async def _is_reachable(url: str) -> bool:
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0, verify=False) as client:
             response = await client.get(url)
             return response.status_code < 500
     except Exception:
@@ -158,6 +160,7 @@ async def context(browser: Browser):
     context = await browser.new_context(
         viewport={"width": 1280, "height": 720},
         base_url=BASE_URL,
+        ignore_https_errors=True,
     )
     yield context
     await context.close()
@@ -181,7 +184,7 @@ async def authenticated_customer_page(context: BrowserContext):
     await page.fill("#username", "customer1")
     await page.fill("#password", "test123")
     await page.click("#kc-login")
-    await page.wait_for_url(f"{BASE_URL}/customer/dashboard")
+    await page.wait_for_url(f"{BASE_URL}/app/dashboard")
     yield page
     await page.close()
 
@@ -220,6 +223,47 @@ async def authenticated_operator_page(context: BrowserContext):
     await page.fill("#username", "operator1")
     await page.fill("#password", "test123")
     await page.click("#kc-login")
-    await page.wait_for_url(f"{BASE_URL}/operator/dashboard")
+    await page.wait_for_url(f"{BASE_URL}/app/operator")
     yield page
     await page.close()
+
+
+@pytest.fixture
+async def operator_page(authenticated_operator_page):
+    """Alias for operator page fixture."""
+    yield authenticated_operator_page
+
+
+@pytest.fixture
+async def customer_page(authenticated_customer_page):
+    """Alias for customer page fixture."""
+    yield authenticated_customer_page
+
+
+@pytest.fixture
+async def db_connection():
+    """Direct connection to E2E database."""
+    conn = await asyncpg.connect(E2E_DATABASE_URL)
+    try:
+        yield conn
+    finally:
+        await conn.close()
+
+
+@pytest.fixture
+def run_worker_once():
+    """Run the subscription worker once for testing state transitions."""
+
+    def _run():
+        env = os.environ.copy()
+        env["DATABASE_URL"] = E2E_DATABASE_URL
+        result = subprocess.run(
+            [sys.executable, "services/subscription_worker/worker.py", "--once"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        return result
+
+    return _run

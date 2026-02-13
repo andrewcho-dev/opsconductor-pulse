@@ -43,7 +43,7 @@ SELECT DISTINCT
     tenant_id,
     tenant_id,  -- Use tenant_id as name initially
     'ACTIVE',
-    MIN(provisioned_at)
+    MIN(created_at)
 FROM device_registry
 WHERE tenant_id IS NOT NULL AND tenant_id != ''
 GROUP BY tenant_id

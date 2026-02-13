@@ -22,6 +22,33 @@ OpsConductor-Pulse is an edge telemetry, health, and signaling platform for mana
 - **HTTPS reverse proxy** — Caddy with self-signed TLS, single-origin for SPA + Keycloak
 - **ECharts + uPlot** — Interactive gauges and time-series charts with live WebSocket data fusion
 
+## Subscription & Entitlement System
+
+OpsConductor Pulse includes a comprehensive subscription management system:
+
+### Subscription Types
+- **MAIN** — Primary annual subscription with device limit
+- **ADDON** — Additional capacity, coterminous with parent MAIN
+- **TRIAL** — Short-term evaluation (default 14 days)
+- **TEMPORARY** — Project or event-based subscriptions
+
+### Subscription Lifecycle
+```
+TRIAL → ACTIVE → (renewal) → ACTIVE
+                     ↓ (no payment)
+                   GRACE (14 days)
+                     ↓ (still no payment)
+                   SUSPENDED (access blocked)
+                     ↓ (90 days)
+                   EXPIRED (data retained 1 year)
+```
+
+### Device Entitlements
+- Each device assigned to exactly one subscription
+- Device limits enforced at creation time
+- Auto-provisioning respects subscription capacity
+- Operators can reassign devices between subscriptions
+
 ## Quick Start
 
 ```bash
@@ -90,7 +117,7 @@ frontend/                # React SPA (Vite + TypeScript + TailwindCSS)
 docs/                    # Architecture and design documentation
   cursor-prompts/      # Phase-by-phase implementation prompts
 db/
-  migrations/           # PostgreSQL + TimescaleDB migrations (001-025)
+  migrations/           # PostgreSQL + TimescaleDB migrations (001-040)
 services/
   ingest_iot/           # MQTT device ingestion, auth cache, batched TimescaleDB writes
   evaluator_iot/        # State evaluation, alert generation, threshold rule engine
@@ -219,6 +246,29 @@ Response: `202 Accepted` with `{"accepted": 2, "rejected": 0, "results": [...]}`
 | POST | `/customer/integration-routes` | Create alert routing rule |
 | GET | `/customer/delivery-status` | Recent delivery attempts |
 
+### Subscription System (Customer)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/customer/subscriptions` | List all subscriptions with summary |
+| GET | `/customer/subscriptions/{id}` | Subscription detail with devices |
+| GET | `/customer/subscription/audit` | Subscription audit history |
+| POST | `/customer/subscription/renew` | Request renewal |
+
+### Device Management (Customer)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/customer/devices` | List devices with pagination |
+| POST | `/customer/devices` | Register new device |
+| GET | `/customer/devices/{id}` | Device details |
+| PATCH | `/customer/devices/{id}` | Update device attributes |
+| DELETE | `/customer/devices/{id}` | Deactivate device |
+| GET | `/customer/devices/{id}/tags` | Get device tags |
+| PUT | `/customer/devices/{id}/tags` | Replace device tags |
+| POST | `/customer/devices/{id}/tags` | Add tags |
+| DELETE | `/customer/devices/{id}/tags` | Remove tags |
+| GET | `/customer/tags` | List all tenant tags |
+| GET | `/customer/geocode` | Geocode address |
+
 ### Operator Endpoints (Operator role required)
 
 | Method | Path | Description |
@@ -235,6 +285,29 @@ Response: `202 Accepted` with `{"accepted": 2, "rejected": 0, "results": [...]}`
 | GET | `/operator/system/capacity` | Disk, DB connections, table sizes |
 | GET | `/operator/system/aggregates` | Platform totals (tenants, devices, alerts) |
 | GET | `/operator/system/errors` | Recent errors and failures |
+
+### Subscription System (Operator)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/operator/subscriptions` | Create subscription |
+| GET | `/operator/subscriptions` | List all subscriptions |
+| GET | `/operator/subscriptions/{id}` | Subscription detail |
+| PATCH | `/operator/subscriptions/{id}` | Update subscription |
+| POST | `/operator/devices/{id}/subscription` | Assign device |
+| GET | `/operator/subscriptions/expiring` | Expiring subscriptions |
+| GET | `/operator/subscriptions/summary` | Platform summary |
+
+### Tenant Management (Operator)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/operator/tenants` | Create tenant |
+| GET | `/operator/tenants` | List all tenants |
+| GET | `/operator/tenants/{id}` | Tenant details |
+| PATCH | `/operator/tenants/{id}` | Update tenant |
+| DELETE | `/operator/tenants/{id}` | Delete tenant |
+| GET | `/operator/tenants/stats/summary` | Platform statistics |
+| GET | `/operator/tenants/{id}/stats` | Tenant statistics |
+| GET | `/operator/tenants/{id}/devices` | Tenant devices |
 
 ### Admin Endpoints (X-Admin-Key required)
 
@@ -269,6 +342,46 @@ Publish to customer topics with configurable QoS and retain settings, topic temp
 - **Audit logging** — All operator cross-tenant access logged with IP and user agent
 - **Admin key protection** — Provisioning API requires X-Admin-Key header
 - **Rate limiting** — Per-tenant API rate limiting on `/api/v2/` endpoints
+
+## Environment Variables
+
+### Database
+| Variable | Default | Description |
+|----------|---------|-------------|
+| DATABASE_URL | postgresql://iot:iot_dev@postgres:5432/iotcloud | PostgreSQL connection |
+| TIMESCALE_BATCH_SIZE | 1000 | Telemetry batch insert size |
+| TIMESCALE_FLUSH_INTERVAL_MS | 1000 | Batch flush interval |
+
+### Authentication
+| Variable | Default | Description |
+|----------|---------|-------------|
+| KEYCLOAK_URL | https://localhost | Keycloak server URL |
+| KEYCLOAK_REALM | iotcloud | Keycloak realm |
+| AUTH_CACHE_TTL_SECONDS | 300 | JWKS cache TTL |
+
+### Ingestion
+| Variable | Default | Description |
+|----------|---------|-------------|
+| INGEST_WORKER_COUNT | 4 | Parallel ingest workers |
+| INGEST_QUEUE_SIZE | 10000 | Message queue size |
+| API_RATE_LIMIT | 100 | Requests per window |
+| API_RATE_WINDOW_SECONDS | 60 | Rate limit window |
+
+### WebSocket
+| Variable | Default | Description |
+|----------|---------|-------------|
+| WS_POLL_SECONDS | 5 | WebSocket poll interval |
+
+### CORS
+| Variable | Default | Description |
+|----------|---------|-------------|
+| CORS_ORIGINS | (empty) | Allowed origins (comma-separated); empty uses dev defaults |
+
+### Notifications
+| Variable | Default | Description |
+|----------|---------|-------------|
+| NOTIFICATION_WEBHOOK_URL | (none) | External notification webhook |
+| WORKER_INTERVAL_SECONDS | 3600 | Subscription worker interval |
 
 ## Development
 

@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 import logging
+from collections import defaultdict
 
 import httpx
 from jose import jwk, jwt
@@ -25,6 +26,10 @@ JWKS_CACHE_TTL = 300
 _jwks_cache: dict | None = None
 _jwks_cache_time = 0.0
 _jwks_lock = asyncio.Lock()
+
+AUTH_RATE_LIMIT = 100
+AUTH_RATE_WINDOW = 60
+_auth_attempts: dict[str, list[float]] = defaultdict(list)
 
 
 async def fetch_jwks() -> dict:
@@ -74,6 +79,25 @@ def get_signing_key(token: str, jwks: dict) -> dict:
     raise HTTPException(status_code=401, detail="Unknown signing key")
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def check_auth_rate_limit(client_ip: str) -> bool:
+    now = time.time()
+    window_start = now - AUTH_RATE_WINDOW
+    _auth_attempts[client_ip] = [t for t in _auth_attempts[client_ip] if t > window_start]
+    if len(_auth_attempts[client_ip]) >= AUTH_RATE_LIMIT:
+        return False
+    _auth_attempts[client_ip].append(now)
+    return True
+
+
 async def validate_token(token: str) -> dict:
     jwks = await get_jwks()
     signing_key = get_signing_key(token, jwks)
@@ -104,6 +128,10 @@ class JWTBearer(HTTPBearer):
         super().__init__(auto_error=True)
 
     async def __call__(self, request: Request) -> HTTPAuthorizationCredentials:
+        client_ip = _get_client_ip(request)
+        if not check_auth_rate_limit(client_ip):
+            raise HTTPException(status_code=429, detail="Too many auth attempts")
+
         token = None
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):

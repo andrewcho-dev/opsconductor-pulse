@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/shared";
 import { useOperatorDevices } from "@/hooks/use-operator";
 import { Server } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { DeviceSubscriptionDialog } from "./DeviceSubscriptionDialog";
 
 export default function OperatorDevices() {
   const [tenantFilterInput, setTenantFilterInput] = useState("");
@@ -21,11 +23,16 @@ export default function OperatorDevices() {
   const limit = 50;
   const offset = (page - 1) * limit;
 
-  const { data, isLoading, error } = useOperatorDevices(
+  const { data, isLoading, error, refetch } = useOperatorDevices(
     tenantFilter,
     limit,
     offset
   );
+  const [selectedDevice, setSelectedDevice] = useState<{
+    deviceId: string;
+    tenantId: string;
+    subscriptionId: string | null | undefined;
+  } | null>(null);
 
   const devices = data?.devices || [];
   const total = data?.total ?? 0;
@@ -93,8 +100,10 @@ export default function OperatorDevices() {
                   <TableHead>Device ID</TableHead>
                   <TableHead>Site ID</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Subscription</TableHead>
                   <TableHead>Last Seen</TableHead>
                   <TableHead className="text-right">Battery</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -110,6 +119,15 @@ export default function OperatorDevices() {
                     <TableCell>
                       <StatusBadge status={d.status} />
                     </TableCell>
+                    <TableCell>
+                      {d.subscription_id ? (
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {d.subscription_id}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">Unassigned</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {d.last_seen_at || "—"}
                     </TableCell>
@@ -117,6 +135,21 @@ export default function OperatorDevices() {
                       {d.state?.battery_pct != null
                         ? `${d.state.battery_pct}%`
                         : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setSelectedDevice({
+                            deviceId: d.device_id,
+                            tenantId: d.tenant_id,
+                            subscriptionId: d.subscription_id,
+                          })
+                        }
+                      >
+                        {d.subscription_id ? "Reassign" : "Assign"}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -151,6 +184,19 @@ export default function OperatorDevices() {
             </div>
           </div>
         </>
+      )}
+      {selectedDevice && (
+        <DeviceSubscriptionDialog
+          open={!!selectedDevice}
+          onOpenChange={(open) => !open && setSelectedDevice(null)}
+          deviceId={selectedDevice.deviceId}
+          tenantId={selectedDevice.tenantId}
+          currentSubscriptionId={selectedDevice.subscriptionId}
+          onAssigned={() => {
+            refetch();
+            setSelectedDevice(null);
+          }}
+        />
       )}
     </div>
   );

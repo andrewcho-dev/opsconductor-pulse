@@ -13,28 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useAuditLog } from "@/hooks/use-audit-log";
+import { formatTimestamp } from "@/lib/format";
 import { ScrollText } from "lucide-react";
-
-function formatTimestamp(ts: string): string {
-  try {
-    // Extract microseconds from ISO timestamp (JS Date only has ms precision)
-    const fracMatch = ts.match(/\.(\d+)/);
-    const micros = fracMatch ? fracMatch[1].padEnd(6, "0").slice(0, 6) : "000000";
-
-    // Convert to local time
-    const d = new Date(ts);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const ss = String(d.getSeconds()).padStart(2, "0");
-
-    return `${y}-${m}-${day} ${hh}:${mm}:${ss}.${micros}`;
-  } catch {
-    return ts;
-  }
-}
 
 function toIso(value: string): string | undefined {
   if (!value) return undefined;

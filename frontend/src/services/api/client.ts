@@ -12,12 +12,18 @@ export class ApiError extends Error {
   }
 }
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
+async function getAuthHeaders(method?: string): Promise<Record<string, string>> {
   // Ensure token is fresh (refresh if < 30s remaining)
   if (keycloak.authenticated) {
     try {
       await keycloak.updateToken(30);
-    } catch {
+    } catch (error) {
+      console.error("Auth token refresh failed:", error);
       // Token refresh failed — Keycloak will redirect to login
       keycloak.login();
       throw new ApiError(401, "Token expired");
@@ -32,79 +38,151 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     headers["Authorization"] = `Bearer ${keycloak.token}`;
   }
 
+  const csrfToken = getCsrfToken();
+  const upperMethod = method?.toUpperCase();
+  if (csrfToken && upperMethod && ["POST", "PUT", "PATCH", "DELETE"].includes(upperMethod)) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
+
   return headers;
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { headers });
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(path, { headers });
 
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch (error) {
+        console.error("API GET response parse failed:", error);
+        body = await res.text();
+      }
+      throw new ApiError(res.status, `API error: ${res.status}`, body);
     }
-    throw new ApiError(res.status, `API error: ${res.status}`, body);
-  }
 
-  return res.json();
+    return res.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    console.error(`API GET ${path} failed:`, error);
+    throw new ApiError(0, "Network error");
+  }
 }
 
 export async function apiPost<T>(path: string, data: unknown): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(data),
-  });
+  try {
+    const headers = await getAuthHeaders("POST");
+    const res = await fetch(path, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
 
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch (error) {
+        console.error("API POST response parse failed:", error);
+        body = await res.text();
+      }
+      throw new ApiError(res.status, `API error: ${res.status}`, body);
     }
-    throw new ApiError(res.status, `API error: ${res.status}`, body);
-  }
 
-  return res.json();
+    return res.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    console.error(`API POST ${path} failed:`, error);
+    throw new ApiError(0, "Network error");
+  }
+}
+
+export async function apiPut<T>(path: string, data: unknown): Promise<T> {
+  try {
+    const headers = await getAuthHeaders("PUT");
+    const res = await fetch(path, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch (error) {
+        console.error("API PUT response parse failed:", error);
+        body = await res.text();
+      }
+      throw new ApiError(res.status, `API error: ${res.status}`, body);
+    }
+
+    return res.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    console.error(`API PUT ${path} failed:`, error);
+    throw new ApiError(0, "Network error");
+  }
 }
 
 export async function apiPatch<T>(path: string, data: unknown): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, {
-    method: "PATCH",
-    headers,
-    body: JSON.stringify(data),
-  });
+  try {
+    const headers = await getAuthHeaders("PATCH");
+    const res = await fetch(path, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(data),
+    });
 
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch (error) {
+        console.error("API PATCH response parse failed:", error);
+        body = await res.text();
+      }
+      throw new ApiError(res.status, `API error: ${res.status}`, body);
     }
-    throw new ApiError(res.status, `API error: ${res.status}`, body);
-  }
 
-  return res.json();
+    return res.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    console.error(`API PATCH ${path} failed:`, error);
+    throw new ApiError(0, "Network error");
+  }
 }
 
 export async function apiDelete(path: string): Promise<void> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { method: "DELETE", headers });
+  try {
+    const headers = await getAuthHeaders("DELETE");
+    const res = await fetch(path, { method: "DELETE", headers });
 
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch (error) {
+        console.error("API DELETE response parse failed:", error);
+        body = await res.text();
+      }
+      throw new ApiError(res.status, `API error: ${res.status}`, body);
     }
-    throw new ApiError(res.status, `API error: ${res.status}`, body);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    console.error(`API DELETE ${path} failed:`, error);
+    throw new ApiError(0, "Network error");
   }
 }

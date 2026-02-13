@@ -12,10 +12,11 @@ import {
   Gauge,
   Monitor,
   Server,
-  FileText,
   ScrollText,
   Settings,
   Building2,
+  CreditCard,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
 import {
@@ -38,6 +39,8 @@ const customerNav = [
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
   { label: "Activity Log", href: "/activity-log", icon: ScrollText },
   { label: "Metrics", href: "/metrics", icon: Gauge },
+  { label: "Subscription", href: "/subscription", icon: CreditCard },
+  { label: "Team", href: "/users", icon: Users },
 ];
 
 const integrationNav = [
@@ -51,8 +54,10 @@ const operatorNav = [
   { label: "Overview", href: "/operator", icon: Monitor },
   { label: "All Devices", href: "/operator/devices", icon: Server },
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
+  { label: "Users", href: "/operator/users", icon: Users },
+  { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
   { label: "System", href: "/operator/system", icon: Activity },
-  { label: "Audit Log", href: "/operator/audit-log", icon: FileText },
+  { label: "Activity Log", href: "/operator/audit-log", icon: ScrollText },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
 

@@ -5,7 +5,7 @@ from aiohttp import web
 import socket
 import time
 from datetime import datetime, timezone
-from ipaddress import ip_address, ip_network
+from ipaddress import ip_address, ip_network, IPv4Address, IPv6Address
 from urllib.parse import urlparse
 
 import asyncpg
@@ -50,7 +50,7 @@ COUNTERS = {
     "last_delivery_at": None,
 }
 
-async def health_handler(request):
+async def health_handler(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "status": "healthy",
@@ -66,7 +66,7 @@ async def health_handler(request):
     )
 
 
-async def start_health_server():
+async def start_health_server() -> None:
     app = web.Application()
     app.router.add_get("/health", health_handler)
     runner = web.AppRunner(app)
@@ -79,86 +79,38 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def normalize_config_json(value) -> dict:
+def normalize_config(
+    value: dict | str | bytes | bytearray | None,
+    defaults: dict | None = None,
+) -> dict:
+    """Normalize configuration from various storage formats."""
     if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, (bytes, bytearray)):
+        config = {}
+    elif isinstance(value, dict):
+        config = value
+    elif isinstance(value, (bytes, bytearray)):
         try:
-            value = value.decode("utf-8")
+            config = json.loads(value.decode("utf-8"))
         except Exception:
-            return {}
-    if isinstance(value, str):
+            config = {}
+    elif isinstance(value, str):
         try:
-            parsed = json.loads(value)
+            config = json.loads(value)
         except Exception:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
+            config = {}
+    else:
+        config = {}
+
+    if not isinstance(config, dict):
+        config = {}
+
+    if defaults:
+        config = {**defaults, **config}
+
+    return config
 
 
-def normalize_snmp_config(value) -> dict:
-    """Normalize snmp_config from various storage formats."""
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, (bytes, bytearray)):
-        try:
-            value = value.decode("utf-8")
-        except Exception:
-            return {}
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except Exception:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
-
-
-def normalize_email_config(value) -> dict:
-    """Normalize email_config from various storage formats."""
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, (bytes, bytearray)):
-        try:
-            value = value.decode("utf-8")
-        except Exception:
-            return {}
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except Exception:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
-
-
-def normalize_mqtt_config(value) -> dict:
-    """Normalize mqtt_config from various storage formats."""
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, (bytes, bytearray)):
-        try:
-            value = value.decode("utf-8")
-        except Exception:
-            return {}
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except Exception:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
-
-
-def is_blocked_ip(ip) -> bool:
+def is_blocked_ip(ip: IPv4Address | IPv6Address) -> bool:
     if ip in BLOCKED_IPS:
         return True
     if any(ip in net for net in BLOCKED_NETWORKS):
@@ -180,8 +132,11 @@ def validate_url(url: str) -> tuple[bool, str]:
     if MODE == "PROD" and parsed.scheme.lower() != "https":
         return False, "https_required"
 
-    if MODE != "PROD":
-        return True, "ok"
+    if parsed.hostname in ("localhost", "127.0.0.1", "::1"):
+        if MODE == "DEV":
+            logger.warning("Allowing localhost webhook in DEV mode: %s", url)
+            return True, "ok"
+        return False, "blocked_localhost"
 
     try:
         addr_info = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
@@ -190,6 +145,8 @@ def validate_url(url: str) -> tuple[bool, str]:
 
     for info in addr_info:
         ip = ip_address(info[4][0])
+        if MODE == "DEV" and ip.is_loopback:
+            continue
         if is_blocked_ip(ip):
             return False, f"blocked_ip:{ip}"
 
@@ -254,7 +211,11 @@ async def fetch_jobs(conn: asyncpg.Connection) -> list[asyncpg.Record]:
         return rows
 
 
-async def fetch_integration(conn: asyncpg.Connection, tenant_id: str, integration_id) -> dict | None:
+async def fetch_integration(
+    conn: asyncpg.Connection,
+    tenant_id: str,
+    integration_id: str,
+) -> dict | None:
     row = await conn.fetchrow(
         """
         SELECT type, enabled, config_json,
@@ -364,14 +325,14 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
         integration_type = integration.get("type", "webhook")
         destination = "unknown"
         if integration_type == "webhook":
-            config = normalize_config_json(integration.get("config_json"))
+            config = normalize_config(integration.get("config_json"))
             destination = config.get("url") or "unknown"
         elif integration_type == "snmp":
             snmp_host = integration.get("snmp_host") or "unknown"
             snmp_port = integration.get("snmp_port") or 162
             destination = f"{snmp_host}:{snmp_port}"
         elif integration_type == "email":
-            recipients = normalize_email_config(integration.get("email_recipients"))
+            recipients = normalize_config(integration.get("email_recipients"))
             destination = f"{len(recipients.get('to', []))} recipients"
         elif integration_type == "mqtt":
             destination = integration.get("mqtt_topic") or "unknown"
@@ -436,7 +397,7 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
 
 async def deliver_webhook(integration: dict, job: asyncpg.Record) -> tuple[bool, int | None, str | None]:
     """Deliver via webhook. Returns (ok, http_status, error)."""
-    config = normalize_config_json(integration.get("config_json"))
+    config = normalize_config(integration.get("config_json"))
     url = config.get("url")
     headers = config.get("headers") or {}
 
@@ -470,7 +431,7 @@ async def deliver_snmp(integration: dict, job: asyncpg.Record) -> tuple[bool, st
 
     snmp_host = integration.get("snmp_host")
     snmp_port = integration.get("snmp_port") or 162
-    snmp_config = normalize_snmp_config(integration.get("snmp_config"))
+    snmp_config = normalize_config(integration.get("snmp_config"), {"version": "2c"})
     oid_prefix = integration.get("snmp_oid_prefix") or "1.3.6.1.4.1.99999"
 
     if not snmp_host:
@@ -519,9 +480,9 @@ async def deliver_email(integration: dict, job: asyncpg.Record) -> tuple[bool, s
     if not AIOSMTPLIB_AVAILABLE:
         return False, "email_not_available"
 
-    email_config = normalize_email_config(integration.get("email_config"))
-    email_recipients = normalize_email_config(integration.get("email_recipients"))
-    email_template = normalize_email_config(integration.get("email_template"))
+    email_config = normalize_config(integration.get("email_config"), {"port": 587})
+    email_recipients = normalize_config(integration.get("email_recipients"))
+    email_template = normalize_config(integration.get("email_template"))
 
     smtp_host = email_config.get("smtp_host")
     if not smtp_host:
@@ -583,7 +544,7 @@ async def deliver_mqtt(integration: dict, job: asyncpg.Record) -> tuple[bool, st
     if not mqtt_topic:
         return False, "missing_mqtt_topic"
 
-    mqtt_config = normalize_mqtt_config(integration.get("mqtt_config"))
+    mqtt_config = normalize_config(integration.get("mqtt_config"))
     broker_url = mqtt_config.get("broker_url") or "mqtt://iot-mqtt:1883"
     mqtt_qos = integration.get("mqtt_qos") if integration.get("mqtt_qos") is not None else 1
     mqtt_retain = integration.get("mqtt_retain") if integration.get("mqtt_retain") is not None else False

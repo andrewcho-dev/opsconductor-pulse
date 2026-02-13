@@ -321,7 +321,11 @@ async def test_auth_status_expired_token(client):
 
 
 async def test_refresh_no_cookie(client):
-    response = await client.post("/api/auth/refresh")
+    response = await client.post(
+        "/api/auth/refresh",
+        headers={"X-CSRF-Token": "csrf"},
+        cookies={"csrf_token": "csrf"},
+    )
     assert response.status_code == 401
 
 
@@ -336,7 +340,11 @@ async def test_refresh_success(client):
         },
     )
     with patch("app.httpx.AsyncClient", return_value=_mock_async_client(response)):
-        resp = await client.post("/api/auth/refresh", cookies={"pulse_refresh": "refresh"})
+        resp = await client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": "csrf"},
+            cookies={"pulse_refresh": "refresh", "csrf_token": "csrf"},
+        )
 
     assert resp.status_code == 200
     cookies_out = resp.headers.get_list("set-cookie")
@@ -347,7 +355,11 @@ async def test_refresh_success(client):
 async def test_refresh_keycloak_rejects(client):
     response = MagicMock(status_code=401, json=lambda: {"error": "invalid"})
     with patch("app.httpx.AsyncClient", return_value=_mock_async_client(response)):
-        resp = await client.post("/api/auth/refresh", cookies={"pulse_refresh": "refresh"})
+        resp = await client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": "csrf"},
+            cookies={"pulse_refresh": "refresh", "csrf_token": "csrf"},
+        )
 
     assert resp.status_code == 401
     cookies_out = resp.headers.get_list("set-cookie")
@@ -358,7 +370,11 @@ async def test_refresh_keycloak_rejects(client):
 async def test_refresh_keycloak_down(client):
     req = httpx.Request("POST", "http://kc/token")
     with patch("app.httpx.AsyncClient", return_value=_mock_async_client(exc=httpx.RequestError("down", request=req))):
-        resp = await client.post("/api/auth/refresh", cookies={"pulse_refresh": "refresh"})
+        resp = await client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": "csrf"},
+            cookies={"pulse_refresh": "refresh", "csrf_token": "csrf"},
+        )
 
     assert resp.status_code == 503
 

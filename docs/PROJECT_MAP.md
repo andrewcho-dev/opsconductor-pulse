@@ -41,7 +41,16 @@ device → activate → provision_token
 - MQTT (publish to customer-configured topics)
 
 ## Data Stores
-- **PostgreSQL + TimescaleDB**: All tables including telemetry hypertable. Core tables: device_state, fleet_alert, alert_rules, integrations, integration_routes, delivery_jobs, delivery_attempts, delivery_log, quarantine_events, operator_audit_log, app_settings, rate_limits, telemetry (hypertable), system_metrics (hypertable)
+
+### Active
+- **PostgreSQL + TimescaleDB** — Primary database with time-series extension
+- **subscriptions** — Multi-subscription entitlements
+- **subscription_audit** — Subscription event history
+
+### Deprecated
+- ~~InfluxDB~~ — Removed in Phase 30, replaced by TimescaleDB
+- ~~tenant_subscription~~ — Replaced by `subscriptions` table in Phase 32
+- ~~raw_events~~ — Renamed to `_deprecated_raw_events` in Phase 16
 
 ## API Layers
 - `/api/v2/*` — REST API + WebSocket (customer-scoped, JWT Bearer)

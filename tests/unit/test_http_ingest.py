@@ -40,7 +40,7 @@ class TestIngestSingle:
     def test_valid_telemetry_returns_202(self, mock_app):
         """Valid telemetry message returns 202 Accepted."""
         with patch('routes.ingest.validate_and_prepare', new_callable=AsyncMock) as mock_validate:
-            mock_validate.return_value = IngestResult(success=True, line_protocol="telemetry,device_id=d1 temp=25 123")
+            mock_validate.return_value = IngestResult(success=True)
 
             client = TestClient(mock_app)
             response = client.post(
@@ -55,7 +55,7 @@ class TestIngestSingle:
     def test_valid_heartbeat_returns_202(self, mock_app):
         """Valid heartbeat message returns 202 Accepted."""
         with patch('routes.ingest.validate_and_prepare', new_callable=AsyncMock) as mock_validate:
-            mock_validate.return_value = IngestResult(success=True, line_protocol="heartbeat,device_id=d1 seq=1 123")
+            mock_validate.return_value = IngestResult(success=True)
 
             client = TestClient(mock_app)
             response = client.post(
@@ -139,7 +139,7 @@ class TestIngestBatch:
         with patch('routes.ingest.validate_and_prepare', new_callable=AsyncMock) as mock_validate:
             # First succeeds, second fails
             mock_validate.side_effect = [
-                IngestResult(success=True, line_protocol="line1"),
+                IngestResult(success=True),
                 IngestResult(success=False, reason="TOKEN_INVALID"),
             ]
 

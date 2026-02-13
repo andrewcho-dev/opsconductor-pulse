@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pysnmp.hlapi.asyncio import (
     sendNotification,
@@ -179,7 +179,7 @@ class SNMPSender:
         """Build varbinds for alert trap."""
         severity_map = {"info": 1, "warning": 2, "critical": 3}
         severity_int = severity_map.get(alert.severity.lower(), 1)
-        uptime = int((datetime.utcnow() - alert.timestamp).total_seconds() * 100)
+        uptime = int((datetime.now(timezone.utc) - alert.timestamp).total_seconds() * 100)
 
         return [
             ObjectType(ObjectIdentity(f"{oid_prefix}.1.1"), OctetString(alert.alert_id)),

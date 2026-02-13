@@ -23,14 +23,46 @@ export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }
 
+function getRoles(tp: Record<string, unknown>): string[] {
+  const realmAccess = (tp.realm_access as { roles?: unknown } | undefined) ?? {};
+  const roles = realmAccess.roles;
+  return Array.isArray(roles) ? roles.filter((r): r is string => typeof r === "string") : [];
+}
+
+function getTenantId(tp: Record<string, unknown>): string {
+  // Standard claim can be object or string array depending on mapper config.
+  const organization = tp.organization;
+  if (Array.isArray(organization)) {
+    const first = organization.find((value): value is string => typeof value === "string" && value.length > 0);
+    if (first) return first;
+  }
+  if (organization && typeof organization === "object") {
+    const keys = Object.keys(organization as Record<string, unknown>);
+    if (keys.length > 0) return keys[0];
+  }
+  // Backward-compatible fallback for older tokens.
+  return (tp.tenant_id as string) || "";
+}
+
+function deriveLegacyRole(roles: string[]): string {
+  if (roles.includes("operator-admin")) return "operator_admin";
+  if (roles.includes("operator")) return "operator";
+  if (roles.includes("tenant-admin")) return "customer_admin";
+  if (roles.includes("customer")) return "customer_viewer";
+  return "";
+}
+
 function extractUser(): PulseUser | null {
   if (!keycloak.tokenParsed) return null;
   const tp = keycloak.tokenParsed as Record<string, unknown>;
+  const roles = getRoles(tp);
   return {
     sub: (tp.sub as string) || "",
     email: (tp.email as string) || "",
-    tenantId: (tp.tenant_id as string) || "",
-    role: (tp.role as string) || "",
+    tenantId: getTenantId(tp),
+    role: deriveLegacyRole(roles) || ((tp.role as string) || ""),
+    organization: (tp.organization as Record<string, object> | string[]) || {},
+    realmAccess: { roles },
     name: (tp.preferred_username as string) || (tp.name as string) || "",
   };
 }
@@ -96,9 +128,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     keycloak.logout({ redirectUri: window.location.origin + "/app/" });
   }, []);
 
-  const role = user?.role || "";
-  const isCustomer = role === "customer_admin" || role === "customer_viewer";
-  const isOperator = role === "operator" || role === "operator_admin";
+  const roles = user?.realmAccess?.roles ?? [];
+  const isOperator = roles.includes("operator") || roles.includes("operator-admin");
+  const isCustomer = roles.includes("customer") || roles.includes("tenant-admin");
 
   if (!initialized) {
     return (

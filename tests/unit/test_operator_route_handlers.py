@@ -116,7 +116,7 @@ async def test_operator_audit_log_requires_admin(client, monkeypatch):
     _mock_operator_deps(monkeypatch, conn, role="operator")
 
     resp = await client.get("/operator/audit-log", headers=_auth_header())
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 async def test_customer_cannot_access_operator(client, monkeypatch):

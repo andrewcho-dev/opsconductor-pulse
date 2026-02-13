@@ -9,10 +9,7 @@ from enum import Enum
 
 import httpx
 
-try:
-    from services.snmp_sender import send_alert_trap
-except ImportError:  # Fallback for local namespace package usage
-    from services.ui_iot.services.snmp_sender import send_alert_trap
+from services.snmp_sender import send_alert_trap
 
 logger = logging.getLogger(__name__)
 

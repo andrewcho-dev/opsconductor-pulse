@@ -9,6 +9,8 @@ from fastapi import HTTPException
 
 import app as app_module
 from middleware import auth as auth_module
+from middleware import tenant as tenant_module
+import dependencies as dependencies_module
 from routes import customer as customer_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -56,16 +58,21 @@ def _tenant_connection(conn):
 
 
 def _auth_header():
-    return {"Authorization": "Bearer test-token"}
+    return {"Authorization": "Bearer test-token", "X-CSRF-Token": "csrf"}
 
 
 def _mock_customer_deps(monkeypatch, conn, role="customer_admin", tenant_id="tenant-a"):
+    tenant_module.set_tenant_context(tenant_id, {"role": role, "tenant_id": tenant_id})
     monkeypatch.setattr(
         auth_module,
         "validate_token",
         AsyncMock(return_value={"sub": "user-1", "role": role, "tenant_id": tenant_id}),
     )
-    monkeypatch.setattr(customer_routes, "get_pool", AsyncMock(return_value=FakePool(conn)))
+    async def _override_get_db_pool(_request=None):
+        return FakePool(conn)
+
+    app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
+    monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
 
 
@@ -88,13 +95,14 @@ async def client():
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("csrf_token", "csrf")
         yield client
 
 
 async def test_devices_json_format(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_devices", AsyncMock(return_value=[]))
+    monkeypatch.setattr(customer_routes, "fetch_devices_v2", AsyncMock(return_value=[]))
 
     resp = await client.get("/customer/devices", headers=_auth_header())
     assert resp.status_code == 200
@@ -575,9 +583,7 @@ async def test_helpers_and_normalizers():
     assert customer_routes._normalize_json(b'{"a":1}') == {"a": 1}
     assert customer_routes._normalize_json("not json") == {}
 
-    payload = customer_routes.generate_test_payload("tenant-a", "Webhook")
-    assert payload["_test"] is True
-    assert payload["integration_name"] == "Webhook"
+    # generate_test_payload removed; test route-level helpers only.
 
 
 async def test_get_alert_success(client, monkeypatch):
@@ -1042,7 +1048,11 @@ async def test_auth_status_valid_token(client, monkeypatch):
 
 
 async def test_auth_refresh_no_cookie(client):
-    resp = await client.post("/api/auth/refresh")
+    resp = await client.post(
+        "/api/auth/refresh",
+        headers={"X-CSRF-Token": "csrf"},
+        cookies={"csrf_token": "csrf"},
+    )
     assert resp.status_code == 401
 
 
@@ -1052,7 +1062,11 @@ async def test_auth_refresh_success(client, monkeypatch):
         json=lambda: {"access_token": "token", "refresh_token": "refresh", "expires_in": 120, "refresh_expires_in": 300},
     )
     monkeypatch.setattr(app_module.httpx, "AsyncClient", lambda *a, **k: _mock_async_client(response))
-    resp = await client.post("/api/auth/refresh", cookies={"pulse_refresh": "refresh"})
+    resp = await client.post(
+        "/api/auth/refresh",
+        headers={"X-CSRF-Token": "csrf"},
+        cookies={"pulse_refresh": "refresh", "csrf_token": "csrf"},
+    )
     assert resp.status_code == 200
 
 

@@ -17,6 +17,26 @@ Each phase has its own subdirectory with numbered task files. Tasks should be ex
 
 ---
 
+## Implementation Phases
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1-22 | Core platform | Complete |
+| 23 | HTTP REST Ingestion | Complete |
+| 24 | Demo Data Generator | Complete |
+| 25 | Dashboard Visualizations | Complete |
+| 26 | Device Simulator | Complete |
+| 27 | Theme Switcher | Complete |
+| 28 | Tenant Management | Complete |
+| 29 | Operator System Dashboard | Complete |
+| 30 | TimescaleDB Migration | Complete |
+| 31 | Subscription Entitlements | Complete |
+| 32 | Multi-Subscription | Complete |
+| 33 | Subscription Follow-up | Complete |
+| 34 | Code Review Remediation | In Progress |
+
+---
+
 ## Phase 1: Customer Read-Only Dashboard
 
 **Goal**: Customers can view their own devices, alerts, and delivery status with tenant isolation.

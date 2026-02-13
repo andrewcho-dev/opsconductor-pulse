@@ -25,11 +25,26 @@ function TelemetryChartsSectionInner({
   timeRange,
   onTimeRangeChange,
 }: TelemetryChartsSectionProps) {
+  const priorityMetrics = [
+    "battery_pct",
+    "temp_c",
+    "rssi_dbm",
+    "snr_db",
+    "humidity",
+    "pressure",
+  ];
+  const normalized = new Set(metrics);
+  const ordered = [
+    ...priorityMetrics.filter((m) => normalized.has(m)),
+    ...metrics.filter((m) => !priorityMetrics.includes(m)),
+  ];
+  const metricsToShow = ordered.slice(0, 6);
+
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between py-2">
         <div className="flex items-center gap-2">
-          <CardTitle className="text-lg">Telemetry History</CardTitle>
+          <CardTitle className="text-xs">Telemetry</CardTitle>
           {isLive && (
             <Badge
               variant="outline"
@@ -54,28 +69,33 @@ function TelemetryChartsSectionInner({
         </Tabs>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="pt-2">
         {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[200px] w-full" />
+          <div className="grid grid-cols-3 gap-2">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Skeleton key={i} className="h-32 w-full" />
             ))}
           </div>
-        ) : metrics.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
+        ) : metricsToShow.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-4">
             No telemetry data in the selected time range.
           </p>
         ) : (
-          metrics.map((metricName, idx) => (
-            <div key={metricName}>
-              <TimeSeriesChart
-                metricName={metricName}
-                points={points}
-                colorIndex={idx}
-                height={200}
-              />
-            </div>
-          ))
+          <div className="grid grid-cols-3 gap-2">
+            {metricsToShow.map((metricName, idx) => (
+              <div key={metricName} className="border rounded p-2">
+                <div className="text-[10px] text-muted-foreground mb-1">
+                  {metricName}
+                </div>
+                <TimeSeriesChart
+                  metricName={metricName}
+                  points={points}
+                  colorIndex={idx}
+                  height={128}
+                />
+              </div>
+            ))}
+          </div>
         )}
       </CardContent>
     </Card>

@@ -1,15 +1,15 @@
-import os
 import logging
 import re
-import datetime
+from datetime import datetime, timezone, timedelta
 import json
 import uuid
 from uuid import UUID
-import asyncpg
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from typing import Optional, List
 from starlette.requests import Request
 
 from middleware.auth import JWTBearer
@@ -60,34 +60,40 @@ from db.telemetry_queries import fetch_device_telemetry, fetch_device_events
 from services.alert_dispatcher import dispatch_to_integration, AlertPayload
 from services.email_sender import send_alert_email
 from services.mqtt_sender import publish_alert
+from services.subscription import create_device_on_subscription, log_subscription_event
+from shared.utils import check_delete_result, validate_uuid
+from dependencies import get_db_pool
+from shared.utils import check_delete_result, validate_uuid
+from dependencies import get_db_pool
 
-# Compatibility shim for tests expecting fetch_devices in this module.
-fetch_devices = fetch_devices_v2
 
 logger = logging.getLogger(__name__)
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
-
-pool: asyncpg.Pool | None = None
 
 
-async def get_pool() -> asyncpg.Pool:
-    global pool
-    if pool is None:
-        pool = await asyncpg.create_pool(
-            host=PG_HOST,
-            port=PG_PORT,
-            database=PG_DB,
-            user=PG_USER,
-            password=PG_PASS,
-            min_size=1,
-            max_size=5,
-        )
-    return pool
+async def geocode_address(address: str) -> tuple[float, float] | None:
+    """Convert street address to lat/lng using Nominatim."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": address,
+                    "format": "json",
+                    "limit": 1,
+                },
+                headers={
+                    "User-Agent": "OpsConductor-Pulse/1.0"
+                },
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        return None
+    return None
 
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9 _-]+$")
@@ -120,6 +126,40 @@ class RouteUpdate(BaseModel):
 
 
 VALID_OPERATORS = {"GT", "LT", "GTE", "LTE"}
+
+
+class DeviceUpdate(BaseModel):
+    latitude: float | None = None
+    longitude: float | None = None
+    address: str | None = None
+    location_source: str | None = None
+    mac_address: str | None = None
+    imei: str | None = None
+    iccid: str | None = None
+    serial_number: str | None = None
+    model: str | None = None
+    manufacturer: str | None = None
+    hw_revision: str | None = None
+    fw_version: str | None = None
+    notes: str | None = None
+
+
+class DeviceCreate(BaseModel):
+    device_id: str = Field(..., min_length=1, max_length=100)
+    site_id: str = Field(..., min_length=1, max_length=100)
+    subscription_id: str | None = None
+
+
+class TagListUpdate(BaseModel):
+    tags: list[str]
+
+
+class RenewalRequest(BaseModel):
+    subscription_id: str
+    plan_id: Optional[str] = None
+    term_days: int = 365
+    new_device_limit: Optional[int] = None
+    devices_to_deactivate: Optional[List[str]] = None
 
 
 class AlertRuleCreate(BaseModel):
@@ -180,7 +220,12 @@ class MetricMappingUpdate(BaseModel):
 
 async def require_customer_admin(request: Request):
     user = get_user()
-    if user.get("role") != "customer_admin":
+    realm_access = user.get("realm_access", {}) or {}
+    roles = set(realm_access.get("roles", []) or [])
+    # Operators retain global admin behavior.
+    if "operator-admin" in roles or "operator" in roles:
+        return
+    if "tenant-admin" not in roles:
         raise HTTPException(status_code=403, detail="Customer admin role required")
 
 
@@ -238,24 +283,6 @@ def _normalize_json(value) -> dict:
     return {}
 
 
-def generate_test_payload(tenant_id: str, integration_name: str) -> dict:
-    now = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    return {
-        "_test": True,
-        "_generated_at": now,
-        "alert_id": "test-00000000-0000-0000-0000-000000000000",
-        "tenant_id": tenant_id,
-        "device_id": "TEST-DEVICE-001",
-        "site_id": "TEST-SITE",
-        "alert_type": "STALE_DEVICE",
-        "severity": "WARNING",
-        "summary": "Test alert from OpsConductor Pulse",
-        "message": "This is a test delivery to verify your webhook integration is working correctly.",
-        "integration_name": integration_name,
-        "created_at": now,
-    }
-
-
 router = APIRouter(
     prefix="/customer",
     tags=["customer"],
@@ -267,16 +294,87 @@ router = APIRouter(
 )
 
 
+@router.post("/devices", status_code=201)
+async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    user = get_user()
+
+    p = pool
+    async with tenant_connection(p, tenant_id) as conn:
+        subscription_id = device.subscription_id
+        if not subscription_id:
+            sub = await conn.fetchrow(
+                """
+                SELECT subscription_id
+                FROM subscriptions
+                WHERE tenant_id = $1
+                  AND subscription_type = 'MAIN'
+                  AND status = 'ACTIVE'
+                  AND active_device_count < device_limit
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                tenant_id,
+            )
+            if not sub:
+                raise HTTPException(403, "No MAIN subscription with available capacity")
+            subscription_id = sub["subscription_id"]
+
+        try:
+            await create_device_on_subscription(
+                conn,
+                tenant_id,
+                device.device_id,
+                device.site_id,
+                subscription_id,
+                actor_id=user.get("sub") if user else None,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 403 if "limit" in message.lower() else 400
+            raise HTTPException(status_code, message)
+
+    return {
+        "device_id": device.device_id,
+        "subscription_id": subscription_id,
+        "status": "created",
+    }
+
+
 @router.get("/devices")
 async def list_devices(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
+            if devices:
+                device_ids = [device["device_id"] for device in devices]
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        d.device_id,
+                        d.subscription_id,
+                        s.subscription_type,
+                        s.status as subscription_status
+                    FROM device_registry d
+                    LEFT JOIN subscriptions s ON d.subscription_id = s.subscription_id
+                    WHERE d.tenant_id = $1 AND d.device_id = ANY($2::text[])
+                    """,
+                    tenant_id,
+                    device_ids,
+                )
+                subscription_map = {row["device_id"]: dict(row) for row in rows}
+                for device in devices:
+                    subscription = subscription_map.get(device["device_id"])
+                    if subscription:
+                        device["subscription_id"] = subscription["subscription_id"]
+                        device["subscription_type"] = subscription["subscription_type"]
+                        device["subscription_status"] = subscription["subscription_status"]
     except Exception:
         logger.exception("Failed to fetch tenant devices")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -289,11 +387,63 @@ async def list_devices(
     }
 
 
+@router.delete("/devices/{device_id}")
+async def delete_device(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    user = get_user()
+
+    p = pool
+    async with tenant_connection(p, tenant_id) as conn:
+        device = await conn.fetchrow(
+            """
+            SELECT subscription_id
+            FROM device_registry
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+        if not device:
+            raise HTTPException(404, "Device not found")
+
+        await conn.execute(
+            """
+            UPDATE device_registry
+            SET status = 'DELETED'
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+
+        subscription_id = device["subscription_id"]
+        if subscription_id:
+            await conn.execute(
+                """
+                UPDATE subscriptions
+                SET active_device_count = GREATEST(0, active_device_count - 1), updated_at = now()
+                WHERE subscription_id = $1
+                """,
+                subscription_id,
+            )
+
+        await log_subscription_event(
+            conn,
+            tenant_id,
+            event_type="DEVICE_REMOVED",
+            actor_type="user",
+            actor_id=user.get("sub") if user else None,
+            details={"device_id": device_id, "subscription_id": subscription_id},
+        )
+
+    return {"device_id": device_id, "status": "deleted"}
+
+
 @router.get("/devices/{device_id}")
-async def get_device_detail(device_id: str):
+async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
@@ -315,14 +465,638 @@ async def get_device_detail(device_id: str):
     }
 
 
+@router.get("/subscriptions")
+async def list_subscriptions(
+    include_expired: bool = Query(False),
+):
+    """List all subscriptions for the tenant."""
+    tenant_id = get_tenant_id()
+
+    p = pool
+    async with tenant_connection(p, tenant_id) as conn:
+        if include_expired:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    subscription_id, subscription_type, parent_subscription_id,
+                    device_limit, active_device_count, term_start, term_end,
+                    status, plan_id, description, created_at
+                FROM subscriptions
+                WHERE tenant_id = $1
+                ORDER BY
+                    CASE subscription_type
+                        WHEN 'MAIN' THEN 1
+                        WHEN 'ADDON' THEN 2
+                        WHEN 'TRIAL' THEN 3
+                        WHEN 'TEMPORARY' THEN 4
+                    END,
+                    term_end DESC
+                """,
+                tenant_id,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    subscription_id, subscription_type, parent_subscription_id,
+                    device_limit, active_device_count, term_start, term_end,
+                    status, plan_id, description, created_at
+                FROM subscriptions
+                WHERE tenant_id = $1 AND status != 'EXPIRED'
+                ORDER BY
+                    CASE subscription_type
+                        WHEN 'MAIN' THEN 1
+                        WHEN 'ADDON' THEN 2
+                        WHEN 'TRIAL' THEN 3
+                        WHEN 'TEMPORARY' THEN 4
+                    END,
+                    term_end DESC
+                """,
+                tenant_id,
+            )
+
+        total_limit = sum(
+            r["device_limit"] for r in rows if r["status"] not in ("SUSPENDED", "EXPIRED")
+        )
+        total_active = sum(
+            r["active_device_count"]
+            for r in rows
+            if r["status"] not in ("SUSPENDED", "EXPIRED")
+        )
+
+        return {
+            "subscriptions": [
+                {
+                    "subscription_id": r["subscription_id"],
+                    "subscription_type": r["subscription_type"],
+                    "parent_subscription_id": r["parent_subscription_id"],
+                    "device_limit": r["device_limit"],
+                    "active_device_count": r["active_device_count"],
+                    "devices_available": r["device_limit"] - r["active_device_count"],
+                    "term_start": r["term_start"].isoformat() if r["term_start"] else None,
+                    "term_end": r["term_end"].isoformat() if r["term_end"] else None,
+                    "status": r["status"],
+                    "plan_id": r["plan_id"],
+                    "description": r["description"],
+                }
+                for r in rows
+            ],
+            "summary": {
+                "total_device_limit": total_limit,
+                "total_active_devices": total_active,
+                "total_available": total_limit - total_active,
+            },
+        }
+
+
+@router.get("/subscriptions/{subscription_id}")
+async def get_subscription_detail(subscription_id: str, pool=Depends(get_db_pool)):
+    """Get details of a specific subscription."""
+    tenant_id = get_tenant_id()
+
+    p = pool
+    async with tenant_connection(p, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM subscriptions
+            WHERE subscription_id = $1 AND tenant_id = $2
+            """,
+            subscription_id,
+            tenant_id,
+        )
+
+        if not row:
+            raise HTTPException(404, "Subscription not found")
+
+        devices = await conn.fetch(
+            """
+            SELECT d.device_id, d.site_id, d.status, ds.last_seen_at
+            FROM device_registry d
+            LEFT JOIN device_state ds ON d.tenant_id = ds.tenant_id AND d.device_id = ds.device_id
+            WHERE d.subscription_id = $1
+            ORDER BY d.device_id
+            LIMIT 100
+            """,
+            subscription_id,
+        )
+
+        device_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM device_registry WHERE subscription_id = $1",
+            subscription_id,
+        )
+
+        days_until_expiry = None
+        if row["term_end"]:
+            delta = row["term_end"] - datetime.now(timezone.utc)
+            days_until_expiry = max(0, delta.days)
+
+        return {
+            "subscription_id": row["subscription_id"],
+            "subscription_type": row["subscription_type"],
+            "parent_subscription_id": row["parent_subscription_id"],
+            "device_limit": row["device_limit"],
+            "active_device_count": row["active_device_count"],
+            "devices_available": row["device_limit"] - row["active_device_count"],
+            "term_start": row["term_start"].isoformat() if row["term_start"] else None,
+            "term_end": row["term_end"].isoformat() if row["term_end"] else None,
+            "days_until_expiry": days_until_expiry,
+            "status": row["status"],
+            "plan_id": row["plan_id"],
+            "description": row["description"],
+            "devices": [
+                {
+                    "device_id": d["device_id"],
+                    "site_id": d["site_id"],
+                    "status": d["status"],
+                    "last_seen_at": d["last_seen_at"].isoformat()
+                    if d["last_seen_at"]
+                    else None,
+                }
+                for d in devices
+            ],
+            "total_devices": device_count,
+        }
+
+
+@router.get("/subscription/audit")
+async def get_subscription_audit(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Get subscription audit history for tenant."""
+    tenant_id = get_tenant_id()
+
+    p = pool
+    async with tenant_connection(p, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                id,
+                event_type,
+                event_timestamp,
+                actor_type,
+                actor_id,
+                previous_state,
+                new_state,
+                details
+            FROM subscription_audit
+            WHERE tenant_id = $1
+            ORDER BY event_timestamp DESC
+            LIMIT $2 OFFSET $3
+            """,
+            tenant_id,
+            limit,
+            offset,
+        )
+
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM subscription_audit WHERE tenant_id = $1",
+            tenant_id,
+        )
+
+        return {
+            "events": [
+                {
+                    "id": row["id"],
+                    "event_type": row["event_type"],
+                    "event_timestamp": row["event_timestamp"].isoformat(),
+                    "actor_type": row["actor_type"],
+                    "actor_id": row["actor_id"],
+                    "previous_state": row["previous_state"],
+                    "new_state": row["new_state"],
+                    "details": row["details"],
+                }
+                for row in rows
+            ],
+            "total": count,
+            "limit": limit,
+            "offset": offset,
+        }
+
+
+@router.post("/subscription/renew")
+async def request_renewal(data: RenewalRequest, request: Request, pool=Depends(get_db_pool)):
+    """
+    Request subscription renewal.
+    If downsizing, deactivates specified devices first.
+    """
+    tenant_id = get_tenant_id()
+    user = get_user()
+    ip = request.client.host if request.client else None
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        async with conn.transaction():
+            sub = await conn.fetchrow(
+                """
+                SELECT * FROM subscriptions
+                WHERE subscription_id = $1 AND tenant_id = $2
+                FOR UPDATE
+                """,
+                data.subscription_id,
+                tenant_id,
+            )
+            if not sub:
+                raise HTTPException(404, "Subscription not found")
+
+            if sub["status"] == "ACTIVE" and sub["term_end"] > (
+                datetime.now(timezone.utc) + timedelta(days=30)
+            ):
+                return {
+                    "subscription_id": data.subscription_id,
+                    "renewed": True,
+                    "note": "Already active",
+                }
+
+            if data.devices_to_deactivate:
+                required_reduction = sub["active_device_count"] - (
+                    data.new_device_limit or sub["device_limit"]
+                )
+                if len(data.devices_to_deactivate) != required_reduction:
+                    raise HTTPException(
+                        400,
+                        f"Must select exactly {required_reduction} devices to deactivate",
+                    )
+
+                devices = await conn.fetch(
+                    """
+                    SELECT device_id FROM device_registry
+                    WHERE subscription_id = $1 AND device_id = ANY($2)
+                    """,
+                    data.subscription_id,
+                    data.devices_to_deactivate,
+                )
+                if len(devices) != len(data.devices_to_deactivate):
+                    raise HTTPException(400, "Some devices not found on this subscription")
+
+                await conn.execute(
+                    """
+                    UPDATE device_registry
+                    SET status = 'INACTIVE', subscription_id = NULL, updated_at = now()
+                    WHERE device_id = ANY($1)
+                    """,
+                    data.devices_to_deactivate,
+                )
+
+                await conn.execute(
+                    """
+                    UPDATE subscriptions
+                    SET active_device_count = active_device_count - $1
+                    WHERE subscription_id = $2
+                    """,
+                    len(data.devices_to_deactivate),
+                    data.subscription_id,
+                )
+
+            new_term_end = datetime.now(timezone.utc) + timedelta(days=data.term_days)
+
+            await conn.execute(
+                """
+                UPDATE subscriptions
+                SET term_end = $1,
+                    device_limit = COALESCE($2, device_limit),
+                    plan_id = COALESCE($3, plan_id),
+                    status = 'ACTIVE',
+                    grace_end = NULL,
+                    updated_at = now()
+                WHERE subscription_id = $4
+                """,
+                new_term_end,
+                data.new_device_limit,
+                data.plan_id,
+                data.subscription_id,
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO subscription_audit
+                    (tenant_id, event_type, actor_type, actor_id, details, ip_address)
+                VALUES ($1, 'RENEWED', 'user', $2, $3, $4)
+                """,
+                tenant_id,
+                user.get("sub") if user else None,
+                json.dumps(
+                    {
+                        "subscription_id": data.subscription_id,
+                        "plan_id": data.plan_id,
+                        "term_days": data.term_days,
+                        "new_device_limit": data.new_device_limit,
+                        "devices_deactivated": data.devices_to_deactivate,
+                    }
+                ),
+                ip,
+            )
+
+            return {
+                "subscription_id": data.subscription_id,
+                "renewed": True,
+                "new_term_end": new_term_end.isoformat(),
+                "devices_deactivated": len(data.devices_to_deactivate)
+                if data.devices_to_deactivate
+                else 0,
+            }
+
+
+@router.patch("/devices/{device_id}")
+async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    update_data = body.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    if update_data.get("address") and not (
+        update_data.get("latitude") is not None and update_data.get("longitude") is not None
+    ):
+        coords = await geocode_address(update_data["address"])
+        if coords:
+            update_data["latitude"], update_data["longitude"] = coords
+
+    if any(key in update_data for key in ("latitude", "longitude", "address")):
+        update_data["location_source"] = "manual"
+
+    fields = [
+        "latitude",
+        "longitude",
+        "address",
+        "location_source",
+        "mac_address",
+        "imei",
+        "iccid",
+        "serial_number",
+        "model",
+        "manufacturer",
+        "hw_revision",
+        "fw_version",
+        "notes",
+    ]
+    allowed_fields = set(fields)
+    unknown_fields = [
+        key for key, value in update_data.items()
+        if value is not None and key not in allowed_fields
+    ]
+    if unknown_fields:
+        raise HTTPException(status_code=400, detail="Invalid fields provided")
+
+    sets: list[str] = []
+    params: list[object] = [tenant_id, device_id]
+    idx = 3
+
+    for field in fields:
+        if field in update_data:
+            sets.append(f"{field} = ${idx}")
+            params.append(update_data[field])
+            idx += 1
+
+    if not sets:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE device_registry
+                SET {", ".join(sets)}
+                WHERE tenant_id = $1 AND device_id = $2
+                RETURNING tenant_id, device_id
+                """,
+                *params,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            device = await fetch_device(conn, tenant_id, device_id)
+            if not device:
+                raise HTTPException(status_code=404, detail="Device not found")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update device attributes")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "device": device}
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        if tag is None:
+            continue
+        trimmed = str(tag).strip()
+        if not trimmed or trimmed in seen:
+            continue
+        seen.add(trimmed)
+        cleaned.append(trimmed)
+    return cleaned
+
+
+
+@router.get("/devices/{device_id}/tags")
+async def get_device_tags(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            rows = await conn.fetch(
+                """
+                SELECT tag
+                FROM device_tags
+                WHERE tenant_id = $1 AND device_id = $2
+                ORDER BY tag
+                """,
+                tenant_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch device tags")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "device_id": device_id, "tags": [r["tag"] for r in rows]}
+
+
+@router.put("/devices/{device_id}/tags")
+async def set_device_tags(device_id: str, body: TagListUpdate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    tags = _normalize_tags(body.tags)
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            await conn.execute(
+                "DELETE FROM device_tags WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if tags:
+                await conn.executemany(
+                    """
+                    INSERT INTO device_tags (tenant_id, device_id, tag)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (tenant_id, device_id, tag) DO NOTHING
+                    """,
+                    [(tenant_id, device_id, tag) for tag in tags],
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update device tags")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "device_id": device_id, "tags": tags}
+
+
+@router.post("/devices/{device_id}/tags/{tag}")
+async def add_device_tag(device_id: str, tag: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    tags = _normalize_tags([tag])
+    if not tags:
+        raise HTTPException(status_code=400, detail="Invalid tag")
+    tag_value = tags[0]
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            await conn.execute(
+                """
+                INSERT INTO device_tags (tenant_id, device_id, tag)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (tenant_id, device_id, tag) DO NOTHING
+                """,
+                tenant_id,
+                device_id,
+                tag_value,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to add device tag")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "device_id": device_id, "tag": tag_value}
+
+
+@router.delete("/devices/{device_id}/tags/{tag}")
+async def remove_device_tag(device_id: str, tag: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    tags = _normalize_tags([tag])
+    if not tags:
+        raise HTTPException(status_code=400, detail="Invalid tag")
+    tag_value = tags[0]
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            await conn.execute(
+                """
+                DELETE FROM device_tags
+                WHERE tenant_id = $1 AND device_id = $2 AND tag = $3
+                """,
+                tenant_id,
+                device_id,
+                tag_value,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to remove device tag")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "device_id": device_id, "tag": tag_value}
+
+
+@router.get("/tags")
+async def list_tags(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT DISTINCT tag
+                FROM device_tags
+                WHERE tenant_id = $1
+                ORDER BY tag
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch tags")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {"tenant_id": tenant_id, "tags": [r["tag"] for r in rows]}
+
+
+@router.get("/geocode")
+async def geocode_address_endpoint(address: str = Query(..., min_length=3)):
+    """Geocode an address using Nominatim (proxied to avoid CORS)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": address,
+                    "format": "json",
+                    "limit": 1,
+                },
+                headers={
+                    "User-Agent": "OpsConductor-Pulse/1.0"
+                },
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    return {
+                        "latitude": float(data[0]["lat"]),
+                        "longitude": float(data[0]["lon"]),
+                        "display_name": data[0].get("display_name", "")
+                    }
+                return {"error": "Address not found"}
+            return {"error": f"Geocoding service returned {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/alerts")
 async def list_alerts(
     status: str = Query("OPEN"),
     limit: int = Query(100, ge=1, le=500),
+    pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             alerts = await fetch_alerts(conn, tenant_id, status=status, limit=limit)
     except Exception:
@@ -333,17 +1107,17 @@ async def list_alerts(
 
 
 @router.get("/alerts/{alert_id}")
-async def get_alert(alert_id: str):
+async def get_alert(alert_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
-                SELECT alert_id, tenant_id, device_id, site_id, alert_type,
+                SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
                        severity, confidence, summary, status, created_at
                 FROM fleet_alert
-                WHERE tenant_id = $1 AND alert_id = $2
+                WHERE tenant_id = $1 AND id = $2
                 """,
                 tenant_id,
                 alert_id,
@@ -359,10 +1133,10 @@ async def get_alert(alert_id: str):
 
 
 @router.get("/integrations")
-async def list_integrations(type: str | None = Query(None)):
+async def list_integrations(type: str | None = Query(None), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await fetch_integrations(conn, tenant_id, limit=50, integration_type=type)
     except Exception:
@@ -375,10 +1149,10 @@ async def list_integrations(type: str | None = Query(None)):
 
 
 @router.get("/metrics/catalog")
-async def list_metric_catalog():
+async def list_metric_catalog(pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -398,7 +1172,7 @@ async def list_metric_catalog():
 
 
 @router.post("/metrics/catalog", dependencies=[Depends(require_customer_admin)])
-async def upsert_metric_catalog(payload: MetricCatalogUpsert):
+async def upsert_metric_catalog(payload: MetricCatalogUpsert, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     metric_name = payload.metric_name.strip()
     if not metric_name:
@@ -408,7 +1182,7 @@ async def upsert_metric_catalog(payload: MetricCatalogUpsert):
             raise HTTPException(status_code=400, detail="expected_min must be <= expected_max")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -440,10 +1214,10 @@ async def upsert_metric_catalog(payload: MetricCatalogUpsert):
 
 
 @router.delete("/metrics/catalog/{metric_name}", dependencies=[Depends(require_customer_admin)])
-async def delete_metric_catalog(metric_name: str):
+async def delete_metric_catalog(metric_name: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -457,17 +1231,17 @@ async def delete_metric_catalog(metric_name: str):
         logger.exception("Failed to delete metric catalog entry")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if result.endswith("0"):
+    if not check_delete_result(result):
         raise HTTPException(status_code=404, detail="Metric not found")
 
     return Response(status_code=204)
 
 
 @router.get("/normalized-metrics")
-async def list_normalized_metrics():
+async def list_normalized_metrics(pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -487,7 +1261,7 @@ async def list_normalized_metrics():
 
 
 @router.post("/normalized-metrics", dependencies=[Depends(require_customer_admin)])
-async def create_normalized_metric(payload: NormalizedMetricCreate):
+async def create_normalized_metric(payload: NormalizedMetricCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     normalized_name = _validate_name(payload.normalized_name)
     if payload.expected_min is not None and payload.expected_max is not None:
@@ -495,7 +1269,7 @@ async def create_normalized_metric(payload: NormalizedMetricCreate):
             raise HTTPException(status_code=400, detail="expected_min must be <= expected_max")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -525,7 +1299,7 @@ async def create_normalized_metric(payload: NormalizedMetricCreate):
 
 
 @router.patch("/normalized-metrics/{name}", dependencies=[Depends(require_customer_admin)])
-async def update_normalized_metric(name: str, payload: NormalizedMetricUpdate):
+async def update_normalized_metric(name: str, payload: NormalizedMetricUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     normalized_name = _validate_name(name)
     if payload.expected_min is not None and payload.expected_max is not None:
@@ -540,7 +1314,7 @@ async def update_normalized_metric(name: str, payload: NormalizedMetricUpdate):
         raise HTTPException(status_code=400, detail="No fields provided")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -572,11 +1346,11 @@ async def update_normalized_metric(name: str, payload: NormalizedMetricUpdate):
 
 
 @router.delete("/normalized-metrics/{name}", dependencies=[Depends(require_customer_admin)])
-async def delete_normalized_metric(name: str):
+async def delete_normalized_metric(name: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     normalized_name = _validate_name(name)
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -590,17 +1364,17 @@ async def delete_normalized_metric(name: str):
         logger.exception("Failed to delete normalized metric")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    if result.endswith("0"):
+    if not check_delete_result(result):
         raise HTTPException(status_code=404, detail="Normalized metric not found")
 
     return Response(status_code=204)
 
 
 @router.get("/metric-mappings")
-async def list_metric_mappings(normalized_name: str | None = Query(None)):
+async def list_metric_mappings(normalized_name: str | None = Query(None), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             if normalized_name:
                 normalized_name = _validate_name(normalized_name)
@@ -632,7 +1406,7 @@ async def list_metric_mappings(normalized_name: str | None = Query(None)):
 
 
 @router.post("/metric-mappings", dependencies=[Depends(require_customer_admin)])
-async def create_metric_mapping(payload: MetricMappingCreate):
+async def create_metric_mapping(payload: MetricMappingCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     raw_metric = payload.raw_metric.strip()
     if not METRIC_NAME_PATTERN.match(raw_metric):
@@ -642,7 +1416,7 @@ async def create_metric_mapping(payload: MetricMappingCreate):
     offset_value = payload.offset_value if payload.offset_value is not None else 0
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             exists = await conn.fetchval(
                 """
@@ -683,7 +1457,7 @@ async def create_metric_mapping(payload: MetricMappingCreate):
 
 
 @router.patch("/metric-mappings/{raw_metric}", dependencies=[Depends(require_customer_admin)])
-async def update_metric_mapping(raw_metric: str, payload: MetricMappingUpdate):
+async def update_metric_mapping(raw_metric: str, payload: MetricMappingUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     raw_metric = raw_metric.strip()
     if not METRIC_NAME_PATTERN.match(raw_metric):
@@ -692,7 +1466,7 @@ async def update_metric_mapping(raw_metric: str, payload: MetricMappingUpdate):
         raise HTTPException(status_code=400, detail="No fields provided")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -718,13 +1492,13 @@ async def update_metric_mapping(raw_metric: str, payload: MetricMappingUpdate):
 
 
 @router.delete("/metric-mappings/{raw_metric}", dependencies=[Depends(require_customer_admin)])
-async def delete_metric_mapping(raw_metric: str):
+async def delete_metric_mapping(raw_metric: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     raw_metric = raw_metric.strip()
     if not METRIC_NAME_PATTERN.match(raw_metric):
         raise HTTPException(status_code=400, detail="Invalid raw metric name")
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -745,11 +1519,11 @@ async def delete_metric_mapping(raw_metric: str):
 
 
 @router.get("/integrations/snmp", response_model=list[SNMPIntegrationResponse])
-async def list_snmp_integrations():
+async def list_snmp_integrations(pool=Depends(get_db_pool)):
     """List all SNMP integrations for this tenant."""
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -786,16 +1560,14 @@ async def list_snmp_integrations():
 
 
 @router.get("/integrations/snmp/{integration_id}", response_model=SNMPIntegrationResponse)
-async def get_snmp_integration(integration_id: str):
+async def get_snmp_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Get a specific SNMP integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -835,7 +1607,7 @@ async def get_snmp_integration(integration_id: str):
     status_code=201,
     dependencies=[Depends(require_customer_admin)],
 )
-async def create_snmp_integration(data: SNMPIntegrationCreate):
+async def create_snmp_integration(data: SNMPIntegrationCreate, pool=Depends(get_db_pool)):
     """Create a new SNMP integration."""
     tenant_id = get_tenant_id()
     name = _validate_name(data.name)
@@ -843,11 +1615,11 @@ async def create_snmp_integration(data: SNMPIntegrationCreate):
     if not validation.valid:
         raise HTTPException(status_code=400, detail=f"Invalid SNMP destination: {validation.error}")
     integration_id = str(uuid.uuid4())
-    now = datetime.datetime.utcnow()
+    now = datetime.now(timezone.utc)
     snmp_config = data.snmp_config.model_dump()
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -893,12 +1665,10 @@ async def create_snmp_integration(data: SNMPIntegrationCreate):
     response_model=SNMPIntegrationResponse,
     dependencies=[Depends(require_customer_admin)],
 )
-async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpdate):
+async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpdate, pool=Depends(get_db_pool)):
     """Update an SNMP integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -916,6 +1686,14 @@ async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpda
     values = []
     param_idx = 1
 
+    allowed_fields = {"name", "snmp_host", "snmp_port", "snmp_oid_prefix", "enabled", "snmp_config"}
+    unknown_fields = [
+        key for key, value in update_data.items()
+        if value is not None and key not in allowed_fields
+    ]
+    if unknown_fields:
+        raise HTTPException(status_code=400, detail="Invalid fields provided")
+
     if "name" in update_data and update_data["name"] is not None:
         update_data["name"] = _validate_name(update_data["name"])
 
@@ -931,13 +1709,13 @@ async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpda
         param_idx += 1
 
     updates.append(f"updated_at = ${param_idx}")
-    values.append(datetime.datetime.utcnow())
+    values.append(datetime.now(timezone.utc))
     param_idx += 1
 
     values.extend([integration_id, tenant_id])
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 f"""
@@ -976,16 +1754,14 @@ async def update_snmp_integration(integration_id: str, data: SNMPIntegrationUpda
     status_code=204,
     dependencies=[Depends(require_customer_admin)],
 )
-async def delete_snmp_integration(integration_id: str):
+async def delete_snmp_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Delete an SNMP integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -1010,11 +1786,11 @@ async def delete_snmp_integration(integration_id: str):
 # ============================================================================
 
 @router.get("/integrations/email", response_model=list[EmailIntegrationResponse])
-async def list_email_integrations():
+async def list_email_integrations(pool=Depends(get_db_pool)):
     """List all email integrations for this tenant."""
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -1055,16 +1831,14 @@ async def list_email_integrations():
 
 
 @router.get("/integrations/email/{integration_id}", response_model=EmailIntegrationResponse)
-async def get_email_integration(integration_id: str):
+async def get_email_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Get a specific email integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -1108,7 +1882,7 @@ async def get_email_integration(integration_id: str):
     status_code=201,
     dependencies=[Depends(require_customer_admin)],
 )
-async def create_email_integration(data: EmailIntegrationCreate):
+async def create_email_integration(data: EmailIntegrationCreate, pool=Depends(get_db_pool)):
     """Create a new email integration."""
     tenant_id = get_tenant_id()
     name = _validate_name(data.name)
@@ -1122,7 +1896,7 @@ async def create_email_integration(data: EmailIntegrationCreate):
         raise HTTPException(status_code=400, detail=f"Invalid email configuration: {validation.error}")
 
     integration_id = str(uuid.uuid4())
-    now = datetime.datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     email_config = data.smtp_config.model_dump()
     email_recipients = data.recipients.model_dump()
@@ -1132,7 +1906,7 @@ async def create_email_integration(data: EmailIntegrationCreate):
     }
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -1179,12 +1953,10 @@ async def create_email_integration(data: EmailIntegrationCreate):
     response_model=EmailIntegrationResponse,
     dependencies=[Depends(require_customer_admin)],
 )
-async def update_email_integration(integration_id: str, data: EmailIntegrationUpdate):
+async def update_email_integration(integration_id: str, data: EmailIntegrationUpdate, pool=Depends(get_db_pool)):
     """Update an email integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -1193,7 +1965,7 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
 
     if "smtp_config" in update_data or "recipients" in update_data:
         try:
-            p = await get_pool()
+            p = pool
             async with tenant_connection(p, tenant_id) as conn:
                 existing = await conn.fetchrow(
                     """
@@ -1253,13 +2025,13 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
         param_idx += 1
 
     updates.append(f"updated_at = ${param_idx}")
-    values.append(datetime.datetime.utcnow())
+    values.append(datetime.now(timezone.utc))
     param_idx += 1
 
     values.extend([integration_id, tenant_id])
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 f"""
@@ -1303,16 +2075,14 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
     status_code=204,
     dependencies=[Depends(require_customer_admin)],
 )
-async def delete_email_integration(integration_id: str):
+async def delete_email_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Delete an email integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -1333,11 +2103,11 @@ async def delete_email_integration(integration_id: str):
 
 
 @router.get("/integrations/mqtt", response_model=list[MQTTIntegrationResponse])
-async def list_mqtt_integrations():
+async def list_mqtt_integrations(pool=Depends(get_db_pool)):
     """List all MQTT integrations for this tenant."""
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -1372,16 +2142,14 @@ async def list_mqtt_integrations():
 
 
 @router.get("/integrations/mqtt/{integration_id}", response_model=MQTTIntegrationResponse)
-async def get_mqtt_integration(integration_id: str):
+async def get_mqtt_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Get a specific MQTT integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -1419,7 +2187,7 @@ async def get_mqtt_integration(integration_id: str):
     status_code=201,
     dependencies=[Depends(require_customer_admin)],
 )
-async def create_mqtt_integration(data: MQTTIntegrationCreate):
+async def create_mqtt_integration(data: MQTTIntegrationCreate, pool=Depends(get_db_pool)):
     """Create a new MQTT integration."""
     tenant_id = get_tenant_id()
     name = _validate_name(data.name)
@@ -1428,10 +2196,10 @@ async def create_mqtt_integration(data: MQTTIntegrationCreate):
         raise HTTPException(status_code=400, detail=f"Invalid MQTT topic: {validation.error}")
 
     integration_id = str(uuid.uuid4())
-    now = datetime.datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 """
@@ -1475,12 +2243,10 @@ async def create_mqtt_integration(data: MQTTIntegrationCreate):
     response_model=MQTTIntegrationResponse,
     dependencies=[Depends(require_customer_admin)],
 )
-async def update_mqtt_integration(integration_id: str, data: MQTTIntegrationUpdate):
+async def update_mqtt_integration(integration_id: str, data: MQTTIntegrationUpdate, pool=Depends(get_db_pool)):
     """Update a MQTT integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -1506,13 +2272,13 @@ async def update_mqtt_integration(integration_id: str, data: MQTTIntegrationUpda
             param_idx += 1
 
     updates.append(f"updated_at = ${param_idx}")
-    values.append(datetime.datetime.utcnow())
+    values.append(datetime.now(timezone.utc))
     param_idx += 1
 
     values.extend([integration_id, tenant_id])
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             row = await conn.fetchrow(
                 f"""
@@ -1549,16 +2315,14 @@ async def update_mqtt_integration(integration_id: str, data: MQTTIntegrationUpda
     status_code=204,
     dependencies=[Depends(require_customer_admin)],
 )
-async def delete_mqtt_integration(integration_id: str):
+async def delete_mqtt_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Delete a MQTT integration."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             result = await conn.execute(
                 """
@@ -1582,17 +2346,14 @@ async def delete_mqtt_integration(integration_id: str):
     "/integrations/mqtt/{integration_id}/test",
     dependencies=[Depends(require_customer_admin)],
 )
-async def test_mqtt_integration(integration_id: str):
+async def test_mqtt_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Send a test MQTT message."""
     tenant_id = get_tenant_id()
-
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
@@ -1626,7 +2387,7 @@ async def test_mqtt_integration(integration_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    now = datetime.datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     timestamp = now.isoformat() + "Z"
     test_values = {
         "tenant_id": tenant_id,
@@ -1666,14 +2427,14 @@ async def test_mqtt_integration(integration_id: str):
 
 
 @router.post("/integrations", dependencies=[Depends(require_customer_admin)])
-async def create_integration_route(body: IntegrationCreate):
+async def create_integration_route(body: IntegrationCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     name = _validate_name(body.name)
     valid, error = await validate_webhook_url(body.webhook_url)
     if not valid:
         raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             integration = await create_integration(
                 conn,
@@ -1690,10 +2451,10 @@ async def create_integration_route(body: IntegrationCreate):
 
 
 @router.get("/integrations/{integration_id}")
-async def get_integration(integration_id: str):
+async def get_integration(integration_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             integration = await fetch_integration(conn, tenant_id, integration_id)
     except Exception:
@@ -1706,7 +2467,7 @@ async def get_integration(integration_id: str):
 
 
 @router.patch("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
-async def patch_integration(integration_id: str, body: IntegrationUpdate):
+async def patch_integration(integration_id: str, body: IntegrationUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     if body.name is None and body.webhook_url is None and body.enabled is None:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -1718,7 +2479,7 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate):
             raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {error}")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             integration = await update_integration(
                 conn,
@@ -1738,10 +2499,10 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate):
 
 
 @router.delete("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
-async def delete_integration_route(integration_id: str):
+async def delete_integration_route(integration_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             deleted = await delete_integration(conn, tenant_id, integration_id)
     except Exception:
@@ -1757,11 +2518,11 @@ async def delete_integration_route(integration_id: str):
     "/integrations/snmp/{integration_id}/test",
     dependencies=[Depends(require_customer_admin)],
 )
-async def test_snmp_integration(integration_id: str):
+async def test_snmp_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Send a test SNMP trap."""
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
@@ -1796,12 +2557,12 @@ async def test_snmp_integration(integration_id: str):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     test_alert = AlertPayload(
-        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
+        alert_id=f"test-{int(datetime.now(timezone.utc).timestamp())}",
         device_id="test-device",
         tenant_id=tenant_id,
         severity="info",
         message="Test trap from OpsConductor Pulse",
-        timestamp=datetime.datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
 
     integration = {
@@ -1832,17 +2593,14 @@ async def test_snmp_integration(integration_id: str):
     "/integrations/email/{integration_id}/test",
     dependencies=[Depends(require_customer_admin)],
 )
-async def test_email_integration(integration_id: str):
+async def test_email_integration(integration_id: str, pool=Depends(get_db_pool)):
     """Send a test email."""
     tenant_id = get_tenant_id()
-
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             # Rate limit
             allowed, _ = await check_and_increment_rate_limit(
@@ -1891,13 +2649,13 @@ async def test_email_integration(integration_id: str):
         from_address=email_config.get("from_address", ""),
         from_name=email_config.get("from_name", "OpsConductor Alerts"),
         recipients=email_recipients,
-        alert_id=f"test-{int(datetime.datetime.utcnow().timestamp())}",
+        alert_id=f"test-{int(datetime.now(timezone.utc).timestamp())}",
         device_id="test-device",
         tenant_id=tenant_id,
         severity="info",
         message="This is a test email from OpsConductor Pulse. If you received this, your email integration is working correctly.",
         alert_type="TEST_ALERT",
-        timestamp=datetime.datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         subject_template=email_template.get("subject_template"),
         body_template=email_template.get("body_template"),
         body_format=email_template.get("format", "html"),
@@ -1914,16 +2672,14 @@ async def test_email_integration(integration_id: str):
 
 
 @router.post("/integrations/{integration_id}/test", dependencies=[Depends(require_customer_admin)])
-async def test_integration_delivery(integration_id: str):
+async def test_integration_delivery(integration_id: str, pool=Depends(get_db_pool)):
     """Send a test delivery to any integration type."""
     tenant_id = get_tenant_id()
-    try:
-        UUID(integration_id)
-    except ValueError:
+    if not validate_uuid(integration_id):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             allowed, _ = await check_and_increment_rate_limit(
                 conn,
@@ -1961,7 +2717,7 @@ async def test_integration_delivery(integration_id: str):
         raise HTTPException(status_code=404, detail="Integration not found")
 
     integration_type = row["type"]
-    now = datetime.datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     if integration_type == "email":
         # Email delivery
@@ -2058,10 +2814,10 @@ async def test_integration_delivery(integration_id: str):
 
 
 @router.get("/integration-routes")
-async def list_integration_routes(limit: int = Query(100, ge=1, le=500)):
+async def list_integration_routes(limit: int = Query(100, ge=1, le=500), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             routes = await fetch_integration_routes(conn, tenant_id, limit=limit)
     except Exception:
@@ -2071,15 +2827,13 @@ async def list_integration_routes(limit: int = Query(100, ge=1, le=500)):
 
 
 @router.get("/integration-routes/{route_id}")
-async def get_integration_route(route_id: str):
-    try:
-        UUID(route_id)
-    except ValueError:
+async def get_integration_route(route_id: str, pool=Depends(get_db_pool)):
+    if not validate_uuid(route_id):
         raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             route = await fetch_integration_route(conn, tenant_id, route_id)
     except Exception:
@@ -2091,12 +2845,12 @@ async def get_integration_route(route_id: str):
 
 
 @router.post("/integration-routes", dependencies=[Depends(require_customer_admin)])
-async def create_integration_route_endpoint(body: RouteCreate):
+async def create_integration_route_endpoint(body: RouteCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     alert_types = _normalize_list(body.alert_types, ALERT_TYPES, "alert_types")
     severities = _normalize_list(body.severities, SEVERITIES, "severities")
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             integration = await fetch_integration(conn, tenant_id, str(body.integration_id))
             if not integration:
@@ -2123,10 +2877,8 @@ async def create_integration_route_endpoint(body: RouteCreate):
 
 
 @router.patch("/integration-routes/{route_id}", dependencies=[Depends(require_customer_admin)])
-async def patch_integration_route(route_id: str, body: RouteUpdate):
-    try:
-        UUID(route_id)
-    except ValueError:
+async def patch_integration_route(route_id: str, body: RouteUpdate, pool=Depends(get_db_pool)):
+    if not validate_uuid(route_id):
         raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
 
     if body.alert_types is None and body.severities is None and body.enabled is None:
@@ -2137,7 +2889,7 @@ async def patch_integration_route(route_id: str, body: RouteUpdate):
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             route = await update_integration_route(
                 conn,
@@ -2157,15 +2909,13 @@ async def patch_integration_route(route_id: str, body: RouteUpdate):
 
 
 @router.delete("/integration-routes/{route_id}", dependencies=[Depends(require_customer_admin)])
-async def delete_integration_route_endpoint(route_id: str):
-    try:
-        UUID(route_id)
-    except ValueError:
+async def delete_integration_route_endpoint(route_id: str, pool=Depends(get_db_pool)):
+    if not validate_uuid(route_id):
         raise HTTPException(status_code=400, detail="Invalid route_id format: must be a valid UUID")
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             deleted = await delete_integration_route(conn, tenant_id, route_id)
     except Exception:
@@ -2178,10 +2928,10 @@ async def delete_integration_route_endpoint(route_id: str):
 
 
 @router.get("/alert-rules")
-async def list_alert_rules():
+async def list_alert_rules(pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rules = await fetch_alert_rules(conn, tenant_id)
     except Exception:
@@ -2192,15 +2942,13 @@ async def list_alert_rules():
 
 
 @router.get("/alert-rules/{rule_id}")
-async def get_alert_rule(rule_id: str):
-    try:
-        UUID(rule_id)
-    except ValueError:
+async def get_alert_rule(rule_id: str, pool=Depends(get_db_pool)):
+    if not validate_uuid(rule_id):
         raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rule = await fetch_alert_rule(conn, tenant_id, rule_id)
     except Exception:
@@ -2212,7 +2960,7 @@ async def get_alert_rule(rule_id: str):
 
 
 @router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
-async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate):
+async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     if body.operator not in VALID_OPERATORS:
         raise HTTPException(status_code=400, detail="Invalid operator value")
@@ -2223,7 +2971,7 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate):
             if site_id is None or not str(site_id).strip():
                 raise HTTPException(status_code=400, detail="Invalid site_id value")
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rule = await create_alert_rule(
                 conn,
@@ -2264,10 +3012,8 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate):
 
 
 @router.patch("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
-async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate):
-    try:
-        UUID(rule_id)
-    except ValueError:
+async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=Depends(get_db_pool)):
+    if not validate_uuid(rule_id):
         raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
 
     if (
@@ -2293,7 +3039,7 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate):
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             rule = await update_alert_rule(
                 conn,
@@ -2317,15 +3063,13 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate):
 
 
 @router.delete("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
-async def delete_alert_rule_endpoint(rule_id: str):
-    try:
-        UUID(rule_id)
-    except ValueError:
+async def delete_alert_rule_endpoint(rule_id: str, pool=Depends(get_db_pool)):
+    if not validate_uuid(rule_id):
         raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
 
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             deleted = await delete_alert_rule(conn, tenant_id, rule_id)
     except Exception:
@@ -2340,10 +3084,11 @@ async def delete_alert_rule_endpoint(rule_id: str):
 @router.get("/delivery-status")
 async def delivery_status(
     limit: int = Query(20, ge=1, le=100),
+    pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
     try:
-        p = await get_pool()
+        p = pool
         async with tenant_connection(p, tenant_id) as conn:
             attempts = await fetch_delivery_attempts(conn, tenant_id, limit=limit)
     except Exception:
@@ -2369,9 +3114,7 @@ async def get_audit_log(
     tenant_id = get_tenant_id()
     pool = request.app.state.pool
 
-    async with pool.acquire() as conn:
-        await conn.execute("SET LOCAL ROLE pulse_app")
-        await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
+    async with tenant_connection(pool, tenant_id) as conn:
 
         where = ["tenant_id = $1"]
         params = [tenant_id]

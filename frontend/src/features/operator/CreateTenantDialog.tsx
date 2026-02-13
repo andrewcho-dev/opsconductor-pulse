@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage } from "@/lib/errors";
 import { createTenant } from "@/services/api/tenants";
 
 interface Props {
@@ -46,8 +47,8 @@ export function CreateTenantDialog({ open, onOpenChange }: Props) {
       setName("");
       setEmail("");
     },
-    onError: (error: any) => {
-      console.error("Create tenant error:", error?.body || error?.response?.data);
+    onError: (error: Error) => {
+      console.error("Create tenant error:", getErrorMessage(error));
     },
   });
 
@@ -122,10 +123,7 @@ export function CreateTenantDialog({ open, onOpenChange }: Props) {
           </div>
           {mutation.isError && (
             <p className="text-sm text-destructive">
-              {(mutation.error as any)?.body?.detail ||
-                (mutation.error as any)?.response?.data?.detail ||
-                (mutation.error as Error).message ||
-                "Failed to create tenant"}
+              {getErrorMessage(mutation.error)}
             </p>
           )}
         </form>

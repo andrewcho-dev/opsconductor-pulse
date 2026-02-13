@@ -4,6 +4,7 @@ import { Providers } from "@/app/providers";
 import { router } from "@/app/router";
 import { registerPulseThemes } from "@/lib/charts/theme";
 import { useUIStore } from "@/stores/ui-store";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Register ECharts themes (runs once on module load)
 registerPulseThemes();
@@ -15,9 +16,11 @@ function App() {
   }, []);
 
   return (
-    <Providers>
-      <RouterProvider router={router} />
-    </Providers>
+    <ErrorBoundary>
+      <Providers>
+        <RouterProvider router={router} />
+      </Providers>
+    </ErrorBoundary>
   );
 }
 

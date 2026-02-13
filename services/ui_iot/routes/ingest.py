@@ -1,6 +1,8 @@
 import sys
 sys.path.insert(0, "/app")
 
+import logging
+import time
 from datetime import datetime, timezone
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -12,8 +14,47 @@ from shared.ingest_core import (
     parse_ts,
     TelemetryRecord,
 )
+from shared.rate_limiter import get_rate_limiter
+from shared.sampled_logger import get_sampled_logger
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingest/v1", tags=["ingest"])
+
+# Cache for known (tenant_id, device_id) to avoid DB hit on every request
+_known_device_cache: set = set()
+_known_device_cache_time: float = 0
+KNOWN_DEVICE_CACHE_TTL = 60
+
+
+def get_client_ip(request: Request) -> str:
+    """Extract client IP, handling X-Forwarded-For and X-Real-IP."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip()
+    if request.scope.get("client"):
+        return request.scope["client"][0]
+    return "unknown"
+
+
+async def is_known_device(pool, tenant_id: str, device_id: str) -> bool:
+    """Check if device is registered (with 60s TTL cache)."""
+    global _known_device_cache, _known_device_cache_time
+    now = time.time()
+    if now - _known_device_cache_time > KNOWN_DEVICE_CACHE_TTL:
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT tenant_id, device_id FROM device_registry"
+                )
+            _known_device_cache = {(r["tenant_id"], r["device_id"]) for r in rows}
+            _known_device_cache_time = now
+        except Exception as e:
+            logger.warning("Failed to refresh known-device cache: %s", e)
+    return (tenant_id, device_id) in _known_device_cache
 
 
 class IngestPayload(BaseModel):
@@ -51,6 +92,16 @@ class BatchResponse(BaseModel):
     results: list[BatchResultItem]
 
 
+@router.get("/metrics/rate-limits")
+async def rate_limit_stats():
+    """Return rate limiting statistics for monitoring."""
+    rate_limiter = get_rate_limiter()
+    return {
+        "rate_limit_stats": rate_limiter.get_stats(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.post("/tenant/{tenant_id}/device/{device_id}/{msg_type}")
 async def ingest_single(
     request: Request,
@@ -73,8 +124,27 @@ async def ingest_single(
     if msg_type not in ("telemetry", "heartbeat"):
         raise HTTPException(status_code=400, detail="Invalid msg_type. Must be 'telemetry' or 'heartbeat'")
 
-    # Get shared state
+    # Rate limiting (per-device, per-IP, global)
     pool = await request.app.state.get_pool()
+    client_ip = get_client_ip(request)
+    known = await is_known_device(pool, tenant_id, device_id)
+    rate_limiter = get_rate_limiter()
+    allowed, reason, status_code = rate_limiter.check_all(
+        device_id=device_id, ip=client_ip, is_known_device=known
+    )
+    if not allowed:
+        event_type = "rate_limited_known" if known else "rate_limited_unknown"
+        get_sampled_logger().log(
+            event_type,
+            f"Rate limited: {reason}",
+            extra={"device_id": device_id, "ip": client_ip},
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=reason or "rate_limited",
+        )
+
+    # Get shared state
     auth_cache = request.app.state.auth_cache
     batch_writer = request.app.state.batch_writer
     rate_buckets = request.app.state.rate_buckets
@@ -104,7 +174,25 @@ async def ingest_single(
     )
 
     if not result.success:
-        # Map reason to HTTP status
+        reason = result.reason
+        if reason == "UNREGISTERED_DEVICE":
+            get_sampled_logger().log(
+                "unknown_device",
+                f"Unknown device: tenant_id={tenant_id} device_id={device_id}",
+                extra={"tenant_id": tenant_id, "device_id": device_id},
+            )
+        elif reason in ("TOKEN_INVALID", "TOKEN_MISSING", "TOKEN_NOT_SET_IN_REGISTRY"):
+            get_sampled_logger().log(
+                "auth_failure",
+                f"Auth failure: {reason} device_id={device_id}",
+                extra={"reason": reason, "device_id": device_id},
+            )
+        elif reason in ("PAYLOAD_TOO_LARGE", "SITE_MISMATCH"):
+            get_sampled_logger().log(
+                "validation_error",
+                f"Validation error: {reason}",
+                extra={"reason": reason, "device_id": device_id},
+            )
         status_map = {
             "RATE_LIMITED": 429,
             "TOKEN_INVALID": 401,
@@ -115,8 +203,8 @@ async def ingest_single(
             "PAYLOAD_TOO_LARGE": 400,
             "SITE_MISMATCH": 400,
         }
-        status = status_map.get(result.reason, 400)
-        raise HTTPException(status_code=status, detail=result.reason)
+        status = status_map.get(reason, 400)
+        raise HTTPException(status_code=status, detail=reason)
 
     event_ts = parse_ts(payload.ts) or datetime.now(timezone.utc)
     record = TelemetryRecord(
@@ -154,8 +242,22 @@ async def ingest_batch(request: Request, batch: BatchRequest):
     if len(batch.messages) == 0:
         raise HTTPException(status_code=400, detail="Batch is empty")
 
-    # Get shared state
+    # Rate limiting: global and per-IP (batch treated as single request)
     pool = await request.app.state.get_pool()
+    client_ip = get_client_ip(request)
+    rate_limiter = get_rate_limiter()
+    allowed, reason, status_code = rate_limiter.check_all(
+        device_id=None, ip=client_ip, is_known_device=False
+    )
+    if not allowed:
+        get_sampled_logger().log(
+            "rate_limited_unknown",
+            f"Rate limited batch: {reason}",
+            extra={"ip": client_ip},
+        )
+        raise HTTPException(status_code=status_code, detail=reason or "rate_limited")
+
+    # Get shared state
     auth_cache = request.app.state.auth_cache
     batch_writer = request.app.state.batch_writer
     rate_buckets = request.app.state.rate_buckets

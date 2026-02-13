@@ -3,7 +3,7 @@ import time
 import logging
 import shutil
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -235,7 +235,7 @@ async def get_system_health(request: Request):
     return {
         "status": overall,
         "components": components,
-        "checked_at": datetime.utcnow().isoformat() + "Z",
+        "checked_at": datetime.now(timezone.utc).isoformat() + "Z",
     }
 
 

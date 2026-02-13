@@ -76,44 +76,17 @@ async def test_require_customer_rejects_operator():
 async def test_get_tenant_id_missing():
     tenant = _tenant_module()
     tenant.tenant_context.set(None)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(HTTPException) as err:
         tenant.get_tenant_id()
-
-
-async def test_get_tenant_id_or_none():
-    tenant = _tenant_module()
-    tenant.tenant_context.set(None)
-    assert tenant.get_tenant_id_or_none() is None
+    assert err.value.status_code == 401
 
 
 async def test_get_user_missing():
     tenant = _tenant_module()
     tenant.user_context.set(None)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(HTTPException) as err:
         tenant.get_user()
-
-
-async def test_is_operator_and_admin_flags():
-    tenant = _tenant_module()
-    tenant.user_context.set({"role": "operator"})
-    assert tenant.is_operator() is True
-    assert tenant.is_operator_admin() is False
-
-    tenant.user_context.set({"role": "operator_admin"})
-    assert tenant.is_operator() is True
-    assert tenant.is_operator_admin() is True
-
-
-async def test_is_operator_no_user():
-    tenant = _tenant_module()
-    tenant.user_context.set(None)
-    assert tenant.is_operator() is False
-
-
-async def test_is_operator_admin_no_user():
-    tenant = _tenant_module()
-    tenant.user_context.set(None)
-    assert tenant.is_operator_admin() is False
+    assert err.value.status_code == 401
 
 
 async def test_inject_tenant_context_missing_user():

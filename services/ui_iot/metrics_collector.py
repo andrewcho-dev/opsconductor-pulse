@@ -2,7 +2,7 @@ import os
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -76,7 +76,7 @@ class MetricsCollector:
 
     async def _collect_and_write(self):
         """Collect all metrics and write to TimescaleDB."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = []
 
         async with httpx.AsyncClient(timeout=5.0) as client:

@@ -3,6 +3,10 @@ export interface PulseUser {
   email: string;
   tenantId: string;
   role: string;
+  organization?: Record<string, object> | string[];
+  realmAccess?: {
+    roles: string[];
+  };
   name?: string;
 }
 

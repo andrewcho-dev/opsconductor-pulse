@@ -654,10 +654,27 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         await websocket.close(code=4001, reason="Invalid or expired token")
         return
 
-    tenant_id = payload.get("tenant_id")
-    role = payload.get("role", "")
-    valid_roles = ("customer_admin", "customer_viewer", "operator", "operator_admin")
-    if role not in valid_roles:
+    # Extract tenant ID from organization claim (new format), with legacy fallback.
+    tenant_id = None
+    orgs = payload.get("organization", {}) or {}
+    if isinstance(orgs, dict) and orgs:
+        tenant_id = next(iter(orgs.keys()))
+    elif isinstance(orgs, list):
+        for org in orgs:
+            if isinstance(org, str) and org:
+                tenant_id = org
+                break
+    if not tenant_id:
+        tenant_id = payload.get("tenant_id")
+
+    # Extract roles from realm_access.roles (new format).
+    realm_access = payload.get("realm_access", {}) or {}
+    roles = realm_access.get("roles", []) or []
+    if not isinstance(roles, list):
+        roles = []
+
+    valid_roles = ("customer", "tenant-admin", "operator", "operator-admin")
+    if not any(role in valid_roles for role in roles):
         await websocket.close(code=4003, reason="Unauthorized")
         return
     # Operators have no tenant_id — use a placeholder for the WS connection

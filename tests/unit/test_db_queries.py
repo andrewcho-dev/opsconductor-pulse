@@ -42,7 +42,7 @@ class FakeConn:
 async def test_list_devices_query_includes_tenant():
     conn = FakeConn()
     await queries.fetch_devices(conn, "tenant-a", limit=10, offset=0)
-    assert "WHERE tenant_id = $1" in conn.last_query
+    assert "WHERE ds.tenant_id = $1" in conn.last_query
 
 
 async def test_list_devices_query_with_status_filter():
@@ -60,7 +60,7 @@ async def test_list_devices_query_with_limit():
 async def test_get_device_query_includes_both_keys():
     conn = FakeConn()
     await queries.fetch_device(conn, "tenant-a", "device-1")
-    assert "tenant_id = $1 AND device_id = $2" in conn.last_query
+    assert "ds.tenant_id = $1 AND ds.device_id = $2" in conn.last_query
 
 
 async def test_list_alerts_query_ordering():
@@ -124,7 +124,7 @@ async def test_check_and_increment_rate_limit_allows():
 async def test_fetch_all_devices_query():
     conn = FakeConn()
     await queries.fetch_all_devices(conn, limit=10, offset=0)
-    assert "ORDER BY tenant_id" in conn.last_query
+    assert "ORDER BY ds.tenant_id" in conn.last_query
 
 
 async def test_fetch_all_alerts_query():

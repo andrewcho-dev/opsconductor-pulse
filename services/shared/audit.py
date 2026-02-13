@@ -8,7 +8,7 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Deque
 
 import asyncpg
@@ -199,7 +199,7 @@ class AuditLogger:
         Call this synchronously - no await needed.
         """
         event = AuditEvent(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             tenant_id=tenant_id,
             event_type=event_type,
             category=category,

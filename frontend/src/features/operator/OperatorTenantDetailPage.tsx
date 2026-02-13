@@ -1,17 +1,29 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { PageHeader } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { apiGet } from "@/services/api/client";
+import {
   fetchTenant,
   fetchTenantStats,
   type Tenant,
 } from "@/services/api/tenants";
 import { EditTenantDialog } from "./EditTenantDialog";
+import { CreateSubscriptionDialog } from "./CreateSubscriptionDialog";
+import { BulkAssignDialog } from "./BulkAssignDialog";
 import {
   Cpu,
   Wifi,
@@ -20,11 +32,28 @@ import {
   Link as LinkIcon,
   Clock,
   Pencil,
+  CreditCard,
 } from "lucide-react";
+
+interface Subscription {
+  subscription_id: string;
+  tenant_id: string;
+  subscription_type: string;
+  parent_subscription_id: string | null;
+  device_limit: number;
+  active_device_count: number;
+  term_start: string | null;
+  term_end: string | null;
+  status: string;
+  plan_id: string | null;
+  description: string | null;
+}
 
 export default function OperatorTenantDetailPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const [showEdit, setShowEdit] = useState(false);
+  const [showSubscriptionCreate, setShowSubscriptionCreate] = useState(false);
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [fullTenant, setFullTenant] = useState<Tenant | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -32,6 +61,17 @@ export default function OperatorTenantDetailPage() {
     queryFn: () => fetchTenantStats(tenantId!),
     enabled: !!tenantId,
     refetchInterval: 30000,
+  });
+
+  const { data: subscriptionList, refetch: refetchSubscriptions } = useQuery<{
+    subscriptions: Subscription[];
+  }>({
+    queryKey: ["tenant-subscriptions", tenantId],
+    queryFn: () =>
+      apiGet<{ subscriptions: Subscription[] }>(
+        `/operator/subscriptions?tenant_id=${tenantId}&limit=200`
+      ),
+    enabled: !!tenantId,
   });
 
   const handleEditClick = async () => {
@@ -50,6 +90,22 @@ export default function OperatorTenantDetailPage() {
   }
 
   const { stats } = data;
+  const subscriptions = subscriptionList?.subscriptions ?? [];
+
+  const typeClasses: Record<string, string> = {
+    MAIN: "bg-blue-100 text-blue-800",
+    ADDON: "bg-purple-100 text-purple-800",
+    TRIAL: "bg-yellow-100 text-yellow-800",
+    TEMPORARY: "bg-orange-100 text-orange-800",
+  };
+
+  const statusClasses: Record<string, string> = {
+    ACTIVE: "bg-green-100 text-green-800",
+    TRIAL: "bg-blue-100 text-blue-800",
+    GRACE: "bg-orange-100 text-orange-800",
+    SUSPENDED: "bg-red-100 text-red-800",
+    EXPIRED: "bg-gray-200 text-gray-700",
+  };
 
   return (
     <div className="space-y-6">
@@ -179,11 +235,108 @@ export default function OperatorTenantDetailPage() {
         </Card>
 
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Subscriptions
+          </CardTitle>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowBulkAssign(true)}>
+              Bulk Assign Devices
+            </Button>
+            <Button size="sm" onClick={() => setShowSubscriptionCreate(true)}>
+              Add Subscription
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Devices</TableHead>
+                  <TableHead>Term End</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {subscriptions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                      No subscriptions found.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {subscriptions.map((subscription) => (
+                  <TableRow key={subscription.subscription_id}>
+                    <TableCell>
+                      <Link
+                        className="text-primary hover:underline"
+                        to={`/operator/subscriptions/${subscription.subscription_id}`}
+                      >
+                        {subscription.subscription_id}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={typeClasses[subscription.subscription_type] ?? ""}
+                      >
+                        {subscription.subscription_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {subscription.active_device_count}/{subscription.device_limit}
+                    </TableCell>
+                    <TableCell>
+                      {subscription.term_end
+                        ? format(new Date(subscription.term_end), "MMM d, yyyy")
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={statusClasses[subscription.status] ?? ""}
+                      >
+                        {subscription.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
       <EditTenantDialog
         tenant={fullTenant}
         open={showEdit}
         onOpenChange={setShowEdit}
       />
+      <CreateSubscriptionDialog
+        open={showSubscriptionCreate}
+        onOpenChange={setShowSubscriptionCreate}
+        preselectedTenantId={tenantId}
+        onCreated={() => {
+          refetchSubscriptions();
+          setShowSubscriptionCreate(false);
+        }}
+      />
+      {tenantId && (
+        <BulkAssignDialog
+          open={showBulkAssign}
+          onOpenChange={setShowBulkAssign}
+          tenantId={tenantId}
+          onComplete={() => {
+            refetchSubscriptions();
+            setShowBulkAssign(false);
+          }}
+        />
+      )}
     </div>
   );
 }

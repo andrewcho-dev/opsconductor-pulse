@@ -4,6 +4,8 @@ import {
   fetchOperatorAlerts,
   fetchQuarantine,
   fetchAuditLog,
+  fetchActivityLog,
+  type ActivityLogFilters,
 } from "@/services/api/operator";
 
 export function useOperatorDevices(tenantFilter?: string, limit = 100, offset = 0) {
@@ -37,5 +39,12 @@ export function useAuditLog(
   return useQuery({
     queryKey: ["audit-log", userId, action, since, limit, offset],
     queryFn: () => fetchAuditLog(userId, action, since, limit, offset),
+  });
+}
+
+export function useActivityLog(filters: ActivityLogFilters) {
+  return useQuery({
+    queryKey: ["activity-log", filters],
+    queryFn: () => fetchActivityLog(filters),
   });
 }

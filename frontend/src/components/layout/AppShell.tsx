@@ -3,6 +3,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
 import { useWebSocket } from "@/hooks/use-websocket";
+import { SubscriptionBanner } from "./SubscriptionBanner";
 
 export default function AppShell() {
   useWebSocket(); // Connect WebSocket on mount
@@ -13,6 +14,7 @@ export default function AppShell() {
         <AppSidebar />
         <div className="flex flex-1 flex-col">
           <AppHeader />
+          <SubscriptionBanner />
           <main className="flex-1 p-6 overflow-auto">
             <Outlet />
           </main>

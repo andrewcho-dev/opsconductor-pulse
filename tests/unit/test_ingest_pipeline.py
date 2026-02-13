@@ -24,8 +24,14 @@ if "paho" not in sys.modules:
     sys.modules["paho.mqtt"] = mqtt_stub
     sys.modules["paho.mqtt.client"] = mqtt_client_stub
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "ingest_iot"))
-from ingest import DeviceAuthCache, _build_line_protocol, _escape_field_key
+services_dir = os.path.join(os.path.dirname(__file__), "..", "..", "services")
+sys.path.insert(0, services_dir)
+from shared.ingest_core import (  # noqa: E402
+    DeviceAuthCache,
+    TokenBucket,
+    sha256_hex,
+    validate_and_prepare,
+)
 
 
 @pytest.mark.unit
@@ -65,7 +71,7 @@ def test_cache_miss_increments_counter():
 def test_cache_ttl_expiration():
     cache = DeviceAuthCache(ttl_seconds=60)
     cache.put("t1", "d1", "hash", "site-1", "ACTIVE")
-    with patch("ingest.time.time", return_value=time.time() + 61):
+    with patch("shared.ingest_core.time.time", return_value=time.time() + 61):
         assert cache.get("t1", "d1") is None
 
 
@@ -94,84 +100,208 @@ def test_cache_stats_size():
     assert cache.stats()["size"] == 5
 
 
-@pytest.mark.unit
-def test_telemetry_arbitrary_float_metric():
-    payload = {"metrics": {"pressure_psi": 42.7}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "pressure_psi=42.7" in line
+class _DummyConn:
+    def __init__(self, row):
+        self._row = row
+
+    async def fetchrow(self, *_args, **_kwargs):
+        return self._row
 
 
-@pytest.mark.unit
-def test_telemetry_arbitrary_int_metric():
-    payload = {"metrics": {"flow_rate": 120}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "flow_rate=120i" in line
+class _DummyAcquire:
+    def __init__(self, row):
+        self._row = row
+
+    async def __aenter__(self):
+        return _DummyConn(self._row)
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return False
 
 
-@pytest.mark.unit
-def test_telemetry_arbitrary_bool_metric():
-    payload = {"metrics": {"valve_open": True}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "valve_open=true" in line
+class _DummyPool:
+    def __init__(self, row):
+        self._row = row
+
+    def acquire(self):
+        return _DummyAcquire(self._row)
 
 
-@pytest.mark.unit
-def test_telemetry_string_metric_dropped():
-    payload = {"metrics": {"location": "building-A", "temp_c": 25.0}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "location" not in line
-    assert "temp_c=25.0" in line
+@pytest.mark.asyncio
+async def test_validate_and_prepare_unregistered_device():
+    result = await validate_and_prepare(
+        pool=_DummyPool(None),
+        auth_cache=DeviceAuthCache(),
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {"temp": 1.0}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is False
+    assert result.reason == "UNREGISTERED_DEVICE"
 
 
-@pytest.mark.unit
-def test_telemetry_none_metric_dropped():
-    payload = {"metrics": {"temp_c": None, "pressure": 42.0}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "temp_c" not in line
-    assert "pressure=42.0" in line
+@pytest.mark.asyncio
+async def test_validate_and_prepare_token_missing():
+    auth_cache = DeviceAuthCache()
+    auth_cache.put("t1", "d1", sha256_hex("token"), "s1", "ACTIVE")
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=auth_cache,
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token=None,
+        payload={"metrics": {}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is False
+    assert result.reason == "TOKEN_MISSING"
 
 
-@pytest.mark.unit
-def test_telemetry_mixed_types():
-    payload = {"metrics": {"temp": 25.5, "count": 10, "ok": False, "name": "test"}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "temp=25.5" in line
-    assert "count=10i" in line
-    assert "ok=false" in line
-    assert "name" not in line
+@pytest.mark.asyncio
+async def test_validate_and_prepare_token_invalid():
+    auth_cache = DeviceAuthCache()
+    auth_cache.put("t1", "d1", sha256_hex("token"), "s1", "ACTIVE")
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=auth_cache,
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="wrong",
+        payload={"metrics": {}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is False
+    assert result.reason == "TOKEN_INVALID"
 
 
-@pytest.mark.unit
-def test_telemetry_empty_metrics_has_seq():
-    payload = {"metrics": {}, "seq": 7}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "seq=7i" in line
-    assert line != ""
+@pytest.mark.asyncio
+async def test_validate_and_prepare_device_revoked():
+    auth_cache = DeviceAuthCache()
+    auth_cache.put("t1", "d1", sha256_hex("token"), "s1", "SUSPENDED")
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=auth_cache,
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is False
+    assert result.reason == "DEVICE_REVOKED"
 
 
-@pytest.mark.unit
-def test_telemetry_bool_not_treated_as_int():
-    payload = {"metrics": {"flag": True}}
-    line = _build_line_protocol("telemetry", "d1", "s1", payload, None)
-    assert "flag=true" in line
-    assert "flag=1i" not in line
+@pytest.mark.asyncio
+async def test_validate_and_prepare_site_mismatch():
+    auth_cache = DeviceAuthCache()
+    auth_cache.put("t1", "d1", sha256_hex("token"), "site-a", "ACTIVE")
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=auth_cache,
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="site-b",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is False
+    assert result.reason == "SITE_MISMATCH"
 
 
-@pytest.mark.unit
-def test_escape_field_key_normal():
-    assert _escape_field_key("battery_pct") == "battery_pct"
+@pytest.mark.asyncio
+async def test_validate_and_prepare_rate_limited():
+    bucket = TokenBucket()
+    bucket.tokens = 0.0
+    bucket.updated = time.time()
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=DeviceAuthCache(),
+        rate_buckets={("t1", "d1"): bucket},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {}},
+        max_payload_bytes=1024,
+        rps=0.0,
+        burst=0.0,
+        require_token=False,
+    )
+    assert result.success is False
+    assert result.reason == "RATE_LIMITED"
 
 
-@pytest.mark.unit
-def test_escape_field_key_with_space():
-    assert "\\ " in _escape_field_key("my field")
+@pytest.mark.asyncio
+async def test_validate_and_prepare_payload_too_large():
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=DeviceAuthCache(),
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {"data": "x" * 100}},
+        max_payload_bytes=10,
+        rps=5.0,
+        burst=5.0,
+        require_token=False,
+    )
+    assert result.success is False
+    assert result.reason == "PAYLOAD_TOO_LARGE"
 
 
-@pytest.mark.unit
-def test_escape_field_key_with_comma():
-    assert "\\," in _escape_field_key("a,b")
-
-
-@pytest.mark.unit
-def test_escape_field_key_with_equals():
-    assert "\\=" in _escape_field_key("a=b")
+@pytest.mark.asyncio
+async def test_validate_and_prepare_success_cached():
+    auth_cache = DeviceAuthCache()
+    auth_cache.put("t1", "d1", sha256_hex("token"), "s1", "ACTIVE")
+    result = await validate_and_prepare(
+        pool=None,
+        auth_cache=auth_cache,
+        rate_buckets={},
+        tenant_id="t1",
+        device_id="d1",
+        site_id="s1",
+        msg_type="telemetry",
+        provision_token="token",
+        payload={"metrics": {"temp": 1.0}},
+        max_payload_bytes=1024,
+        rps=5.0,
+        burst=5.0,
+        require_token=True,
+    )
+    assert result.success is True

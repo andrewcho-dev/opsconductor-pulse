@@ -188,7 +188,7 @@ class TimescaleBatchWriter:
             elapsed_ms = (time.time() - start_time) * 1000
             self.records_written += len(records_to_write)
             self.batches_flushed += 1
-            self.last_flush_time = datetime.utcnow()
+            self.last_flush_time = datetime.now(timezone.utc)
             self.last_flush_latency_ms = elapsed_ms
 
             if elapsed_ms > 100:

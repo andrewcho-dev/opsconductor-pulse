@@ -1,6 +1,5 @@
 import os
-import sys
-sys.path.insert(0, "/app")
+import asyncio
 import base64
 import hashlib
 import logging
@@ -18,10 +17,24 @@ from starlette.middleware.cors import CORSMiddleware
 
 from routes.customer import router as customer_router
 from routes.operator import router as operator_router
-from routes.system import router as system_router
+from routes.system import (
+    router as system_router,
+    check_service,
+    INGEST_URL,
+    EVALUATOR_URL,
+    DISPATCHER_URL,
+    DELIVERY_URL,
+)
 from routes.api_v2 import router as api_v2_router, ws_router as api_v2_ws_router
 from routes.ingest import router as ingest_router
+from routes.users import router as users_router
 from middleware.auth import validate_token
+from db.pool import operator_connection
+from db.queries import (
+    get_open_system_alert,
+    create_system_alert,
+    resolve_system_alert,
+)
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
 from metrics_collector import collector
@@ -38,15 +51,37 @@ FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "1") == "1"
 
 UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
+HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
+SYSTEM_ALERT_ENABLED = os.getenv("SYSTEM_ALERT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+CSRF_COOKIE_NAME = "csrf_token"
+CSRF_HEADER_NAME = "X-CSRF-Token"
+
+ALLOWED_ORIGINS = [origin for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin]
+if not ALLOWED_ORIGINS:
+    if os.getenv("ENV") == "PROD":
+        ALLOWED_ORIGINS = []
+    else:
+        ALLOWED_ORIGINS = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://localhost:3000",
+            "https://localhost:5173",
+        ]
+
+HEALTH_MONITOR_ENDPOINTS = {
+    "ingest": INGEST_URL,
+    "evaluator": EVALUATOR_URL,
+    "dispatcher": DISPATCHER_URL,
+    "delivery_worker": DELIVERY_URL,
+}
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOWED_ORIGINS.split(","),
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -56,6 +91,7 @@ app.include_router(system_router)
 app.include_router(api_v2_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
+app.include_router(users_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
@@ -93,6 +129,45 @@ def _secure_cookies_enabled() -> bool:
     return os.getenv("SECURE_COOKIES", "false").lower() == "true"
 
 
+CSRF_EXEMPT_PATHS = (
+    "/ingest/",
+    "/health",
+    "/metrics",
+    "/webhook/",
+    "/.well-known/",
+)
+
+
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        response = await call_next(request)
+        if CSRF_COOKIE_NAME not in request.cookies:
+            csrf_token = secrets.token_urlsafe(32)
+            response.set_cookie(
+                CSRF_COOKIE_NAME,
+                csrf_token,
+                httponly=False,
+                secure=_secure_cookies_enabled(),
+                samesite="strict",
+                path="/",
+            )
+        return response
+
+    if any(request.url.path.startswith(path) for path in CSRF_EXEMPT_PATHS):
+        return await call_next(request)
+
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    header_token = request.headers.get(CSRF_HEADER_NAME)
+    if not cookie_token or not header_token or cookie_token != header_token:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CSRF token missing or invalid"},
+        )
+
+    return await call_next(request)
+
+
 def get_ui_base_url() -> str:
     return os.getenv("UI_BASE_URL", "http://localhost:8080").rstrip("/")
 
@@ -117,6 +192,44 @@ async def get_pool():
             min_size=1, max_size=5
         )
     return pool
+
+
+def _health_failure_reason(health: dict) -> str:
+    if not isinstance(health, dict):
+        return "unknown"
+    if health.get("error"):
+        return str(health["error"])
+    if health.get("http_status"):
+        return f"http {health['http_status']}"
+    return health.get("status", "unknown")
+
+
+async def health_monitor_loop() -> None:
+    """Background loop that creates/resolves system alerts from service health."""
+    logger.info("System health monitor started (interval=%ss)", HEALTH_CHECK_INTERVAL)
+    while True:
+        try:
+            current_pool = await get_pool()
+            async with operator_connection(current_pool) as conn:
+                for service_name, service_url in HEALTH_MONITOR_ENDPOINTS.items():
+                    health = await check_service(service_name, service_url)
+                    is_healthy = health.get("status") == "healthy"
+                    open_alert = await get_open_system_alert(conn, service_name)
+
+                    if not is_healthy and not open_alert:
+                        reason = _health_failure_reason(health)
+                        message = f"Service unhealthy: {service_name} ({reason})"
+                        await create_system_alert(conn, service_name, message)
+                        logger.warning("[health-monitor] created alert for %s: %s", service_name, reason)
+                    elif is_healthy and open_alert:
+                        await resolve_system_alert(conn, service_name)
+                        logger.info("[health-monitor] resolved alert for %s", service_name)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Health monitor loop failed")
+
+        await asyncio.sleep(max(5, HEALTH_CHECK_INTERVAL))
 
 @app.on_event("startup")
 async def startup():
@@ -161,39 +274,32 @@ async def startup():
             kc_host, ui_host,
         )
 
+    if SYSTEM_ALERT_ENABLED:
+        app.state.health_monitor_task = asyncio.create_task(health_monitor_loop())
+    else:
+        logger.info("System health monitor disabled (SYSTEM_ALERT_ENABLED=false)")
+
 
 @app.on_event("shutdown")
 async def shutdown():
+    health_monitor_task = getattr(app.state, "health_monitor_task", None)
+    if health_monitor_task:
+        health_monitor_task.cancel()
+        try:
+            await health_monitor_task
+        except asyncio.CancelledError:
+            pass
+
     await collector.stop()
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
         await app.state.audit.stop()
-
-async def get_settings(conn):
-    rows = await conn.fetch(
-        "SELECT key, value FROM app_settings WHERE key IN "
-        "('MODE','STORE_REJECTS','MIRROR_REJECTS_TO_RAW','RATE_LIMIT_RPS','RATE_LIMIT_BURST','MAX_PAYLOAD_BYTES')"
-    )
-    kv = {r["key"]: r["value"] for r in rows}
-
-    mode = (kv.get("MODE", "PROD") or "PROD").upper()
-    if mode not in ("PROD", "DEV"):
-        mode = "PROD"
-
-    store_rejects = kv.get("STORE_REJECTS", "0")
-    mirror_rejects = kv.get("MIRROR_REJECTS_TO_RAW", "0")
-
-    # Policy lock in PROD
-    if mode == "PROD":
-        store_rejects = "0"
-        mirror_rejects = "0"
-
-    rate_rps = kv.get("RATE_LIMIT_RPS", "5")
-    rate_burst = kv.get("RATE_LIMIT_BURST", "20")
-    max_payload_bytes = kv.get("MAX_PAYLOAD_BYTES", "8192")
-
-    return mode, store_rejects, mirror_rejects, rate_rps, rate_burst, max_payload_bytes
+    try:
+        from shared.sampled_logger import get_sampled_logger
+        get_sampled_logger().shutdown()
+    except Exception:
+        pass
 
 @app.get("/api/v2/health")
 async def api_v2_health():
@@ -401,6 +507,8 @@ async def auth_status(request: Request):
             "email": payload.get("email"),
             "role": payload.get("role"),
             "tenant_id": payload.get("tenant_id"),
+            "organization": payload.get("organization", {}),
+            "realm_access": payload.get("realm_access", {}),
         },
         "expires_in": expires_in,
     }

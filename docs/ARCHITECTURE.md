@@ -125,20 +125,56 @@ Transactional data store for all non-telemetry data:
 - `rate_limits` — Per-device rate limiting
 
 ### TimescaleDB (PostgreSQL Extension)
-Time-series data stored in hypertables:
+
+Time-series data is stored using TimescaleDB hypertables for automatic partitioning and compression:
 
 **telemetry** — Device telemetry and heartbeats:
-- Automatic time-based partitioning (chunks)
-- Compression policies for older data
-- All metrics stored as JSONB in `metrics` column
-- Tenant isolation via `tenant_id` column with application-level filtering
-- Supports 20,000+ msg/sec with batched COPY inserts
+- Partitioned by time (automatic chunking)
+- Compression enabled for data older than 7 days
+- Retention policy: 90 days (configurable)
+- Columns: `time`, `tenant_id`, `device_id`, `msg_type`, `metrics` (JSONB)
+- Supports 20,000+ messages/second with batched COPY inserts
 
-**system_metrics** — Platform metrics for System Dashboard:
-- Service health counters (ingest, evaluator, dispatcher, delivery)
-- Platform aggregates (devices online/stale, alerts open, deliveries pending)
-- Database metrics (connections, size)
-- Collected every 5 seconds by metrics_collector
+**system_metrics** — Platform monitoring:
+- CPU, memory, disk, network metrics per service
+- Used by System Dashboard
+- Same compression/retention policies
+
+**Query patterns:**
+- Recent data: Standard SELECT with time range
+- Aggregations: TimescaleDB `time_bucket()` for downsampling
+- Metrics access: JSONB operators (`->`, `->>`, `?`)
+
+**Migration from InfluxDB:**
+Phase 30 migrated all time-series storage from InfluxDB to TimescaleDB for:
+- Simplified operations (single database)
+- Better integration with RLS
+- Native PostgreSQL tooling
+
+### Metric Catalog & Normalization
+
+The metric system provides consistent naming across different device types:
+
+**metric_catalog** — Defines known metrics:
+- `metric_name`: Internal name (e.g., `cpu_temp`)
+- `display_name`: Human-readable (e.g., "CPU Temperature")
+- `unit`: Measurement unit (e.g., "°C")
+- `description`: Documentation
+
+**normalized_metrics** — Unified metric definitions:
+- Maps raw device metrics to normalized names
+- Enables cross-device comparisons
+- Supports metric aliasing
+
+**metric_mappings** — Raw to normalized mapping:
+- Per-device-type mappings
+- Handles vendor-specific naming
+- Automatic normalization in queries
+
+**API Endpoints:**
+- GET/POST/DELETE `/customer/metrics/catalog`
+- GET/POST/PATCH/DELETE `/customer/normalized-metrics`
+- GET/POST/PATCH/DELETE `/customer/metric-mappings`
 
 ## Authentication Model
 

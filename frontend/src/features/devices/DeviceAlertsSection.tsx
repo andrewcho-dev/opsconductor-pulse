@@ -3,19 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SeverityBadge } from "@/components/shared";
 import { useDeviceAlerts } from "@/hooks/use-device-alerts";
+import { formatTimestamp } from "@/lib/format";
 import { Bell } from "lucide-react";
 import { memo } from "react";
 
 interface DeviceAlertsSectionProps {
   deviceId: string;
-}
-
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return ts;
-  }
 }
 
 function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
@@ -60,7 +53,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                   {a.alert_type}
                 </span>
                 <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
-                  {formatTime(a.created_at)}
+                  {formatTimestamp(a.created_at)}
                 </span>
               </div>
             ))}

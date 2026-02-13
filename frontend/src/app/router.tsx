@@ -11,13 +11,19 @@ import WebhookPage from "@/features/integrations/WebhookPage";
 import SnmpPage from "@/features/integrations/SnmpPage";
 import EmailPage from "@/features/integrations/EmailPage";
 import MqttPage from "@/features/integrations/MqttPage";
+import SubscriptionPage from "@/features/subscription/SubscriptionPage";
+import RenewalPage from "@/features/subscription/RenewalPage";
 import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
 import OperatorTenantsPage from "@/features/operator/OperatorTenantsPage";
 import OperatorTenantDetailPage from "@/features/operator/OperatorTenantDetailPage";
+import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
+import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
+import OperatorUsersPage from "@/features/operator/OperatorUsersPage";
 import { SystemDashboard } from "@/features/operator/SystemDashboard";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
+import UsersPage from "@/features/users/UsersPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 
 function HomeRedirect() {
@@ -31,6 +37,13 @@ function RequireOperator() {
   return <Outlet />;
 }
 
+function RequireCustomer() {
+  const { isCustomer, isOperator } = useAuth();
+  if (isOperator && !isCustomer) return <Navigate to="/operator" replace />;
+  if (!isCustomer) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
 export const router = createBrowserRouter(
   [
     {
@@ -38,17 +51,26 @@ export const router = createBrowserRouter(
       element: <AppShell />,
       children: [
         { index: true, element: <HomeRedirect /> },
-        { path: "dashboard", element: <DashboardPage /> },
-        { path: "devices", element: <DeviceListPage /> },
-        { path: "devices/:deviceId", element: <DeviceDetailPage /> },
-        { path: "alerts", element: <AlertListPage /> },
-        { path: "alert-rules", element: <AlertRulesPage /> },
-        { path: "activity-log", element: <ActivityLogPage /> },
-        { path: "metrics", element: <MetricsPage /> },
-        { path: "integrations/webhooks", element: <WebhookPage /> },
-        { path: "integrations/snmp", element: <SnmpPage /> },
-        { path: "integrations/email", element: <EmailPage /> },
-        { path: "integrations/mqtt", element: <MqttPage /> },
+        // Customer routes
+        {
+          element: <RequireCustomer />,
+          children: [
+            { path: "dashboard", element: <DashboardPage /> },
+            { path: "devices", element: <DeviceListPage /> },
+            { path: "devices/:deviceId", element: <DeviceDetailPage /> },
+            { path: "alerts", element: <AlertListPage /> },
+            { path: "alert-rules", element: <AlertRulesPage /> },
+            { path: "activity-log", element: <ActivityLogPage /> },
+            { path: "metrics", element: <MetricsPage /> },
+            { path: "integrations/webhooks", element: <WebhookPage /> },
+            { path: "integrations/snmp", element: <SnmpPage /> },
+            { path: "integrations/email", element: <EmailPage /> },
+            { path: "integrations/mqtt", element: <MqttPage /> },
+            { path: "subscription", element: <SubscriptionPage /> },
+            { path: "subscription/renew", element: <RenewalPage /> },
+            { path: "users", element: <UsersPage /> },
+          ],
+        },
         // Operator routes
         {
           path: "operator",
@@ -58,6 +80,9 @@ export const router = createBrowserRouter(
             { path: "devices", element: <OperatorDevices /> },
             { path: "tenants", element: <OperatorTenantsPage /> },
             { path: "tenants/:tenantId", element: <OperatorTenantDetailPage /> },
+            { path: "users", element: <OperatorUsersPage /> },
+            { path: "subscriptions", element: <SubscriptionsPage /> },
+            { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "audit-log", element: <AuditLogPage /> },
             { path: "settings", element: <SettingsPage /> },

@@ -1,39 +1,150 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { PageHeader, StatusBadge, EmptyState } from "@/components/shared";
+import { PageHeader, EmptyState } from "@/components/shared";
 import { useDevices } from "@/hooks/use-devices";
-import { Cpu } from "lucide-react";
+import { Cpu, AlertTriangle } from "lucide-react";
+import { getAllTags } from "@/services/api/devices";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/services/api/client";
+import { Badge } from "@/components/ui/badge";
+import { DeviceActions } from "./DeviceActions";
+import { DeviceFilters } from "./DeviceFilters";
+import { DeviceTable } from "./DeviceTable";
+
+interface SubscriptionStatus {
+  device_limit: number;
+  active_device_count: number;
+  devices_available: number;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED";
+}
+
+interface SubscriptionsResponse {
+  subscriptions: { status: SubscriptionStatus["status"] }[];
+  summary: {
+    total_device_limit: number;
+    total_active_devices: number;
+    total_available: number;
+  };
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="h-1.5 w-full rounded-full bg-muted">
+      <div
+        className="h-1.5 rounded-full bg-primary"
+        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+      />
+    </div>
+  );
+}
 
 export default function DeviceListPage() {
-  const [page, setPage] = useState(1);
-  const limit = 50;
-  const offset = (page - 1) * limit;
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(100);
   const { data, isLoading, error } = useDevices(limit, offset);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagFilterOpen, setTagFilterOpen] = useState(false);
+
+  const { data: allTagsData } = useQuery({
+    queryKey: ["tags"],
+    queryFn: getAllTags,
+  });
+  const allTags = allTagsData?.tags ?? [];
+
+  const { data: subscription } = useQuery({
+    queryKey: ["subscription-status"],
+    queryFn: async () => {
+      const response = await apiGet<SubscriptionsResponse>("/customer/subscriptions");
+      const statuses = response.subscriptions.map((sub) => sub.status);
+      let status: SubscriptionStatus["status"] = "ACTIVE";
+      if (statuses.includes("EXPIRED")) {
+        status = "EXPIRED";
+      } else if (statuses.includes("SUSPENDED")) {
+        status = "SUSPENDED";
+      } else if (statuses.includes("GRACE")) {
+        status = "GRACE";
+      } else if (statuses.includes("TRIAL") && !statuses.includes("ACTIVE")) {
+        status = "TRIAL";
+      }
+
+      return {
+        device_limit: response.summary.total_device_limit,
+        active_device_count: response.summary.total_active_devices,
+        devices_available: response.summary.total_available,
+        status,
+      };
+    },
+  });
 
   const devices = data?.devices || [];
   const totalCount = data?.total ?? data?.count ?? 0;
-  const totalPages = totalCount > 0 ? Math.ceil(totalCount / limit) : 1;
-  const canGoNext =
-    totalCount > 0 ? offset + devices.length < totalCount : devices.length === limit;
+
+  const filteredDevices = useMemo(() => {
+    if (selectedTags.length === 0) return devices;
+    return devices.filter((device) => {
+      const tags = device.tags || [];
+      return selectedTags.every((tag) => tags.includes(tag));
+    });
+  }, [devices, selectedTags]);
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const canCreate =
+    subscription?.status !== "SUSPENDED" &&
+    subscription?.status !== "EXPIRED";
+  const createDisabled = subscription?.devices_available === 0;
+  const usagePercent = subscription
+    ? Math.round(
+        (subscription.active_device_count / Math.max(subscription.device_limit, 1)) * 100
+      )
+    : 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Devices"
         description={
-          isLoading ? "Loading..." : `${totalCount} devices in your fleet`
+          isLoading
+            ? "Loading..."
+            : selectedTags.length > 0
+            ? `${filteredDevices.length} devices match filters`
+            : subscription
+            ? `${totalCount} of ${subscription.device_limit} devices (${subscription.devices_available} available)`
+            : `${totalCount} devices in your fleet`
         }
+        action={<DeviceActions canCreate={canCreate} createDisabled={createDisabled} />}
       />
+
+      {subscription && (
+        <div className="flex items-center gap-4 py-2">
+          <div className="flex-1 max-w-xs">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-muted-foreground">Device Usage</span>
+              <span>
+                {subscription.active_device_count} / {subscription.device_limit}
+              </span>
+            </div>
+            <ProgressBar value={usagePercent} />
+          </div>
+
+          {subscription.devices_available === 0 && (
+            <Badge variant="outline" className="border-orange-500 text-orange-600">
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              At Limit
+            </Badge>
+          )}
+
+          {subscription.devices_available > 0 && subscription.devices_available <= 5 && (
+            <Badge variant="outline" className="border-yellow-500 text-yellow-600">
+              {subscription.devices_available} remaining
+            </Badge>
+          )}
+        </div>
+      )}
 
       {error ? (
         <div className="text-destructive">
@@ -53,77 +164,25 @@ export default function DeviceListPage() {
         />
       ) : (
         <>
-          <div className="rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Device ID</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Seen</TableHead>
-                  <TableHead className="text-right">Battery</TableHead>
-                  <TableHead className="text-right">Metrics</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {devices.map((d) => (
-                  <TableRow key={d.device_id}>
-                    <TableCell>
-                      <Link
-                        to={`/devices/${d.device_id}`}
-                        className="font-mono text-sm text-primary hover:underline"
-                      >
-                        {d.device_id}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{d.site_id}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={d.status} />
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {d.last_seen_at || "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {d.state?.battery_pct != null
-                        ? `${d.state.battery_pct}%`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">
-                      {d.state ? Object.keys(d.state).length : 0}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <DeviceFilters
+            selectedTags={selectedTags}
+            setSelectedTags={setSelectedTags}
+            allTags={allTags}
+            tagFilterOpen={tagFilterOpen}
+            setTagFilterOpen={setTagFilterOpen}
+            toggleTag={toggleTag}
+            offset={offset}
+            limit={limit}
+            totalCount={totalCount}
+            setOffset={setOffset}
+            setLimit={setLimit}
+          />
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              Showing {offset + 1}–{offset + devices.length} of {totalCount}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={page === 1}
-              >
-                Previous
-              </Button>
-              <span className="flex items-center px-2 text-muted-foreground">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((prev) => prev + 1)}
-                disabled={!canGoNext}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <DeviceTable
+            devices={filteredDevices}
+            selectedTagsCount={selectedTags.length}
+            onOpenTagFilter={() => setTagFilterOpen(true)}
+          />
         </>
       )}
     </div>

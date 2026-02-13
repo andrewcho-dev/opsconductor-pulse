@@ -16,6 +16,23 @@ export interface Device {
   last_heartbeat_at: string | null;
   last_telemetry_at: string | null;
   state: DeviceState | null;
+  subscription_id?: string | null;
+  subscription_type?: string | null;
+  subscription_status?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  location_source?: "auto" | "manual" | null;
+  mac_address?: string | null;
+  imei?: string | null;
+  iccid?: string | null;
+  serial_number?: string | null;
+  model?: string | null;
+  manufacturer?: string | null;
+  hw_revision?: string | null;
+  fw_version?: string | null;
+  notes?: string | null;
+  tags?: string[];
 }
 
 export interface DeviceListResponse {
@@ -30,6 +47,67 @@ export interface DeviceListResponse {
 export interface DeviceDetailResponse {
   tenant_id: string;
   device: Device;
+}
+
+export interface DeviceUpdate {
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  location_source?: "auto" | "manual" | null;
+  mac_address?: string | null;
+  imei?: string | null;
+  iccid?: string | null;
+  serial_number?: string | null;
+  model?: string | null;
+  manufacturer?: string | null;
+  hw_revision?: string | null;
+  fw_version?: string | null;
+  notes?: string | null;
+}
+
+export interface SubscriptionDevice {
+  device_id: string;
+  site_id: string;
+  status: string;
+  last_seen_at: string | null;
+}
+
+export interface ChildSubscription {
+  subscription_id: string;
+  device_limit: number;
+  active_device_count: number;
+  status: string;
+}
+
+export interface SubscriptionDetail {
+  subscription_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  subscription_type: "MAIN" | "ADDON" | "TRIAL" | "TEMPORARY";
+  parent_subscription_id: string | null;
+  device_limit: number;
+  active_device_count: number;
+  term_start: string;
+  term_end: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED";
+  grace_end: string | null;
+  plan_id: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  devices: SubscriptionDevice[];
+  child_subscriptions: ChildSubscription[];
+}
+
+export interface DeviceTagsResponse {
+  tenant_id: string;
+  device_id: string;
+  tags: string[];
+}
+
+export interface AllTagsResponse {
+  tenant_id: string;
+  tags: string[];
 }
 
 export interface FleetSummary {
