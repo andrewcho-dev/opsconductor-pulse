@@ -1,0 +1,602 @@
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/opsconductor/simcloud
+configfile: pytest.ini
+plugins: playwright-0.7.2, benchmark-5.2.3, base-url-2.1.0, respx-0.22.0, cov-4.1.0, anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=auto, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 85 items
+
+tests/e2e/test_customer_dashboard.py::TestCustomerDashboard::test_dashboard_shows_device_stats PASSED [  1%]
+tests/e2e/test_customer_dashboard.py::TestCustomerDashboard::test_dashboard_shows_devices_table PASSED [  2%]
+tests/e2e/test_customer_dashboard.py::TestCustomerDashboard::test_device_link_navigates_to_detail PASSED [  3%]
+tests/e2e/test_customer_dashboard.py::TestCustomerDashboard::test_shows_only_tenant_data PASSED [  4%]
+tests/e2e/test_customer_dashboard.py::TestCustomerDeviceDetail::test_device_detail_loads PASSED [  5%]
+tests/e2e/test_customer_dashboard.py::TestCustomerDeviceDetail::test_cannot_access_other_tenant_device PASSED [  7%]
+tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_create_webhook_integration FAILED [  8%]
+tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_webhook_form_validates_url FAILED [  9%]
+tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_test_webhook_delivery FAILED [ 10%]
+tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_delete_webhook_integration FAILED [ 11%]
+tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_create_snmp_v2c_integration FAILED [ 12%]
+tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_create_snmp_v3_integration FAILED [ 14%]
+tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_snmp_version_toggle FAILED [ 15%]
+tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_delete_snmp_integration FAILED [ 16%]
+tests/e2e/test_integration_crud.py::TestEmailCRUD::test_create_email_integration FAILED [ 17%]
+tests/e2e/test_integration_crud.py::TestEmailCRUD::test_delete_email_integration FAILED [ 18%]
+tests/e2e/test_integration_crud.py::TestMQTTCRUD::test_create_mqtt_integration FAILED [ 20%]
+tests/e2e/test_integration_crud.py::TestMQTTCRUD::test_delete_mqtt_integration FAILED [ 21%]
+tests/e2e/test_integration_crud.py::TestDesignConsistency::test_all_integration_pages_have_same_theme FAILED [ 22%]
+tests/e2e/test_integration_crud.py::TestDesignConsistency::test_all_integration_pages_have_add_button FAILED [ 23%]
+tests/e2e/test_integrations.py::TestIntegrationManagement::test_create_integration_via_api PASSED [ 24%]
+tests/e2e/test_integrations.py::TestIntegrationManagement::test_list_integrations FAILED [ 25%]
+tests/e2e/test_login_flow.py::TestLoginFlow::test_unauthenticated_redirects_to_login FAILED [ 27%]
+tests/e2e/test_login_flow.py::TestLoginFlow::test_customer_login_flow FAILED [ 28%]
+tests/e2e/test_login_flow.py::TestLoginFlow::test_operator_login_flow FAILED [ 29%]
+tests/e2e/test_login_flow.py::TestLoginFlow::test_invalid_login_shows_error PASSED [ 30%]
+tests/e2e/test_login_flow.py::TestLoginFlow::test_logout_flow FAILED     [ 31%]
+tests/e2e/test_multi_subscription.py::TestOperatorMultiSubscriptionUI::test_operator_subscription_list_page PASSED [ 32%]
+tests/e2e/test_multi_subscription.py::TestOperatorMultiSubscriptionUI::test_operator_create_main_subscription PASSED [ 34%]
+tests/e2e/test_multi_subscription.py::TestOperatorMultiSubscriptionUI::test_operator_create_addon_subscription PASSED [ 35%]
+tests/e2e/test_multi_subscription.py::TestOperatorMultiSubscriptionUI::test_operator_assign_device_to_subscription PASSED [ 36%]
+tests/e2e/test_multi_subscription.py::TestCustomerMultiSubscriptionUI::test_customer_multi_subscription_view SKIPPED [ 37%]
+tests/e2e/test_multi_subscription.py::TestCustomerMultiSubscriptionUI::test_subscription_banner_warnings SKIPPED [ 38%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_dashboard_link_works PASSED [ 40%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_devices_link_returns_html PASSED [ 41%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_alerts_link_returns_html PASSED [ 42%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_webhooks_link_works PASSED [ 43%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_snmp_link_works PASSED [ 44%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_email_link_works PASSED [ 45%]
+tests/e2e/test_navigation.py::TestCustomerNavLinks::test_mqtt_link_works PASSED [ 47%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_dashboard_has_nav PASSED [ 48%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_devices_page_has_nav PASSED [ 49%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_alerts_page_has_nav PASSED [ 50%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_webhooks_page_has_nav PASSED [ 51%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_snmp_page_has_nav PASSED [ 52%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_email_page_has_nav PASSED [ 54%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_mqtt_page_has_nav PASSED [ 55%]
+tests/e2e/test_navigation.py::TestNavBarPresence::test_device_detail_has_nav FAILED [ 56%]
+tests/e2e/test_navigation.py::TestActiveNavLink::test_dashboard_nav_active PASSED [ 57%]
+tests/e2e/test_navigation.py::TestActiveNavLink::test_devices_nav_active PASSED [ 58%]
+tests/e2e/test_navigation.py::TestActiveNavLink::test_alerts_nav_active PASSED [ 60%]
+tests/e2e/test_navigation.py::TestPageContent::test_devices_page_shows_table SKIPPED [ 61%]
+tests/e2e/test_navigation.py::TestPageContent::test_alerts_page_shows_table SKIPPED [ 62%]
+tests/e2e/test_navigation.py::TestPageContent::test_device_detail_shows_device_info SKIPPED [ 63%]
+tests/e2e/test_navigation.py::TestCrossPageNavigation::test_navigate_dashboard_to_devices_to_detail SKIPPED [ 64%]
+tests/e2e/test_navigation.py::TestCrossPageNavigation::test_navigate_back_button SKIPPED [ 65%]
+tests/e2e/test_navigation.py::TestOperatorNav::test_operator_dashboard_has_nav PASSED [ 67%]
+tests/e2e/test_navigation.py::TestOperatorNav::test_operator_can_see_all_tenants PASSED [ 68%]
+tests/e2e/test_operator_dashboard.py::TestOperatorDashboard::test_shows_all_tenants PASSED [ 69%]
+tests/e2e/test_operator_dashboard.py::TestOperatorDashboard::test_operator_badge_visible FAILED [ 70%]
+tests/e2e/test_operator_dashboard.py::TestOperatorDashboard::test_settings_not_visible_for_regular_operator PASSED [ 71%]
+tests/e2e/test_page_load_performance.py::test_page_load_dashboard FAILED [ 72%]
+tests/e2e/test_page_load_performance.py::test_page_load_devices FAILED   [ 74%]
+tests/e2e/test_page_load_performance.py::test_page_load_webhooks FAILED  [ 75%]
+tests/e2e/test_page_load_performance.py::test_page_load_snmp FAILED      [ 76%]
+tests/e2e/test_page_load_performance.py::test_page_load_email FAILED     [ 77%]
+tests/e2e/test_phase33_features.py::TestSubscriptionDetailPage::test_detail_page_loads PASSED [ 78%]
+tests/e2e/test_phase33_features.py::TestSubscriptionDetailPage::test_edit_device_limit PASSED [ 80%]
+tests/e2e/test_phase33_features.py::TestSubscriptionStatusChange::test_change_status_to_suspended PASSED [ 81%]
+tests/e2e/test_phase33_features.py::TestSubscriptionStatusChange::test_change_status_to_grace PASSED [ 82%]
+tests/e2e/test_phase33_features.py::TestRenewalWorkflow::test_renewal_banner_shows_for_expiring SKIPPED [ 83%]
+tests/e2e/test_phase33_features.py::TestRenewalWorkflow::test_renew_now_navigation SKIPPED [ 84%]
+tests/e2e/test_phase33_features.py::TestRenewalWorkflow::test_renewal_page_loads SKIPPED [ 85%]
+tests/e2e/test_phase33_features.py::TestRenewalWorkflow::test_plan_selection_shows_summary SKIPPED [ 87%]
+tests/e2e/test_phase33_features.py::TestRenewalWithDownsize::test_downsize_warning_appears SKIPPED [ 88%]
+tests/e2e/test_phase33_features.py::TestRenewalWithDownsize::test_device_selection_modal_opens SKIPPED [ 89%]
+tests/e2e/test_phase33_features.py::TestRenewalWithDownsize::test_device_selection_limits_count SKIPPED [ 90%]
+tests/e2e/test_phase33_features.py::TestNotificationWorkerTransitions::test_active_to_grace_transition PASSED [ 91%]
+tests/e2e/test_phase33_features.py::TestNotificationWorkerTransitions::test_grace_to_suspended_transition PASSED [ 92%]
+tests/e2e/test_phase33_features.py::TestNotificationWorkerTransitions::test_renewal_notification_scheduled PASSED [ 94%]
+tests/e2e/test_subscription_ui.py::TestOperatorSubscriptionUI::test_tenant_detail_has_subscription_card FAILED [ 95%]
+tests/e2e/test_subscription_ui.py::TestOperatorSubscriptionUI::test_edit_subscription_dialog FAILED [ 96%]
+tests/e2e/test_subscription_ui.py::TestCustomerSubscriptionUI::test_sidebar_has_subscription_link PASSED [ 97%]
+tests/e2e/test_subscription_ui.py::TestCustomerSubscriptionUI::test_subscription_page_loads FAILED [ 98%]
+tests/e2e/test_subscription_ui.py::TestCustomerSubscriptionUI::test_device_list_shows_limit FAILED [100%]
+
+=================================== FAILURES ===================================
+_______________ TestWebhookCRUD.test_create_webhook_integration ________________
+tests/e2e/test_integration_crud.py:35: in test_create_webhook_integration
+    await page.click("#btn-add-webhook")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-webhook")
+_______________ TestWebhookCRUD.test_webhook_form_validates_url ________________
+tests/e2e/test_integration_crud.py:70: in test_webhook_form_validates_url
+    await page.click("#btn-add-webhook")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-webhook")
+__________________ TestWebhookCRUD.test_test_webhook_delivery __________________
+tests/e2e/test_integration_crud.py:102: in test_test_webhook_delivery
+    assert response.status in (200, 201)
+E   AssertionError: assert 403 in (200, 201)
+E    +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations' status=403 status_text='Forbidden'>.status
+_______________ TestWebhookCRUD.test_delete_webhook_integration ________________
+tests/e2e/test_integration_crud.py:136: in test_delete_webhook_integration
+    assert response.status in (200, 201)
+E   AssertionError: assert 403 in (200, 201)
+E    +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations' status=403 status_text='Forbidden'>.status
+________________ TestSNMPCRUD.test_create_snmp_v2c_integration _________________
+tests/e2e/test_integration_crud.py:177: in test_create_snmp_v2c_integration
+    await page.click("#btn-add-snmp")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-snmp")
+_________________ TestSNMPCRUD.test_create_snmp_v3_integration _________________
+tests/e2e/test_integration_crud.py:220: in test_create_snmp_v3_integration
+    await page.click("#btn-add-snmp")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-snmp")
+____________________ TestSNMPCRUD.test_snmp_version_toggle _____________________
+tests/e2e/test_integration_crud.py:265: in test_snmp_version_toggle
+    await page.click("#btn-add-snmp")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-snmp")
+__________________ TestSNMPCRUD.test_delete_snmp_integration ___________________
+tests/e2e/test_integration_crud.py:305: in test_delete_snmp_integration
+    assert response.status in (200, 201)
+E   AssertionError: assert 403 in (200, 201)
+E    +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/snmp' status=403 status_text='Forbidden'>.status
+_________________ TestEmailCRUD.test_create_email_integration __________________
+tests/e2e/test_integration_crud.py:345: in test_create_email_integration
+    await page.click("#btn-add-email")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-email")
+_________________ TestEmailCRUD.test_delete_email_integration __________________
+tests/e2e/test_integration_crud.py:402: in test_delete_email_integration
+    assert response.status in (200, 201)
+E   AssertionError: assert 403 in (200, 201)
+E    +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/email' status=403 status_text='Forbidden'>.status
+__________________ TestMQTTCRUD.test_create_mqtt_integration ___________________
+tests/e2e/test_integration_crud.py:441: in test_create_mqtt_integration
+    await page.click("#btn-add-mqtt")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("#btn-add-mqtt")
+__________________ TestMQTTCRUD.test_delete_mqtt_integration ___________________
+tests/e2e/test_integration_crud.py:477: in test_delete_mqtt_integration
+    assert response.status in (200, 201)
+E   AssertionError: assert 403 in (200, 201)
+E    +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/mqtt' status=403 status_text='Forbidden'>.status
+_______ TestDesignConsistency.test_all_integration_pages_have_same_theme _______
+tests/e2e/test_integration_crud.py:518: in test_all_integration_pages_have_same_theme
+    await expect(card).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator(".card").first
+_______ TestDesignConsistency.test_all_integration_pages_have_add_button _______
+tests/e2e/test_integration_crud.py:544: in test_all_integration_pages_have_add_button
+    await expect(button).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("#btn-add-webhook")
+_______________ TestIntegrationManagement.test_list_integrations _______________
+tests/e2e/test_integrations.py:39: in test_list_integrations
+    assert response.status == 200
+E   AssertionError: assert 401 == 200
+E    +  where 401 = <APIResponse url='https://192.168.10.53/customer/integrations' status=401 status_text='Unauthorized'>.status
+____________ TestLoginFlow.test_unauthenticated_redirects_to_login _____________
+tests/e2e/test_login_flow.py:22: in test_unauthenticated_redirects_to_login
+    assert "realms/pulse" in page.url
+E   AssertionError: assert 'realms/pulse' in 'https://192.168.10.53/app/'
+E    +  where 'https://192.168.10.53/app/' = <Page url='https://192.168.10.53/app/'>.url
+____________________ TestLoginFlow.test_customer_login_flow ____________________
+tests/e2e/test_login_flow.py:31: in test_customer_login_flow
+    await page.wait_for_url("**/customer/dashboard", timeout=10000)
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9186: in wait_for_url
+    await self._impl_obj.wait_for_url(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:580: in wait_for_url
+    return await self._main_frame.wait_for_url(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:263: in wait_for_url
+    async with self.expect_navigation(
+../.local/lib/python3.10/site-packages/playwright/_impl/_event_context_manager.py:33: in __aexit__
+    await self._future
+/usr/lib/python3.10/asyncio/tasks.py:304: in __wakeup
+    future.result()
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:239: in continuation
+    event = await waiter.result()
+E   playwright._impl._errors.TimeoutError: Timeout 10000ms exceeded.
+E   =========================== logs ===========================
+E   waiting for navigation to "**/customer/dashboard" until 'load'
+E     navigated to "https://192.168.10.53/app/#state=678b95f8-c753-4b86-a634-7c1a703d1f1b&session_state=66463163-358a-4807-a5ba-ad58ef61ffb6&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=1e28a907-631a-4264-aadf-6f5674ceaaed.66463163-358a-4807-a5ba-ad58ef61ffb6.ad883717-e1c7-43ce-9fed-1246d5b0cbd0"
+E     navigated to "https://192.168.10.53/app/"
+E     navigated to "https://192.168.10.53/app/dashboard"
+E   ============================================================
+____________________ TestLoginFlow.test_operator_login_flow ____________________
+tests/e2e/test_login_flow.py:44: in test_operator_login_flow
+    await page.wait_for_url("**/operator/dashboard", timeout=10000)
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9186: in wait_for_url
+    await self._impl_obj.wait_for_url(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:580: in wait_for_url
+    return await self._main_frame.wait_for_url(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:263: in wait_for_url
+    async with self.expect_navigation(
+../.local/lib/python3.10/site-packages/playwright/_impl/_event_context_manager.py:33: in __aexit__
+    await self._future
+/usr/lib/python3.10/asyncio/tasks.py:304: in __wakeup
+    future.result()
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:239: in continuation
+    event = await waiter.result()
+E   playwright._impl._errors.TimeoutError: Timeout 10000ms exceeded.
+E   =========================== logs ===========================
+E   waiting for navigation to "**/operator/dashboard" until 'load'
+E     navigated to "https://192.168.10.53/app/#state=1a5adf0c-71cd-4763-9fd1-846fe0557dc9&session_state=9854d083-3aed-46b4-927e-95102e600c52&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=6a35b2be-2ba2-41d8-b032-ee3d22e4736d.9854d083-3aed-46b4-927e-95102e600c52.ad883717-e1c7-43ce-9fed-1246d5b0cbd0"
+E     navigated to "https://192.168.10.53/app/"
+E     navigated to "https://192.168.10.53/app/operator"
+E   ============================================================
+________________________ TestLoginFlow.test_logout_flow ________________________
+tests/e2e/test_login_flow.py:63: in test_logout_flow
+    await page.click("text=Logout")
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("text=Logout")
+________________ TestNavBarPresence.test_device_detail_has_nav _________________
+tests/e2e/test_navigation.py:130: in test_device_detail_has_nav
+    await expect(device_link).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("table tbody tr td a").first
+______________ TestOperatorDashboard.test_operator_badge_visible _______________
+tests/e2e/test_operator_dashboard.py:26: in test_operator_badge_visible
+    await expect(badge).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator(".operator-badge")
+___________________________ test_page_load_dashboard ___________________________
+tests/e2e/test_page_load_performance.py:19: in test_page_load_dashboard
+    await expect(page.locator(".stats")).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator(".stats")
+____________________________ test_page_load_devices ____________________________
+tests/e2e/test_page_load_performance.py:32: in test_page_load_devices
+    await expect(table).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("table").filter(has=locator("th:has-text('Device ID')")).first
+E       - waiting for" https://192.168.10.53/app/" navigation to finish...
+E       - navigated to "https://192.168.10.53/app/#state=5f226b61-1c98-41a1-acc7-b963b3433974&session_state=e664e146-9ad0-4e3b-ba03-ae171fe56214&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=131d6f04-bd8e-4240-825f-…"
+___________________________ test_page_load_webhooks ____________________________
+tests/e2e/test_page_load_performance.py:42: in test_page_load_webhooks
+    await expect(page.locator("#webhook-list")).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("#webhook-list")
+_____________________________ test_page_load_snmp ______________________________
+tests/e2e/test_page_load_performance.py:52: in test_page_load_snmp
+    await expect(page.locator("#snmp-list")).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("#snmp-list")
+_____________________________ test_page_load_email _____________________________
+tests/e2e/test_page_load_performance.py:62: in test_page_load_email
+    await expect(page.locator("#email-list")).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("#email-list")
+_____ TestOperatorSubscriptionUI.test_tenant_detail_has_subscription_card ______
+tests/e2e/test_subscription_ui.py:26: in test_tenant_detail_has_subscription_card
+    await expect(manage_button).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("button:has-text(\"Manage\")")
+___________ TestOperatorSubscriptionUI.test_edit_subscription_dialog ___________
+tests/e2e/test_subscription_ui.py:39: in test_edit_subscription_dialog
+    await page.click('button:has-text("Manage")')
+../.local/lib/python3.10/site-packages/playwright/async_api/_generated.py:9931: in click
+    await self._impl_obj.click(
+../.local/lib/python3.10/site-packages/playwright/_impl/_page.py:854: in click
+    return await self._main_frame._click(**locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_frame.py:566: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+../.local/lib/python3.10/site-packages/playwright/_impl/_connection.py:559: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for locator("button:has-text(\"Manage\")")
+___________ TestCustomerSubscriptionUI.test_subscription_page_loads ____________
+tests/e2e/test_subscription_ui.py:82: in test_subscription_page_loads
+    await expect(page.locator("text=Plan Details")).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("text=Plan Details")
+___________ TestCustomerSubscriptionUI.test_device_list_shows_limit ____________
+tests/e2e/test_subscription_ui.py:97: in test_device_list_shows_limit
+    await expect(limit_text).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for locator("text=/\\d+ of \\d+ devices/")
+
+---------- coverage: platform linux, python 3.10.12-final-0 ----------
+Name                                           Stmts   Miss Branch BrPart   Cover   Missing
+-------------------------------------------------------------------------------------------
+services/ui_iot/app.py                           295    209     56      3  25.36%   44->55, 46, 75-88, 92-96, 104, 118-143, 147, 151-155, 159, 163-169, 173-207, 217-221, 225, 228, 232, 236, 240-244, 258-280, 285, 290-384, 389-404, 409-423, 436-495, 501-543
+services/ui_iot/db/__init__.py                     0      0      0      0 100.00%
+services/ui_iot/db/audit.py                       16      9      0      0  43.75%   21-40, 52-81
+services/ui_iot/db/pool.py                        18     11      2      0  35.00%   17-26, 43-47
+services/ui_iot/db/queries.py                    223    186     44      0  13.86%   9-10, 14-15, 19-20, 29-60, 66-94, 98-110, 119-133, 141-154, 163-191, 199-211, 221-236, 247-280, 288-298, 306-321, 329-342, 353-369, 380-409, 417-426, 436-467, 477-494, 502-514, 521-531, 538-548, 556-567, 575-588, 596-607, 622-644, 660-709, 717-725, 735-762, 771-797, 809-835, 844-856
+services/ui_iot/db/telemetry_queries.py           56     43     20      0  17.11%   17-29, 45-72, 89-104, 119-136, 153-168, 187-223, 238-284
+services/ui_iot/dependencies.py                   18      7      0      0  61.11%   13-17, 27, 32
+services/ui_iot/metrics_collector.py             100     69     20      0  25.83%   40-53, 57-66, 70-75, 79-166, 172-178, 182-195
+services/ui_iot/middleware/__init__.py             0      0      0      0 100.00%
+services/ui_iot/middleware/auth.py               104     72     22      0  25.40%   36-44, 50-61, 65-79, 83-88, 92-98, 102-123, 131-147
+services/ui_iot/middleware/tenant.py              36     24     12      0  25.00%   11-12, 16-19, 23-26, 30-35, 39-41, 45-47, 51-53
+services/ui_iot/routes/__init__.py                 0      0      0      0 100.00%
+services/ui_iot/routes/api_v2.py                 298    234     76      0  17.11%   55-61, 70-78, 83-85, 113-134, 147-203, 219-237, 251-258, 278-315, 326-332, 343-347, 357-363, 378-427, 439-451, 464-475, 487-500, 511-571, 583-625, 647-725
+services/ui_iot/routes/customer.py              1421   1161    356      0  14.63%   76-96, 222-224, 228-233, 241-259, 263-278, 294-332, 344-376, 386-433, 438-454, 467-521, 549-587, 621-651, 677-783, 795-870, 874-884, 890-918, 923-956, 961-993, 998-1029, 1034-1051, 1057-1082, 1090-1099, 1104-1125, 1130-1141, 1146-1164, 1169-1206, 1211-1230, 1235-1253, 1258-1291, 1296-1338, 1343-1363, 1368-1398, 1403-1449, 1454-1484, 1489-1511, 1517-1552, 1558-1583, 1605-1642, 1663-1747, 1768-1790, 1800-1839, 1845-1872, 1896-1944, 1967-2066, 2089-2111, 2117-2150, 2156-2180, 2201-2237, 2257-2309, 2329-2351, 2360-2431, 2440-2459, 2464-2475, 2480-2507, 2512-2523, 2532-2590, 2607-2673, 2686-2813, 2827-2835, 2840-2853, 2858-2885, 2890-2917, 2922-2936, 2941-2950, 2955-2968, 2973-3020, 3025-3071, 3076-3090, 3097-3106, 3122-3187
+services/ui_iot/routes/ingest.py                  81     44     14      0  38.95%   73-133, 151-231
+services/ui_iot/routes/operator.py               544    430    120      0  17.17%   103-113, 117-119, 123-144, 166-201, 212-260, 282-311, 317-387, 409-454, 478-516, 540-618, 628-702, 716-755, 775-818, 833-876, 890-943, 953-981, 987-1032, 1074-1102, 1117-1158, 1167-1196, 1211-1234, 1243-1262, 1270-1293, 1315-1441, 1452-1502
+services/ui_iot/routes/system.py                 271    218     70      0  15.54%   49-59, 63-88, 92-108, 112-133, 137-152, 157-174, 179-192, 197-235, 248-266, 305-359, 378-396, 402-424, 433-443, 455-502, 569-759, 772-821, 826-859
+services/ui_iot/schemas/__init__.py                3      0      0      0 100.00%
+services/ui_iot/schemas/email.py                  49      3      2      0  90.20%   30-32
+services/ui_iot/schemas/mqtt.py                   25      0      0      0 100.00%
+services/ui_iot/schemas/snmp.py                   64      3      2      0  92.42%   56-58
+services/ui_iot/services/alert_dispatcher.py      87     47     24      0  36.04%   60-90, 101-139, 151-176, 188-193
+services/ui_iot/services/email_sender.py          82     60     18      0  22.00%   18-21, 104-111, 135-237
+services/ui_iot/services/mqtt_sender.py           38     23      2      0  37.50%   15-18, 39-63
+services/ui_iot/services/snmp_sender.py           77     43     12      0  38.20%   67-69, 80-147, 156-170, 180-184, 200-202, 218-227
+services/ui_iot/services/subscription.py          81     68     38      0  10.92%   26-64, 71-75, 87-105, 114-124, 142-205, 216-227, 239-259, 267-277, 289-332, 349
+services/ui_iot/utils/__init__.py                  0      0      0      0 100.00%
+services/ui_iot/utils/email_validator.py          97     75     44      0  15.60%   61-82, 87-126, 131-147, 158-185
+services/ui_iot/utils/mqtt_validator.py           31     22     18      0  18.37%   27-60
+services/ui_iot/utils/snmp_validator.py           58     43     24      0  18.29%   38-74, 79-95, 100
+services/ui_iot/utils/url_validator.py            53     44     26      0  11.39%   22-26, 30-35, 39-79
+services/ui_iot/ws_manager.py                     36     13      2      0  60.53%   27-31, 35-37, 41, 45, 49, 53, 57
+-------------------------------------------------------------------------------------------
+TOTAL                                           4262   3161   1024      3  20.89%
+Coverage HTML written to dir htmlcov
+Coverage XML written to file coverage.xml
+
+=========================== short test summary info ============================
+FAILED tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_create_webhook_integration - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-webhook")
+FAILED tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_webhook_form_validates_url - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-webhook")
+FAILED tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_test_webhook_delivery - AssertionError: assert 403 in (200, 201)
+ +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations' status=403 status_text='Forbidden'>.status
+FAILED tests/e2e/test_integration_crud.py::TestWebhookCRUD::test_delete_webhook_integration - AssertionError: assert 403 in (200, 201)
+ +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations' status=403 status_text='Forbidden'>.status
+FAILED tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_create_snmp_v2c_integration - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-snmp")
+FAILED tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_create_snmp_v3_integration - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-snmp")
+FAILED tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_snmp_version_toggle - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-snmp")
+FAILED tests/e2e/test_integration_crud.py::TestSNMPCRUD::test_delete_snmp_integration - AssertionError: assert 403 in (200, 201)
+ +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/snmp' status=403 status_text='Forbidden'>.status
+FAILED tests/e2e/test_integration_crud.py::TestEmailCRUD::test_create_email_integration - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-email")
+FAILED tests/e2e/test_integration_crud.py::TestEmailCRUD::test_delete_email_integration - AssertionError: assert 403 in (200, 201)
+ +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/email' status=403 status_text='Forbidden'>.status
+FAILED tests/e2e/test_integration_crud.py::TestMQTTCRUD::test_create_mqtt_integration - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#btn-add-mqtt")
+FAILED tests/e2e/test_integration_crud.py::TestMQTTCRUD::test_delete_mqtt_integration - AssertionError: assert 403 in (200, 201)
+ +  where 403 = <APIResponse url='https://192.168.10.53/customer/integrations/mqtt' status=403 status_text='Forbidden'>.status
+FAILED tests/e2e/test_integration_crud.py::TestDesignConsistency::test_all_integration_pages_have_same_theme - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator(".card").first
+FAILED tests/e2e/test_integration_crud.py::TestDesignConsistency::test_all_integration_pages_have_add_button - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("#btn-add-webhook")
+FAILED tests/e2e/test_integrations.py::TestIntegrationManagement::test_list_integrations - AssertionError: assert 401 == 200
+ +  where 401 = <APIResponse url='https://192.168.10.53/customer/integrations' status=401 status_text='Unauthorized'>.status
+FAILED tests/e2e/test_login_flow.py::TestLoginFlow::test_unauthenticated_redirects_to_login - AssertionError: assert 'realms/pulse' in 'https://192.168.10.53/app/'
+ +  where 'https://192.168.10.53/app/' = <Page url='https://192.168.10.53/app/'>.url
+FAILED tests/e2e/test_login_flow.py::TestLoginFlow::test_customer_login_flow - playwright._impl._errors.TimeoutError: Timeout 10000ms exceeded.
+=========================== logs ===========================
+waiting for navigation to "**/customer/dashboard" until 'load'
+  navigated to "https://192.168.10.53/app/#state=678b95f8-c753-4b86-a634-7c1a703d1f1b&session_state=66463163-358a-4807-a5ba-ad58ef61ffb6&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=1e28a907-631a-4264-aadf-6f5674ceaaed.66463163-358a-4807-a5ba-ad58ef61ffb6.ad883717-e1c7-43ce-9fed-1246d5b0cbd0"
+  navigated to "https://192.168.10.53/app/"
+  navigated to "https://192.168.10.53/app/dashboard"
+============================================================
+FAILED tests/e2e/test_login_flow.py::TestLoginFlow::test_operator_login_flow - playwright._impl._errors.TimeoutError: Timeout 10000ms exceeded.
+=========================== logs ===========================
+waiting for navigation to "**/operator/dashboard" until 'load'
+  navigated to "https://192.168.10.53/app/#state=1a5adf0c-71cd-4763-9fd1-846fe0557dc9&session_state=9854d083-3aed-46b4-927e-95102e600c52&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=6a35b2be-2ba2-41d8-b032-ee3d22e4736d.9854d083-3aed-46b4-927e-95102e600c52.ad883717-e1c7-43ce-9fed-1246d5b0cbd0"
+  navigated to "https://192.168.10.53/app/"
+  navigated to "https://192.168.10.53/app/operator"
+============================================================
+FAILED tests/e2e/test_login_flow.py::TestLoginFlow::test_logout_flow - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("text=Logout")
+FAILED tests/e2e/test_navigation.py::TestNavBarPresence::test_device_detail_has_nav - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("table tbody tr td a").first
+FAILED tests/e2e/test_operator_dashboard.py::TestOperatorDashboard::test_operator_badge_visible - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator(".operator-badge")
+FAILED tests/e2e/test_page_load_performance.py::test_page_load_dashboard - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator(".stats")
+FAILED tests/e2e/test_page_load_performance.py::test_page_load_devices - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("table").filter(has=locator("th:has-text('Device ID')")).first
+    - waiting for" https://192.168.10.53/app/" navigation to finish...
+    - navigated to "https://192.168.10.53/app/#state=5f226b61-1c98-41a1-acc7-b963b3433974&session_state=e664e146-9ad0-4e3b-ba03-ae171fe56214&iss=https%3A%2F%2F192.168.10.53%2Frealms%2Fpulse&code=131d6f04-bd8e-4240-825f-…"
+FAILED tests/e2e/test_page_load_performance.py::test_page_load_webhooks - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("#webhook-list")
+FAILED tests/e2e/test_page_load_performance.py::test_page_load_snmp - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("#snmp-list")
+FAILED tests/e2e/test_page_load_performance.py::test_page_load_email - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("#email-list")
+FAILED tests/e2e/test_subscription_ui.py::TestOperatorSubscriptionUI::test_tenant_detail_has_subscription_card - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("button:has-text(\"Manage\")")
+FAILED tests/e2e/test_subscription_ui.py::TestOperatorSubscriptionUI::test_edit_subscription_dialog - playwright._impl._errors.TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button:has-text(\"Manage\")")
+FAILED tests/e2e/test_subscription_ui.py::TestCustomerSubscriptionUI::test_subscription_page_loads - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("text=Plan Details")
+FAILED tests/e2e/test_subscription_ui.py::TestCustomerSubscriptionUI::test_device_list_shows_limit - AssertionError: Locator expected to be visible
+Actual value: None
+Error: element(s) not found 
+Call log:
+  - Expect "to_be_visible" with timeout 5000ms
+  - waiting for locator("text=/\\d+ of \\d+ devices/")
+============ 30 failed, 41 passed, 14 skipped in 558.05s (0:09:18) =============
