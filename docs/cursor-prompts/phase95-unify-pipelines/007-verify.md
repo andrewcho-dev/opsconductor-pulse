@@ -182,9 +182,11 @@ git log --oneline -3
 - [ ] `notification_routing_rules` has `site_ids`, `device_prefixes`, `deliver_on`, `priority` columns
 - [ ] `dispatch_alert()` inserts rows to `notification_jobs`, does not call senders directly
 - [ ] `delivery_worker` processes `notification_jobs` with retry/backoff
-- [ ] New channel types (snmp, email, mqtt) can be created via API
-- [ ] Old `/customer/integrations` endpoints return `X-Deprecated` header
-- [ ] Existing integrations data migrated to `notification_channels`
-- [ ] Frontend navigation has one "Notification Channels" entry
-- [ ] Old `/customer/integrations` URL redirects to `/customer/notification-channels`
-- [ ] No regressions in existing delivery pipeline (old delivery_jobs still process normally)
+- [ ] All 7 channel types (slack, pagerduty, teams, webhook, email, snmp, mqtt) can be created via API
+- [ ] Old tables `integrations`, `integration_routes`, `delivery_jobs`, `delivery_attempts` are GONE
+- [ ] Old `/customer/integrations` endpoints return 404
+- [ ] Old integrations data migrated to `notification_channels`
+- [ ] Frontend has ONE "Notification Channels" navigation entry — no "Integrations" entry
+- [ ] Old Integrations page components deleted from src/
+- [ ] `delivery_worker` logs show no references to old `integrations` table
+- [ ] No regressions in alert generation → notification delivery end-to-end

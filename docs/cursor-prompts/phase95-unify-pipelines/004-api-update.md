@@ -1,16 +1,11 @@
-# Phase 95 — API Update: Extend notification_channels + Deprecate old integrations
+# Phase 95 — API Update: Extend notification_channels + Remove old integrations
 
-## Part A: Extend notifications.py to support snmp, email, mqtt channel types
+## Part A: Extend notifications.py to support all 7 channel types
 
 ### File to modify
 `services/ui_iot/routes/notifications.py`
 
-### Changes needed
-
-#### 1. Update channel creation to validate snmp/email/mqtt config shapes
-
-In `create_channel()`, add config validation for the new channel types.
-After saving the channel, validate the required config keys exist:
+### 1. Add config validation for all channel types
 
 ```python
 REQUIRED_CONFIG_KEYS = {
@@ -18,10 +13,9 @@ REQUIRED_CONFIG_KEYS = {
     "pagerduty":  ["integration_key"],
     "teams":      ["webhook_url"],
     "webhook":    ["url"],
-    "http":       ["url"],
-    "email":      ["smtp", "recipients"],   # smtp: {host, port, username, password, use_tls}, recipients: {to: []}
-    "snmp":       ["host"],                 # host required; port defaults to 162
-    "mqtt":       ["broker_host", "topic"], # broker_host, topic required
+    "email":      ["smtp", "recipients"],
+    "snmp":       ["host"],
+    "mqtt":       ["broker_host", "topic"],
 }
 
 def validate_channel_config(channel_type: str, config: dict) -> None:
@@ -34,106 +28,140 @@ def validate_channel_config(channel_type: str, config: dict) -> None:
         )
 ```
 
-Call `validate_channel_config(body.channel_type, body.config)` before INSERT.
+Call `validate_channel_config(body.channel_type, body.config)` before INSERT in `create_channel()`.
 
-#### 2. Mask sensitive config fields in list/get responses
-
-Extend the masking logic to include new channel types:
+### 2. Mask sensitive fields per channel type
 
 ```python
 MASKED_FIELDS = {
-    "slack":     ["webhook_url"],  # mask last 20 chars
+    "slack":     ["webhook_url"],
     "pagerduty": ["integration_key"],
     "teams":     ["webhook_url"],
     "webhook":   ["secret"],
-    "http":      ["secret"],
-    "email":     ["smtp"],         # mask entire smtp block (contains password)
+    "email":     ["smtp"],
     "snmp":      ["community", "auth_password", "priv_password"],
     "mqtt":      ["password"],
 }
 ```
 
-#### 3. Update RoutingRuleIn schema to include new routing fields
-
-Extend the Pydantic model (or inline dict schema) for `POST /notification-routing-rules`:
+### 3. Extend RoutingRuleIn with full routing fields
 
 ```python
 class RoutingRuleIn(BaseModel):
-    channel_id:      int
-    min_severity:    Optional[int]   = None
-    alert_type:      Optional[str]   = None
-    device_tag_key:  Optional[str]   = None
-    device_tag_val:  Optional[str]   = None
-    site_ids:        Optional[list[str]] = None
-    device_prefixes: Optional[list[str]] = None
-    deliver_on:      list[str]       = ["OPEN"]
-    throttle_minutes: int            = 0
-    priority:        int             = 100
-    is_enabled:      bool            = True
+    channel_id:       int
+    min_severity:     Optional[int]       = None
+    alert_type:       Optional[str]       = None
+    device_tag_key:   Optional[str]       = None
+    device_tag_val:   Optional[str]       = None
+    site_ids:         Optional[list[str]] = None
+    device_prefixes:  Optional[list[str]] = None
+    deliver_on:       list[str]           = ["OPEN"]
+    throttle_minutes: int                 = 0
+    priority:         int                 = 100
+    is_enabled:       bool                = True
 ```
 
-Update `create_routing_rule()` INSERT to include the new columns.
-Update `update_routing_rule()` PUT to include the new columns.
+Update `create_routing_rule()` INSERT and `update_routing_rule()` PUT to include all new fields.
 Update `list_routing_rules()` SELECT to return all new columns.
+
+### 4. Add notification_jobs list endpoint
+
+```python
+@router.get("/notification-jobs")
+async def list_notification_jobs(
+    channel_id: Optional[int] = None,
+    status: Optional[str] = None,
+    limit: int = Query(default=20, le=100),
+    pool=Depends(get_db_pool),
+    claims=Depends(require_customer),
+):
+    tenant_id = claims["tenant_id"]
+    conditions = ["tenant_id = $1"]
+    params = [tenant_id]
+    if channel_id:
+        params.append(channel_id)
+        conditions.append(f"channel_id = ${len(params)}")
+    if status:
+        params.append(status)
+        conditions.append(f"status = ${len(params)}")
+    params.append(limit)
+    where = " AND ".join(conditions)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT * FROM notification_jobs WHERE {where} ORDER BY created_at DESC LIMIT ${len(params)}",
+            *params
+        )
+    return [dict(r) for r in rows]
+```
 
 ---
 
-## Part B: Deprecate old /customer/integrations endpoints
+## Part B: Remove old integrations endpoints from customer.py
 
 ### File to modify
 `services/ui_iot/routes/customer.py`
 
-### Goal
-Keep all old `/customer/integrations` and `/customer/integration-routes` endpoints **fully working**
-(do not break existing customers), but add a deprecation header to every response so the frontend
-and API clients know to migrate.
+### Delete ALL of the following functions entirely
 
-### Implementation
+Search by function name and delete the entire function (decorator + body):
 
-Add a response header `X-Deprecated` to every integration endpoint response.
-The cleanest way is a dependency or a custom APIRouter.
-
-Add this helper at the top of customer.py (near the other router setup):
-
-```python
-from fastapi import Response
-
-def add_deprecation_header(response: Response):
-    """Add deprecation notice to integration endpoints."""
-    response.headers["X-Deprecated"] = (
-        "true; Use /customer/notification-channels instead. "
-        "This endpoint will be removed in a future release."
-    )
-    response.headers["Sunset"] = "2026-06-01"  # Target deprecation date
-```
-
-Then add `response: Response` parameter and call `add_deprecation_header(response)` to all of:
+**Generic integration endpoints:**
 - `list_integrations()`
 - `get_integration()`
-- `create_integration()` (generic)
-- `update_integration()` (generic)
+- `create_integration()` (generic POST /integrations)
+- `update_integration()` (generic PATCH /integrations/{id})
 - `delete_integration()`
-- `list_snmp_integrations()`, `get_snmp_integration()`, `create_snmp_integration()`, etc.
-- `list_email_integrations()`, etc.
-- `list_mqtt_integrations()`, etc.
-- `list_integration_routes()`, `create_integration_route()`, etc.
+- `get_template_variables()`
+- `test_integration()`
+- `test_send_alert()`
 
-Do NOT add the header to `/customer/delivery-jobs` or `/customer/delivery-status` —
-those are operational endpoints, not configuration endpoints.
+**SNMP integration endpoints:**
+- `list_snmp_integrations()`
+- `get_snmp_integration()`
+- `create_snmp_integration()`
+- `update_snmp_integration()`
+- `delete_snmp_integration()`
+
+**Email integration endpoints:**
+- `list_email_integrations()`
+- `get_email_integration()`
+- `create_email_integration()`
+- `update_email_integration()`
+- `delete_email_integration()`
+
+**MQTT integration endpoints:**
+- `list_mqtt_integrations()`
+- `get_mqtt_integration()`
+- `create_mqtt_integration()`
+- `update_mqtt_integration()`
+- `delete_mqtt_integration()`
+
+**Integration routes endpoints:**
+- `list_integration_routes()`
+- `get_integration_route()`
+- `create_integration_route()`
+- `update_integration_route()`
+- `delete_integration_route()`
+
+**Delivery jobs endpoints:**
+- `list_delivery_jobs()`
+- `get_delivery_job_attempts()`
+- `delivery_status()`
+
+### Also remove these imports from customer.py (if no longer used elsewhere)
+
+```python
+# Remove if only used by deleted integration functions:
+from services.alert_dispatcher import dispatch_to_integration, AlertPayload
+# Any SNMPIntegrationResponse, EmailIntegrationResponse, MQTTIntegrationResponse model imports
+```
 
 ---
 
-## Part C: Add migration hint to operator dashboard
+## Part C: Add migration status endpoint to operator routes
 
 ### File to modify
-`services/ui_iot/routes/operator.py` (or system.py)
-
-Add a new endpoint that operators can query to see how many tenants still have
-active `integrations` records (useful for tracking migration progress):
-
-```
-GET /operator/migration/integration-status
-```
+`services/ui_iot/routes/operator.py`
 
 ```python
 @router.get("/migration/integration-status")
@@ -141,25 +169,17 @@ async def integration_migration_status(
     pool=Depends(get_db_pool),
     claims=Depends(require_operator),
 ):
+    """Check how many integrations were migrated to notification_channels."""
     async with pool.acquire() as conn:
-        old_count = await conn.fetchval(
-            "SELECT COUNT(DISTINCT tenant_id) FROM integrations WHERE enabled = TRUE"
+        migrated = await conn.fetchval(
+            "SELECT COUNT(*) FROM notification_channels WHERE config ? 'migrated_from_integration_id'"
         )
-        new_count = await conn.fetchval(
-            "SELECT COUNT(DISTINCT tenant_id) FROM notification_channels WHERE is_enabled = TRUE"
-        )
-        total_old_integrations = await conn.fetchval(
-            "SELECT COUNT(*) FROM integrations WHERE enabled = TRUE"
-        )
-        total_new_channels = await conn.fetchval(
+        total_channels = await conn.fetchval(
             "SELECT COUNT(*) FROM notification_channels WHERE is_enabled = TRUE"
         )
     return {
-        "tenants_on_old_system": old_count,
-        "tenants_on_new_system": new_count,
-        "total_old_integrations": total_old_integrations,
-        "total_new_channels": total_new_channels,
-        "migration_complete": old_count == 0,
+        "migrated_channels": migrated,
+        "total_active_channels": total_channels,
     }
 ```
 
@@ -168,16 +188,21 @@ async def integration_migration_status(
 ## Verify
 
 ```bash
-# Test that old endpoints still work with deprecation header
-curl -s -I http://localhost:8000/customer/integrations \
-  -H "Authorization: Bearer $TOKEN" | grep -i deprecated
+# Confirm old endpoints are gone (should return 404 or 405)
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/customer/integrations \
+  -H "Authorization: Bearer $TOKEN"
+# Expected: 404
 
-# Expected: X-Deprecated: true; Use /customer/notification-channels instead...
+# Confirm new endpoint works
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/customer/notification-channels \
+  -H "Authorization: Bearer $TOKEN"
+# Expected: 200
 
-# Test new snmp/email channel creation validates config
+# Create an SNMP channel
 curl -s -X POST http://localhost:8000/customer/notification-channels \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test SNMP","channel_type":"snmp","config":{"host":"192.168.1.100","port":162,"community":"public"}}' \
+  -d '{"name":"SNMP Traps","channel_type":"snmp","config":{"host":"192.168.1.1","port":162,"community":"public"}}' \
   | python3 -m json.tool
+# Expected: channel_id returned, no error
 ```

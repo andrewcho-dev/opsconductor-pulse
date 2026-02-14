@@ -162,21 +162,28 @@ async def list_notification_jobs(
 
 ---
 
-## Step 5: Hide old Integrations pages (do not delete the components yet)
+## Step 5: Delete old Integrations pages
 
-Instead of deleting the old `IntegrationsPage.tsx`, add a redirect:
+Delete the following files entirely — they are replaced by the unified Notification Channels UI:
+
+- `src/pages/IntegrationsPage.tsx` (or wherever the old integrations page lives)
+- `src/components/integrations/` directory (all files)
+- `src/services/api/integrations.ts` (old API client for integrations endpoints)
+
+In the router definition, remove the old integrations route entirely:
 
 ```tsx
-// In router definition, replace the old integrations route:
-// OLD: <Route path="/customer/integrations" element={<IntegrationsPage />} />
-// NEW:
-<Route
-  path="/customer/integrations"
-  element={<Navigate to="/customer/notification-channels" replace />}
-/>
+// DELETE this line:
+// <Route path="/customer/integrations" element={<IntegrationsPage />} />
 ```
 
-This ensures any bookmarked or linked old URLs redirect to the new page.
+Search the entire `src/` directory for any remaining imports of the deleted files and remove them:
+
+```bash
+rg "IntegrationsPage\|/api/integrations\|integration_routes" src/ --type tsx --type ts
+```
+
+Any remaining references must be updated to point to the notification-channels equivalents.
 
 ---
 
