@@ -2,6 +2,9 @@
 
 OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platform. It provides edge telemetry ingestion, real-time alert evaluation, multi-level escalation, on-call scheduling, outbound notifications, and professional operator dashboards.
 
+> 📊 **Visual diagram**: See [docs/diagrams/reference-architecture.pdf](diagrams/reference-architecture.pdf)
+> or view the [Mermaid source](diagrams/reference-architecture.md) which renders in GitHub.
+
 ---
 
 ## System Overview
