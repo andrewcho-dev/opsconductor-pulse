@@ -46,8 +46,6 @@ from shared.audit import init_audit_logger
 from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
 from shared.metrics import fleet_active_alerts, fleet_devices_by_status
-from workers.escalation_worker import run_escalation_tick
-from workers.report_worker import run_report_tick
 
 # PHASE 43 AUDIT — Background Tasks
 #
@@ -296,17 +294,6 @@ async def get_pool():
     return pool
 
 
-async def worker_loop(fn, pool_obj, interval: int):
-    while True:
-        try:
-            await fn(pool_obj)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Background worker loop failed")
-        await asyncio.sleep(interval)
-
-
 @app.on_event("startup")
 async def startup():
     await get_pool()
@@ -362,8 +349,6 @@ async def startup():
         logger.warning("JWKS cache pre-warm failed", exc_info=True)
 
     await setup_ws_listener()
-    background_tasks.append(asyncio.create_task(worker_loop(run_escalation_tick, pool, interval=60)))
-    background_tasks.append(asyncio.create_task(worker_loop(run_report_tick, pool, interval=86400)))
 
 @app.on_event("shutdown")
 async def shutdown():
