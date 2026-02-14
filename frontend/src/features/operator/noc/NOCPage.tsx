@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Pause, Play } from "lucide-react";
 import { fetchSystemAggregates, fetchSystemHealth } from "@/services/api/system";
+import { AlertHeatmap } from "./AlertHeatmap";
 import { GaugeRow } from "./GaugeRow";
+import { LiveEventFeed } from "./LiveEventFeed";
 import { MetricsChartGrid } from "./MetricsChartGrid";
 import { ServiceTopologyStrip } from "./ServiceTopologyStrip";
 
@@ -81,6 +83,10 @@ export default function NOCPage() {
       <GaugeRow refreshInterval={refreshInterval} isPaused={isPaused} />
       <MetricsChartGrid refreshInterval={refreshInterval} isPaused={isPaused} />
       <ServiceTopologyStrip refreshInterval={refreshInterval} isPaused={isPaused} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <AlertHeatmap refreshInterval={refreshInterval} isPaused={isPaused} />
+        <LiveEventFeed refreshInterval={10000} isPaused={isPaused} />
+      </div>
     </div>
   );
 }
