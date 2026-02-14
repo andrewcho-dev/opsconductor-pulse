@@ -1,12 +1,12 @@
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 
-export type ChannelType = "slack" | "pagerduty" | "teams" | "webhook";
+export type ChannelType = "slack" | "pagerduty" | "teams" | "webhook" | "http" | "email" | "snmp" | "mqtt";
 
 export interface NotificationChannel {
   channel_id: number;
   name: string;
   channel_type: ChannelType;
-  config: Record<string, string>;
+  config: Record<string, unknown>;
   is_enabled: boolean;
   created_at: string;
 }
@@ -18,6 +18,10 @@ export interface RoutingRule {
   alert_type?: string;
   device_tag_key?: string;
   device_tag_val?: string;
+  site_ids?: string[];
+  device_prefixes?: string[];
+  deliver_on?: string[];
+  priority?: number;
   throttle_minutes: number;
   is_enabled: boolean;
 }
@@ -61,4 +65,27 @@ export async function updateRoutingRule(id: number, body: Partial<RoutingRule>):
 
 export async function deleteRoutingRule(id: number): Promise<void> {
   await apiDelete(`/customer/notification-routing-rules/${id}`);
+}
+
+export interface NotificationJob {
+  job_id: number;
+  channel_id: number;
+  alert_id: number;
+  status: string;
+  attempts: number;
+  deliver_on_event: string;
+  last_error?: string;
+  created_at: string;
+}
+
+export async function listNotificationJobs(
+  channelId?: number,
+  status?: string,
+  limit = 20
+): Promise<{ jobs: NotificationJob[] }> {
+  const params = new URLSearchParams();
+  if (channelId) params.set("channel_id", String(channelId));
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  return apiGet(`/customer/notification-jobs?${params.toString()}`);
 }

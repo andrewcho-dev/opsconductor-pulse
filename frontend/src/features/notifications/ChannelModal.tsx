@@ -8,12 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import type { ChannelType, NotificationChannel } from "@/services/api/notifications";
 
 type ChannelDraft = {
   name: string;
   channel_type: ChannelType;
-  config: Record<string, string>;
+  config: Record<string, unknown>;
   is_enabled: boolean;
 };
 
@@ -52,17 +53,43 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
   }, [initial, open]);
 
   function cfgValue(key: string): string {
-    return draft.config[key] ?? "";
+    const value = draft.config[key];
+    return typeof value === "string" ? value : "";
   }
 
   function setCfg(key: string, value: string) {
     setDraft((prev) => ({ ...prev, config: { ...prev.config, [key]: value } }));
   }
 
+  function setCfgObj(key: string, value: unknown) {
+    setDraft((prev) => ({ ...prev, config: { ...prev.config, [key]: value } }));
+  }
+
   async function submit() {
     setSaving(true);
     try {
-      await onSave(draft);
+      const config = { ...draft.config } as Record<string, unknown>;
+      if (draft.channel_type === "webhook" || draft.channel_type === "http") {
+        if (typeof config.headers === "string") {
+          try {
+            config.headers = JSON.parse(config.headers);
+          } catch {
+            config.headers = {};
+          }
+        }
+      }
+      if (draft.channel_type === "email") {
+        const smtp = (config.smtp as Record<string, unknown>) || {};
+        config.smtp = {
+          host: smtp.host || "",
+          port: 587,
+          username: smtp.username || "",
+          password: smtp.password || "",
+          use_tls: true,
+        };
+        if (!config.recipients) config.recipients = { to: [] };
+      }
+      await onSave({ ...draft, config });
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -97,6 +124,9 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
               <option value="pagerduty">PagerDuty</option>
               <option value="teams">Teams</option>
               <option value="webhook">Webhook</option>
+              <option value="email">Email (SMTP)</option>
+              <option value="snmp">SNMP Trap</option>
+              <option value="mqtt">MQTT</option>
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -163,6 +193,76 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                   onChange={(e) => setCfg("secret", e.target.value)}
                 />
               </div>
+            </div>
+          )}
+          {draft.channel_type === "email" && (
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground">SMTP Host</label>
+              <Input
+                placeholder="smtp.example.com"
+                value={cfgValue("smtp_host")}
+                onChange={(e) =>
+                  setCfgObj("smtp", {
+                    ...(typeof draft.config.smtp === "object" && draft.config.smtp ? draft.config.smtp : {}),
+                    host: e.target.value,
+                  })
+                }
+              />
+              <label className="text-xs text-muted-foreground">Recipients (comma separated)</label>
+              <Input
+                placeholder="ops@example.com, noc@example.com"
+                value={cfgValue("to")}
+                onChange={(e) => {
+                  const list = e.target.value
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean);
+                  setCfgObj("recipients", { to: list });
+                  setCfg("to", e.target.value);
+                }}
+              />
+            </div>
+          )}
+          {draft.channel_type === "snmp" && (
+            <div className="grid gap-2 md:grid-cols-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Host</label>
+                <Input value={cfgValue("host")} onChange={(e) => setCfg("host", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Port</label>
+                <Input
+                  type="number"
+                  value={cfgValue("port") || "162"}
+                  onChange={(e) => setCfg("port", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          {draft.channel_type === "mqtt" && (
+            <div className="grid gap-2 md:grid-cols-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Broker Host</label>
+                <Input
+                  value={cfgValue("broker_host")}
+                  onChange={(e) => setCfg("broker_host", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Topic</label>
+                <Input value={cfgValue("topic")} onChange={(e) => setCfg("topic", e.target.value)} />
+              </div>
+            </div>
+          )}
+          {(draft.channel_type === "webhook" || draft.channel_type === "http") && (
+            <div>
+              <label className="text-xs text-muted-foreground">Headers (JSON)</label>
+              <Textarea
+                rows={3}
+                placeholder='{"X-Token":"value"}'
+                value={typeof draft.config.headers === "string" ? draft.config.headers : ""}
+                onChange={(e) => setCfg("headers", e.target.value)}
+              />
             </div>
           )}
 

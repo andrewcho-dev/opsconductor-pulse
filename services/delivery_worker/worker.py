@@ -252,6 +252,231 @@ async def fetch_jobs(conn: asyncpg.Connection) -> list[asyncpg.Record]:
         return rows
 
 
+async def fetch_notification_jobs(
+    conn: asyncpg.Connection,
+    batch_size: int = 10,
+) -> list[asyncpg.Record]:
+    async with conn.transaction():
+        rows = await conn.fetch(
+            """
+            SELECT job_id, tenant_id, alert_id, channel_id, rule_id, deliver_on_event, attempts, payload_json
+            FROM notification_jobs
+            WHERE status='PENDING' AND next_run_at <= now()
+            ORDER BY next_run_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT $1
+            """,
+            batch_size,
+        )
+        if not rows:
+            return []
+        job_ids = [r["job_id"] for r in rows]
+        await conn.execute(
+            """
+            UPDATE notification_jobs
+            SET status='PROCESSING', updated_at=now()
+            WHERE job_id = ANY($1::bigint[])
+            """,
+            job_ids,
+        )
+        return rows
+
+
+async def complete_notification_job(conn: asyncpg.Connection, job_id: int, channel_id: int, alert_id: int) -> None:
+    await conn.execute(
+        "UPDATE notification_jobs SET status='COMPLETED', updated_at=now() WHERE job_id=$1",
+        job_id,
+    )
+    await conn.execute(
+        """
+        INSERT INTO notification_log (channel_id, alert_id, job_id, success)
+        VALUES ($1, $2, $3, TRUE)
+        """,
+        channel_id,
+        alert_id,
+        job_id,
+    )
+
+
+async def retry_notification_job(conn: asyncpg.Connection, job_id: int, attempts: int, error: str) -> None:
+    delay = min(WORKER_BACKOFF_BASE_SECONDS * (2 ** attempts), WORKER_BACKOFF_MAX_SECONDS)
+    await conn.execute(
+        """
+        UPDATE notification_jobs
+        SET status='PENDING',
+            attempts=$1,
+            next_run_at=now() + ($2::int * interval '1 second'),
+            last_error=$3,
+            updated_at=now()
+        WHERE job_id=$4
+        """,
+        attempts + 1,
+        delay,
+        error[:500],
+        job_id,
+    )
+
+
+async def fail_notification_job(
+    conn: asyncpg.Connection,
+    job_id: int,
+    channel_id: int,
+    alert_id: int,
+    error: str,
+) -> None:
+    await conn.execute(
+        """
+        UPDATE notification_jobs
+        SET status='FAILED', last_error=$1, updated_at=now()
+        WHERE job_id=$2
+        """,
+        error[:500],
+        job_id,
+    )
+    await conn.execute(
+        """
+        INSERT INTO notification_log (channel_id, alert_id, job_id, success, error_msg)
+        VALUES ($1, $2, $3, FALSE, $4)
+        """,
+        channel_id,
+        alert_id,
+        job_id,
+        error[:500],
+    )
+
+
+async def fetch_notification_channel(conn: asyncpg.Connection, channel_id: int) -> dict | None:
+    row = await conn.fetchrow(
+        """
+        SELECT channel_id, channel_type, config, is_enabled
+        FROM notification_channels
+        WHERE channel_id=$1
+        """,
+        channel_id,
+    )
+    return dict(row) if row else None
+
+
+async def process_notification_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
+    job_id = int(job["job_id"])
+    channel_id = int(job["channel_id"])
+    alert_id = int(job["alert_id"])
+    attempts = int(job["attempts"])
+    max_attempts = int(os.getenv("WORKER_MAX_ATTEMPTS", "5"))
+    payload = job["payload_json"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    channel = await fetch_notification_channel(conn, channel_id)
+    if not channel:
+        await fail_notification_job(conn, job_id, channel_id, alert_id, "Channel not found")
+        return
+    if not channel["is_enabled"]:
+        await fail_notification_job(conn, job_id, channel_id, alert_id, "Channel disabled")
+        return
+
+    try:
+        ctype = channel["channel_type"]
+        cfg = normalize_config(channel.get("config"))
+        fake_job = {"payload_json": payload, "tenant_id": job["tenant_id"]}
+        if ctype in ("webhook", "http"):
+            webhook_integration = {"type": "webhook", "config_json": cfg}
+            ok, _, err = await deliver_webhook(webhook_integration, fake_job)
+            if not ok:
+                raise RuntimeError(err or "delivery_failed")
+        elif ctype == "slack":
+            payload_msg = {
+                "text": f"*[{severity_label_for(int(payload.get('severity') or 0))}]* {payload.get('device_id', '-')}: {payload.get('message', '')}",
+                "attachments": [
+                    {
+                        "fields": [
+                            {"title": "Type", "value": payload.get("alert_type", ""), "short": True},
+                            {"title": "Event", "value": payload.get("event_type", "OPEN"), "short": True},
+                        ]
+                    }
+                ],
+            }
+            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+                resp = await client.post(cfg.get("webhook_url"), json=payload_msg)
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"slack_http_{resp.status_code}")
+        elif ctype == "teams":
+            payload_msg = {
+                "@type": "MessageCard",
+                "@context": "http://schema.org/extensions",
+                "summary": payload.get("alert_type", "ALERT"),
+                "sections": [
+                    {
+                        "activityTitle": payload.get("device_id", "-"),
+                        "activityText": payload.get("message", ""),
+                    }
+                ],
+            }
+            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+                resp = await client.post(cfg.get("webhook_url"), json=payload_msg)
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"teams_http_{resp.status_code}")
+        elif ctype == "pagerduty":
+            severity = int(payload.get("severity") or 0)
+            pd_sev = "critical" if severity >= 4 else "error" if severity >= 3 else "warning"
+            pd_payload = {
+                "routing_key": cfg.get("integration_key"),
+                "event_action": "trigger",
+                "dedup_key": f"alert-{payload.get('alert_id', 0)}",
+                "payload": {
+                    "summary": f"{payload.get('alert_type', 'ALERT')} on {payload.get('device_id', '-')}",
+                    "severity": pd_sev,
+                    "source": payload.get("device_id", "unknown"),
+                    "custom_details": payload,
+                },
+            }
+            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+                resp = await client.post("https://events.pagerduty.com/v2/enqueue", json=pd_payload)
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"pagerduty_http_{resp.status_code}")
+        elif ctype == "email":
+            integration = {
+                "email_config": cfg.get("smtp", {}),
+                "email_recipients": cfg.get("recipients", {}),
+                "email_template": cfg.get("template", {}),
+            }
+            ok, err = await deliver_email(integration, fake_job)
+            if not ok:
+                raise RuntimeError(err or "delivery_failed")
+        elif ctype == "snmp":
+            integration = {
+                "snmp_host": cfg.get("host"),
+                "snmp_port": cfg.get("port", 162),
+                "snmp_config": cfg.get("snmp_config", cfg),
+                "snmp_oid_prefix": cfg.get("oid_prefix"),
+            }
+            ok, err = await deliver_snmp(integration, fake_job)
+            if not ok:
+                raise RuntimeError(err or "delivery_failed")
+        elif ctype == "mqtt":
+            integration = {
+                "mqtt_topic": cfg.get("topic"),
+                "mqtt_qos": cfg.get("qos", 1),
+                "mqtt_retain": cfg.get("retain", False),
+                "mqtt_config": cfg.get("mqtt_config", cfg),
+            }
+            ok, err = await deliver_mqtt(integration, fake_job)
+            if not ok:
+                raise RuntimeError(err or "delivery_failed")
+        else:
+            raise RuntimeError(f"Unknown channel_type: {ctype}")
+        await complete_notification_job(conn, job_id, channel_id, alert_id)
+        logger.info("notification_job %s completed (channel=%s)", job_id, channel_id)
+    except Exception as exc:
+        error = str(exc)
+        logger.warning("notification_job %s failed attempt %d: %s", job_id, attempts + 1, error)
+        if attempts + 1 >= max_attempts:
+            await fail_notification_job(conn, job_id, channel_id, alert_id, error)
+            logger.error("notification_job %s permanently failed", job_id)
+        else:
+            await retry_notification_job(conn, job_id, attempts, error)
+
+
 async def fetch_integration(
     conn: asyncpg.Connection,
     tenant_id: str,
@@ -718,6 +943,9 @@ async def run_worker() -> None:
 
                     for job in jobs:
                         await process_job(conn, job)
+                    notification_jobs = await fetch_notification_jobs(conn, WORKER_BATCH_SIZE)
+                    for notification_job in notification_jobs:
+                        await process_notification_job(conn, notification_job)
             except Exception as exc:
                 logger.error(
                     "delivery worker loop failed",

@@ -7,9 +7,6 @@ import {
   Bell,
   ShieldAlert,
   Webhook,
-  Network,
-  Mail,
-  Radio,
   Activity,
   Gauge,
   Monitor,
@@ -73,10 +70,6 @@ const customerDataNav: NavItem[] = [
   { label: "Telemetry / Metrics", href: "/metrics", icon: Gauge },
   { label: "Reports", href: "/reports", icon: ScrollText },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
-  { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
-  { label: "Email", href: "/integrations/email", icon: Mail },
-  { label: "SNMP", href: "/integrations/snmp", icon: Network },
-  { label: "MQTT", href: "/integrations/mqtt", icon: Radio },
   { label: "Export", href: "/devices", icon: ScrollText },
 ];
 

@@ -21,6 +21,10 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
     alert_type: "",
     device_tag_key: "",
     device_tag_val: "",
+    site_ids: [],
+    device_prefixes: [],
+    deliver_on: ["OPEN"],
+    priority: 100,
     throttle_minutes: 0,
     is_enabled: true,
   });
@@ -44,7 +48,7 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
         <h3 className="font-medium">Routing Rules</h3>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-6">
+      <div className="grid gap-2 md:grid-cols-10">
         <select
           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           value={draft.channel_id || ""}
@@ -91,6 +95,57 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
           value={draft.device_tag_val ?? ""}
           onChange={(e) => setDraft((prev) => ({ ...prev, device_tag_val: e.target.value }))}
         />
+        <input
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          placeholder="Site IDs (csv)"
+          value={(draft.site_ids ?? []).join(",")}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              site_ids: e.target.value
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean),
+            }))
+          }
+        />
+        <input
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          placeholder="Device prefixes (csv)"
+          value={(draft.device_prefixes ?? []).join(",")}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              device_prefixes: e.target.value
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean),
+            }))
+          }
+        />
+        <select
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          value={(draft.deliver_on ?? ["OPEN"]).join(",")}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              deliver_on: e.target.value.split(",").filter(Boolean),
+            }))
+          }
+        >
+          <option value="OPEN">OPEN</option>
+          <option value="OPEN,CLOSED">OPEN+CLOSED</option>
+          <option value="OPEN,ACKNOWLEDGED">OPEN+ACKNOWLEDGED</option>
+          <option value="OPEN,CLOSED,ACKNOWLEDGED">OPEN+CLOSED+ACKNOWLEDGED</option>
+        </select>
+        <input
+          type="number"
+          min={0}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          placeholder="Priority"
+          value={draft.priority ?? 100}
+          onChange={(e) => setDraft((prev) => ({ ...prev, priority: Number(e.target.value || 100) }))}
+        />
         <div className="flex gap-2">
           <input
             type="number"
@@ -110,6 +165,8 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
                 alert_type: draft.alert_type || undefined,
                 device_tag_key: draft.device_tag_key || undefined,
                 device_tag_val: draft.device_tag_val || undefined,
+                site_ids: draft.site_ids?.length ? draft.site_ids : undefined,
+                device_prefixes: draft.device_prefixes?.length ? draft.device_prefixes : undefined,
               });
             }}
           >
@@ -125,6 +182,8 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
               <th className="px-2 py-1 text-left">Channel</th>
               <th className="px-2 py-1 text-left">Min Severity</th>
               <th className="px-2 py-1 text-left">Type</th>
+              <th className="px-2 py-1 text-left">Deliver On</th>
+              <th className="px-2 py-1 text-left">Priority</th>
               <th className="px-2 py-1 text-left">Throttle</th>
               <th className="px-2 py-1 text-left">Actions</th>
             </tr>
@@ -137,6 +196,8 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
                 </td>
                 <td className="px-2 py-1">{rule.min_severity ?? "any"}</td>
                 <td className="px-2 py-1">{rule.alert_type ?? "any"}</td>
+                <td className="px-2 py-1">{(rule.deliver_on ?? ["OPEN"]).join(",")}</td>
+                <td className="px-2 py-1">{rule.priority ?? 100}</td>
                 <td className="px-2 py-1">{rule.throttle_minutes}m</td>
                 <td className="px-2 py-1">
                   <Button

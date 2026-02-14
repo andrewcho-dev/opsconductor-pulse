@@ -149,6 +149,19 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestIdMiddleware)
 
+
+@app.middleware("http")
+async def deprecate_legacy_integrations_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/customer/integrations") or request.url.path.startswith("/customer/integration-routes"):
+        response.headers["X-Deprecated"] = (
+            "true; Use /customer/notification-channels instead. "
+            "This endpoint will be removed in a future release."
+        )
+        response.headers["Sunset"] = "2026-06-01"
+    return response
+
+
 app.include_router(customer_router)
 app.include_router(operator_router)
 app.include_router(system_router)

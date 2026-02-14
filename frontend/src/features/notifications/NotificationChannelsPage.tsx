@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   createChannel,
   deleteChannel,
+  listNotificationJobs,
   listChannels,
   listRoutingRules,
   testChannel,
@@ -18,6 +20,7 @@ export default function NotificationChannelsPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<NotificationChannel | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
 
   const channelsQuery = useQuery({
     queryKey: ["notification-channels"],
@@ -26,6 +29,10 @@ export default function NotificationChannelsPage() {
   const rulesQuery = useQuery({
     queryKey: ["notification-routing-rules"],
     queryFn: listRoutingRules,
+  });
+  const jobsQuery = useQuery({
+    queryKey: ["notification-jobs", selectedChannelId],
+    queryFn: () => listNotificationJobs(selectedChannelId ?? undefined, undefined, 20),
   });
 
   const createMutation = useMutation({
@@ -85,7 +92,16 @@ export default function NotificationChannelsPage() {
           <tbody>
             {channels.map((channel) => (
               <tr key={channel.channel_id} className="border-b border-border/50">
-                <td className="px-3 py-2">{channel.name}</td>
+                <td className="px-3 py-2">
+                  <span>{channel.name}</span>
+                  {Boolean(
+                    (channel.config as Record<string, unknown>)?.migrated_from_integration_id
+                  ) && (
+                    <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
+                      Migrated
+                    </Badge>
+                  )}
+                </td>
                 <td className="px-3 py-2">{channel.channel_type}</td>
                 <td className="px-3 py-2">{channel.is_enabled ? "Enabled" : "Disabled"}</td>
                 <td className="px-3 py-2">
@@ -111,6 +127,13 @@ export default function NotificationChannelsPage() {
                       Edit
                     </Button>
                     <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedChannelId(channel.channel_id)}
+                    >
+                      History
+                    </Button>
+                    <Button
                       variant="destructive"
                       size="sm"
                       onClick={async () => {
@@ -129,6 +152,35 @@ export default function NotificationChannelsPage() {
       </div>
 
       <RoutingRulesPanel channels={channels} rules={rules} />
+      {selectedChannelId && (
+        <div className="rounded border border-border p-3">
+          <div className="mb-2 text-sm font-medium">Recent Deliveries</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="px-2 py-1 text-left">Job</th>
+                  <th className="px-2 py-1 text-left">Alert</th>
+                  <th className="px-2 py-1 text-left">Status</th>
+                  <th className="px-2 py-1 text-left">Attempts</th>
+                  <th className="px-2 py-1 text-left">Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(jobsQuery.data?.jobs ?? []).map((job) => (
+                  <tr key={job.job_id} className="border-b border-border/40">
+                    <td className="px-2 py-1">{job.job_id}</td>
+                    <td className="px-2 py-1">{job.alert_id}</td>
+                    <td className="px-2 py-1">{job.status}</td>
+                    <td className="px-2 py-1">{job.attempts}</td>
+                    <td className="px-2 py-1">{new Date(job.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <ChannelModal
         open={open}

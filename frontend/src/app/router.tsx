@@ -14,10 +14,6 @@ import NotificationChannelsPage from "@/features/notifications/NotificationChann
 import OncallSchedulesPage from "@/features/oncall/OncallSchedulesPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
-import WebhookPage from "@/features/integrations/WebhookPage";
-import SnmpPage from "@/features/integrations/SnmpPage";
-import EmailPage from "@/features/integrations/EmailPage";
-import MqttPage from "@/features/integrations/MqttPage";
 import SubscriptionPage from "@/features/subscription/SubscriptionPage";
 import RenewalPage from "@/features/subscription/RenewalPage";
 import OperatorDashboard from "@/features/operator/OperatorDashboard";
@@ -96,14 +92,14 @@ export const router = createBrowserRouter(
             { path: "escalation-policies", element: <EscalationPoliciesPage /> },
             { path: "notifications", element: <NotificationChannelsPage /> },
             { path: "oncall", element: <OncallSchedulesPage /> },
+            { path: "integrations", element: <Navigate to="/notifications" replace /> },
+            { path: "integrations/*", element: <Navigate to="/notifications" replace /> },
+            { path: "customer/integrations", element: <Navigate to="/notifications" replace /> },
+            { path: "customer/integrations/*", element: <Navigate to="/notifications" replace /> },
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
-            { path: "integrations/webhooks", element: <WebhookPage /> },
             { path: "delivery-log", element: <DeliveryLogPage /> },
             { path: "reports", element: <ReportsPage /> },
-            { path: "integrations/snmp", element: <SnmpPage /> },
-            { path: "integrations/email", element: <EmailPage /> },
-            { path: "integrations/mqtt", element: <MqttPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
           ],

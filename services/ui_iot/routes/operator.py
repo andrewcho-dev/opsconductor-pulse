@@ -32,6 +32,7 @@ from db.queries import (
 from db.telemetry_queries import fetch_device_telemetry, fetch_device_events
 from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
+from dependencies import get_db_pool
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,33 @@ router = APIRouter(
         Depends(require_operator),
     ],
 )
+
+
+@router.get("/migration/integration-status")
+async def integration_migration_status(
+    pool=Depends(get_db_pool),
+    claims=Depends(require_operator),
+):
+    async with pool.acquire() as conn:
+        old_count = await conn.fetchval(
+            "SELECT COUNT(DISTINCT tenant_id) FROM integrations WHERE enabled = TRUE"
+        )
+        new_count = await conn.fetchval(
+            "SELECT COUNT(DISTINCT tenant_id) FROM notification_channels WHERE is_enabled = TRUE"
+        )
+        total_old_integrations = await conn.fetchval(
+            "SELECT COUNT(*) FROM integrations WHERE enabled = TRUE"
+        )
+        total_new_channels = await conn.fetchval(
+            "SELECT COUNT(*) FROM notification_channels WHERE is_enabled = TRUE"
+        )
+    return {
+        "tenants_on_old_system": old_count or 0,
+        "tenants_on_new_system": new_count or 0,
+        "total_old_integrations": total_old_integrations or 0,
+        "total_new_channels": total_new_channels or 0,
+        "migration_complete": (old_count or 0) == 0,
+    }
 
 
 
