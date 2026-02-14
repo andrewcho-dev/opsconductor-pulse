@@ -1407,6 +1407,7 @@ async def export_telemetry_csv(
 @router.get("/subscriptions")
 async def list_subscriptions(
     include_expired: bool = Query(False),
+    pool=Depends(get_db_pool),
 ):
     """List all subscriptions for the tenant."""
     tenant_id = get_tenant_id()

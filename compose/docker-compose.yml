@@ -31,7 +31,8 @@ services:
     restart: unless-stopped
 
   pgbouncer:
-    image: edoburu/pgbouncer:1.22.1
+    # 1.22.1 tag was removed from Docker Hub; keep pullable with latest.
+    image: edoburu/pgbouncer:latest
     container_name: iot-pgbouncer
     environment:
       DATABASE_URL: "postgres://iot:iot_dev@iot-postgres:5432/iotcloud"
