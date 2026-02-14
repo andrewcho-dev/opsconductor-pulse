@@ -77,6 +77,7 @@ const customerDataNav: NavItem[] = [
 
 const operatorOverviewNav: NavItem[] = [
   { label: "Overview", href: "/operator", icon: Monitor },
+  { label: "NOC", href: "/operator/noc", icon: Monitor },
   { label: "System Metrics", href: "/operator/system-metrics", icon: Gauge },
 ];
 
