@@ -2,6 +2,7 @@ import logging
 from datetime import timedelta
 
 import httpx
+from notifications.dispatcher import dispatch_alert
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,12 @@ async def run_escalation_tick(pool):
                 "alert_id": row["id"],
                 "tenant_id": row["tenant_id"],
                 "device_id": row["device_id"],
+                "alert_type": "ESCALATION",
+                "severity": next_level_no,
                 "summary": row["summary"],
                 "escalation_level": next_level_no,
+                "created_at": None,
+                "details": {},
             }
             webhook = level["notify_webhook"]
             if webhook:
@@ -87,3 +92,7 @@ async def run_escalation_tick(pool):
                 next_level_no,
                 timedelta(minutes=int(level["delay_minutes"])),
             )
+            try:
+                await dispatch_alert(pool, payload, row["tenant_id"])
+            except Exception:
+                logger.exception("Escalation notification routing failed")

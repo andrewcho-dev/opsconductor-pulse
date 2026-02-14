@@ -34,6 +34,7 @@ from routes.api_v2 import (
 from routes.ingest import router as ingest_router
 from routes.users import router as users_router
 from routes.escalation import router as escalation_router
+from routes.notifications import router as notifications_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
@@ -155,6 +156,7 @@ app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
 app.include_router(users_router)
 app.include_router(escalation_router)
+app.include_router(notifications_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
