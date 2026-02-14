@@ -1330,35 +1330,6 @@ async def list_quarantine(
     return {"minutes": minutes, "events": events, "limit": limit}
 
 
-@router.get("/integrations")
-async def list_integrations(
-    request: Request,
-    tenant_filter: str | None = Query(None),
-):
-    user = get_user()
-    ip, user_agent = get_request_metadata(request)
-    try:
-        p = await get_pool()
-        async with p.acquire() as conn:
-            await log_operator_access(
-                conn,
-                user_id=user["sub"],
-                action="list_all_integrations",
-                tenant_filter=tenant_filter,
-                ip_address=ip,
-                user_agent=user_agent,
-                rls_bypassed=True,
-            )
-        async with operator_connection(p) as conn:
-            if tenant_filter:
-                integrations = await fetch_integrations(conn, tenant_filter, limit=50)
-            else:
-                integrations = await fetch_all_integrations(conn, limit=50)
-    except Exception:
-        logger.exception("Failed to fetch operator integrations")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    return {"integrations": integrations, "tenant_filter": tenant_filter}
 
 
 @router.get("/audit-log")
