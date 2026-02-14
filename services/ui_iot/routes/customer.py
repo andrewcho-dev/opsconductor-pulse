@@ -1562,6 +1562,7 @@ async def get_subscription_detail(subscription_id: str, pool=Depends(get_db_pool
 async def get_subscription_audit(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
 ):
     """Get subscription audit history for tenant."""
     tenant_id = get_tenant_id()
