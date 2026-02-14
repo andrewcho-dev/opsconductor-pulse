@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Cpu,
@@ -17,8 +19,20 @@ import {
   Building2,
   CreditCard,
   Users,
+  Layers,
+  Wand2,
+  CalendarOff,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
+import { fetchAlerts } from "@/services/api/alerts";
+import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -32,39 +46,61 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 
-const customerNav = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+type NavItem = {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+};
+
+const customerFleetNav: NavItem[] = [
   { label: "Sites", href: "/sites", icon: Building2 },
   { label: "Devices", href: "/devices", icon: Cpu },
-  { label: "Device Groups", href: "/device-groups", icon: Cpu },
+  { label: "Device Groups", href: "/device-groups", icon: Layers },
+  { label: "Onboarding Wizard", href: "/devices/wizard", icon: Wand2 },
+];
+
+const customerMonitoringNav: NavItem[] = [
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
-  { label: "Maintenance", href: "/maintenance-windows", icon: ShieldAlert },
-  { label: "Activity Log", href: "/activity-log", icon: ScrollText },
-  { label: "Metrics", href: "/metrics", icon: Gauge },
-  { label: "Subscription", href: "/subscription", icon: CreditCard },
-  { label: "Team", href: "/users", icon: Users },
+  { label: "Maintenance", href: "/maintenance-windows", icon: CalendarOff },
 ];
 
-const integrationNav = [
-  { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
+const customerDataNav: NavItem[] = [
+  { label: "Telemetry / Metrics", href: "/metrics", icon: Gauge },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
-  { label: "SNMP", href: "/integrations/snmp", icon: Network },
+  { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
   { label: "Email", href: "/integrations/email", icon: Mail },
+  { label: "SNMP", href: "/integrations/snmp", icon: Network },
   { label: "MQTT", href: "/integrations/mqtt", icon: Radio },
+  { label: "Export", href: "/devices", icon: ScrollText },
 ];
 
-const operatorNav = [
+const operatorOverviewNav: NavItem[] = [
   { label: "Overview", href: "/operator", icon: Monitor },
   { label: "System Metrics", href: "/operator/system-metrics", icon: Gauge },
-  { label: "All Devices", href: "/operator/devices", icon: Server },
+];
+
+const operatorTenantNav: NavItem[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
-  { label: "System", href: "/operator/system", icon: Activity },
+];
+
+const operatorUsersAuditNav: NavItem[] = [
   { label: "Users", href: "/operator/users", icon: Users },
   { label: "Audit Log", href: "/operator/audit-log", icon: ScrollText },
+];
+
+const operatorSystemNav: NavItem[] = [
+  { label: "All Devices", href: "/operator/devices", icon: Server },
+  { label: "System", href: "/operator/system", icon: Activity },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
+
+function readSidebarOpen(key: string, defaultValue: boolean) {
+  const stored = localStorage.getItem(key);
+  if (stored === null) return defaultValue;
+  return stored !== "false";
+}
 
 export function AppSidebar() {
   const location = useLocation();
@@ -74,9 +110,47 @@ export function AppSidebar() {
     roles.includes("tenant-admin") ||
     roles.includes("operator") ||
     roles.includes("operator-admin");
-  const customerNavItems = customerNav.filter((item) =>
-    item.href === "/users" ? canManageUsers : true
+  const [fleetOpen, setFleetOpen] = useState(() =>
+    readSidebarOpen("sidebar-fleet", true)
   );
+  const [monitoringOpen, setMonitoringOpen] = useState(() =>
+    readSidebarOpen("sidebar-monitoring", true)
+  );
+  const [dataOpen, setDataOpen] = useState(() =>
+    readSidebarOpen("sidebar-data", false)
+  );
+  const [settingsOpen, setSettingsOpen] = useState(() =>
+    readSidebarOpen("sidebar-settings", false)
+  );
+  const [operatorOverviewOpen, setOperatorOverviewOpen] = useState(() =>
+    readSidebarOpen("sidebar-operator-overview", true)
+  );
+  const [operatorTenantsOpen, setOperatorTenantsOpen] = useState(() =>
+    readSidebarOpen("sidebar-operator-tenants", true)
+  );
+  const [operatorUsersOpen, setOperatorUsersOpen] = useState(() =>
+    readSidebarOpen("sidebar-operator-users-audit", true)
+  );
+  const [operatorSystemOpen, setOperatorSystemOpen] = useState(() =>
+    readSidebarOpen("sidebar-operator-system", true)
+  );
+  const { data: alertData } = useQuery({
+    queryKey: ["sidebar-alert-count"],
+    queryFn: () => fetchAlerts("OPEN", 1, 0),
+    refetchInterval: 30000,
+    enabled: isCustomer,
+  });
+  const openAlertCount = alertData?.total ?? 0;
+  const settingsNav: NavItem[] = [
+    { label: "Subscription", href: "/subscription", icon: CreditCard },
+    ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
+    { label: "Notification Prefs", href: "/alerts", icon: Bell },
+  ];
+
+  function onToggle(setter: (next: boolean) => void, key: string, next: boolean) {
+    setter(next);
+    localStorage.setItem(key, String(next));
+  }
 
   function isActive(href: string) {
     if (href === "/dashboard") {
@@ -90,6 +164,53 @@ export function AppSidebar() {
       return location.pathname === "/operator";
     }
     return location.pathname.startsWith(href);
+  }
+
+  function renderNavItem(item: NavItem) {
+    const Icon = item.icon;
+    const showAlertBadge = item.href === "/alerts" && openAlertCount > 0;
+    return (
+      <SidebarMenuItem key={item.href}>
+        <SidebarMenuButton asChild isActive={isActive(item.href)}>
+          <Link to={item.href}>
+            {showAlertBadge ? (
+              <div className="flex w-full items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </div>
+                <Badge variant="destructive" className="h-5 min-w-5 px-1 text-xs">
+                  {openAlertCount > 99 ? "99+" : openAlertCount}
+                </Badge>
+              </div>
+            ) : (
+              <>
+                <Icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </>
+            )}
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
+
+  function renderGroupHeader(label: string, open: boolean, showDot = false) {
+    return (
+      <div className="flex w-full items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span>{label}</span>
+          {showDot && !open && (
+            <span className="ml-1 inline-block h-2 w-2 rounded-full bg-destructive" />
+          )}
+        </div>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -114,19 +235,14 @@ export function AppSidebar() {
       <SidebarContent>
         {isCustomer && (
           <SidebarGroup>
-            <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
+            <SidebarGroupLabel>Overview</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {customerNavItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                      <Link to={item.href}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {renderNavItem({
+                  label: "Dashboard",
+                  href: "/dashboard",
+                  icon: LayoutDashboard,
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -134,43 +250,186 @@ export function AppSidebar() {
 
         {isCustomer && (
           <SidebarGroup>
-            <SidebarGroupLabel>Integrations</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {integrationNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                      <Link to={item.href}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
+            <Collapsible
+              open={fleetOpen}
+              onOpenChange={(next) => onToggle(setFleetOpen, "sidebar-fleet", next)}
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Fleet", fleetOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>{customerFleetNav.map((item) => renderNavItem(item))}</SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isCustomer && (
+          <SidebarGroup>
+            <Collapsible
+              open={monitoringOpen}
+              onOpenChange={(next) =>
+                onToggle(setMonitoringOpen, "sidebar-monitoring", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Monitoring", monitoringOpen, openAlertCount > 0)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {customerMonitoringNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isCustomer && (
+          <SidebarGroup>
+            <Collapsible
+              open={dataOpen}
+              onOpenChange={(next) => onToggle(setDataOpen, "sidebar-data", next)}
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Data & Integrations", dataOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>{customerDataNav.map((item) => renderNavItem(item))}</SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isCustomer && (
+          <SidebarGroup>
+            <Collapsible
+              open={settingsOpen}
+              onOpenChange={(next) =>
+                onToggle(setSettingsOpen, "sidebar-settings", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Settings", settingsOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>{settingsNav.map((item) => renderNavItem(item))}</SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
           </SidebarGroup>
         )}
 
         {isOperator && (
           <SidebarGroup>
-            <SidebarGroupLabel>Operator</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {operatorNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                      <Link to={item.href}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
+            <Collapsible
+              open={operatorOverviewOpen}
+              onOpenChange={(next) =>
+                onToggle(setOperatorOverviewOpen, "sidebar-operator-overview", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Overview", operatorOverviewOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {operatorOverviewNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
           </SidebarGroup>
         )}
+
+        {isOperator && (
+          <SidebarGroup>
+            <Collapsible
+              open={operatorTenantsOpen}
+              onOpenChange={(next) =>
+                onToggle(setOperatorTenantsOpen, "sidebar-operator-tenants", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Tenants", operatorTenantsOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {operatorTenantNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isOperator && (
+          <SidebarGroup>
+            <Collapsible
+              open={operatorUsersOpen}
+              onOpenChange={(next) =>
+                onToggle(setOperatorUsersOpen, "sidebar-operator-users-audit", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Users & Audit", operatorUsersOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {operatorUsersAuditNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isOperator && (
+          <SidebarGroup>
+            <Collapsible
+              open={operatorSystemOpen}
+              onOpenChange={(next) =>
+                onToggle(setOperatorSystemOpen, "sidebar-operator-system", next)
+              }
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("System", operatorSystemOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {operatorSystemNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
       </SidebarContent>
 
       <SidebarFooter className="p-4">
