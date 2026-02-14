@@ -900,6 +900,10 @@ async def run_worker() -> None:
 
     fallback_poll_seconds = int(os.getenv("FALLBACK_POLL_SECONDS", "15"))
     debounce_seconds = float(os.getenv("DEBOUNCE_SECONDS", "0.1"))
+    async with pool.acquire() as conn:
+        legacy_pipeline_enabled = bool(
+            await conn.fetchval("SELECT to_regclass('public.delivery_jobs') IS NOT NULL")
+        )
 
     listener_conn = None
     try:
@@ -932,17 +936,15 @@ async def run_worker() -> None:
                 _notify_event.clear()
 
                 async with pool.acquire() as conn:
-                    stuck = await requeue_stuck_jobs(conn)
-                    if stuck:
-                        log_event(logger, "stuck jobs requeued", count=stuck)
+                    if legacy_pipeline_enabled:
+                        stuck = await requeue_stuck_jobs(conn)
+                        if stuck:
+                            log_event(logger, "stuck jobs requeued", count=stuck)
 
-                    jobs = await fetch_jobs(conn)
-                    COUNTERS["jobs_pending"] = len(jobs)
-                    if not jobs:
-                        continue
-
-                    for job in jobs:
-                        await process_job(conn, job)
+                        jobs = await fetch_jobs(conn)
+                        COUNTERS["jobs_pending"] = len(jobs)
+                        for job in jobs:
+                            await process_job(conn, job)
                     notification_jobs = await fetch_notification_jobs(conn, WORKER_BATCH_SIZE)
                     for notification_job in notification_jobs:
                         await process_notification_job(conn, notification_job)
