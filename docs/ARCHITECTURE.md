@@ -1,350 +1,448 @@
-# OpsConductor-Pulse Architecture
+# OpsConductor-Pulse — Architecture Reference
 
-OpsConductor-Pulse is an edge telemetry, health, and signaling platform for managed devices. It provides secure multi-tenant device ingestion, real-time state evaluation, alert generation, and operational dashboards for IoT fleet management.
+OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platform. It provides edge telemetry ingestion, real-time alert evaluation, multi-level escalation, on-call scheduling, outbound notifications, and professional operator dashboards.
 
-## Architecture Overview
+---
+
+## System Overview
 
 ```
-Browser ──► https://HOST (Caddy, ports 80/443)
-              │
-              ├── /realms/*     ──► Keycloak (OIDC identity provider)
-              ├── /resources/*  ──► Keycloak (static assets)
-              ├── /admin/*      ──► Keycloak (admin console)
-              ├── /app/*        ──► ui_iot (React SPA static files)
-              ├── /api/v2/*     ──► ui_iot (REST API + WebSocket)
-              ├── /customer/*   ──► ui_iot (customer JSON APIs)
-              ├── /operator/*   ──► ui_iot (operator JSON APIs)
-              ├── /ingest/*     ──► ui_iot (HTTP telemetry ingestion)
-              └── /*            ──► ui_iot (catch-all)
+┌─────────────────────────────────────────────────────────────────┐
+│                         BROWSER / OPERATOR                      │
+│   React SPA (shadcn/ui + ECharts + TanStack Query + Zustand)   │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ HTTPS (keycloak-js OIDC/PKCE)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    CADDY (Reverse Proxy / TLS)                  │
+│  /realms/* → Keycloak    /app/* /api/v2/* /customer/* → ui     │
+└──────┬──────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────┐
+│  ui  (FastAPI + asyncpg)             │
+│  ├── React SPA static files          │
+│  ├── /api/v2/*  (REST + WebSocket)   │
+│  ├── /customer/* (tenant APIs)       │
+│  ├── /operator/* (cross-tenant APIs) │
+│  ├── /ingest/*  (HTTP telemetry)     │
+│  ├── Workers:                        │
+│  │    escalation_worker (60s tick)   │
+│  │    report_worker (daily)          │
+│  └── Packages:                       │
+│       notifications/ oncall/         │
+│       reports/ workers/              │
+└──────────────────────────────────────┘
 
-IoT Devices ──► MQTT (1883) ──► ingest_iot ──► TimescaleDB (telemetry)
-            └── HTTP POST ──► ui_iot/ingest ──► TimescaleDB (telemetry)
-                                                    │
-                                              evaluator_iot
-                                                    │
-                                          device_state + fleet_alert
-                                                    │
-                                               dispatcher
-                                                    │
-                                            delivery_worker
-                                            │    │    │    │
-                                            ▼    ▼    ▼    ▼
-                                      Webhook SNMP Email MQTT
+┌──────────────────────────────────────────────────────────────┐
+│                    IOT DATA PIPELINE                          │
+│                                                              │
+│  IoT Devices ──► MQTT (:1883)                               │
+│              └── HTTP POST /ingest/v1/*                     │
+│                      │                                      │
+│                      ▼                                      │
+│              ingest (auth cache + rate limit + batch write) │
+│                      │                                      │
+│                      ▼                                      │
+│              TimescaleDB (telemetry hypertable)             │
+│                      │                                      │
+│                      ▼                                      │
+│              evaluator (state tracking + alert generation)  │
+│                      │                                      │
+│          ┌───────────┴────────────┐                        │
+│          ▼                        ▼                        │
+│    device_state              alerts table                  │
+│    (ONLINE/STALE/OFFLINE)    (NO_HEARTBEAT / THRESHOLD)    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                  ALERT OPERATIONS LOOP                        │
+│                                                              │
+│  Alert fires                                                 │
+│      │                                                       │
+│      ├──► Legacy pipeline:                                   │
+│      │    dispatcher → delivery_jobs → delivery_worker      │
+│      │                                 ├── Webhook (HTTP)   │
+│      │                                 ├── SNMP trap        │
+│      │                                 ├── Email (SMTP)     │
+│      │                                 └── MQTT publish     │
+│      │                                                       │
+│      └──► Phase 91+ routing engine:                         │
+│           notification_channels + routing_rules             │
+│                ├── Slack webhook                            │
+│                ├── PagerDuty Events API v2                  │
+│                ├── Microsoft Teams MessageCard              │
+│                └── Generic HTTP (HMAC signed)               │
+│                                                              │
+│  escalation_worker (every 60s):                             │
+│      ├── Check next_escalation_at ≤ NOW()                   │
+│      ├── Resolve on-call schedule (if linked)               │
+│      └── Fire notification at new escalation level          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Network Architecture
+---
 
-All browser traffic goes through a **Caddy** reverse proxy that terminates TLS with a self-signed certificate. This puts the React SPA and Keycloak behind a single HTTPS origin, which is required for the Web Crypto API (PKCE code challenge) used by keycloak-js.
+## Services
 
-| Port | Service | Access |
-|------|---------|--------|
-| 443 | Caddy | HTTPS — all browser traffic |
-| 80 | Caddy | Redirects to HTTPS |
-| 8081 | provision_api | Admin API (direct, no proxy) |
-| 1883 | Mosquitto | MQTT device ingestion |
-| 5432 | PostgreSQL | Database (internal) |
+### caddy
+HTTPS reverse proxy. Terminates TLS with a self-signed certificate. Routes:
+- `/realms/*`, `/admin/*`, `/resources/*`, `/js/*` → Keycloak
+- Everything else → `ui` service
 
-## Services and Responsibilities
+### keycloak
+OIDC identity provider. The React SPA uses `keycloak-js` for direct browser PKCE authentication.
 
-### Caddy (caddy:2-alpine)
-HTTPS reverse proxy. Terminates TLS with internally generated self-signed certificate. Routes `/realms/*`, `/resources/*`, `/admin/*`, `/js/*` to Keycloak and everything else to `ui_iot`. Port 80 redirects to HTTPS.
+### ui (`services/ui_iot/`)
+FastAPI backend, serving three API layers and the React SPA:
+- **`/api/v2/*`** — REST + WebSocket. JWT-auth, tenant-scoped, TimescaleDB queries
+- **`/customer/*`** — Customer APIs: devices, alerts, escalation, notifications, on-call, reports, subscriptions, integrations
+- **`/operator/*`** — Operator APIs: cross-tenant views (BYPASSRLS), system health, audit
+- **`/ingest/*`** — HTTP telemetry ingestion (alternative to MQTT)
+- **Workers**: `escalation_worker` (60s), `report_worker` (daily), metrics collector (5s)
+- **Packages**: `routes/`, `workers/`, `reports/`, `notifications/`, `oncall/`
 
-### services/ingest_iot
-Device ingress, authentication, validation, and quarantine. Handles MQTT device connections, validates provision tokens via a TTL-based auth cache (eliminates per-message PG lookups), enforces rate limits, and writes accepted telemetry to TimescaleDB using batched writes. Multi-worker async pipeline processes ~20,000 msg/sec per instance. Supports arbitrary numeric/boolean metrics without schema changes.
+> **Dockerfile note**: Each top-level package under `services/ui_iot/` requires a
+> `COPY <pkg> /app/<pkg>` line in the Dockerfile.
 
-### services/evaluator_iot
-Heartbeat tracking, state management, alert generation, and threshold rule evaluation. Reads telemetry from TimescaleDB to maintain `device_state`, detects stale devices (NO_HEARTBEAT alerts), and evaluates customer-defined threshold rules against latest device metrics (THRESHOLD alerts). Rules support GT, LT, GTE, LTE operators on any metric. Creates and manages `alert_rules` table DDL on startup.
+### ingest (`services/ingest_iot/`)
+MQTT device ingestion. Multi-worker async pipeline:
+- Validates provision tokens via in-memory TTL auth cache (eliminates per-message DB lookups)
+- Enforces per-device rate limits (token bucket)
+- Writes telemetry to TimescaleDB using batched COPY for high throughput (~20k msg/sec)
+- Quarantines invalid messages to `quarantine_events`
 
-### services/ui_iot
-FastAPI backend serving the React SPA and providing JSON APIs. Three API layers:
+### evaluator (`services/evaluator_iot/`)
+State tracking and alert generation:
+- Reads telemetry from TimescaleDB
+- Maintains `device_state` (ONLINE/STALE/OFFLINE) based on heartbeat windows
+- Generates `NO_HEARTBEAT` alerts when devices miss their window
+- Evaluates customer-defined threshold rules and generates `THRESHOLD` alerts
+- Deduplicates alerts by fingerprint (same device + rule → one open alert)
 
-- **`/api/v2/*`** — REST API with JWT Bearer auth, per-tenant rate limiting, TimescaleDB telemetry queries, and WebSocket live data streaming. Customer-scoped (RLS-enforced).
-- **`/customer/*`** — Customer JSON APIs for integrations, alert rules, devices, and alerts. Customer-scoped (RLS-enforced).
-- **`/operator/*`** — Operator JSON APIs for cross-tenant views (BYPASSRLS), quarantine, audit log, and system settings. All access audited.
+### dispatcher (`services/dispatcher/`)
+Legacy alert-to-delivery pipeline. Polls `alerts` for open alerts, matches against `integration_routes`, creates `delivery_jobs`.
 
-The SPA is served from `/app/` via a volume mount of `frontend/dist` at `/app/spa`.
+### delivery_worker (`services/delivery_worker/`)
+Legacy delivery. Processes `delivery_jobs` with exponential backoff retry (5 attempts, 30s–7200s):
+- **Webhook**: HTTP POST with JSON payload, configurable headers
+- **SNMP**: v2c (community string) and v3 (auth/priv) traps, custom OID prefix
+- **Email**: SMTP with TLS, HTML + plain text templates, multiple recipients
+- **MQTT**: Publish to customer topics with configurable QoS and retain
 
-### services/provision_api
-Admin and device provisioning APIs. Handles device registration, activation code generation, token management, and administrative operations protected by X-Admin-Key.
+### api (`services/provision_api/`)
+Device provisioning. Protected by `X-Admin-Key` header. Handles device registration, activation code generation, and token management.
 
-### services/dispatcher
-Alert-to-delivery job dispatcher. Polls `fleet_alert` for open alerts, matches them against `integration_routes`, and creates `delivery_jobs` for the worker.
+### ops_worker (`services/ops_worker/`)
+Platform health monitoring. Polls service health endpoints and writes metrics to `system_metrics` hypertable. Used by the operator NOC dashboards.
 
-### services/delivery_worker
-Alert delivery via webhook, SNMP, email, and MQTT. Processes delivery_jobs with retry logic and exponential backoff (up to 5 attempts, 30s-7200s backoff range). Supports:
-- **Webhooks**: HTTP POST with JSON payload
-- **SNMP**: v2c and v3 trap delivery
-- **Email**: SMTP with HTML/text templates, multiple recipients
-- **MQTT**: Publish to customer-configured topics with QoS and retain
+### subscription_worker (`services/subscription_worker/`)
+Subscription lifecycle. Handles renewals, grace periods, suspensions, and expirations. Runs on configurable interval.
 
-### simulator/device_sim_iot
-Simulation only. Generates realistic device telemetry (battery_pct, temp_c, pressure_psi, humidity_pct, vibration_g, rssi_dbm, snr_db) and heartbeat messages for 25 simulated devices. Includes battery drain/recharge cycles and periodic uplink drops.
+### postgres
+PostgreSQL 15 + TimescaleDB extension. Accessed via PgBouncer for connection pooling.
+
+### pgbouncer
+Connection pooler. Use `edoburu/pgbouncer:latest` (not a specific version tag — older tags removed from Docker Hub).
+
+### mqtt
+Eclipse Mosquitto MQTT broker. Port 1883 (TCP), 9001 (WebSocket).
+
+---
 
 ## Frontend Architecture
 
-The frontend is a React SPA built with Vite and TypeScript, served at `/app/` by the `ui_iot` FastAPI backend.
-
 ### Technology Stack
+
 | Layer | Technology |
 |-------|-----------|
 | Framework | React 18 + TypeScript |
 | Build | Vite |
 | Styling | TailwindCSS + shadcn/ui |
-| Server state | TanStack Query (REST API data) |
-| Client state | Zustand (WebSocket live data, UI state) |
-| Auth | keycloak-js (browser-native OIDC/PKCE) |
-| Charts | ECharts (gauges), uPlot (time-series) |
+| Server state | TanStack Query (REST) |
+| Client state | Zustand (WebSocket live data) |
+| Auth | keycloak-js (OIDC/PKCE) |
+| Charts | ECharts (gauges, heatmaps, area), uPlot (time-series) |
 | Routing | React Router v6 |
 
-### Page Structure
-- **Customer pages**: Dashboard, Device List, Device Detail (telemetry charts + gauges), Alerts, Alert Rules CRUD, Webhook/SNMP/Email/MQTT integration management
-- **Operator pages**: Cross-tenant Overview, All Devices (with tenant filter), System Dashboard (health, metrics, capacity), Audit Log (admin only), System Settings (admin only)
-- **Role-based routing**: Operators see only operator nav; customers see only customer nav. Index redirects to role-appropriate dashboard.
+### Application Layout
+
+The app shell (`AppShell.tsx`) renders a collapsible sidebar with 5 navigation groups:
+1. **Overview** — Fleet dashboard
+2. **Fleet** — Devices, sites
+3. **Monitoring** — Alerts, alert rules, escalation, notifications, on-call
+4. **Data & Integrations** — Legacy integrations, reports
+5. **Settings** — Users, subscriptions, audit
+
+Live alert count badge on the Alerts nav item (refetches every 30s). Red dot on collapsed Monitoring group header when alerts > 0.
+
+### Customer Pages
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/` | Dashboard | Fleet KPI strip + active alerts + recent devices |
+| `/devices` | DeviceListPage | Split-pane: device list (left) + detail pane (right) |
+| `/devices/:id` | DeviceDetailPage | 5 tabs: Overview, Telemetry, Alerts, API Tokens, Uptime |
+| `/devices/wizard` | SetupWizard | 4-step guided provisioning |
+| `/devices/import` | BulkImportPage | CSV import with preview + error reporting |
+| `/alerts` | AlertListPage | Inbox with severity tabs, bulk actions, expand |
+| `/alert-rules` | AlertRulesPage | Threshold rule CRUD |
+| `/escalation-policies` | EscalationPoliciesPage | Multi-level policy builder |
+| `/notifications` | NotificationChannelsPage | Slack/PD/Teams/webhook + routing rules |
+| `/oncall` | OncallSchedulesPage | Rotation schedules + 14-day timeline |
+| `/reports` | ReportsPage | CSV exports + SLA card + history |
+| `/sites` | SitesPage | Site CRUD |
+| `/integrations` | IntegrationsPage | Legacy webhook/SNMP/email/MQTT |
+| `/subscription` | SubscriptionPage | Subscription status and renewal |
+| `/users` | UsersPage | User management (tenant-admin only) |
+
+### Operator Pages
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/operator` | OperatorDashboard | KPI cards + nav cards + error feed |
+| `/operator/noc` | NOCPage | Dark NOC: gauges, charts, topology, heatmap, event feed |
+| `/operator/tenant-matrix` | TenantHealthMatrix | Dense tenant health table with sparklines |
+| `/operator/system` | SystemDashboard | Service health, sparklines, capacity |
+| `/operator/devices` | OperatorDevices | Cross-tenant device inventory |
+| `/operator/alerts` | OperatorAlerts | Cross-tenant alert list |
+| `/operator/audit-log` | AuditLogPage | Operator access audit (admin only) |
+| `/operator/settings` | SettingsPage | System settings (admin only) |
+
+### NOC Command Center (`/operator/noc`)
+
+- **GaugeRow**: 4 ECharts circular gauges (fleet online %, ingest rate, open alerts, DB connections %)
+- **MetricsChartGrid**: 4 dark area charts (messages/s, alert rate, device state, delivery jobs)
+- **ServiceTopologyStrip**: Pipeline visualization (ingest → evaluator → dispatcher → delivery)
+- **AlertHeatmap**: ECharts calendar-style day × hour alert volume heatmap
+- **LiveEventFeed**: Monospace scrolling stream of recent events with pause control
+- **TV mode**: Press `F` for fullscreen, hides shell chrome, amber TV badge in corner
 
 ### Data Flow
-1. **Initial load**: TanStack Query fetches data from REST API (`/api/v2/*`)
-2. **Live updates**: WebSocket at `/api/v2/ws` pushes telemetry and alerts to Zustand stores
-3. **Fusion**: Device detail charts merge REST historical data with WebSocket live data into a rolling buffer (500 points max, deduplicated by timestamp)
-4. **Mutations**: CRUD operations use TanStack Query mutations that invalidate list caches on success
 
-## Data Stores
+```
+Initial load:  TanStack Query → REST API → component state
+Live updates:  WebSocket /api/v2/ws → Zustand stores → reactive components
+Mutations:     TanStack Query mutation → invalidate query cache → re-fetch
+```
 
-### PostgreSQL
-Transactional data store for all non-telemetry data:
-- `device_state` — Current device status, last seen, state JSONB
-- `fleet_alert` — Open/closed alerts with severity, fingerprint dedup
-- `alert_rules` — Customer-defined threshold rules
-- `integrations` — Webhook, SNMP, email, MQTT configurations
-- `integration_routes` — Alert-to-integration routing rules
-- `delivery_jobs` — Queued delivery work items
-- `delivery_attempts` — Delivery attempt history
-- `delivery_log` — Delivery event log
-- `quarantine_events` — Rejected device events
-- `operator_audit_log` — Operator cross-tenant access audit
-- `app_settings` — System configuration
-- `rate_limits` — Per-device rate limiting
+---
 
-### TimescaleDB (PostgreSQL Extension)
+## Data Architecture
 
-Time-series data is stored using TimescaleDB hypertables for automatic partitioning and compression:
+### TimescaleDB Hypertables
 
-**telemetry** — Device telemetry and heartbeats:
-- Partitioned by time (automatic chunking)
-- Compression enabled for data older than 7 days
-- Retention policy: 90 days (configurable)
-- Columns: `time`, `tenant_id`, `device_id`, `msg_type`, `metrics` (JSONB)
-- Supports 20,000+ messages/second with batched COPY inserts
+**`telemetry`** — Device time-series data:
+- Partitioned by time (automatic chunks)
+- Compression after 7 days
+- Retention: 90 days
+- Columns: `time`, `tenant_id`, `device_id`, `msg_type`, `metrics (JSONB)`
 
-**system_metrics** — Platform monitoring:
-- CPU, memory, disk, network metrics per service
-- Used by System Dashboard
+**`system_metrics`** — Platform monitoring:
 - Same compression/retention policies
+- Written by `ops_worker` and `ui` metrics collector
 
-**Query patterns:**
-- Recent data: Standard SELECT with time range
-- Aggregations: TimescaleDB `time_bucket()` for downsampling
-- Metrics access: JSONB operators (`->`, `->>`, `?`)
+### Key Transactional Tables
 
-**Migration from InfluxDB:**
-Phase 30 migrated all time-series storage from InfluxDB to TimescaleDB for:
-- Simplified operations (single database)
-- Better integration with RLS
-- Native PostgreSQL tooling
+See [PROJECT_MAP.md](PROJECT_MAP.md) for the full table index.
 
-### Metric Catalog & Normalization
-
-The metric system provides consistent naming across different device types:
-
-**metric_catalog** — Defines known metrics:
-- `metric_name`: Internal name (e.g., `cpu_temp`)
-- `display_name`: Human-readable (e.g., "CPU Temperature")
-- `unit`: Measurement unit (e.g., "°C")
-- `description`: Documentation
-
-**normalized_metrics** — Unified metric definitions:
-- Maps raw device metrics to normalized names
-- Enables cross-device comparisons
-- Supports metric aliasing
-
-**metric_mappings** — Raw to normalized mapping:
-- Per-device-type mappings
-- Handles vendor-specific naming
-- Automatic normalization in queries
-
-**API Endpoints:**
-- GET/POST/DELETE `/customer/metrics/catalog`
-- GET/POST/PATCH/DELETE `/customer/normalized-metrics`
-- GET/POST/PATCH/DELETE `/customer/metric-mappings`
-
-## Authentication Model
-
-### Browser Authentication (SPA)
-The React SPA uses **keycloak-js** for direct browser-to-Keycloak OIDC authentication with PKCE. Keycloak is accessed at `window.location.origin` (same origin via Caddy reverse proxy). No server-side OAuth flow is needed — the browser handles the full OIDC code exchange.
-
-### API Authentication
-All `/api/v2/*`, `/customer/*`, and `/operator/*` endpoints require a JWT Bearer token in the `Authorization` header. The backend validates tokens against Keycloak's JWKS endpoint.
-
-### User Roles
-
-| Role | Description | Access |
-|------|-------------|--------|
-| `customer_viewer` | Read-only customer access | View devices, alerts, delivery status |
-| `customer_admin` | Full customer access | Above + manage integrations, alert rules, routes |
-| `operator` | Cross-tenant operator access | All tenant data, audited |
-| `operator_admin` | Operator with admin functions | Above + system settings, audit log |
-
-### JWT Claims
-
-```json
-{
-  "iss": "https://192.168.10.53/realms/pulse",
-  "sub": "user-uuid",
-  "tenant_id": "tenant-a",
-  "role": "customer_admin"
-}
-```
-
-Operators have `tenant_id: ""` (empty) and use `operator_connection` (BYPASSRLS) for cross-tenant access.
-
-## Core Flows
-
-### Telemetry Ingestion Paths
-
-```
-Device → MQTT (1883) → ingest_iot → TimescaleDB
-Device → HTTP POST /ingest/v1/* → ui_iot → TimescaleDB
-```
-
-**MQTT Path**: High-throughput ingestion via Mosquitto broker. Multi-worker async pipeline with auth caching.
-
-**HTTP Path**: REST alternative for devices/gateways that prefer HTTP. Single-message and batch endpoints with same validation.
-
-Both paths use shared validation (`services/shared/ingest_core.py`):
-- DeviceAuthCache for credential caching
-- TimescaleBatchWriter for batched writes (COPY for large batches, executemany for small)
-- TokenBucket for per-device rate limiting
-
-### Device Telemetry/Heartbeat Flow
-```
-Device → MQTT → ingest_iot → auth cache → validation → TimescaleDB (batched writes)
-                                                              ↓
-                                                      evaluator_iot → device_state + fleet_alert
-                                                              ↓
-ui_iot (REST API reads from TimescaleDB)
-                                                              ↓
-                                       React SPA (charts, gauges, WebSocket live updates)
-```
-
-### Alert Pipeline
-```
-evaluator_iot → fleet_alert (NO_HEARTBEAT + THRESHOLD)
-                      ↓
-                 dispatcher → route match → delivery_job
-                                                 ↓
-                                         delivery_worker
-                                       ↓    ↓     ↓     ↓
-                             webhook  SNMP  email  MQTT
-                                       ↓    ↓     ↓     ↓
-                                 delivery_attempts (logged)
-```
-
-### Rejection/Quarantine Flow
-```
-Device → MQTT → ingest_iot → validation failure → quarantine_events
-                                                         ↓
-                                              operator dashboard (SPA)
-```
-
-### Provisioning Flow
-```
-Admin → provision_api (X-Admin-Key) → create device → activation_code
-Device → provision_api → activation_code → provision_token
-Device → ingest_iot → provision_token validation → accepted telemetry
-```
+---
 
 ## Security Architecture
 
-### Tenant Isolation
+### Authentication Flow
 
-1. **JWT-based identity**: tenant_id extracted from validated JWT claims only
-2. **Application enforcement**: All queries include tenant_id in WHERE clause
-3. **RLS defense-in-depth**: PostgreSQL row-level security as backup layer
-4. **TimescaleDB isolation**: Tenant filtering via tenant_id column with application-level enforcement
-5. **Audit logging**: All operator cross-tenant access is logged with IP and user agent
-
-### RLS Configuration
-
-Two database roles used by `ui_iot`:
-- `pulse_app` — Subject to RLS. Customer connections use `SET LOCAL ROLE pulse_app` with `app.tenant_id` context.
-- `pulse_operator` — BYPASSRLS. Operator connections use `SET LOCAL ROLE pulse_operator` for cross-tenant access.
-
-```sql
--- Customer connection (RLS enforced)
-SET LOCAL ROLE pulse_app;
-SELECT set_config('app.tenant_id', 'tenant-a', true);
-
--- Operator connection (BYPASSRLS)
-SET LOCAL ROLE pulse_operator;
+```
+Browser → keycloak-js → Keycloak OIDC (PKCE)
+                              │
+                         JWT issued
+                              │
+Browser → API request with Bearer token
+                              │
+ui backend → validate JWT against Keycloak JWKS
+                              │
+             extract tenant_id from JWT claims
+                              │
+          open tenant_connection(pool, tenant_id)
+                              │
+          SET LOCAL ROLE pulse_app;
+          SELECT set_config('app.tenant_id', tenant_id, true);
+                              │
+                       RLS enforced
 ```
 
+### Tenant Isolation (Defense in Depth)
+
+1. **JWT-only trust**: `tenant_id` comes from validated JWT claims only — never from request body or URL
+2. **Application WHERE clauses**: Every query includes `WHERE tenant_id = $tenant_id`
+3. **Row-Level Security**: `pulse_app` role has RLS policies enforcing `app.tenant_id` match
+4. **TimescaleDB**: Tenant filtering via `tenant_id` column in all hypertable queries
+5. **Operator audit**: `pulse_operator` role (BYPASSRLS) — all cross-tenant access logged
+
+### Database Roles
+
+| Role | Access | Used by |
+|------|--------|---------|
+| `pulse_app` | RLS-enforced, per-tenant | Customer API connections |
+| `pulse_operator` | BYPASSRLS, audited | Operator API connections |
+| `iot` (owner) | Superuser equivalent | Migrations, schema changes |
+
+### User Roles (Keycloak)
+
+| Role | Description | API access |
+|------|-------------|-----------|
+| `customer` | Standard tenant user | `/api/v2/`, `/customer/` |
+| `tenant-admin` | Elevated tenant user | Above + user/subscription management |
+| `operator` | Cross-tenant read | `/operator/` (read) |
+| `operator-admin` | Cross-tenant full | `/operator/` (full) + settings + audit |
+
 ### SSRF Prevention
+Customer-provided URLs (webhooks, SNMP, SMTP) are validated:
+- Private IP ranges blocked (RFC1918: 10.x, 172.16.x, 192.168.x)
+- Loopback blocked (127.x, ::1)
+- Cloud metadata endpoints blocked (169.254.169.254)
 
-Customer-provided URLs (webhooks, SNMP destinations, SMTP hosts) are validated:
-- Private IP ranges blocked (10.x, 172.16.x, 192.168.x)
-- Loopback addresses blocked
-- Cloud metadata endpoints blocked
-- DNS resolution validated
+### Webhook HMAC Signing
+Generic HTTP notification channels support an optional HMAC-SHA256 signing secret.
+The signature is sent as `X-Signature-SHA256: <hex>` header.
 
-## Operator System Dashboard
+---
 
-The System Dashboard (`/app/operator/system`) provides real-time visibility into platform health and performance.
+## Ingestion Performance
 
-### Components
+The ingest service is designed for high-throughput device telemetry:
 
-| Section | Data Source | Refresh |
-|---------|-------------|---------|
-| Service Health | Health endpoints on each service | 10s |
-| Metric Sparklines | system_metrics hypertable | 10s |
-| Time-series Charts | system_metrics with rate calculation | 10s |
-| Platform Totals | PostgreSQL aggregates | 15s |
-| Capacity Gauges | pg_stat + disk_usage | 30s |
-| Recent Errors | delivery_jobs + quarantine_events | 15s |
+- **Auth cache**: In-memory TTL cache (default 60s) — provision token validated once, cached for subsequent messages
+- **Batched writes**: `TimescaleBatchWriter` — accumulates messages, flushes with PostgreSQL COPY (large) or executemany (small)
+- **Multi-worker**: Configurable async worker count (default 4)
+- **Rate limiting**: Per-device token bucket — configurable rate/window
 
-### Metrics Collection
+**Throughput target**: ~20,000 messages/second per ingest instance.
 
-The `MetricsCollector` in `ui_iot` polls service health endpoints every 5 seconds and writes to `system_metrics`:
-- `messages_received`, `messages_written`, `queue_depth` (ingest)
-- `rules_evaluated`, `alerts_created` (evaluator)
-- `alerts_processed`, `routes_matched` (dispatcher)
-- `jobs_succeeded`, `jobs_failed`, `jobs_pending` (delivery)
-- `connections`, `db_size_bytes` (postgres)
-- `devices_online`, `devices_stale`, `alerts_open` (platform)
+---
 
-### Rate Calculation
+## Escalation & On-Call Architecture
 
-Counter metrics (like `messages_written`) are cumulative. The `/operator/system/metrics/history` endpoint supports a `rate=true` parameter that computes the derivative (delta/time) between consecutive samples to show actual throughput rates.
+### Escalation Flow
+```
+Alert created
+    └── linked alert_rule has escalation_policy_id?
+              │ yes
+              ▼
+        escalation_policy → escalation_levels (level 1, 2, 3...)
+              │
+              ▼
+        alert.next_escalation_at = NOW() + level_1.delay_minutes
+              │
+        (every 60 seconds) escalation_worker ticks:
+              │
+              ├── SELECT alerts WHERE status='OPEN' AND next_escalation_at <= NOW()
+              │
+              ├── For each: increment escalation_level
+              │
+              ├── Resolve on-call if escalation_level.oncall_schedule_id set:
+              │     oncall/resolver.py → get_current_responder(layer, now)
+              │     overrides checked first (time-range match)
+              │
+              ├── Fire notification via notifications/dispatcher.py
+              │     → routing rules → senders (Slack / PD / Teams / HTTP)
+              │
+              └── Set next_escalation_at for next level (or NULL if exhausted)
+```
+
+### On-Call Resolution Algorithm
+```python
+def get_current_responder(layer, now):
+    # elapsed = how many complete shifts since rotation epoch
+    # responder = responders[elapsed % len(responders)]
+```
+
+Overrides are checked before layer rotation. If `NOW()` falls within an override's
+`start_at` to `end_at` range, the override's `responder` is used.
+
+---
+
+## Notification Channel Architecture (Phase 91+)
+
+```
+Alert event (new alert or escalation)
+    │
+    ▼
+notifications/dispatcher.py: dispatch_alert(pool, alert, tenant_id)
+    │
+    ├── Load enabled routing rules for tenant
+    │
+    ├── For each matching rule (severity ≥ min_severity, type matches, tag matches):
+    │     Check throttle: notification_log WHERE channel_id=$1 AND alert_id=$2
+    │                       AND sent_at > NOW() - throttle_minutes * INTERVAL
+    │     If not throttled:
+    │       Send via appropriate sender
+    │       Insert into notification_log
+    │
+    └── Senders (notifications/senders.py, all use httpx.AsyncClient):
+          ├── send_slack(webhook_url, alert) → Slack Incoming Webhook
+          ├── send_pagerduty(key, alert) → PD Events API v2 (dedup_key per alert_id)
+          ├── send_teams(webhook_url, alert) → Teams MessageCard
+          └── send_webhook(url, method, headers, secret, alert) → Generic HTTP
+```
+
+---
+
+## Subscription System
+
+```
+Subscription types:
+  MAIN     — Primary annual subscription, device limit
+  ADDON    — Additional capacity, coterminous with parent MAIN
+  TRIAL    — Evaluation (default 14 days)
+  TEMPORARY — Project-scoped
+
+Lifecycle:
+  TRIAL → ACTIVE → (renewal) → ACTIVE
+                    ↓ (missed renewal)
+                  GRACE (14 days)
+                    ↓
+                  SUSPENDED (access blocked)
+                    ↓ (90 days)
+                  EXPIRED (data retained 1 year)
+```
+
+Enforced by `subscription_worker`. Device limit checked at provisioning time.
+
+---
+
+## Report Architecture (Phase 90)
+
+```
+On-demand exports:
+  GET /customer/export/devices  → StreamingResponse (CSV or JSON)
+  GET /customer/export/alerts   → StreamingResponse (CSV or JSON)
+  → inserts row into report_runs (triggered_by = "user:{id}")
+
+SLA Summary:
+  GET /customer/reports/sla-summary
+  → reports/sla_report.py: generate_sla_report(pool, tenant_id, days)
+    Queries: device counts, alert counts, MTTR, top alerting devices
+  → returns JSON + inserts into report_runs
+
+Scheduled (daily via report_worker):
+  → generate_sla_report for each active tenant
+  → stores result in report_runs.parameters (JSONB)
+```
 
 ---
 
 ## Operational Knobs
 
-### MODE DEV/PROD
-- PROD: Debug storage disabled, rejects not stored/mirrored, HTTPS required for webhooks
-- DEV: Full debugging enabled, rejects can be stored for analysis
-
-### Ingestion Performance
-- `INGEST_WORKER_COUNT`: Async worker count (default: 4)
-- `INGEST_QUEUE_SIZE`: Processing queue depth (default: 50000)
-- `TIMESCALE_BATCH_SIZE`: TimescaleDB write batch size (default: 500)
-- `TIMESCALE_FLUSH_INTERVAL_MS`: Max batch wait time (default: 1000)
-- `AUTH_CACHE_TTL_SECONDS`: Device auth cache TTL (default: 60)
-
-### Delivery Configuration
-- `WORKER_MAX_ATTEMPTS`: Maximum retry attempts (default: 5)
-- `WORKER_BACKOFF_BASE_SECONDS`: Initial retry delay (default: 30)
-- `WORKER_TIMEOUT_SECONDS`: HTTP/SNMP/SMTP timeout (default: 30)
-
-### API Rate Limiting
-- `API_RATE_LIMIT`: Requests per window per tenant (default: 100)
-- `API_RATE_WINDOW_SECONDS`: Rate limit window (default: 60)
-- `WS_POLL_SECONDS`: WebSocket push interval (default: 5)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INGEST_WORKER_COUNT` | `4` | Async ingest worker count |
+| `INGEST_QUEUE_SIZE` | `10000` | Queue depth |
+| `TIMESCALE_BATCH_SIZE` | `1000` | Write batch size |
+| `TIMESCALE_FLUSH_INTERVAL_MS` | `1000` | Max batch wait (ms) |
+| `AUTH_CACHE_TTL_SECONDS` | `300` | JWKS cache TTL |
+| `WORKER_MAX_ATTEMPTS` | `5` | Delivery retry attempts |
+| `WORKER_BACKOFF_BASE_SECONDS` | `30` | Initial retry delay |
+| `WS_POLL_SECONDS` | `5` | WebSocket push interval |
+| `API_RATE_LIMIT` | `100` | Requests per window |
+| `API_RATE_WINDOW_SECONDS` | `60` | Rate limit window (seconds) |

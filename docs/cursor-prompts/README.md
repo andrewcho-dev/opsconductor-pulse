@@ -1,6 +1,79 @@
-# Cursor Execution Prompts
+# Cursor Prompts — Implementation History
 
-This directory contains structured implementation prompts for Cursor (execution AI).
+This directory contains the phase-by-phase implementation prompts used to build OpsConductor-Pulse. Each phase directory contains a `000-start.md` overview and numbered task files.
+
+All phases follow the ARCHITECT pattern: prompts are written by the principal engineer (Claude in ARCHITECT mode) and executed by Cursor.
+
+---
+
+## Phase Index
+
+| Phase | Directory | Description | Status |
+|-------|-----------|-------------|--------|
+| 1–9 | `phase01-*` through `phase09-*` | Core foundation: Keycloak, JWT, RLS, SNMP, email | ✅ Complete |
+| 11–14 | `phase11-*` through `phase14-*` | InfluxDB → TimescaleDB migration, flexible ingestion | ✅ Complete |
+| 15–21 | `phase15-*` through `phase21-*` | Alert rules, REST/WebSocket API, React SPA, CRUD pages | ✅ Complete |
+| 22–30 | `phase22-*` through `phase30-*` | SPA cutover, HTTP ingestion, dashboards | ✅ Complete |
+| 31–40 | `phase31-*` through `phase40-*` | Subscriptions, user management, schema hardening, testing | ✅ Complete |
+| 41–53 | `phase41-*` through `phase53-*` | Envelope isolation, advanced alerting, webhooks | ✅ Complete |
+| 54–62 | `phase54-*` through `phase62-*` | Multi-site, fleet metrics, device groups | ✅ Complete |
+| 63–74 | `phase63-*` through `phase74-*` | API tokens, alert digest, uptime tracking | ✅ Complete |
+| 75–78 | `phase75-*` through `phase78-*` | Device API tokens, bulk import, alert digest emails, uptime | ✅ Complete |
+| 79 | `phase79-runtime-fix` | Runtime fixes: pool NameError, pgbouncer, migrations | ✅ Complete |
+| 80 | `phase80-sidebar-restructure` | Collapsible nav groups + live alert badge | ✅ Complete |
+| 81 | `phase81-fleet-overview-homepage` | Fleet command center dashboard | ✅ Complete |
+| 82 | `phase82-alert-inbox` | Alert inbox redesign (severity tabs, bulk actions) | ✅ Complete |
+| 83 | `phase83-split-pane-devices` | Split-pane device list + 5-tab device detail | ✅ Complete |
+| 84 | `phase84-noc-command-center` | NOC gauges + charts + topology strip | ✅ Complete |
+| 85 | `phase85-tenant-health-matrix` | Tenant health matrix + sparklines | ✅ Complete |
+| 86 | `phase86-heatmap-event-feed` | Alert heatmap + live event feed | ✅ Complete |
+| 87 | `phase87-tv-mode-noc-theme` | TV mode + NOC color tokens + operator landing | ✅ Complete |
+| 88 | `phase88-alert-escalation` | Escalation policies (CRUD + worker + UI) | ✅ Complete |
+| 88b | `phase88-cleanup-gitignore` | .gitignore cleanup | ✅ Complete |
+| 89 | `phase89-device-provisioning-polish` | Wizard + bulk import preview + credential rotation | ✅ Complete |
+| 90 | `phase90-reporting` | CSV exports + SLA summary + report history | ✅ Complete |
+| 91 | `phase91-webhook-routing` | Notification channels (Slack/PD/Teams/HTTP) + routing rules | ✅ Complete |
+| 92 | `phase92-oncall-schedules` | On-call schedules + layers + overrides + timeline | ✅ Complete |
+
+---
+
+## Conventions
+
+### Directory naming
+`phaseNN-description/` — NN is zero-padded, e.g. `phase88-alert-escalation`.
+
+### File naming
+- `000-start.md` — overview and execution order (always start here)
+- `001-migration.md`, `002-backend.md`, etc. — sequential task files
+
+### Every prompt set includes
+1. Migration file (if DB schema changes needed)
+2. Backend implementation (FastAPI routes, workers, utilities)
+3. Frontend implementation (React components, API service, routing)
+4. Verify file: `npm run build` + smoke tests + `git commit && git push`
+
+### Dockerfile rule
+Any phase adding a new top-level Python package under `services/ui_iot/`
+must include `COPY <package> /app/<package>` in `services/ui_iot/Dockerfile`.
+Missing this causes `ModuleNotFoundError` on container startup.
+This is explicitly noted in all relevant verify files.
+
+---
+
+## Migration Reference
+
+| Migration(s) | Phase | Description |
+|-------------|-------|-------------|
+| 000–040 | 1–40 | Base schema, integrations, TimescaleDB, subscriptions |
+| 054–063 | 54–74 | Alert fields, decommission, escalation, anomaly, groups |
+| 064 | 75 | device_api_tokens |
+| 065 | 77 | alert_digest_settings |
+| 066 | 88 | escalation_policies + escalation_levels |
+| 067 | 90 | report_runs |
+| 068 | 91 | notification_channels + routing_rules + notification_log |
+| 069 | 92 | oncall_schedules + oncall_layers + oncall_overrides |
+
+---
 
 ## Prompt Organization
 
