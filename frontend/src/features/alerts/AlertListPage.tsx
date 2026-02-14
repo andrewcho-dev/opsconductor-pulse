@@ -17,17 +17,31 @@ const SILENCE_OPTIONS = [
 
 const TABS = [
   { key: "ALL", label: "All" },
-  { key: "OPEN:CRITICAL", label: "Critical" },
-  { key: "OPEN:HIGH", label: "High" },
-  { key: "OPEN:MEDIUM", label: "Medium" },
-  { key: "OPEN:LOW", label: "Low" },
+  { key: "CRITICAL", label: "Critical" },
+  { key: "HIGH", label: "High" },
+  { key: "MEDIUM", label: "Medium" },
+  { key: "LOW", label: "Low" },
   { key: "ACKNOWLEDGED", label: "Ack'd" },
   { key: "CLOSED", label: "Closed" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
-function levelFromSeverity(severity: number): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
+const TAB_CONFIG: Record<
+  TabKey,
+  { apiStatus: "OPEN" | "ACKNOWLEDGED" | "CLOSED"; severity?: SeverityLevel }
+> = {
+  ALL: { apiStatus: "OPEN" },
+  CRITICAL: { apiStatus: "OPEN", severity: "CRITICAL" },
+  HIGH: { apiStatus: "OPEN", severity: "HIGH" },
+  MEDIUM: { apiStatus: "OPEN", severity: "MEDIUM" },
+  LOW: { apiStatus: "OPEN", severity: "LOW" },
+  ACKNOWLEDGED: { apiStatus: "ACKNOWLEDGED" },
+  CLOSED: { apiStatus: "CLOSED" },
+};
+
+function levelFromSeverity(severity: number): SeverityLevel {
   if (severity >= 5) return "CRITICAL";
   if (severity >= 4) return "HIGH";
   if (severity >= 3) return "MEDIUM";
@@ -70,7 +84,12 @@ export default function AlertListPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [expandedAlertId, setExpandedAlertId] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const { data, isLoading, error, refetch, isFetching } = useAlerts("ALL", 500, 0);
+  const activeApiStatus = TAB_CONFIG[tab].apiStatus;
+  const activeSeverity = TAB_CONFIG[tab].severity;
+  const { data, isLoading, error, refetch, isFetching } = useAlerts(activeApiStatus, 200, 0);
+  const { data: allOpenData } = useAlerts("OPEN", 200, 0);
+  const { data: ackData } = useAlerts("ACKNOWLEDGED", 1, 0);
+  const { data: closedData } = useAlerts("CLOSED", 1, 0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -84,33 +103,31 @@ export default function AlertListPage() {
 
   const allAlerts = data?.alerts ?? [];
   const counts = useMemo(() => {
-    const base = {
-      ALL: allAlerts.length,
-      "OPEN:CRITICAL": 0,
-      "OPEN:HIGH": 0,
-      "OPEN:MEDIUM": 0,
-      "OPEN:LOW": 0,
-      ACKNOWLEDGED: 0,
-      CLOSED: 0,
+    const openAlerts = allOpenData?.alerts ?? [];
+    const byLevel: Record<SeverityLevel, number> = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
     };
-    for (const alert of allAlerts) {
-      if (alert.status === "ACKNOWLEDGED") base.ACKNOWLEDGED += 1;
-      if (alert.status === "CLOSED") base.CLOSED += 1;
-      if (alert.status === "OPEN") {
-        const level = levelFromSeverity(alert.severity);
-        base[`OPEN:${level}`] += 1;
-      }
+    for (const alert of openAlerts) {
+      byLevel[levelFromSeverity(alert.severity)] += 1;
     }
-    return base;
-  }, [allAlerts]);
+    return {
+      ALL: (allOpenData?.total ?? 0) + (ackData?.total ?? 0) + (closedData?.total ?? 0),
+      CRITICAL: byLevel.CRITICAL,
+      HIGH: byLevel.HIGH,
+      MEDIUM: byLevel.MEDIUM,
+      LOW: byLevel.LOW,
+      ACKNOWLEDGED: ackData?.total ?? 0,
+      CLOSED: closedData?.total ?? 0,
+    };
+  }, [allOpenData?.alerts, allOpenData?.total, ackData?.total, closedData?.total]);
 
   const filteredAlerts = useMemo(() => {
-    const byTab = allAlerts.filter((alert) => {
-      if (tab === "ALL") return true;
-      if (tab === "ACKNOWLEDGED" || tab === "CLOSED") return alert.status === tab;
-      const [status, level] = tab.split(":");
-      return alert.status === status && levelFromSeverity(alert.severity) === level;
-    });
+    const byTab = activeSeverity
+      ? allAlerts.filter((alert) => levelFromSeverity(alert.severity) === activeSeverity)
+      : allAlerts;
     const query = search.trim().toLowerCase();
     if (!query) return byTab;
     return byTab.filter((alert) => {
@@ -119,7 +136,7 @@ export default function AlertListPage() {
         alert.alert_type.toLowerCase().includes(query)
       );
     });
-  }, [allAlerts, tab, search]);
+  }, [allAlerts, activeSeverity, search]);
 
   const allVisibleSelected =
     filteredAlerts.length > 0 &&
