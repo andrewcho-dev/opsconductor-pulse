@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import time
+import contextlib
 from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
@@ -55,6 +56,7 @@ COUNTERS = {
 # Shared state for LISTEN/NOTIFY wakeups.
 _pending_tenants: set[str] = set()
 _notify_event = asyncio.Event()
+NOTIFY_CHANNEL = "telemetry_inserted"
 
 COUNTERS = {
     "rules_evaluated": 0,
@@ -732,11 +734,54 @@ async def close_notify_listener(conn, channel: str, callback) -> None:
 
 
 def on_telemetry_notify(conn, pid, channel, payload):
-    """Called by asyncpg when a new_telemetry notification arrives."""
-    tenant_id = (payload or "").strip()
-    if tenant_id:
-        _pending_tenants.add(tenant_id)
+    """Called by asyncpg when a telemetry notification arrives."""
+    payload = (payload or "").strip()
+    if payload:
+        try:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                tenant_ids = parsed.get("tenant_ids") or []
+                for tenant_id in tenant_ids:
+                    if tenant_id:
+                        _pending_tenants.add(str(tenant_id))
+            elif isinstance(parsed, str) and parsed:
+                _pending_tenants.add(parsed)
+        except Exception:
+            _pending_tenants.add(payload)
     _notify_event.set()
+
+
+async def maintain_notify_listener(channel: str, callback, stop_event: asyncio.Event) -> None:
+    while not stop_event.is_set():
+        listener_conn = None
+        try:
+            listener_conn = await init_notify_listener(channel, callback)
+            log_event(logger, "listen channel active", channel=channel)
+            while not stop_event.is_set():
+                if listener_conn.is_closed():
+                    log_event(
+                        logger,
+                        "listener connection dropped, reconnecting",
+                        level="WARNING",
+                        channel=channel,
+                    )
+                    break
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log_event(
+                logger,
+                "listener setup failed, retrying",
+                level="WARNING",
+                channel=channel,
+                error=str(exc),
+            )
+            await asyncio.sleep(2)
+        finally:
+            await close_notify_listener(listener_conn, channel, callback)
+        if not stop_event.is_set():
+            await asyncio.sleep(2)
 
 async def main():
     if DATABASE_URL:
@@ -753,25 +798,18 @@ async def main():
     audit = init_audit_logger(pool, "evaluator")
     await audit.start()
 
-    fallback_poll_seconds = int(os.getenv("FALLBACK_POLL_SECONDS", "30"))
+    fallback_poll_seconds = int(os.getenv("FALLBACK_POLL_SECONDS", str(POLL_SECONDS)))
     debounce_seconds = float(os.getenv("DEBOUNCE_SECONDS", "0.5"))
 
-    listener_conn = None
-    try:
-        listener_conn = await init_notify_listener("new_telemetry", on_telemetry_notify)
-        log_event(logger, "listen channel active", channel="new_telemetry")
-    except Exception as exc:
-        log_event(
-            logger,
-            "listen setup failed, using poll-only mode",
-            level="WARNING",
-            error=str(exc),
-        )
-        listener_conn = None
+    stop_listener = asyncio.Event()
+    listener_task = asyncio.create_task(
+        maintain_notify_listener(NOTIFY_CHANNEL, on_telemetry_notify, stop_listener)
+    )
 
     try:
         last_escalation_check = 0.0
         while True:
+            conn = None
             try:
                 try:
                     await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
@@ -788,8 +826,8 @@ async def main():
                 _notify_event.clear()
                 _pending_tenants.clear()
 
-                async with pool.acquire() as conn:
-                    rows = await fetch_rollup_timescaledb(conn)
+                conn = await pool.acquire()
+                rows = await fetch_rollup_timescaledb(conn)
                 # Group devices by tenant for rule loading
                 tenant_rules_cache = {}
                 tenant_mapping_cache = {}
@@ -947,6 +985,11 @@ async def main():
                         fp_rule = f"RULE:{rule_id}:{device_id}"
                         op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
                         conditions_json = rule.get("conditions")
+                        if isinstance(conditions_json, str):
+                            try:
+                                conditions_json = json.loads(conditions_json)
+                            except Exception:
+                                conditions_json = {}
 
                         if rule_type == "telemetry_gap":
                             await maybe_process_telemetry_gap_rule(
@@ -1273,7 +1316,12 @@ async def main():
                     if escalated > 0:
                         log_event(logger, "escalation check", escalated=escalated)
                     last_escalation_check = current_monotonic
+                if conn is not None:
+                    await pool.release(conn)
             except Exception as exc:
+                if conn is not None:
+                    with contextlib.suppress(Exception):
+                        await pool.release(conn)
                 COUNTERS["evaluation_errors"] += 1
                 evaluator_evaluation_errors_total.inc()
                 logger.error(
@@ -1283,7 +1331,10 @@ async def main():
                 )
                 await asyncio.sleep(1)
     finally:
-        await close_notify_listener(listener_conn, "new_telemetry", on_telemetry_notify)
+        stop_listener.set()
+        listener_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await listener_task
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -184,6 +184,12 @@ class TimescaleBatchWriter:
                     await self._copy_insert(conn, records_to_write)
                 else:
                     await self._batch_insert(conn, records_to_write)
+                tenant_ids = sorted({r.tenant_id for r in records_to_write if r.tenant_id})
+                notify_payload = json.dumps({"tenant_ids": tenant_ids})
+                try:
+                    await conn.execute("SELECT pg_notify('telemetry_inserted', $1)", notify_payload)
+                except Exception as notify_err:
+                    logger.warning("Failed to send telemetry_inserted notify: %s", notify_err)
 
             elapsed_ms = (time.time() - start_time) * 1000
             self.records_written += len(records_to_write)
