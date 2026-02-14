@@ -159,3 +159,17 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+body.noc-tv-mode [data-sidebar],
+body.noc-tv-mode aside,
+body.noc-tv-mode nav,
+body.noc-tv-mode header,
+body.noc-tv-mode [data-sidebar="trigger"] {
+  display: none !important;
+}
+
+body.noc-tv-mode main {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  padding-top: 0 !important;
+}

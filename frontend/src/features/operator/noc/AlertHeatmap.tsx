@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import * as echarts from "echarts";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { fetchOperatorAlerts } from "@/services/api/operator";
+import { NOC_THEME_NAME } from "@/lib/charts/nocTheme";
+import { NOC_COLORS } from "./nocColors";
 
 interface AlertHeatmapProps {
   refreshInterval: number;
@@ -56,13 +58,13 @@ export function AlertHeatmap({ refreshInterval, isPaused }: AlertHeatmapProps) {
     xAxis: {
       type: "category",
       data: Array.from({ length: 24 }, (_, i) => `${i}:00`),
-      axisLabel: { color: "#9ca3af", fontSize: 9, interval: 2 },
+      axisLabel: { color: NOC_COLORS.textSecondary, fontSize: 9, interval: 2 },
       splitArea: { show: false },
     },
     yAxis: {
       type: "category",
       data: DAYS,
-      axisLabel: { color: "#9ca3af", fontSize: 10 },
+      axisLabel: { color: NOC_COLORS.textSecondary, fontSize: 10 },
       splitArea: { show: false },
     },
     visualMap: {
@@ -73,9 +75,15 @@ export function AlertHeatmap({ refreshInterval, isPaused }: AlertHeatmapProps) {
       left: "center",
       bottom: 0,
       inRange: {
-        color: ["#1f2937", "#1e3a5f", "#1d4ed8", "#3b82f6", "#ef4444"],
+        color: [
+          NOC_COLORS.bg.cardBorder,
+          NOC_COLORS.heatmapLow,
+          NOC_COLORS.heatmapMid,
+          NOC_COLORS.info,
+          NOC_COLORS.critical,
+        ],
       },
-      textStyle: { color: "#9ca3af", fontSize: 9 },
+      textStyle: { color: NOC_COLORS.textSecondary, fontSize: 9 },
     },
     series: [
       {
@@ -88,12 +96,19 @@ export function AlertHeatmap({ refreshInterval, isPaused }: AlertHeatmapProps) {
   };
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+    <div
+      className="rounded-lg border p-3"
+      style={{ borderColor: NOC_COLORS.bg.cardBorder, backgroundColor: NOC_COLORS.bg.card }}
+    >
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-medium text-gray-300">Alert Volume - Last 7 Days (by hour)</div>
-        <div className="text-xs text-gray-500">{alerts.length} alerts in last 7 days</div>
+        <div className="text-sm font-medium" style={{ color: NOC_COLORS.textSecondary }}>
+          Alert Volume - Last 7 Days (by hour)
+        </div>
+        <div className="text-xs" style={{ color: NOC_COLORS.neutral }}>
+          {alerts.length} alerts in last 7 days
+        </div>
       </div>
-      <EChartWrapper option={heatmapOption} style={{ height: 208 }} />
+      <EChartWrapper option={heatmapOption} theme={NOC_THEME_NAME} style={{ height: 208 }} />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { fetchSystemHealth, type ComponentHealth } from "@/services/api/system";
+import { NOC_COLORS } from "./nocColors";
 
 interface ServiceTopologyStripProps {
   refreshInterval: number;
@@ -48,15 +49,17 @@ function ServiceNodeCard({ node, health }: { node: ServiceNode; health?: Compone
     <div className={nodeStyle(status)}>
       <div className="flex items-center gap-1">
         <span
-          className={
-            status === "healthy"
-              ? "inline-block h-2 w-2 rounded-full bg-green-400"
-              : status === "degraded"
-                ? "inline-block h-2 w-2 rounded-full bg-yellow-400"
-                : status === "down"
-                  ? "inline-block h-2 w-2 rounded-full bg-red-400"
-                  : "inline-block h-2 w-2 rounded-full bg-gray-400"
-          }
+          className="inline-block h-2 w-2 rounded-full"
+          style={{
+            backgroundColor:
+              status === "healthy"
+                ? NOC_COLORS.healthy
+                : status === "degraded"
+                  ? NOC_COLORS.warning
+                  : status === "down"
+                    ? NOC_COLORS.critical
+                    : NOC_COLORS.neutral,
+          }}
         />
         <Icon className="h-3.5 w-3.5" />
       </div>
@@ -76,7 +79,10 @@ export function ServiceTopologyStrip({ refreshInterval, isPaused }: ServiceTopol
   });
 
   return (
-    <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-900 p-4">
+    <div
+      className="space-y-3 rounded-lg border p-4"
+      style={{ borderColor: NOC_COLORS.bg.cardBorder, backgroundColor: NOC_COLORS.bg.card }}
+    >
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-gray-200">Service Topology</div>
         <div className="text-xs text-gray-500">

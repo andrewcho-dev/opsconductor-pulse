@@ -1,0 +1,20 @@
+export const NOC_COLORS = {
+  healthy: "#22c55e",
+  warning: "#f59e0b",
+  critical: "#ef4444",
+  info: "#3b82f6",
+  neutral: "#6b7280",
+  ingest: "#3b82f6",
+  alerts: "#ef4444",
+  queue: "#f59e0b",
+  db: "#8b5cf6",
+  heatmapLow: "#1e3a5f",
+  heatmapMid: "#1d4ed8",
+  textPrimary: "#f3f4f6",
+  textSecondary: "#9ca3af",
+  bg: {
+    page: "#030712",
+    card: "#111827",
+    cardBorder: "#1f2937",
+  },
+} as const;

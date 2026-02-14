@@ -1,204 +1,128 @@
 import { useMemo } from "react";
-import { PageHeader, SeverityBadge } from "@/components/shared";
-import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useOperatorAlerts, useOperatorDevices, useQuarantine } from "@/hooks/use-operator";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Building2, Grid3X3, Monitor, Server } from "lucide-react";
+import { fetchOperatorAlerts } from "@/services/api/operator";
+import { fetchSystemAggregates, fetchSystemErrors, fetchSystemHealth } from "@/services/api/system";
 
-function StatCard({
-  title,
-  value,
-  loading,
-}: {
-  title: string;
-  value: number;
-  loading: boolean;
-}) {
+function kpiCard(title: string, value: string, sub: string) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <Skeleton className="h-8 w-20" />
-        ) : (
-          <div className="text-2xl font-bold">{value}</div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border bg-card p-4">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+    </div>
+  );
+}
+
+function navCard(to: string, title: string, description: string, icon: React.ElementType) {
+  const Icon = icon;
+  return (
+    <Link
+      to={to}
+      className="rounded-lg border bg-card p-4 transition-colors hover:border-primary hover:bg-muted/50"
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-primary" />
+        <div className="font-semibold">{title}</div>
+      </div>
+      <div className="text-sm text-muted-foreground">{description}</div>
+      <div className="mt-3 text-xs font-medium text-primary">Open -&gt;</div>
+    </Link>
   );
 }
 
 export default function OperatorDashboard() {
-  const devicesQuery = useOperatorDevices(undefined, 500, 0);
-  const alertsQuery = useOperatorAlerts("OPEN", undefined, 20);
-  const quarantineQuery = useQuarantine(60, 20);
+  const { data: health } = useQuery({
+    queryKey: ["operator-dashboard-health"],
+    queryFn: fetchSystemHealth,
+    refetchInterval: 30000,
+  });
+  const { data: aggregates } = useQuery({
+    queryKey: ["operator-dashboard-aggregates"],
+    queryFn: fetchSystemAggregates,
+    refetchInterval: 30000,
+  });
+  const { data: alerts } = useQuery({
+    queryKey: ["operator-dashboard-open-alerts"],
+    queryFn: () => fetchOperatorAlerts("OPEN", undefined, 200),
+    refetchInterval: 30000,
+  });
+  const { data: errors } = useQuery({
+    queryKey: ["operator-dashboard-errors"],
+    queryFn: () => fetchSystemErrors(1),
+    refetchInterval: 30000,
+  });
 
-  const devices = devicesQuery.data?.devices || [];
-  const alerts = alertsQuery.data?.alerts || [];
-  const quarantine = quarantineQuery.data?.events || [];
-
-  const totals = useMemo(() => {
-    const totalDevices = devices.length;
-    const onlineDevices = devices.filter((d) => d.status === "ONLINE").length;
-    const openAlerts = alertsQuery.data?.alerts?.length || 0;
-    const quarantineCount = quarantineQuery.data?.events?.length || 0;
-    return { totalDevices, onlineDevices, openAlerts, quarantineCount };
-  }, [devices, alertsQuery.data, quarantineQuery.data]);
+  const lastUpdated = useMemo(() => new Date().toLocaleTimeString(), [health?.checked_at]);
+  const online = aggregates?.devices.online ?? 0;
+  const totalDevices = aggregates?.devices.registered ?? 0;
+  const onlinePct = totalDevices > 0 ? Math.round((online / totalDevices) * 100) : 0;
+  const openAlerts = aggregates?.alerts.open ?? 0;
+  const criticalCount =
+    alerts?.alerts.filter((a) => (a.severity ?? 0) >= 4).length ?? 0;
+  const highCount =
+    alerts?.alerts.filter((a) => (a.severity ?? 0) === 3).length ?? 0;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Operator Dashboard"
-        description="Cross-tenant system overview"
-      />
-
-      <WidgetErrorBoundary widgetName="Operator Stats">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title="Total Devices"
-            value={totals.totalDevices}
-            loading={devicesQuery.isLoading}
-          />
-          <StatCard
-            title="Online Devices"
-            value={totals.onlineDevices}
-            loading={devicesQuery.isLoading}
-          />
-          <StatCard
-            title="Open Alerts"
-            value={totals.openAlerts}
-            loading={alertsQuery.isLoading}
-          />
-          <StatCard
-            title="Quarantine Events"
-            value={totals.quarantineCount}
-            loading={quarantineQuery.isLoading}
-          />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-2xl font-semibold">Operator Console</div>
+          <div className="text-sm text-muted-foreground">
+            <span
+              className={`mr-2 inline-block h-2 w-2 rounded-full ${
+                health?.status === "healthy" ? "bg-green-500" : "bg-yellow-500"
+              }`}
+            />
+            {health?.status?.toUpperCase() ?? "UNKNOWN"} | Last: {lastUpdated}
+          </div>
         </div>
-      </WidgetErrorBoundary>
+      </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <WidgetErrorBoundary widgetName="Open Alerts">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Recent Open Alerts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {alertsQuery.error ? (
-                <div className="text-destructive text-sm">
-                  Failed to load alerts: {(alertsQuery.error as Error).message}
-                </div>
-              ) : alertsQuery.isLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : alerts.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No open alerts.</div>
-              ) : (
-                <div className="rounded-md border border-border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Time</TableHead>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Device</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Severity</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {alerts.slice(0, 10).map((a) => (
-                        <TableRow key={a.alert_id}>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                            {a.created_at}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {a.tenant_id}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {a.device_id}
-                          </TableCell>
-                          <TableCell className="text-xs">{a.alert_type}</TableCell>
-                          <TableCell>
-                            <SeverityBadge severity={a.severity} />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </WidgetErrorBoundary>
+      <div className="grid gap-4 md:grid-cols-3">
+        {kpiCard(
+          "Tenants",
+          String(aggregates?.tenants.active ?? 0),
+          `${aggregates?.tenants.total ?? 0} total`
+        )}
+        {kpiCard("Devices", `${online}/${totalDevices}`, `${onlinePct}% online`)}
+        {kpiCard("Alerts", String(openAlerts), `${criticalCount} critical, ${highCount} high`)}
+      </div>
 
-        <WidgetErrorBoundary widgetName="Quarantine Events">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Recent Quarantine Events</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {quarantineQuery.error ? (
-                <div className="text-destructive text-sm">
-                  Failed to load quarantine: {(quarantineQuery.error as Error).message}
-                </div>
-              ) : quarantineQuery.isLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : quarantine.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  No quarantine events in the last hour.
-                </div>
-              ) : (
-                <div className="rounded-md border border-border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Time</TableHead>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Device</TableHead>
-                        <TableHead>Reason</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {quarantine.slice(0, 10).map((q, idx) => (
-                        <TableRow key={`${q.device_id}-${q.ingested_at}-${idx}`}>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                            {q.ingested_at}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {q.tenant_id}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {q.device_id}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {q.reason}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </WidgetErrorBoundary>
+      <div className="grid gap-4 md:grid-cols-2">
+        {navCard("/operator/noc", "NOC Console", "Full system monitoring wallboard", Monitor)}
+        {navCard(
+          "/operator/tenant-matrix",
+          "Tenant Health Matrix",
+          "All tenant health at a glance",
+          Grid3X3
+        )}
+        {navCard("/operator/tenants", "Tenants", "Manage tenant records and status", Building2)}
+        {navCard("/operator/system", "System Alerts", "Investigate system-level incidents", AlertTriangle)}
+      </div>
+
+      <div className="rounded-lg border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Server className="h-4 w-4 text-muted-foreground" />
+          <div className="font-medium">Recent Errors (last hour)</div>
+        </div>
+        <div className="space-y-1 text-xs">
+          {(errors?.errors ?? []).slice(0, 5).map((err, idx) => (
+            <div key={`${err.timestamp}-${idx}`} className="flex items-start gap-2">
+              <span className="text-muted-foreground">
+                {new Date(err.timestamp).toLocaleTimeString()}
+              </span>
+              <span className="font-medium text-red-500">{err.error_type}</span>
+              <span className="text-muted-foreground">
+                {err.tenant_id ? `tenant: ${err.tenant_id}` : "system"}
+              </span>
+            </div>
+          ))}
+          {(errors?.errors ?? []).length === 0 && (
+            <div className="text-muted-foreground">No recent errors.</div>
+          )}
+        </div>
       </div>
     </div>
   );

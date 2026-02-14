@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchOperatorAlerts, fetchOperatorTenants } from "@/services/api/operator";
 import { fetchSystemErrors } from "@/services/api/system";
 import { fetchTenantsSummary } from "@/services/api/tenants";
+import { NOC_COLORS } from "./nocColors";
 
 interface LiveEventFeedProps {
   refreshInterval: number;
@@ -114,11 +115,18 @@ export function LiveEventFeed({ refreshInterval, isPaused }: LiveEventFeedProps)
   }, [events]);
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+    <div
+      className="rounded-lg border p-3"
+      style={{ borderColor: NOC_COLORS.bg.cardBorder, backgroundColor: NOC_COLORS.bg.card }}
+    >
       <div className="mb-2 flex items-center gap-2">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-        <span className="text-sm font-medium text-gray-300">Live Event Feed</span>
-        <span className="ml-auto text-xs text-gray-500">{events.length} events</span>
+        <span className="h-2 w-2 animate-pulse rounded-full" style={{ backgroundColor: NOC_COLORS.healthy }} />
+        <span className="text-sm font-medium" style={{ color: NOC_COLORS.textSecondary }}>
+          Live Event Feed
+        </span>
+        <span className="ml-auto text-xs" style={{ color: NOC_COLORS.neutral }}>
+          {events.length} events
+        </span>
       </div>
       <div ref={feedRef} className="h-48 space-y-1 overflow-y-auto font-mono text-xs">
         {events.map((event, idx) => (

@@ -9,6 +9,7 @@ interface EChartWrapperProps {
   option: echarts.EChartsOption;
   className?: string;
   style?: React.CSSProperties;
+  theme?: string;
   /** If true, merge new options instead of replacing */
   notMerge?: boolean;
 }
@@ -17,12 +18,14 @@ function EChartWrapperInner({
   option,
   className,
   style,
+  theme,
   notMerge = false,
 }: EChartWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ECharts | null>(null);
   const resolvedTheme = useUIStore((s) => s.resolvedTheme);
-  const echartsTheme = resolvedTheme === "dark" ? ECHARTS_DARK_THEME : ECHARTS_LIGHT_THEME;
+  const echartsTheme =
+    theme ?? (resolvedTheme === "dark" ? ECHARTS_DARK_THEME : ECHARTS_LIGHT_THEME);
 
   // Initialize chart
   useEffect(() => {

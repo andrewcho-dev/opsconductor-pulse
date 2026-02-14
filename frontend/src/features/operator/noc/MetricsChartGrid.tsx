@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as echarts from "echarts";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
+import { NOC_THEME_NAME } from "@/lib/charts/nocTheme";
 import { fetchSystemMetricsHistory } from "@/services/api/operator";
+import { NOC_COLORS } from "./nocColors";
 
 interface MetricsChartGridProps {
   refreshInterval: number;
@@ -29,13 +31,13 @@ function lineOption(
         typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value),
     },
     grid: { left: 50, right: 20, top: 30, bottom: 40 },
-    xAxis: { type: "time", axisLabel: { color: "#9ca3af", fontSize: 10 } },
+    xAxis: { type: "time", axisLabel: { color: NOC_COLORS.textSecondary, fontSize: 10 } },
     yAxis: {
       type: "value",
       name: yName,
-      nameTextStyle: { color: "#9ca3af", fontSize: 10 },
-      axisLabel: { color: "#9ca3af", fontSize: 10 },
-      splitLine: { lineStyle: { color: "#374151" } },
+      nameTextStyle: { color: NOC_COLORS.textSecondary, fontSize: 10 },
+      axisLabel: { color: NOC_COLORS.textSecondary, fontSize: 10 },
+      splitLine: { lineStyle: { color: NOC_COLORS.bg.cardBorder } },
     },
     series: [
       {
@@ -50,7 +52,7 @@ function lineOption(
         markLine: markAt
           ? {
               symbol: ["none", "none"],
-              lineStyle: { color: "#6b7280", type: "dashed" },
+              lineStyle: { color: NOC_COLORS.neutral, type: "dashed" },
               data: [{ yAxis: markAt }],
             }
           : undefined,
@@ -61,9 +63,14 @@ function lineOption(
 
 function ChartCard({ title, option }: { title: string; option: echarts.EChartsOption }) {
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3">
-      <div className="mb-2 text-sm font-medium text-gray-200">{title}</div>
-      <EChartWrapper option={option} style={{ height: 208 }} />
+    <div
+      className="rounded-lg border p-3"
+      style={{ borderColor: NOC_COLORS.bg.cardBorder, backgroundColor: NOC_COLORS.bg.card }}
+    >
+      <div className="mb-2 text-sm font-medium" style={{ color: NOC_COLORS.textSecondary }}>
+        {title}
+      </div>
+      <EChartWrapper option={option} theme={NOC_THEME_NAME} style={{ height: 208 }} />
     </div>
   );
 }
@@ -117,19 +124,19 @@ export function MetricsChartGrid({ refreshInterval, isPaused }: MetricsChartGrid
   });
 
   const ingestOption = useMemo(
-    () => lineOption(toSeriesPoints(ingest?.points), "#3b82f6", "msg/s"),
+    () => lineOption(toSeriesPoints(ingest?.points), NOC_COLORS.ingest, "msg/s"),
     [ingest?.points]
   );
   const alertsOption = useMemo(
-    () => lineOption(toSeriesPoints(alerts?.points), "#ef4444", "alerts/min"),
+    () => lineOption(toSeriesPoints(alerts?.points), NOC_COLORS.alerts, "alerts/min"),
     [alerts?.points]
   );
   const queueOption = useMemo(
-    () => lineOption(toSeriesPoints(queue?.points), "#f59e0b", "jobs", true, 1000),
+    () => lineOption(toSeriesPoints(queue?.points), NOC_COLORS.queue, "jobs", true, 1000),
     [queue?.points]
   );
   const dbConnOption = useMemo(
-    () => lineOption(toSeriesPoints(dbConnections?.points), "#8b5cf6", "connections"),
+    () => lineOption(toSeriesPoints(dbConnections?.points), NOC_COLORS.db, "connections"),
     [dbConnections?.points]
   );
 

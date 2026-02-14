@@ -4,6 +4,7 @@ import * as echarts from "echarts";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { fetchSystemAggregates, fetchSystemCapacity } from "@/services/api/system";
 import { fetchSystemMetricsLatest } from "@/services/api/operator";
+import { NOC_COLORS } from "./nocColors";
 
 interface GaugeRowProps {
   refreshInterval: number;
@@ -54,16 +55,16 @@ function gaugeOption(
         pointer: { itemStyle: { color: "auto" }, length: "60%", width: 6 },
         axisTick: { show: false },
         splitLine: { length: 8, lineStyle: { color: "auto", width: 2 } },
-        axisLabel: { color: "#9ca3af", fontSize: 10, distance: 15 },
+        axisLabel: { color: NOC_COLORS.textSecondary, fontSize: 10, distance: 15 },
         detail: {
           valueAnimation: true,
           formatter: `${display}${unit}`,
-          color: "#f3f4f6",
+          color: NOC_COLORS.textPrimary,
           fontSize: 22,
           fontWeight: "bold",
           offsetCenter: [0, "65%"],
         },
-        title: { color: "#9ca3af", fontSize: 11, offsetCenter: [0, "90%"] },
+        title: { color: NOC_COLORS.textSecondary, fontSize: 11, offsetCenter: [0, "90%"] },
         data: [{ value, name: title }],
       },
     ],
@@ -116,9 +117,9 @@ export function GaugeRow({ refreshInterval, isPaused }: GaugeRowProps) {
         fleetOnlinePct,
         100,
         [
-          [0.8, "#ef4444"],
-          [0.95, "#f59e0b"],
-          [1, "#22c55e"],
+          [0.8, NOC_COLORS.critical],
+          [0.95, NOC_COLORS.warning],
+          [1, NOC_COLORS.healthy],
         ],
         "Fleet Online",
         "%"
@@ -129,7 +130,7 @@ export function GaugeRow({ refreshInterval, isPaused }: GaugeRowProps) {
       option: gaugeOption(
         ingestRate,
         Math.max(ingestRate * 1.5, 100),
-        [[1, "#3b82f6"]],
+        [[1, NOC_COLORS.info]],
         "Ingest Rate",
         ""
       ),
@@ -140,9 +141,9 @@ export function GaugeRow({ refreshInterval, isPaused }: GaugeRowProps) {
         openAlerts,
         Math.max(openAlerts * 2, 50),
         [
-          [0.2, "#22c55e"],
-          [0.5, "#f59e0b"],
-          [1, "#ef4444"],
+          [0.2, NOC_COLORS.healthy],
+          [0.5, NOC_COLORS.warning],
+          [1, NOC_COLORS.critical],
         ],
         "Open Alerts",
         ""
@@ -154,9 +155,9 @@ export function GaugeRow({ refreshInterval, isPaused }: GaugeRowProps) {
         dbConnPct,
         100,
         [
-          [0.7, "#22c55e"],
-          [0.9, "#f59e0b"],
-          [1, "#ef4444"],
+          [0.7, NOC_COLORS.healthy],
+          [0.9, NOC_COLORS.warning],
+          [1, NOC_COLORS.critical],
         ],
         "DB Conn Usage",
         "%"
@@ -169,7 +170,8 @@ export function GaugeRow({ refreshInterval, isPaused }: GaugeRowProps) {
       {cards.map((card) => (
         <div
           key={card.key}
-          className="h-48 rounded-lg border border-gray-700 bg-gray-900 p-2"
+          className="h-48 rounded-lg border p-2"
+          style={{ borderColor: NOC_COLORS.bg.cardBorder, backgroundColor: NOC_COLORS.bg.card }}
         >
           <EChartWrapper option={card.option} style={{ height: "100%" }} />
         </div>

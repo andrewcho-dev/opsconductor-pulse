@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2, Pause, Play } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { fetchSystemAggregates, fetchSystemHealth } from "@/services/api/system";
 import { AlertHeatmap } from "./AlertHeatmap";
 import { GaugeRow } from "./GaugeRow";
 import { LiveEventFeed } from "./LiveEventFeed";
 import { MetricsChartGrid } from "./MetricsChartGrid";
+import { NOC_COLORS } from "./nocColors";
 import { ServiceTopologyStrip } from "./ServiceTopologyStrip";
 
 function statusDotClass(status: string) {
@@ -18,6 +19,7 @@ function statusDotClass(status: string) {
 export default function NOCPage() {
   const [refreshInterval, setRefreshInterval] = useState(15000);
   const [isPaused, setIsPaused] = useState(false);
+  const [tvMode, setTvMode] = useState(false);
 
   const { data: health } = useQuery({
     queryKey: ["noc-system-health-header"],
@@ -34,12 +36,56 @@ export default function NOCPage() {
   const systemStatus = health?.status ?? "unknown";
   const lastUpdated = useMemo(() => new Date().toLocaleTimeString(), [health?.checked_at]);
 
-  const enterFullscreen = () => {
-    document.documentElement.requestFullscreen?.();
-  };
+  const toggleTvMode = useCallback(() => {
+    if (!tvMode) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+      setTvMode(true);
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+      setTvMode(false);
+    }
+  }, [tvMode]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.key === "f" || e.key === "F") && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        toggleTvMode();
+      }
+      if (e.key === "Escape" && tvMode) {
+        setTvMode(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleTvMode, tvMode]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (!document.fullscreenElement) {
+        setTvMode(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  useEffect(() => {
+    if (tvMode) {
+      document.body.classList.add("noc-tv-mode");
+    } else {
+      document.body.classList.remove("noc-tv-mode");
+    }
+    return () => document.body.classList.remove("noc-tv-mode");
+  }, [tvMode]);
 
   return (
-    <div className="min-h-screen space-y-4 bg-gray-950 p-4 text-gray-100">
+    <div className="min-h-screen space-y-4 p-4 text-gray-100" style={{ backgroundColor: NOC_COLORS.bg.page }}>
+      {tvMode && (
+        <div className="fixed right-2 top-2 z-50 rounded bg-gray-800/80 px-2 py-1 text-xs text-gray-400">
+          TV MODE - Press F to exit
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -71,11 +117,11 @@ export default function NOCPage() {
             {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </button>
           <button
-            onClick={enterFullscreen}
-            title="Fullscreen"
+            onClick={toggleTvMode}
+            title="TV Mode (F)"
             className="rounded border border-gray-600 bg-gray-800 p-1.5 text-gray-300 hover:bg-gray-700"
           >
-            <Maximize2 className="h-4 w-4" />
+            {tvMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
         </div>
       </div>
