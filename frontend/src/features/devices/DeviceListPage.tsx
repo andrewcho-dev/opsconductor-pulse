@@ -1,220 +1,100 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
-import { useDevices, useFleetSummary } from "@/hooks/use-devices";
-import { Cpu, AlertTriangle } from "lucide-react";
-import { getAllTags } from "@/services/api/devices";
+import { useDevices } from "@/hooks/use-devices";
+import { Cpu } from "lucide-react";
+import { fetchSites } from "@/services/api/sites";
 import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "@/services/api/client";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DeviceActions } from "./DeviceActions";
-import { DeviceFilters } from "./DeviceFilters";
-import { DeviceTable } from "./DeviceTable";
-import { UptimeSummaryWidget } from "./UptimeSummaryWidget";
 import type { Device } from "@/services/api/types";
 import { AddDeviceModal } from "./AddDeviceModal";
-import { EditDeviceModal } from "./EditDeviceModal";
-import { decommissionDevice } from "@/services/api/devices";
-import { useQueryClient } from "@tanstack/react-query";
+import { useAlerts } from "@/hooks/use-alerts";
+import { DeviceDetailPane } from "./DeviceDetailPane";
 
-interface SubscriptionStatus {
-  device_limit: number;
-  active_device_count: number;
-  devices_available: number;
-  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED";
+interface DeviceListFilters {
+  limit: number;
+  offset: number;
+  status?: string;
+  q: string;
+  site_id?: string;
 }
 
-interface SubscriptionsResponse {
-  subscriptions: { status: SubscriptionStatus["status"] }[];
-  summary: {
-    total_device_limit: number;
-    total_active_devices: number;
-    total_available: number;
-  };
+function statusDot(status: string) {
+  if (status === "ONLINE") return "bg-green-500";
+  if (status === "STALE") return "bg-yellow-500";
+  return "bg-red-500";
 }
 
-function ProgressBar({ value }: { value: number }) {
-  return (
-    <div className="h-1.5 w-full rounded-full bg-muted">
-      <div
-        className="h-1.5 rounded-full bg-primary"
-        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
-      />
-    </div>
-  );
+function formatTimeAgo(input?: string | null) {
+  if (!input) return "never";
+  const deltaMs = Date.now() - new Date(input).getTime();
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) return "just now";
+  const mins = Math.floor(deltaMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export default function DeviceListPage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<{
-    limit: number;
-    offset: number;
-    status?: string;
-    tags: string[];
-    q: string;
-    site_id?: string;
-  }>({
-    limit: 100,
+  const [filters, setFilters] = useState<DeviceListFilters>({
+    limit: 25,
     offset: 0,
     status: undefined,
-    tags: [],
     q: "",
     site_id: undefined,
   });
-  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
-  const [tagFilterOpen, setTagFilterOpen] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<Device | null>(null);
-  const refreshDevices = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["devices"] });
-    await queryClient.invalidateQueries({ queryKey: ["fleet-summary"] });
-  };
-
-
-  const {
-    summary,
-    isLoading: summaryLoading,
-    error: summaryError,
-    isConnected: summaryLiveConnected,
-  } = useFleetSummary();
-  const groupedCapExceeded = viewMode === "grouped" && (summary?.total ?? 0) > 500;
-  const groupedModeActive = viewMode === "grouped" && !groupedCapExceeded;
-  const deviceQueryParams = groupedModeActive
-    ? {
-        limit: 500,
-        offset: 0,
-        status: filters.status,
-        tags: filters.tags,
-        q: filters.q,
-        site_id: filters.site_id,
-      }
-    : {
-        limit: filters.limit,
-        offset: filters.offset,
-        status: filters.status,
-        tags: filters.tags,
-        q: filters.q,
-        site_id: filters.site_id,
-      };
-  const { data, isLoading, error } = useDevices(deviceQueryParams);
-
-  const { data: allTagsData } = useQuery({
-    queryKey: ["tags"],
-    queryFn: getAllTags,
+  const { data, isLoading, error } = useDevices({
+    limit: filters.limit,
+    offset: filters.offset,
+    status: filters.status,
+    q: filters.q,
+    site_id: filters.site_id,
   });
-  const allTags = allTagsData?.tags ?? [];
-
-  const { data: subscription } = useQuery({
-    queryKey: ["subscription-status"],
-    queryFn: async () => {
-      const response = await apiGet<SubscriptionsResponse>("/customer/subscriptions");
-      const statuses = response.subscriptions.map((sub) => sub.status);
-      let status: SubscriptionStatus["status"] = "ACTIVE";
-      if (statuses.includes("EXPIRED")) {
-        status = "EXPIRED";
-      } else if (statuses.includes("SUSPENDED")) {
-        status = "SUSPENDED";
-      } else if (statuses.includes("GRACE")) {
-        status = "GRACE";
-      } else if (statuses.includes("TRIAL") && !statuses.includes("ACTIVE")) {
-        status = "TRIAL";
-      }
-
-      return {
-        device_limit: response.summary.total_device_limit,
-        active_device_count: response.summary.total_active_devices,
-        devices_available: response.summary.total_available,
-        status,
-      };
-    },
+  const { data: sitesData } = useQuery({
+    queryKey: ["sites"],
+    queryFn: fetchSites,
   });
+  const { data: openAlertsData } = useAlerts("OPEN", 500, 0);
 
   const devices = data?.devices || [];
   const totalCount = data?.total ?? 0;
-
-  const toggleTag = (tag: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      tags: prev.tags.includes(tag)
-        ? prev.tags.filter((t) => t !== tag)
-        : [...prev.tags, tag],
-      offset: 0,
-    }));
-  };
-
-  const groupedDevices = useMemo(() => {
-    const groups = new Map<string, Device[]>();
-    const untagged: Device[] = [];
-    for (const device of devices) {
-      if (!device.tags || device.tags.length === 0) {
-        untagged.push(device);
-      } else {
-        for (const tag of device.tags) {
-          if (!groups.has(tag)) groups.set(tag, []);
-          groups.get(tag)?.push(device);
-        }
-      }
+  const selectedDevice = devices.find((d) => d.device_id === selectedDeviceId) ?? null;
+  const alertCountByDevice = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const alert of openAlertsData?.alerts ?? []) {
+      counts.set(alert.device_id, (counts.get(alert.device_id) ?? 0) + 1);
     }
-    const sorted = new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)));
-    if (untagged.length > 0) sorted.set("(untagged)", untagged);
-    return sorted;
-  }, [devices]);
+    return counts;
+  }, [openAlertsData?.alerts]);
 
-  useEffect(() => {
-    if (!groupedModeActive) return;
-    setCollapsedGroups((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const [tag] of groupedDevices) {
-        next[tag] = prev[tag] ?? false;
-      }
-      return next;
-    });
-  }, [groupedDevices, groupedModeActive]);
-
-  const toggleGroup = (groupName: string) => {
-    setCollapsedGroups((prev) => ({
-      ...prev,
-      [groupName]: !prev[groupName],
-    }));
+  const onDeviceClick = (device: Device) => {
+    if (window.innerWidth < 1024) {
+      navigate(`/devices/${device.device_id}`);
+      return;
+    }
+    setSelectedDeviceId(device.device_id);
   };
-
-  const toggleStatusFromWidget = (status: "ONLINE" | "STALE" | "OFFLINE") => {
-    setFilters((prev) => ({
-      ...prev,
-      status: prev.status === status ? undefined : status,
-      offset: 0,
-    }));
-  };
-
-  const canCreate =
-    subscription?.status !== "SUSPENDED" &&
-    subscription?.status !== "EXPIRED";
-  const createDisabled = subscription?.devices_available === 0;
-  const usagePercent = subscription
-    ? Math.round(
-        (subscription.active_device_count / Math.max(subscription.device_limit, 1)) * 100
-      )
-    : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Devices"
         description={
           isLoading
             ? "Loading..."
-            : subscription
-            ? `${totalCount} of ${subscription.device_limit} devices (${subscription.devices_available} available)`
             : `${totalCount} devices in your fleet`
         }
         action={
           <DeviceActions
-            canCreate={canCreate}
-            createDisabled={createDisabled}
+            canCreate={true}
+            createDisabled={false}
             onCreate={() => setAddOpen(true)}
             onGuidedSetup={() => navigate("/devices/wizard")}
             onImport={() => navigate("/devices/import")}
@@ -224,129 +104,8 @@ export default function DeviceListPage() {
       <AddDeviceModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreated={refreshDevices}
+        onCreated={async () => {}}
       />
-      <EditDeviceModal
-        open={Boolean(editTarget)}
-        device={editTarget}
-        onClose={() => setEditTarget(null)}
-        onSaved={refreshDevices}
-      />
-
-      {subscription && (
-        <div className="flex items-center gap-4 py-2">
-          <div className="flex-1 max-w-xs">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-muted-foreground">Device Usage</span>
-              <span>
-                {subscription.active_device_count} / {subscription.device_limit}
-              </span>
-            </div>
-            <ProgressBar value={usagePercent} />
-          </div>
-
-          {subscription.devices_available === 0 && (
-            <Badge variant="outline" className="border-orange-500 text-orange-600">
-              <AlertTriangle className="h-3 w-3 mr-1" />
-              At Limit
-            </Badge>
-          )}
-
-          {subscription.devices_available > 0 && subscription.devices_available <= 5 && (
-            <Badge variant="outline" className="border-yellow-500 text-yellow-600">
-              {subscription.devices_available} remaining
-            </Badge>
-          )}
-        </div>
-      )}
-
-      {!summaryError &&
-        (summaryLoading ? (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <Badge variant="outline" className="text-xs">
-                ○ Polling
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {[1, 2, 3, 4].map((n) => (
-                <Skeleton key={n} className="h-20" />
-              ))}
-            </div>
-          </div>
-        ) : summary ? (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <Badge
-                variant="outline"
-                className={`text-xs ${summaryLiveConnected ? "text-green-700 border-green-300 dark:text-green-400 dark:border-green-700" : ""}`}
-              >
-                {summaryLiveConnected ? "● Live" : "○ Polling"}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {[
-                { key: "ONLINE", label: "Online", color: "bg-green-500" },
-                { key: "STALE", label: "Stale", color: "bg-yellow-500" },
-                { key: "OFFLINE", label: "Offline", color: "bg-red-500" },
-              ].map((card) => {
-                const active = filters.status === card.key;
-                const value = summary[card.key as "ONLINE" | "STALE" | "OFFLINE"] ?? 0;
-                return (
-                  <button
-                    key={card.key}
-                    type="button"
-                    onClick={() => toggleStatusFromWidget(card.key as "ONLINE" | "STALE" | "OFFLINE")}
-                    className={`rounded-md border p-3 text-left ${
-                      active ? "border-primary bg-primary/5" : "border-border"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className={`h-2 w-2 rounded-full ${card.color}`} />
-                      {card.label}
-                    </div>
-                    <div className="mt-1 text-2xl font-semibold">{value}</div>
-                  </button>
-                );
-              })}
-              <div className="rounded-md border border-border p-3">
-                <div className="text-sm text-muted-foreground">Total</div>
-                <div className="mt-1 text-2xl font-semibold">{summary.total ?? 0}</div>
-              </div>
-            </div>
-            <UptimeSummaryWidget />
-          </div>
-        ) : null)}
-
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={viewMode === "list" ? "default" : "outline"}
-          onClick={() => setViewMode("list")}
-        >
-          List view
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={viewMode === "grouped" ? "default" : "outline"}
-          onClick={() => setViewMode("grouped")}
-        >
-          Group by tag
-        </Button>
-      </div>
-
-      {groupedModeActive && (
-        <p className="text-xs text-muted-foreground">
-          Showing all devices grouped by tag. Use list view for pagination.
-        </p>
-      )}
-      {groupedCapExceeded && (
-        <p className="text-xs text-yellow-600">
-          Grouped view is capped at 500 devices. Switch to list view for pagination.
-        </p>
-      )}
 
       {error ? (
         <div className="text-destructive">
@@ -365,82 +124,131 @@ export default function DeviceListPage() {
           icon={<Cpu className="h-12 w-12" />}
         />
       ) : (
-        <>
-          <DeviceFilters
-            selectedTags={filters.tags}
-            setSelectedTags={(tags) =>
-              setFilters((prev) => ({
-                ...prev,
-                tags,
-                offset: 0,
-              }))
-            }
-            allTags={allTags}
-            tagFilterOpen={tagFilterOpen}
-            setTagFilterOpen={setTagFilterOpen}
-            toggleTag={toggleTag}
-            offset={filters.offset}
-            limit={filters.limit}
-            totalCount={totalCount}
-            setOffset={(n) => setFilters((prev) => ({ ...prev, offset: n }))}
-            setLimit={(n) => setFilters((prev) => ({ ...prev, limit: n, offset: 0 }))}
-            q={filters.q}
-            onQChange={(q) => setFilters((prev) => ({ ...prev, q, offset: 0 }))}
-            statusFilter={filters.status ?? ""}
-            onStatusFilterChange={(s) =>
-              setFilters((prev) => ({ ...prev, status: s || undefined, offset: 0 }))
-            }
-            showPagination={!groupedModeActive}
-          />
+        <div className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="flex h-[calc(100vh-210px)] flex-col rounded-md border border-border">
+            <div className="space-y-2 border-b border-border p-3">
+              <input
+                value={filters.q}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, q: e.target.value, offset: 0 }))
+                }
+                placeholder="Search devices..."
+                className="h-8 w-full rounded border border-border bg-background px-2 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={filters.status ?? ""}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      status: e.target.value || undefined,
+                      offset: 0,
+                    }))
+                  }
+                  className="h-8 rounded border border-border bg-background px-2 text-sm"
+                >
+                  <option value="">All Status</option>
+                  <option value="ONLINE">Online</option>
+                  <option value="OFFLINE">Offline</option>
+                  <option value="STALE">Stale</option>
+                </select>
+                <select
+                  value={filters.site_id ?? ""}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      site_id: e.target.value || undefined,
+                      offset: 0,
+                    }))
+                  }
+                  className="h-8 rounded border border-border bg-background px-2 text-sm"
+                >
+                  <option value="">All Sites</option>
+                  {(sitesData?.sites ?? []).map((site) => (
+                    <option key={site.site_id} value={site.site_id}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          {groupedModeActive ? (
-            <div className="space-y-3">
-              {[...groupedDevices.entries()].map(([tag, group]) => {
-                const collapsed = collapsedGroups[tag] ?? false;
+            <div className="flex-1 space-y-2 overflow-auto p-2">
+              {devices.map((device) => {
+                const isSelected = selectedDevice?.device_id === device.device_id;
+                const openAlerts = alertCountByDevice.get(device.device_id) ?? 0;
                 return (
-                  <div key={tag} className="rounded-md border border-border">
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium hover:bg-muted/40"
-                      onClick={() => toggleGroup(tag)}
-                    >
-                      <span>
-                        {collapsed ? "▶" : "▼"} {tag} ({group.length} devices)
-                      </span>
-                    </button>
-                    {!collapsed && (
-                      <div className="p-2">
-                        <DeviceTable
-                          devices={group}
-                          selectedTagsCount={filters.tags.length}
-                          onOpenTagFilter={() => setTagFilterOpen(true)}
-                          onEdit={(device) => setEditTarget(device)}
-                          onDecommission={async (device) => {
-                            if (!window.confirm(`Are you sure you want to decommission ${device.device_id}?`)) return;
-                            await decommissionDevice(device.device_id);
-                            await refreshDevices();
-                          }}
-                        />
+                  <button
+                    key={device.device_id}
+                    onClick={() => onDeviceClick(device)}
+                    className={`w-full rounded border p-2 text-left transition-colors ${
+                      isSelected
+                        ? "border-l-2 border-l-primary bg-primary/10 border-primary"
+                        : "border-border hover:bg-accent"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${statusDot(device.status)}`} />
+                        <span className="font-semibold">{device.device_id}</span>
                       </div>
-                    )}
-                  </div>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimeAgo(device.last_seen_at)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {device.model || "unknown-type"}
+                      </span>
+                      {openAlerts > 0 && (
+                        <Badge variant="destructive" className="h-5 min-w-5 text-xs">
+                          {openAlerts}
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
                 );
               })}
             </div>
-          ) : (
-            <DeviceTable
-              devices={devices}
-              selectedTagsCount={filters.tags.length}
-              onOpenTagFilter={() => setTagFilterOpen(true)}
-              onEdit={(device) => setEditTarget(device)}
-              onDecommission={async (device) => {
-                if (!window.confirm(`Are you sure you want to decommission ${device.device_id}?`)) return;
-                await decommissionDevice(device.device_id);
-                await refreshDevices();
-              }}
-            />
-          )}
-        </>
+
+            <div className="flex items-center justify-between border-t border-border p-2">
+              <button
+                onClick={() =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    offset: Math.max(0, prev.offset - prev.limit),
+                  }))
+                }
+                disabled={filters.offset === 0}
+                className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50"
+              >
+                {"< Prev"}
+              </button>
+              <button
+                onClick={() =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    offset: prev.offset + prev.limit,
+                  }))
+                }
+                disabled={filters.offset + filters.limit >= totalCount}
+                className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50"
+              >
+                {"Next >"}
+              </button>
+            </div>
+          </div>
+
+          <div className="hidden h-[calc(100vh-210px)] overflow-hidden rounded-md border border-border lg:block">
+            {selectedDeviceId ? (
+              <DeviceDetailPane deviceId={selectedDeviceId} />
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                Select a device to view details →
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
