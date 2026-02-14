@@ -68,7 +68,15 @@ const operatorNav = [
 
 export function AppSidebar() {
   const location = useLocation();
-  const { isOperator, isCustomer } = useAuth();
+  const { isOperator, isCustomer, user } = useAuth();
+  const roles = user?.realmAccess?.roles ?? [];
+  const canManageUsers =
+    roles.includes("tenant-admin") ||
+    roles.includes("operator") ||
+    roles.includes("operator-admin");
+  const customerNavItems = customerNav.filter((item) =>
+    item.href === "/users" ? canManageUsers : true
+  );
 
   function isActive(href: string) {
     if (href === "/dashboard") {
@@ -109,7 +117,7 @@ export function AppSidebar() {
             <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {customerNav.map((item) => (
+                {customerNavItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive(item.href)}>
                       <Link to={item.href}>

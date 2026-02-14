@@ -53,6 +53,17 @@ function RequireCustomer() {
   return <Outlet />;
 }
 
+function RequireTenantAdminOrOperator() {
+  const { user } = useAuth();
+  const roles = user?.realmAccess?.roles ?? [];
+  const allowed =
+    roles.includes("tenant-admin") ||
+    roles.includes("operator") ||
+    roles.includes("operator-admin");
+  if (!allowed) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
 export const router = createBrowserRouter(
   [
     {
@@ -85,8 +96,11 @@ export const router = createBrowserRouter(
             { path: "integrations/mqtt", element: <MqttPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
-            { path: "users", element: <UsersPage /> },
           ],
+        },
+        {
+          element: <RequireTenantAdminOrOperator />,
+          children: [{ path: "users", element: <UsersPage /> }],
         },
         // Operator routes
         {
