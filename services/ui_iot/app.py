@@ -21,6 +21,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from routes.customer import router as customer_router, limiter
+from routes.devices import router as devices_router
+from routes.alerts import router as alerts_router
+from routes.metrics import router as metrics_router
+from routes.exports import router as exports_router
 from routes.operator import router as operator_router
 from routes.system import (
     router as system_router,
@@ -162,6 +166,10 @@ async def deprecate_legacy_integrations_middleware(request: Request, call_next):
     return response
 
 
+app.include_router(devices_router)
+app.include_router(alerts_router)
+app.include_router(metrics_router)
+app.include_router(exports_router)
 app.include_router(customer_router)
 app.include_router(operator_router)
 app.include_router(system_router)
