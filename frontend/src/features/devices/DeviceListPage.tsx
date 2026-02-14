@@ -61,7 +61,7 @@ export default function DeviceListPage() {
     queryKey: ["sites"],
     queryFn: fetchSites,
   });
-  const { data: openAlertsData } = useAlerts("OPEN", 500, 0);
+  const { data: openAlertsData } = useAlerts("OPEN", 200, 0);
 
   const devices = data?.devices || [];
   const totalCount = data?.total ?? 0;
