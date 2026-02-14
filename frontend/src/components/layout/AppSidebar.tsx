@@ -63,6 +63,7 @@ const customerFleetNav: NavItem[] = [
 const customerMonitoringNav: NavItem[] = [
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
+  { label: "Escalation", href: "/escalation-policies", icon: ShieldAlert },
   { label: "Maintenance", href: "/maintenance-windows", icon: CalendarOff },
 ];
 

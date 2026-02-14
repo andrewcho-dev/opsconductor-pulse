@@ -33,12 +33,14 @@ from routes.api_v2 import (
 )
 from routes.ingest import router as ingest_router
 from routes.users import router as users_router
+from routes.escalation import router as escalation_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
 from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
 from shared.metrics import fleet_active_alerts, fleet_devices_by_status
+from workers.escalation_worker import run_escalation_tick
 
 # PHASE 43 AUDIT — Background Tasks
 #
@@ -151,6 +153,7 @@ app.include_router(api_v2_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
 app.include_router(users_router)
+app.include_router(escalation_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
@@ -190,6 +193,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 pool: asyncpg.Pool | None = None
+background_tasks: list[asyncio.Task] = []
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +270,17 @@ async def get_pool():
     return pool
 
 
+async def worker_loop(fn, pool_obj, interval: int):
+    while True:
+        try:
+            await fn(pool_obj)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background worker loop failed")
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def startup():
     await get_pool()
@@ -321,6 +336,7 @@ async def startup():
         logger.warning("JWKS cache pre-warm failed", exc_info=True)
 
     await setup_ws_listener()
+    background_tasks.append(asyncio.create_task(worker_loop(run_escalation_tick, pool, interval=60)))
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -337,6 +353,13 @@ async def shutdown():
         await shutdown_ws_listener()
     except Exception:
         pass
+    for task in background_tasks:
+        task.cancel()
+    for task in background_tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 @app.get("/api/v2/health")
 async def api_v2_health():

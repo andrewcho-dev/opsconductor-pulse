@@ -9,6 +9,7 @@ import BulkImportPage from "@/features/devices/BulkImportPage";
 import AlertListPage from "@/features/alerts/AlertListPage";
 import AlertRulesPage from "@/features/alerts/AlertRulesPage";
 import MaintenanceWindowsPage from "@/features/alerts/MaintenanceWindowsPage";
+import EscalationPoliciesPage from "@/features/escalation/EscalationPoliciesPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
 import WebhookPage from "@/features/integrations/WebhookPage";
@@ -89,6 +90,7 @@ export const router = createBrowserRouter(
             { path: "alerts", element: <AlertListPage /> },
             { path: "alert-rules", element: <AlertRulesPage /> },
             { path: "maintenance-windows", element: <MaintenanceWindowsPage /> },
+            { path: "escalation-policies", element: <EscalationPoliciesPage /> },
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
             { path: "integrations/webhooks", element: <WebhookPage /> },
