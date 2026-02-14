@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import secrets
 from datetime import datetime, timezone, timedelta
 import time
 import json
@@ -9,7 +10,7 @@ import io
 import uuid
 from uuid import UUID
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from typing import Optional, List, Literal
 from starlette.requests import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from passlib.hash import bcrypt
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
@@ -295,6 +297,15 @@ class MaintenanceWindowUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class TokenRotateRequest(BaseModel):
+    label: str = Field(default="rotated", min_length=1, max_length=100)
+
+
+class AlertDigestSettingsUpdate(BaseModel):
+    frequency: Literal["daily", "weekly", "disabled"]
+    email: str = Field(default="", max_length=320)
+
+
 class RenewalRequest(BaseModel):
     subscription_id: str
     plan_id: Optional[str] = None
@@ -435,6 +446,22 @@ def _validate_name(name: str) -> str:
 
 ALERT_TYPES = {"NO_HEARTBEAT", "THRESHOLD", "ANOMALY", "NO_TELEMETRY"}
 SEVERITIES = {"CRITICAL", "WARNING", "INFO"}
+SUPPORTED_DEVICE_TYPES = {
+    "temperature",
+    "humidity",
+    "pressure",
+    "vibration",
+    "power",
+    "flow",
+    "level",
+    "gateway",
+}
+
+UPTIME_RANGES_SECONDS = {
+    "24h": 24 * 60 * 60,
+    "7d": 7 * 24 * 60 * 60,
+    "30d": 30 * 24 * 60 * 60,
+}
 
 
 def _normalize_list(values: list[str] | None, allowed: set[str], field_name: str) -> list[str] | None:
@@ -567,6 +594,442 @@ async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
         "device_id": device.device_id,
         "subscription_id": subscription_id,
         "status": "created",
+    }
+
+
+@router.get("/devices/{device_id}/tokens")
+async def list_device_tokens(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+            rows = await conn.fetch(
+                """
+                SELECT id, client_id, label, created_at, revoked_at
+                FROM device_api_tokens
+                WHERE tenant_id = $1 AND device_id = $2 AND revoked_at IS NULL
+                ORDER BY created_at DESC
+                """,
+                tenant_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to list device tokens")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    tokens = []
+    for row in rows:
+        token = dict(row)
+        if token.get("revoked_at") is not None:
+            continue
+        token["id"] = str(token["id"])
+        tokens.append(token)
+    return {"device_id": device_id, "tokens": tokens, "total": len(tokens)}
+
+
+@router.delete("/devices/{device_id}/tokens/{token_id}", status_code=204)
+async def revoke_device_token(device_id: str, token_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE device_api_tokens
+                SET revoked_at = now()
+                WHERE tenant_id = $1
+                  AND device_id = $2
+                  AND id = $3::uuid
+                  AND revoked_at IS NULL
+                RETURNING id
+                """,
+                tenant_id,
+                device_id,
+                token_id,
+            )
+    except Exception:
+        logger.exception("Failed to revoke device token")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Token not found")
+    return Response(status_code=204)
+
+
+@router.post("/devices/{device_id}/tokens/rotate", status_code=201)
+async def rotate_device_token(
+    device_id: str,
+    body: TokenRotateRequest,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            await conn.execute(
+                """
+                UPDATE device_api_tokens
+                SET revoked_at = now()
+                WHERE tenant_id = $1 AND device_id = $2 AND revoked_at IS NULL
+                """,
+                tenant_id,
+                device_id,
+            )
+
+            client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
+            password = secrets.token_urlsafe(32)
+            token_hash = bcrypt.hash(password)
+            await conn.execute(
+                """
+                INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                tenant_id,
+                device_id,
+                client_id,
+                token_hash,
+                body.label.strip() or "rotated",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to rotate device token")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    broker_url = os.environ.get("MQTT_BROKER_URL", "mqtt://localhost:1883")
+    return {"client_id": client_id, "password": password, "broker_url": broker_url}
+
+
+@router.post("/devices/import")
+async def import_devices_csv(file: UploadFile = File(...), pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    user = get_user()
+    raw = await file.read()
+    if len(raw) > 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 1 MB)")
+
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded")
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+    required_columns = {"name", "device_type"}
+    if not required_columns.issubset(set(headers)):
+        raise HTTPException(status_code=400, detail="Missing required CSV columns: name, device_type")
+
+    rows = list(reader)
+    if len(rows) > 500:
+        raise HTTPException(status_code=400, detail="CSV row limit exceeded (max 500)")
+
+    results: list[dict] = []
+    imported = 0
+    failed = 0
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        for idx, row in enumerate(rows, start=1):
+            name = (row.get("name") or "").strip()
+            device_type = (row.get("device_type") or "").strip().lower()
+            site_id = (row.get("site_id") or "").strip() or "default-site"
+            tags_value = (row.get("tags") or "").strip()
+            tags = _normalize_tags(tags_value.split(",")) if tags_value else []
+
+            if not name:
+                failed += 1
+                results.append(
+                    {"row": idx, "name": name, "status": "error", "message": "name is required"}
+                )
+                continue
+            if device_type not in SUPPORTED_DEVICE_TYPES:
+                failed += 1
+                results.append(
+                    {
+                        "row": idx,
+                        "name": name,
+                        "status": "error",
+                        "message": f"unsupported device_type: {device_type}",
+                    }
+                )
+                continue
+
+            subscription_id = await conn.fetchval(
+                """
+                SELECT subscription_id
+                FROM subscriptions
+                WHERE tenant_id = $1
+                  AND subscription_type = 'MAIN'
+                  AND status = 'ACTIVE'
+                  AND active_device_count < device_limit
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                tenant_id,
+            )
+            if not subscription_id:
+                failed += 1
+                results.append(
+                    {
+                        "row": idx,
+                        "name": name,
+                        "status": "error",
+                        "message": "No active subscription capacity",
+                    }
+                )
+                continue
+
+            base_id = re.sub(r"[^A-Za-z0-9-]+", "-", name).strip("-").upper() or "DEVICE"
+            device_id = f"{base_id}-{uuid.uuid4().hex[:6]}"
+            try:
+                await create_device_on_subscription(
+                    conn,
+                    tenant_id,
+                    device_id,
+                    site_id,
+                    subscription_id,
+                    actor_id=user.get("sub") if user else None,
+                )
+
+                if tags:
+                    await conn.executemany(
+                        """
+                        INSERT INTO device_tags (tenant_id, device_id, tag)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (tenant_id, device_id, tag) DO NOTHING
+                        """,
+                        [(tenant_id, device_id, tag) for tag in tags],
+                    )
+
+                client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
+                password = secrets.token_urlsafe(32)
+                await conn.execute(
+                    """
+                    INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
+                    VALUES ($1, $2, $3, $4, 'default')
+                    """,
+                    tenant_id,
+                    device_id,
+                    client_id,
+                    bcrypt.hash(password),
+                )
+            except Exception as exc:
+                failed += 1
+                results.append(
+                    {"row": idx, "name": name, "status": "error", "message": str(exc)}
+                )
+                continue
+
+            imported += 1
+            results.append({"row": idx, "name": name, "status": "ok", "device_id": device_id})
+
+    return {
+        "total": len(rows),
+        "imported": imported,
+        "failed": failed,
+        "results": results,
+    }
+
+
+@router.get("/alert-digest-settings")
+async def get_alert_digest_settings(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT frequency, email, last_sent_at
+                FROM alert_digest_settings
+                WHERE tenant_id = $1
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch alert digest settings")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        return {"frequency": "daily", "email": "", "last_sent_at": None}
+    return {
+        "frequency": row["frequency"],
+        "email": row["email"],
+        "last_sent_at": row["last_sent_at"],
+    }
+
+
+@router.put("/alert-digest-settings")
+async def put_alert_digest_settings(
+    body: AlertDigestSettingsUpdate,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            await conn.execute(
+                """
+                INSERT INTO alert_digest_settings (tenant_id, frequency, email)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (tenant_id)
+                DO UPDATE SET
+                    frequency = EXCLUDED.frequency,
+                    email = EXCLUDED.email,
+                    updated_at = now()
+                """,
+                tenant_id,
+                body.frequency,
+                body.email.strip(),
+            )
+    except Exception:
+        logger.exception("Failed to upsert alert digest settings")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"ok": True}
+
+
+@router.get("/devices/{device_id}/uptime")
+async def get_device_uptime(
+    device_id: str,
+    range: Literal["24h", "7d", "30d"] = Query("24h"),
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    range_seconds = UPTIME_RANGES_SECONDS[range]
+    range_start = datetime.now(timezone.utc) - timedelta(seconds=range_seconds)
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            row = await conn.fetchrow(
+                """
+                SELECT COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (LEAST(COALESCE(closed_at, now()), now()) - GREATEST(created_at, $3)))
+                ), 0) AS offline_seconds
+                FROM fleet_alert
+                WHERE tenant_id = $1
+                  AND device_id = $2
+                  AND alert_type = 'NO_TELEMETRY'
+                  AND created_at < now()
+                  AND COALESCE(closed_at, now()) > $3
+                """,
+                tenant_id,
+                device_id,
+                range_start,
+            )
+            is_offline = await conn.fetchval(
+                """
+                SELECT 1
+                FROM fleet_alert
+                WHERE tenant_id = $1
+                  AND device_id = $2
+                  AND alert_type = 'NO_TELEMETRY'
+                  AND status = 'OPEN'
+                LIMIT 1
+                """,
+                tenant_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to compute device uptime")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    offline_seconds = max(0, int(float(row["offline_seconds"] or 0)))
+    offline_seconds = min(offline_seconds, range_seconds)
+    uptime_pct = round(((range_seconds - offline_seconds) / range_seconds) * 100, 1)
+    return {
+        "device_id": device_id,
+        "range": range,
+        "uptime_pct": uptime_pct,
+        "offline_seconds": offline_seconds,
+        "range_seconds": range_seconds,
+        "status": "offline" if is_offline else "online",
+    }
+
+
+@router.get("/fleet/uptime-summary")
+async def get_fleet_uptime_summary(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    range_seconds = UPTIME_RANGES_SECONDS["24h"]
+    range_start = datetime.now(timezone.utc) - timedelta(seconds=range_seconds)
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            counts = await conn.fetchrow(
+                """
+                WITH open_gap AS (
+                    SELECT DISTINCT device_id
+                    FROM fleet_alert
+                    WHERE tenant_id = $1
+                      AND alert_type = 'NO_TELEMETRY'
+                      AND status = 'OPEN'
+                )
+                SELECT
+                    COUNT(*) AS total_devices,
+                    COUNT(*) FILTER (WHERE og.device_id IS NULL) AS online,
+                    COUNT(*) FILTER (WHERE og.device_id IS NOT NULL) AS offline
+                FROM device_registry dr
+                LEFT JOIN open_gap og
+                  ON og.device_id = dr.device_id
+                WHERE dr.tenant_id = $1
+                """,
+                tenant_id,
+            )
+            avg_row = await conn.fetchrow(
+                """
+                WITH device_offline AS (
+                    SELECT
+                        dr.device_id,
+                        COALESCE(SUM(
+                            EXTRACT(EPOCH FROM (
+                                LEAST(COALESCE(fa.closed_at, now()), now()) - GREATEST(fa.created_at, $2)
+                            ))
+                        ), 0) AS offline_seconds
+                    FROM device_registry dr
+                    LEFT JOIN fleet_alert fa
+                      ON fa.tenant_id = dr.tenant_id
+                     AND fa.device_id = dr.device_id
+                     AND fa.alert_type = 'NO_TELEMETRY'
+                     AND fa.created_at < now()
+                     AND COALESCE(fa.closed_at, now()) > $2
+                    WHERE dr.tenant_id = $1
+                    GROUP BY dr.device_id
+                )
+                SELECT COALESCE(AVG(
+                    (( $3 - LEAST(offline_seconds, $3) ) / $3::numeric) * 100
+                ), 100) AS avg_uptime_pct
+                FROM device_offline
+                """,
+                tenant_id,
+                range_start,
+                range_seconds,
+            )
+    except Exception:
+        logger.exception("Failed to compute fleet uptime summary")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {
+        "total_devices": int(counts["total_devices"] or 0),
+        "online": int(counts["online"] or 0),
+        "offline": int(counts["offline"] or 0),
+        "avg_uptime_pct": round(float(avg_row["avg_uptime_pct"] or 100), 1),
+        "as_of": datetime.now(timezone.utc).isoformat(),
     }
 
 

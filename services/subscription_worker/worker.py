@@ -241,6 +241,99 @@ async def send_expiry_notification_email(
         return False
 
 
+async def send_alert_digest(pool: asyncpg.Pool) -> None:
+    """
+    Send daily/weekly alert digests to tenant-configured recipients.
+    """
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    use_tls = os.environ.get("SMTP_TLS", "true").lower() == "true"
+    from_address = os.environ.get("SMTP_FROM", "noreply@pulse.local")
+    if not smtp_host:
+        return
+
+    now = datetime.now(timezone.utc)
+    async with pool.acquire() as conn:
+        settings_rows = await conn.fetch(
+            """
+            SELECT tenant_id, frequency, email, last_sent_at
+            FROM alert_digest_settings
+            WHERE frequency != 'disabled'
+            """
+        )
+
+        for settings in settings_rows:
+            tenant_id = settings["tenant_id"]
+            frequency = settings["frequency"]
+            if frequency == "disabled":
+                continue
+            email = (settings["email"] or "").strip()
+            if not email:
+                continue
+
+            last_sent_at = settings["last_sent_at"]
+            min_interval = timedelta(days=1 if frequency == "daily" else 7)
+            if last_sent_at and (now - last_sent_at) < min_interval:
+                continue
+
+            summary = await conn.fetchrow(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE severity >= 4) AS critical_count,
+                    COUNT(*) FILTER (WHERE severity = 3) AS high_count,
+                    COUNT(*) FILTER (WHERE severity = 2) AS medium_count,
+                    COUNT(*) FILTER (WHERE severity <= 1) AS low_count,
+                    COUNT(*) AS total_count
+                FROM fleet_alert
+                WHERE tenant_id = $1
+                  AND status = 'OPEN'
+                """,
+                tenant_id,
+            )
+            total = int(summary["total_count"] or 0) if summary else 0
+            if total <= 0:
+                continue
+
+            body = (
+                f"Alert Digest for {tenant_id}\n"
+                f"Generated: {now.isoformat()}\n\n"
+                "Open Alerts Summary:\n"
+                f"  CRITICAL: {int(summary['critical_count'] or 0)}\n"
+                f"  HIGH: {int(summary['high_count'] or 0)}\n"
+                f"  MEDIUM: {int(summary['medium_count'] or 0)}\n"
+                f"  LOW: {int(summary['low_count'] or 0)}\n\n"
+                f"Total open alerts: {total}\n\n"
+                "Log in to OpsConductor to view and manage alerts.\n"
+            )
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"[OpsConductor] Alert Digest - {total} open alerts"
+            msg["From"] = from_address
+            msg["To"] = email
+            msg.attach(MIMEText(body, "plain"))
+
+            try:
+                await aiosmtplib.send(
+                    msg,
+                    hostname=smtp_host,
+                    port=smtp_port,
+                    username=smtp_user or None,
+                    password=smtp_password or None,
+                    use_tls=use_tls,
+                )
+                await conn.execute(
+                    """
+                    UPDATE alert_digest_settings
+                    SET last_sent_at = now(), updated_at = now()
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                )
+            except Exception as exc:
+                logger.warning("Failed to send alert digest for %s: %s", tenant_id, exc)
+
+
 async def process_grace_transitions(pool: asyncpg.Pool) -> None:
     """Transition subscriptions based on term_end and grace_end."""
     async with pool.acquire() as conn:
@@ -346,6 +439,7 @@ async def run_once() -> None:
         logger.info("Starting subscription worker run...")
         await schedule_renewal_notifications(pool)
         await process_pending_notifications(pool)
+        await send_alert_digest(pool)
         await process_grace_transitions(pool)
         await reconcile_device_counts(pool)
         logger.info("Subscription worker run complete")
@@ -362,6 +456,7 @@ async def run_loop(interval_seconds: int = 3600) -> None:
             try:
                 await schedule_renewal_notifications(pool)
                 await process_pending_notifications(pool)
+                await send_alert_digest(pool)
                 await process_grace_transitions(pool)
                 await reconcile_device_counts(pool)
             except Exception as exc:

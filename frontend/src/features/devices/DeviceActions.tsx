@@ -7,9 +7,16 @@ interface DeviceActionsProps {
   createDisabled: boolean;
   onCreate: () => void;
   onGuidedSetup?: () => void;
+  onImport?: () => void;
 }
 
-export function DeviceActions({ canCreate, createDisabled, onCreate, onGuidedSetup }: DeviceActionsProps) {
+export function DeviceActions({
+  canCreate,
+  createDisabled,
+  onCreate,
+  onGuidedSetup,
+  onImport,
+}: DeviceActionsProps) {
   if (!canCreate) return null;
 
   return (
@@ -31,6 +38,15 @@ export function DeviceActions({ canCreate, createDisabled, onCreate, onGuidedSet
               disabled={createDisabled}
             >
               Guided Setup
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onImport}
+              disabled={createDisabled}
+            >
+              Import Devices
             </Button>
           </div>
         </TooltipTrigger>

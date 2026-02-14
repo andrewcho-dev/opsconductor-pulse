@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { DeviceActions } from "./DeviceActions";
 import { DeviceFilters } from "./DeviceFilters";
 import { DeviceTable } from "./DeviceTable";
+import { UptimeSummaryWidget } from "./UptimeSummaryWidget";
 import type { Device } from "@/services/api/types";
 import { AddDeviceModal } from "./AddDeviceModal";
 import { EditDeviceModal } from "./EditDeviceModal";
@@ -216,6 +217,7 @@ export default function DeviceListPage() {
             createDisabled={createDisabled}
             onCreate={() => setAddOpen(true)}
             onGuidedSetup={() => navigate("/devices/wizard")}
+            onImport={() => navigate("/devices/import")}
           />
         }
       />
@@ -312,6 +314,7 @@ export default function DeviceListPage() {
                 <div className="mt-1 text-2xl font-semibold">{summary.total ?? 0}</div>
               </div>
             </div>
+            <UptimeSummaryWidget />
           </div>
         ) : null)}
 

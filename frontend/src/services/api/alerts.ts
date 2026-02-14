@@ -1,6 +1,6 @@
 import { apiGet, apiPatch } from "./client";
 import type { AlertListResponse, AlertDetailResponse } from "./types";
-import { apiDelete, apiPost } from "./client";
+import { apiDelete, apiPost, apiPut } from "./client";
 
 export interface AlertTrendPoint {
   hour: string;
@@ -77,4 +77,21 @@ export async function updateMaintenanceWindow(
 
 export async function deleteMaintenanceWindow(windowId: string): Promise<void> {
   await apiDelete(`/customer/maintenance-windows/${encodeURIComponent(windowId)}`);
+}
+
+export interface AlertDigestSettings {
+  frequency: "daily" | "weekly" | "disabled";
+  email: string;
+  last_sent_at?: string | null;
+}
+
+export async function getAlertDigestSettings(): Promise<AlertDigestSettings> {
+  return apiGet("/customer/alert-digest-settings");
+}
+
+export async function updateAlertDigestSettings(settings: AlertDigestSettings): Promise<void> {
+  await apiPut("/customer/alert-digest-settings", {
+    frequency: settings.frequency,
+    email: settings.email,
+  });
 }

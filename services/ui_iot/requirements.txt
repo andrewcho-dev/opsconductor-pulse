@@ -19,3 +19,4 @@ email-validator
 paho-mqtt>=2.0.0
 prometheus_client>=0.20.0
 slowapi>=0.1.9
+passlib[bcrypt]>=1.7.4

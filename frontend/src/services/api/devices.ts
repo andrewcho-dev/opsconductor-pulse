@@ -209,6 +209,46 @@ export interface DeviceGroupMember {
   added_at: string;
 }
 
+export interface DeviceToken {
+  id: string;
+  client_id: string;
+  label: string;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface ImportResultRow {
+  row: number;
+  name: string;
+  status: "ok" | "error";
+  device_id?: string;
+  message?: string;
+}
+
+export interface ImportResult {
+  total: number;
+  imported: number;
+  failed: number;
+  results: ImportResultRow[];
+}
+
+export interface DeviceUptimeStats {
+  device_id: string;
+  range: "24h" | "7d" | "30d" | string;
+  uptime_pct: number;
+  offline_seconds: number;
+  range_seconds: number;
+  status: "online" | "offline";
+}
+
+export interface FleetUptimeSummary {
+  total_devices: number;
+  online: number;
+  offline: number;
+  avg_uptime_pct: number;
+  as_of: string;
+}
+
 export async function fetchDeviceGroups(): Promise<{ groups: DeviceGroup[]; total: number }> {
   return apiGet("/customer/device-groups");
 }
@@ -248,4 +288,54 @@ export async function removeGroupMember(groupId: string, deviceId: string): Prom
   await apiDelete(
     `/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`
   );
+}
+
+export async function listDeviceTokens(
+  deviceId: string
+): Promise<{ device_id: string; tokens: DeviceToken[]; total: number }> {
+  return apiGet(`/customer/devices/${encodeURIComponent(deviceId)}/tokens`);
+}
+
+export async function revokeDeviceToken(deviceId: string, tokenId: string): Promise<void> {
+  await apiDelete(
+    `/customer/devices/${encodeURIComponent(deviceId)}/tokens/${encodeURIComponent(tokenId)}`
+  );
+}
+
+export async function rotateDeviceToken(
+  deviceId: string,
+  label = "rotated"
+): Promise<ProvisionDeviceResponse> {
+  return apiPost(`/customer/devices/${encodeURIComponent(deviceId)}/tokens/rotate`, { label });
+}
+
+export async function importDevicesCSV(file: File): Promise<ImportResult> {
+  if (keycloak.authenticated) {
+    await keycloak.updateToken(30);
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/customer/devices/import", {
+    method: "POST",
+    body: form,
+    headers: keycloak.token ? { Authorization: `Bearer ${keycloak.token}` } : undefined,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Import failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getDeviceUptime(
+  deviceId: string,
+  range: "24h" | "7d" | "30d"
+): Promise<DeviceUptimeStats> {
+  return apiGet(
+    `/customer/devices/${encodeURIComponent(deviceId)}/uptime?range=${encodeURIComponent(range)}`
+  );
+}
+
+export async function getFleetUptimeSummary(): Promise<FleetUptimeSummary> {
+  return apiGet("/customer/fleet/uptime-summary");
 }

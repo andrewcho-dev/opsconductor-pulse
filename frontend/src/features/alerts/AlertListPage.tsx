@@ -14,6 +14,7 @@ import { useAlerts } from "@/hooks/use-alerts";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
 import { Bell } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { DigestSettingsCard } from "./DigestSettingsCard";
 
 const STATUS_OPTIONS = ["OPEN", "ACKNOWLEDGED", "CLOSED", "ALL"] as const;
 const SILENCE_OPTIONS = [
@@ -275,6 +276,8 @@ export default function AlertListPage() {
           )}
         </>
       )}
+
+      <DigestSettingsCard />
     </div>
   );
 }
