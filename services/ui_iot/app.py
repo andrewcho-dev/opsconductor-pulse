@@ -41,6 +41,7 @@ from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
 from shared.metrics import fleet_active_alerts, fleet_devices_by_status
 from workers.escalation_worker import run_escalation_tick
+from workers.report_worker import run_report_tick
 
 # PHASE 43 AUDIT — Background Tasks
 #
@@ -337,6 +338,7 @@ async def startup():
 
     await setup_ws_listener()
     background_tasks.append(asyncio.create_task(worker_loop(run_escalation_tick, pool, interval=60)))
+    background_tasks.append(asyncio.create_task(worker_loop(run_report_tick, pool, interval=86400)))
 
 @app.on_event("shutdown")
 async def shutdown():

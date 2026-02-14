@@ -69,6 +69,7 @@ const customerMonitoringNav: NavItem[] = [
 
 const customerDataNav: NavItem[] = [
   { label: "Telemetry / Metrics", href: "/metrics", icon: Gauge },
+  { label: "Reports", href: "/reports", icon: ScrollText },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
   { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
   { label: "Email", href: "/integrations/email", icon: Mail },
