@@ -20,6 +20,7 @@ import RenewalPage from "@/features/subscription/RenewalPage";
 import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
 import TenantListPage from "@/features/operator/TenantListPage";
+import TenantHealthMatrix from "@/features/operator/TenantHealthMatrix";
 import TenantDetailPage from "@/features/operator/TenantDetailPage";
 import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
 import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
@@ -111,6 +112,7 @@ export const router = createBrowserRouter(
             { index: true, element: <OperatorDashboard /> },
             { path: "devices", element: <OperatorDevices /> },
             { path: "tenants", element: <TenantListPage /> },
+            { path: "tenant-matrix", element: <TenantHealthMatrix /> },
             { path: "tenants/:tenantId", element: <TenantDetailPage /> },
             { path: "users", element: <UserListPage /> },
             { path: "users/:userId", element: <UserDetailPage /> },

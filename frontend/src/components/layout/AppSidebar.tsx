@@ -20,6 +20,7 @@ import {
   CreditCard,
   Users,
   Layers,
+  LayoutGrid,
   Wand2,
   CalendarOff,
   ChevronRight,
@@ -83,6 +84,7 @@ const operatorOverviewNav: NavItem[] = [
 
 const operatorTenantNav: NavItem[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
+  { label: "Health Matrix", href: "/operator/tenant-matrix", icon: LayoutGrid },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
 ];
 
