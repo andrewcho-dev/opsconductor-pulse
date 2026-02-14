@@ -41,3 +41,4 @@ inspect_ui.py
 run_sanity_test.sh
 sanity_test_standalone.py
 tests/e2e/test_phase80_83_sanity.py
+docs/AWS Industrial*
