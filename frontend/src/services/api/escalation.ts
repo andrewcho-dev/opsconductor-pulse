@@ -6,6 +6,7 @@ export interface EscalationLevel {
   delay_minutes: number;
   notify_email?: string;
   notify_webhook?: string;
+  oncall_schedule_id?: number;
 }
 
 export interface EscalationPolicy {

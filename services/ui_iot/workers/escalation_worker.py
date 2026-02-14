@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import httpx
 from notifications.dispatcher import dispatch_alert
+from oncall.resolver import get_current_responder
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ async def run_escalation_tick(pool):
             next_level_no = int(row["escalation_level"] or 0) + 1
             level = await conn.fetchrow(
                 """
-                SELECT level_number, delay_minutes, notify_email, notify_webhook
+                SELECT level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
                 FROM escalation_levels
                 WHERE policy_id = $1 AND level_number = $2
                 """,
@@ -74,6 +75,21 @@ async def run_escalation_tick(pool):
                     logger.exception("Escalation webhook send failed")
 
             email = level["notify_email"]
+            if level["oncall_schedule_id"]:
+                layer = await conn.fetchrow(
+                    """
+                    SELECT responders, shift_duration_hours, handoff_day, handoff_hour
+                    FROM oncall_layers
+                    WHERE schedule_id = $1
+                    ORDER BY layer_order, layer_id
+                    LIMIT 1
+                    """,
+                    level["oncall_schedule_id"],
+                )
+                if layer:
+                    resolved = get_current_responder(dict(layer), __import__("datetime").datetime.now(__import__("datetime").UTC))
+                    if resolved:
+                        email = resolved
             if email:
                 logger.info(
                     "Escalation email placeholder",

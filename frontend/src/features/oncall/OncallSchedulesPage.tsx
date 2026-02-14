@@ -1,0 +1,133 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/shared";
+import { Button } from "@/components/ui/button";
+import {
+  createSchedule,
+  deleteSchedule,
+  getCurrentOncall,
+  listSchedules,
+  updateSchedule,
+  type OncallSchedule,
+} from "@/services/api/oncall";
+import ScheduleModal from "./ScheduleModal";
+import TimelineView from "./TimelineView";
+
+function ScheduleCard({ schedule }: { schedule: OncallSchedule }) {
+  const [open, setOpen] = useState(false);
+  const currentQuery = useQuery({
+    queryKey: ["oncall-current", schedule.schedule_id],
+    queryFn: () => getCurrentOncall(schedule.schedule_id),
+    refetchInterval: 60000,
+  });
+  return (
+    <div className="rounded border border-border p-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-medium">{schedule.name}</div>
+          <div className="text-xs text-muted-foreground">Timezone: {schedule.timezone}</div>
+          <div className="text-xs">
+            Now on-call: {currentQuery.data?.responder || "-"} ({currentQuery.data?.layer || "-"})
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
+          {open ? "Hide" : "View"}
+        </Button>
+      </div>
+      {open && <TimelineView scheduleId={schedule.schedule_id} />}
+    </div>
+  );
+}
+
+export default function OncallSchedulesPage() {
+  const queryClient = useQueryClient();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<OncallSchedule | null>(null);
+  const schedulesQuery = useQuery({
+    queryKey: ["oncall-schedules"],
+    queryFn: listSchedules,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: createSchedule,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Partial<OncallSchedule> }) => updateSchedule(id, body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: deleteSchedule,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+    },
+  });
+
+  const schedules = schedulesQuery.data?.schedules ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="On-Call Schedules"
+        description="Configure rotation layers and temporary overrides."
+        action={
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setModalOpen(true);
+            }}
+          >
+            New Schedule
+          </Button>
+        }
+      />
+
+      <div className="space-y-3">
+        {schedules.map((schedule) => (
+          <div key={schedule.schedule_id} className="space-y-2">
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditing(schedule);
+                  setModalOpen(true);
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={async () => {
+                  if (!window.confirm("Delete schedule?")) return;
+                  await deleteMutation.mutateAsync(schedule.schedule_id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+            <ScheduleCard schedule={schedule} />
+          </div>
+        ))}
+      </div>
+
+      <ScheduleModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        initial={editing}
+        onSave={async (payload) => {
+          if (editing) {
+            await updateMutation.mutateAsync({ id: editing.schedule_id, body: payload });
+          } else {
+            await createMutation.mutateAsync(payload);
+          }
+        }}
+      />
+    </div>
+  );
+}

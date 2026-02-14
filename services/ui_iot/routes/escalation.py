@@ -18,6 +18,7 @@ class EscalationLevelIn(BaseModel):
     delay_minutes: int = Field(default=15, ge=1)
     notify_email: Optional[str] = None
     notify_webhook: Optional[str] = None
+    oncall_schedule_id: Optional[int] = None
 
 
 class EscalationPolicyIn(BaseModel):
@@ -67,7 +68,7 @@ async def _fetch_policy(conn, tenant_id: str, policy_id: int):
         return None
     levels = await conn.fetch(
         """
-        SELECT level_id, level_number, delay_minutes, notify_email, notify_webhook
+        SELECT level_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
         FROM escalation_levels
         WHERE policy_id = $1
         ORDER BY level_number
@@ -124,14 +125,17 @@ async def create_escalation_policy(body: EscalationPolicyIn, pool=Depends(get_db
         for level in body.levels:
             await conn.execute(
                 """
-                INSERT INTO escalation_levels (policy_id, level_number, delay_minutes, notify_email, notify_webhook)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO escalation_levels (
+                    policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 policy_id,
                 level.level_number,
                 level.delay_minutes,
                 level.notify_email,
                 level.notify_webhook,
+                level.oncall_schedule_id,
             )
         policy = await _fetch_policy(conn, tenant_id, policy_id)
     return policy
@@ -184,14 +188,17 @@ async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, poo
         for level in body.levels:
             await conn.execute(
                 """
-                INSERT INTO escalation_levels (policy_id, level_number, delay_minutes, notify_email, notify_webhook)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO escalation_levels (
+                    policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 policy_id,
                 level.level_number,
                 level.delay_minutes,
                 level.notify_email,
                 level.notify_webhook,
+                level.oncall_schedule_id,
             )
         policy = await _fetch_policy(conn, tenant_id, policy_id)
     return policy

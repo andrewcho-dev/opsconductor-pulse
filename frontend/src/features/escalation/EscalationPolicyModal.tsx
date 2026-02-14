@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -11,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { EscalationLevel, EscalationPolicy } from "@/services/api/escalation";
+import { listSchedules } from "@/services/api/oncall";
 
 interface EscalationPolicyModalProps {
   open: boolean;
@@ -36,7 +38,7 @@ function emptyForm(): FormState {
     name: "",
     description: "",
     is_default: false,
-    levels: [{ level_number: 1, delay_minutes: 15, notify_email: "", notify_webhook: "" }],
+    levels: [{ level_number: 1, delay_minutes: 15, notify_email: "", notify_webhook: "", oncall_schedule_id: undefined }],
   };
 }
 
@@ -48,6 +50,11 @@ export function EscalationPolicyModal({
 }: EscalationPolicyModalProps) {
   const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const schedulesQuery = useQuery({
+    queryKey: ["oncall-schedules-for-escalation"],
+    queryFn: listSchedules,
+    enabled: open,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +73,7 @@ export function EscalationPolicyModal({
               level_number: idx + 1,
               notify_email: level.notify_email ?? "",
               notify_webhook: level.notify_webhook ?? "",
+              oncall_schedule_id: level.oncall_schedule_id,
             }))
           : emptyForm().levels,
     });
@@ -86,7 +94,13 @@ export function EscalationPolicyModal({
       ...prev,
       levels: [
         ...prev.levels,
-        { level_number: prev.levels.length + 1, delay_minutes: 15, notify_email: "", notify_webhook: "" },
+        {
+          level_number: prev.levels.length + 1,
+          delay_minutes: 15,
+          notify_email: "",
+          notify_webhook: "",
+          oncall_schedule_id: undefined,
+        },
       ],
     }));
   }
@@ -114,6 +128,7 @@ export function EscalationPolicyModal({
           delay_minutes: Math.max(1, Number(level.delay_minutes || 1)),
           notify_email: level.notify_email?.trim() || undefined,
           notify_webhook: level.notify_webhook?.trim() || undefined,
+          oncall_schedule_id: level.oncall_schedule_id || undefined,
         })),
       });
       onOpenChange(false);
@@ -186,7 +201,7 @@ export function EscalationPolicyModal({
                     onChange={(e) => updateLevel(idx, { delay_minutes: Number(e.target.value || 1) })}
                   />
                 </div>
-                <div className="md:col-span-4">
+                <div className="md:col-span-3">
                   <div className="text-xs text-muted-foreground">Email</div>
                   <Input
                     placeholder="notify@example.com"
@@ -194,13 +209,32 @@ export function EscalationPolicyModal({
                     onChange={(e) => updateLevel(idx, { notify_email: e.target.value })}
                   />
                 </div>
-                <div className="md:col-span-4">
+                <div className="md:col-span-3">
                   <div className="text-xs text-muted-foreground">Webhook</div>
                   <Input
                     placeholder="https://..."
                     value={level.notify_webhook ?? ""}
                     onChange={(e) => updateLevel(idx, { notify_webhook: e.target.value })}
                   />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-muted-foreground">On-Call Schedule</div>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    value={level.oncall_schedule_id ?? ""}
+                    onChange={(e) =>
+                      updateLevel(idx, {
+                        oncall_schedule_id: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                  >
+                    <option value="">None</option>
+                    {(schedulesQuery.data?.schedules ?? []).map((schedule) => (
+                      <option key={schedule.schedule_id} value={schedule.schedule_id}>
+                        {schedule.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex items-end justify-end md:col-span-1">
                   <Button

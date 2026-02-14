@@ -14,6 +14,7 @@ COPY routes /app/routes
 COPY schemas /app/schemas
 COPY services /app/services
 COPY notifications /app/notifications
+COPY oncall /app/oncall
 COPY reports /app/reports
 COPY workers /app/workers
 COPY utils /app/utils
