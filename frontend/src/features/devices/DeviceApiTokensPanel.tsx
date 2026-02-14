@@ -3,21 +3,55 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   listDeviceTokens,
   revokeDeviceToken,
   rotateDeviceToken,
   type ProvisionDeviceResponse,
 } from "@/services/api/devices";
-import { CredentialModal } from "./CredentialModal";
+import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
 
 interface DeviceApiTokensPanelProps {
   deviceId: string;
 }
 
+function TokenAgeChip({ createdAt }: { createdAt: string }) {
+  const created = new Date(createdAt);
+  const ageDays = Number.isNaN(created.getTime())
+    ? 0
+    : Math.floor((Date.now() - created.getTime()) / (24 * 60 * 60 * 1000));
+  const tone =
+    ageDays < 30
+      ? "text-green-600 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950/30"
+      : ageDays <= 90
+        ? "text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-300 dark:bg-yellow-950/30"
+        : "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${tone}`}>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          ageDays < 30 ? "bg-green-500" : ageDays <= 90 ? "bg-yellow-500" : "bg-red-500"
+        }`}
+      />
+      {ageDays} days old
+      {ageDays > 90 ? " (consider rotating)" : ""}
+    </span>
+  );
+}
+
 export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
   const queryClient = useQueryClient();
   const [credentials, setCredentials] = useState<ProvisionDeviceResponse | null>(null);
-  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["device-tokens", deviceId],
@@ -36,7 +70,6 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     mutationFn: () => rotateDeviceToken(deviceId),
     onSuccess: async (result) => {
       setCredentials(result);
-      setCredentialsOpen(true);
       await queryClient.invalidateQueries({ queryKey: ["device-tokens", deviceId] });
     },
   });
@@ -52,14 +85,19 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
         </div>
         <Button
           size="sm"
-          onClick={async () => {
-            if (!window.confirm("Rotate credentials and revoke existing active tokens?")) return;
-            await rotateMutation.mutateAsync();
-          }}
+          onClick={() => setConfirmOpen(true)}
         >
-          Rotate Credentials
+          {(data?.tokens?.length ?? 0) > 0 ? "Rotate Credentials" : "Create Token"}
         </Button>
       </div>
+
+      {credentials && (
+        <OneTimeSecretDisplay
+          label="API Token"
+          value={credentials.password}
+          filename={`device-${deviceId}.env`}
+        />
+      )}
 
       {error && <div className="text-sm text-destructive">Failed to load tokens.</div>}
       {isLoading ? (
@@ -72,6 +110,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
                 <th className="py-2 pr-2">Client ID</th>
                 <th className="py-2 pr-2">Label</th>
                 <th className="py-2 pr-2">Created</th>
+                <th className="py-2 pr-2">Age</th>
                 <th className="py-2 pr-2">Status</th>
                 <th className="py-2">Actions</th>
               </tr>
@@ -82,6 +121,9 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
                   <td className="py-2 pr-2 font-mono text-xs">{token.client_id}</td>
                   <td className="py-2 pr-2">{token.label}</td>
                   <td className="py-2 pr-2 text-xs">{new Date(token.created_at).toLocaleString()}</td>
+                  <td className="py-2 pr-2">
+                    <TokenAgeChip createdAt={token.created_at} />
+                  </td>
                   <td className="py-2 pr-2">
                     <Badge variant={token.revoked_at ? "outline" : "default"}>
                       {token.revoked_at ? "Revoked" : "Active"}
@@ -108,12 +150,29 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
         </div>
       )}
 
-      <CredentialModal
-        open={credentialsOpen}
-        credentials={credentials}
-        deviceName={deviceId}
-        onClose={() => setCredentialsOpen(false)}
-      />
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rotate API Credentials</AlertDialogTitle>
+            <AlertDialogDescription>
+              Creating a new token will not automatically revoke existing tokens. Revoke old tokens
+              after updating your device configuration.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                await rotateMutation.mutateAsync();
+                setConfirmOpen(false);
+              }}
+            >
+              Generate Token
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
