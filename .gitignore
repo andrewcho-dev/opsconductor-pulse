@@ -32,3 +32,12 @@ __pycache__/
 # local artifacts
 dashboard.png
 docs/cursor-prompts/
+
+# Ad-hoc sanity/debug artifacts
+FINAL_SANITY_REPORT.txt
+SANITY_TEST_CHECKLIST.md
+SANITY_TEST_REPORT.txt
+inspect_ui.py
+run_sanity_test.sh
+sanity_test_standalone.py
+tests/e2e/test_phase80_83_sanity.py
