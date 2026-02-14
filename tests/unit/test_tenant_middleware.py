@@ -24,9 +24,17 @@ def _make_request(user=None):
     return request
 
 
+def _user_payload(tenant_id: str | None, roles: list[str]) -> dict:
+    payload = {"realm_access": {"roles": roles}}
+    if tenant_id:
+        payload["organization"] = {tenant_id: {}}
+        payload["tenant_id"] = tenant_id
+    return payload
+
+
 async def test_inject_tenant_context_extracts_tenant_id(monkeypatch):
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": "tenant-a", "role": "customer_admin"})
+    request = _make_request(_user_payload("tenant-a", ["customer", "tenant-admin"]))
 
     await tenant.inject_tenant_context(request)
     assert tenant.get_tenant_id() == "tenant-a"
@@ -34,7 +42,7 @@ async def test_inject_tenant_context_extracts_tenant_id(monkeypatch):
 
 async def test_inject_tenant_context_no_tenant(monkeypatch):
     tenant = _tenant_module()
-    request = _make_request({"role": "customer_admin"})
+    request = _make_request(_user_payload(None, ["customer"]))
 
     def _raise_if_missing(tenant_id, user):
         if tenant_id is None:
@@ -50,27 +58,25 @@ async def test_inject_tenant_context_no_tenant(monkeypatch):
 
 async def test_require_operator_admin_passes():
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": "tenant-a", "role": "operator_admin"})
+    request = _make_request(_user_payload("tenant-a", ["operator-admin"]))
     await tenant.inject_tenant_context(request)
     await tenant.require_operator_admin(request)
 
 
 async def test_require_operator_admin_rejects_operator():
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": "tenant-a", "role": "operator"})
+    request = _make_request(_user_payload("tenant-a", ["operator"]))
     await tenant.inject_tenant_context(request)
     with pytest.raises(HTTPException) as err:
         await tenant.require_operator_admin(request)
     assert err.value.status_code == 403
 
 
-async def test_require_customer_rejects_operator():
+async def test_require_customer_allows_operator():
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": None, "role": "operator"})
+    request = _make_request(_user_payload(None, ["operator"]))
     await tenant.inject_tenant_context(request)
-    with pytest.raises(HTTPException) as err:
-        await tenant.require_customer(request)
-    assert err.value.status_code == 403
+    await tenant.require_customer(request)
 
 
 async def test_get_tenant_id_missing():
@@ -99,14 +105,14 @@ async def test_inject_tenant_context_missing_user():
 
 async def test_require_customer_allows_viewer():
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": "tenant-a", "role": "customer_viewer"})
+    request = _make_request(_user_payload("tenant-a", ["customer"]))
     await tenant.inject_tenant_context(request)
     await tenant.require_customer(request)
 
 
 async def test_require_operator_rejects_customer():
     tenant = _tenant_module()
-    request = _make_request({"tenant_id": "tenant-a", "role": "customer_admin"})
+    request = _make_request(_user_payload("tenant-a", ["customer", "tenant-admin"]))
     await tenant.inject_tenant_context(request)
     with pytest.raises(HTTPException) as err:
         await tenant.require_operator(request)

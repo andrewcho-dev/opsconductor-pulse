@@ -5,45 +5,87 @@ import hashlib
 import logging
 import secrets
 import time
+import uuid
 import asyncpg
 import httpx
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from pathlib import Path
 from urllib.parse import urlparse, urlencode
 from fastapi import FastAPI, Query, HTTPException
-from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
-from routes.customer import router as customer_router
+from routes.customer import router as customer_router, limiter
 from routes.operator import router as operator_router
 from routes.system import (
     router as system_router,
-    check_service,
-    INGEST_URL,
-    EVALUATOR_URL,
-    DISPATCHER_URL,
-    DELIVERY_URL,
 )
-from routes.api_v2 import router as api_v2_router, ws_router as api_v2_ws_router
+from routes.api_v2 import (
+    router as api_v2_router,
+    ws_router as api_v2_ws_router,
+    setup_ws_listener,
+    shutdown_ws_listener,
+)
 from routes.ingest import router as ingest_router
 from routes.users import router as users_router
 from middleware.auth import validate_token
-from db.pool import operator_connection
-from db.queries import (
-    get_open_system_alert,
-    create_system_alert,
-    resolve_system_alert,
-)
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
-from metrics_collector import collector
+from shared.logging import configure_logging
+from shared.jwks_cache import init_jwks_cache, get_jwks_cache
+from shared.metrics import fleet_active_alerts, fleet_devices_by_status
+
+# PHASE 43 AUDIT — Background Tasks
+#
+# Task 1: health_monitor
+#   - Interval: max(5s, HEALTH_CHECK_INTERVAL), default 60s
+#   - What it does: polls ingest/evaluator/dispatcher/delivery health endpoints,
+#     opens/closes system alerts based on service status transitions.
+#   - Tables it writes: fleet_alert (OPEN/CLOSED system-health rows), tenants
+#     (ensures synthetic __system__ tenant exists when opening alerts).
+#   - External dependencies: HTTP calls to service /health endpoints.
+#   - Decision: EXTRACT to ops_worker
+#   - Reason: polling + alert maintenance is process-isolated work and does not
+#     depend on request context.
+#
+# Task 2: metrics_collector
+#   - Interval: METRICS_COLLECTION_INTERVAL, default 5s
+#   - What it does: polls service /health counters and DB aggregates, then writes
+#     platform/service metrics.
+#   - Tables it writes: system_metrics.
+#   - External dependencies: HTTP calls to service /health endpoints + DB reads.
+#   - Decision: EXTRACT to ops_worker
+#   - Reason: periodic aggregation work is independent from request lifecycle.
+#
+# Task 3: batch_writer
+#   - Interval: FLUSH_INTERVAL_MS (default 1000ms) and batch size thresholds.
+#   - What it does: buffers and flushes HTTP ingest telemetry writes.
+#   - Tables it writes: telemetry.
+#   - External dependencies: DB only.
+#   - Decision: KEEP in ui_iot
+#   - Reason: tightly coupled to HTTP ingest request path shared state.
+#
+# Task 4: audit_logger
+#   - Interval: internal periodic flush loop (configured in shared.audit).
+#   - What it does: buffers request-context audit events and flushes asynchronously.
+#   - Tables it writes: audit_log.
+#   - External dependencies: DB only.
+#   - Decision: KEEP in ui_iot
+#   - Reason: captures request-context events emitted by ui_iot handlers.
+
+configure_logging("ui_iot")
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
@@ -51,8 +93,6 @@ FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "1") == "1"
 
 UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
-HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
-SYSTEM_ALERT_ENABLED = os.getenv("SYSTEM_ALERT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
@@ -69,14 +109,8 @@ if not ALLOWED_ORIGINS:
             "https://localhost:5173",
         ]
 
-HEALTH_MONITOR_ENDPOINTS = {
-    "ingest": INGEST_URL,
-    "evaluator": EVALUATOR_URL,
-    "dispatcher": DISPATCHER_URL,
-    "delivery_worker": DELIVERY_URL,
-}
-
 app = FastAPI()
+app.state.limiter = limiter
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -84,6 +118,31 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+app.add_middleware(SlowAPIMiddleware)
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+        request.state.request_id = request_id
+        start = time.monotonic()
+        response = await call_next(request)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "request",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
+        return response
+
+
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(customer_router)
 app.include_router(operator_router)
@@ -119,6 +178,16 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         if "text/html" in accept:
             return RedirectResponse(url="/", status_code=302)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    retry_after = getattr(exc, "retry_after", 60)
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Please slow down."},
+        headers={"Retry-After": str(retry_after)},
+    )
 
 pool: asyncpg.Pool | None = None
 
@@ -186,50 +255,16 @@ def generate_state() -> str:
 async def get_pool():
     global pool
     if pool is None:
-        pool = await asyncpg.create_pool(
-            host=PG_HOST, port=PG_PORT, database=PG_DB,
-            user=PG_USER, password=PG_PASS,
-            min_size=1, max_size=5
-        )
+        if DATABASE_URL:
+            pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+        else:
+            pool = await asyncpg.create_pool(
+                host=PG_HOST, port=PG_PORT, database=PG_DB,
+                user=PG_USER, password=PG_PASS,
+                min_size=2, max_size=10, command_timeout=30
+            )
     return pool
 
-
-def _health_failure_reason(health: dict) -> str:
-    if not isinstance(health, dict):
-        return "unknown"
-    if health.get("error"):
-        return str(health["error"])
-    if health.get("http_status"):
-        return f"http {health['http_status']}"
-    return health.get("status", "unknown")
-
-
-async def health_monitor_loop() -> None:
-    """Background loop that creates/resolves system alerts from service health."""
-    logger.info("System health monitor started (interval=%ss)", HEALTH_CHECK_INTERVAL)
-    while True:
-        try:
-            current_pool = await get_pool()
-            async with operator_connection(current_pool) as conn:
-                for service_name, service_url in HEALTH_MONITOR_ENDPOINTS.items():
-                    health = await check_service(service_name, service_url)
-                    is_healthy = health.get("status") == "healthy"
-                    open_alert = await get_open_system_alert(conn, service_name)
-
-                    if not is_healthy and not open_alert:
-                        reason = _health_failure_reason(health)
-                        message = f"Service unhealthy: {service_name} ({reason})"
-                        await create_system_alert(conn, service_name, message)
-                        logger.warning("[health-monitor] created alert for %s: %s", service_name, reason)
-                    elif is_healthy and open_alert:
-                        await resolve_system_alert(conn, service_name)
-                        logger.info("[health-monitor] resolved alert for %s", service_name)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Health monitor loop failed")
-
-        await asyncio.sleep(max(5, HEALTH_CHECK_INTERVAL))
 
 @app.on_event("startup")
 async def startup():
@@ -254,8 +289,6 @@ async def startup():
     app.state.burst = 20.0
     app.state.require_token = REQUIRE_TOKEN
 
-    await collector.start()
-
     # Log URL configuration for debugging OAuth issues
     keycloak_public = _get_keycloak_public_url()
     keycloak_internal = _get_keycloak_internal_url()
@@ -274,23 +307,23 @@ async def startup():
             kc_host, ui_host,
         )
 
-    if SYSTEM_ALERT_ENABLED:
-        app.state.health_monitor_task = asyncio.create_task(health_monitor_loop())
-    else:
-        logger.info("System health monitor disabled (SYSTEM_ALERT_ENABLED=false)")
+    jwks_uri = os.getenv(
+        "KEYCLOAK_JWKS_URI",
+        f"{keycloak_internal}/realms/{os.getenv('KEYCLOAK_REALM', 'pulse')}/protocol/openid-connect/certs",
+    )
+    jwks_ttl = int(os.getenv("JWKS_TTL_SECONDS", "300"))
+    try:
+        cache = init_jwks_cache(jwks_uri=jwks_uri, ttl_seconds=jwks_ttl)
+        await cache.get_keys()
+        logger.info("JWKS cache pre-warm succeeded")
+    except Exception:
+        # Non-fatal: auth middleware can retry/refresh lazily.
+        logger.warning("JWKS cache pre-warm failed", exc_info=True)
 
+    await setup_ws_listener()
 
 @app.on_event("shutdown")
 async def shutdown():
-    health_monitor_task = getattr(app.state, "health_monitor_task", None)
-    if health_monitor_task:
-        health_monitor_task.cancel()
-        try:
-            await health_monitor_task
-        except asyncio.CancelledError:
-            pass
-
-    await collector.stop()
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
@@ -300,10 +333,75 @@ async def shutdown():
         get_sampled_logger().shutdown()
     except Exception:
         pass
+    try:
+        await shutdown_ws_listener()
+    except Exception:
+        pass
 
 @app.get("/api/v2/health")
 async def api_v2_health():
     return {"status": "ok", "service": "pulse-ui", "api_version": "v2"}
+
+
+@app.get("/healthz")
+async def healthz():
+    checks: dict[str, str] = {}
+
+    try:
+        p = await get_pool()
+        async with p.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        checks["db"] = "ok"
+    except Exception:
+        checks["db"] = "unreachable"
+
+    try:
+        cache = get_jwks_cache()
+        if cache is None:
+            checks["keycloak"] = "uninitialized"
+        elif cache.is_stale():
+            jwks_uri = os.getenv("KEYCLOAK_JWKS_URI", "")
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                r = await client.get(jwks_uri)
+            checks["keycloak"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+        else:
+            checks["keycloak"] = "cached"
+    except Exception as exc:
+        checks["keycloak"] = f"unreachable: {type(exc).__name__}"
+
+    overall = "ok" if checks.get("db") == "ok" else "degraded"
+    return {"status": overall, "checks": checks}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    p = await get_pool()
+    async with p.acquire() as conn:
+        alert_rows = await conn.fetch(
+            """
+            SELECT tenant_id, COUNT(*) AS cnt
+            FROM fleet_alert
+            WHERE status IN ('OPEN', 'ACKNOWLEDGED')
+            GROUP BY tenant_id
+            """
+        )
+        device_rows = await conn.fetch(
+            """
+            SELECT tenant_id, status, COUNT(*) AS cnt
+            FROM device_state
+            GROUP BY tenant_id, status
+            """
+        )
+
+    for row in alert_rows:
+        fleet_active_alerts.labels(tenant_id=row["tenant_id"]).set(row["cnt"])
+    for row in device_rows:
+        fleet_devices_by_status.labels(
+            tenant_id=row["tenant_id"],
+            status=row["status"],
+        ).set(row["cnt"])
+
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 def get_callback_url() -> str:
     return f"{get_ui_base_url()}/callback"

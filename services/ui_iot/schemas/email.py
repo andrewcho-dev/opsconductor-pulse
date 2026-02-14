@@ -75,6 +75,8 @@ class EmailIntegrationResponse(BaseModel):
     from_address: str
     recipient_count: int
     template_format: str
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
     enabled: bool
     created_at: str
     updated_at: str

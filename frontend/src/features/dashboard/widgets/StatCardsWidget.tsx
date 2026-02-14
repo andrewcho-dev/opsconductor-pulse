@@ -44,9 +44,9 @@ function StatCardsWidgetInner() {
     refetchInterval: 10_000,
   });
 
-  const totalDevices = summary?.total_devices ?? 0;
-  const onlineDevices = summary?.online ?? 0;
-  const staleDevices = summary?.stale ?? 0;
+  const totalDevices = summary?.total_devices ?? summary?.total ?? 0;
+  const onlineDevices = summary?.online ?? summary?.ONLINE ?? 0;
+  const staleDevices = summary?.stale ?? summary?.STALE ?? 0;
   const openAlerts = summary?.alerts_open ?? 0;
 
   return (

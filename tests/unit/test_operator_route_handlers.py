@@ -53,11 +53,26 @@ def _auth_header():
     return {"Authorization": "Bearer test-token"}
 
 
+def _mock_user_payload(role: str) -> dict:
+    role_map = {
+        "operator": ["operator"],
+        "operator_admin": ["operator-admin"],
+        "customer_admin": ["customer", "tenant-admin"],
+    }
+    return {
+        "sub": "operator-1",
+        "tenant_id": "tenant-a",
+        "organization": {"tenant-a": {}},
+        "realm_access": {"roles": role_map.get(role, [role])},
+    }
+
+
 def _mock_operator_deps(monkeypatch, conn, role="operator"):
+    user_payload = _mock_user_payload(role)
     monkeypatch.setattr(
         auth_module,
         "validate_token",
-        AsyncMock(return_value={"sub": "operator-1", "role": role, "tenant_id": "tenant-a"}),
+        AsyncMock(return_value=user_payload),
     )
     monkeypatch.setattr(operator_routes, "get_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(operator_routes, "operator_connection", _operator_connection(conn))

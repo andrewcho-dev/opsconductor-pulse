@@ -7,13 +7,24 @@ from services.evaluator_iot import evaluator
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
 
+@pytest.fixture(autouse=True)
+def reset_evaluator_state():
+    evaluator._notify_event.clear()
+    evaluator._pending_tenants.clear()
+    yield
+    evaluator._notify_event.clear()
+    evaluator._pending_tenants.clear()
+
+
 class FakeConn:
     def __init__(self):
         self.fetchrow_result = None
         self.fetch_result = []
+        self.fetchval_results = []
         self.execute_calls = []
         self.fetch_calls = []
         self.fetchrow_calls = []
+        self.fetchval_calls = []
 
     async def fetchrow(self, query, *args):
         self.fetchrow_calls.append((query, args))
@@ -26,6 +37,12 @@ class FakeConn:
     async def execute(self, query, *args):
         self.execute_calls.append((query, args))
         return "UPDATE 1"
+
+    async def fetchval(self, query, *args):
+        self.fetchval_calls.append((query, args))
+        if self.fetchval_results:
+            return self.fetchval_results.pop(0)
+        return 0
 
 
 async def test_threshold_gt_fires_when_exceeded():
@@ -133,11 +150,94 @@ async def test_fetch_tenant_rules_returns_dict_rows():
             "threshold": 40,
             "severity": 4,
             "site_ids": ["site-a"],
+            "duration_seconds": 0,
         }
     ]
     rows = await evaluator.fetch_tenant_rules(conn, "tenant-a")
     assert rows[0]["rule_id"] == "r1"
     assert rows[0]["metric_name"] == "temp_c"
+
+
+async def test_check_duration_window_zero_returns_true_immediately():
+    """duration_seconds=0 must return True without any DB query."""
+    conn = FakeConn()
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "GT", 40.0, 0
+    )
+    assert result is True
+    assert len(conn.fetchval_calls) == 0
+
+
+async def test_check_duration_window_all_readings_breach():
+    """Window fully satisfied: 0 failing readings, 5 total."""
+    conn = FakeConn()
+    conn.fetchval_results = [0, 5]
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "GT", 40.0, 300
+    )
+    assert result is True
+
+
+async def test_check_duration_window_some_readings_fail():
+    """Window NOT satisfied: 2 readings fail the threshold."""
+    conn = FakeConn()
+    conn.fetchval_results = [2, 5]
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "GT", 40.0, 300
+    )
+    assert result is False
+
+
+async def test_check_duration_window_no_readings_in_window():
+    """No data in window — cannot confirm continuous breach."""
+    conn = FakeConn()
+    conn.fetchval_results = [0, 0]
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "GT", 40.0, 300
+    )
+    assert result is False
+
+
+async def test_check_duration_window_unsupported_operator():
+    """Unknown operator returns False without DB query."""
+    conn = FakeConn()
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "UNKNOWN_OP", 40.0, 300
+    )
+    assert result is False
+    assert len(conn.fetchval_calls) == 0
+
+
+async def test_check_duration_window_with_mapping():
+    """With metric mapping (normalization), uses raw_metric and multiplier."""
+    conn = FakeConn()
+    conn.fetchval_results = [0, 3]
+    mappings = [{"raw_metric": "temp_f", "multiplier": 0.5556, "offset_value": -17.78}]
+    result = await evaluator.check_duration_window(
+        conn, "tenant-a", "device-1", "temp_c", "GT", 40.0, 300, mappings=mappings
+    )
+    assert result is True
+    assert conn.fetchval_calls[0][1][2] == "temp_f"
+
+
+async def test_duration_seconds_zero_in_fetch_tenant_rules():
+    """fetch_tenant_rules returns duration_seconds field."""
+    conn = FakeConn()
+    conn.fetch_result = [
+        {
+            "rule_id": "r1",
+            "name": "High temp",
+            "metric_name": "temp_c",
+            "operator": "GT",
+            "threshold": 40,
+            "severity": 4,
+            "site_ids": ["site-a"],
+            "duration_seconds": 0,
+        }
+    ]
+    rows = await evaluator.fetch_tenant_rules(conn, "tenant-a")
+    assert "duration_seconds" in rows[0]
+    assert rows[0]["duration_seconds"] == 0
 
 
 async def test_fetch_metric_mappings_grouped_by_normalized_name():

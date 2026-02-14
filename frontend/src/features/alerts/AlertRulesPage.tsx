@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Table,
   TableBody,
@@ -20,6 +21,10 @@ import {
 import type { AlertRule } from "@/services/api/types";
 import { AlertRuleDialog } from "./AlertRuleDialog";
 import { DeleteAlertRuleDialog } from "./DeleteAlertRuleDialog";
+import {
+  applyAlertRuleTemplates,
+  fetchAlertRuleTemplates,
+} from "@/services/api/alert-rules";
 
 const OPERATOR_LABELS: Record<string, string> = {
   GT: ">",
@@ -29,6 +34,7 @@ const OPERATOR_LABELS: Record<string, string> = {
 };
 
 export default function AlertRulesPage() {
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "customer_admin";
 
@@ -38,6 +44,7 @@ export default function AlertRulesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const [deletingRule, setDeletingRule] = useState<AlertRule | null>(null);
+  const [applyingDefaults, setApplyingDefaults] = useState(false);
 
   const rules = data?.rules || [];
   const count = data?.count || rules.length;
@@ -55,9 +62,30 @@ export default function AlertRulesPage() {
 
   const rows = useMemo(() => rules, [rules]);
 
+  async function handleAddAllDefaults() {
+    setApplyingDefaults(true);
+    try {
+      const templates = await fetchAlertRuleTemplates();
+      const result = await applyAlertRuleTemplates(
+        templates.map((tmpl) => tmpl.template_id)
+      );
+      window.alert(`Created ${result.created.length} rules, skipped ${result.skipped.length} (already exist)`);
+      await queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+    } finally {
+      setApplyingDefaults(false);
+    }
+  }
+
   function formatCondition(rule: AlertRule) {
     const op = OPERATOR_LABELS[rule.operator] || rule.operator;
     return `${rule.metric_name} ${op} ${rule.threshold}`;
+  }
+
+  function formatDuration(rule: AlertRule) {
+    const seconds = rule.duration_seconds ?? 0;
+    if (seconds <= 0) return "Immediate";
+    if (seconds % 60 === 0) return `${seconds / 60}m`;
+    return `${seconds}s`;
   }
 
   return (
@@ -67,14 +95,23 @@ export default function AlertRulesPage() {
         description={description}
         action={
           isAdmin ? (
-            <Button
-              onClick={() => {
-                setEditingRule(null);
-                setDialogOpen(true);
-              }}
-            >
-              Add Rule
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={applyingDefaults}
+                onClick={handleAddAllDefaults}
+              >
+                {applyingDefaults ? "Applying..." : "Add All Defaults"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditingRule(null);
+                  setDialogOpen(true);
+                }}
+              >
+                Add Rule
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -103,6 +140,7 @@ export default function AlertRulesPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Condition</TableHead>
+                <TableHead>Duration</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Enabled</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -115,6 +153,7 @@ export default function AlertRulesPage() {
                   <TableCell className="font-mono text-sm">
                     {formatCondition(rule)}
                   </TableCell>
+                  <TableCell>{formatDuration(rule)}</TableCell>
                   <TableCell>
                     <SeverityBadge severity={rule.severity} />
                   </TableCell>

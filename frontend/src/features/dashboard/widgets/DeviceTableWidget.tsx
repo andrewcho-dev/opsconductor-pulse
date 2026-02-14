@@ -14,9 +14,9 @@ import { useDevices } from "@/hooks/use-devices";
 import { memo } from "react";
 
 function DeviceTableWidgetInner() {
-  const { data, isLoading } = useDevices(10, 0); // Show top 10 on dashboard
+  const { data, isLoading } = useDevices({ limit: 10, offset: 0 }); // Show top 10 on dashboard
   const devices = data?.devices || [];
-  const totalCount = data?.count || 0;
+  const totalCount = data?.total || 0;
 
   return (
     <Card>

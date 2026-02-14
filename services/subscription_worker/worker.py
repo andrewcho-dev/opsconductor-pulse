@@ -12,6 +12,25 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 import asyncpg
 import httpx
+import aiosmtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+try:
+    from .email_templates import (
+        EXPIRY_SUBJECT_TEMPLATE,
+        EXPIRY_HTML_TEMPLATE,
+        EXPIRY_TEXT_TEMPLATE,
+        GRACE_SUBJECT_TEMPLATE,
+        GRACE_HTML_TEMPLATE,
+    )
+except ImportError:
+    from email_templates import (
+        EXPIRY_SUBJECT_TEMPLATE,
+        EXPIRY_HTML_TEMPLATE,
+        EXPIRY_TEXT_TEMPLATE,
+        GRACE_SUBJECT_TEMPLATE,
+        GRACE_HTML_TEMPLATE,
+    )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,7 +96,8 @@ async def process_pending_notifications(pool: asyncpg.Pool) -> None:
         pending = await conn.fetch(
             """
             SELECT n.id, n.tenant_id, n.notification_type, t.name as tenant_name,
-                   s.term_end, s.device_limit, s.active_device_count
+                   s.subscription_id, s.term_end, s.grace_end, s.status,
+                   s.device_limit, s.active_device_count
             FROM subscription_notifications n
             JOIN tenants t ON t.tenant_id = n.tenant_id
             JOIN subscriptions s ON s.tenant_id = n.tenant_id AND s.subscription_type = 'MAIN'
@@ -91,14 +111,21 @@ async def process_pending_notifications(pool: asyncpg.Pool) -> None:
         for row in pending:
             try:
                 await send_notification(row)
+                email_sent = await send_expiry_notification_email(
+                    notification=dict(row),
+                    subscription=dict(row),
+                    tenant={"tenant_id": row["tenant_id"], "name": row["tenant_name"]},
+                )
+                channel = "email" if email_sent else ("webhook" if NOTIFICATION_WEBHOOK_URL else "log")
 
                 await conn.execute(
                     """
                     UPDATE subscription_notifications
-                    SET status = 'SENT', sent_at = now()
+                    SET status = 'SENT', sent_at = now(), channel = $2
                     WHERE id = $1
                     """,
                     row["id"],
+                    channel,
                 )
                 logger.info("Sent %s to %s", row["notification_type"], row["tenant_id"])
             except Exception as exc:
@@ -137,6 +164,81 @@ async def send_notification(row: dict[str, Any]) -> None:
             row["tenant_name"],
             row["tenant_id"],
         )
+
+
+async def send_expiry_notification_email(
+    notification: dict,
+    subscription: dict,
+    tenant: dict,
+) -> bool:
+    """
+    Send an expiry notification email directly via SMTP.
+    Returns True on success, False if SMTP is not configured or send fails.
+    """
+    smtp_host = os.environ.get("SMTP_HOST")
+    if not smtp_host:
+        return False
+
+    to_address = os.environ.get("NOTIFICATION_EMAIL_TO")
+    if not to_address:
+        return False
+
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    use_tls = os.environ.get("SMTP_TLS", "true").lower() == "true"
+    from_address = os.environ.get("SMTP_FROM", "noreply@pulse.local")
+
+    now = datetime.now(timezone.utc)
+    term_end = subscription.get("term_end")
+    days_remaining = (term_end - now).days if isinstance(term_end, datetime) else 0
+    notification_type = str(notification.get("notification_type", "expiry"))
+    is_grace = "grace" in notification_type.lower()
+
+    grace_end_val = subscription.get("grace_end")
+    if isinstance(grace_end_val, datetime):
+        grace_end_text = grace_end_val.strftime("%Y-%m-%d")
+    else:
+        grace_end_text = str(grace_end_val or "")
+
+    template_vars = {
+        "tenant_id": tenant.get("tenant_id", ""),
+        "tenant_name": tenant.get("name", tenant.get("tenant_id", "")),
+        "subscription_id": subscription.get("subscription_id", ""),
+        "term_end": term_end.strftime("%Y-%m-%d") if isinstance(term_end, datetime) else "",
+        "grace_end": grace_end_text,
+        "status": subscription.get("status", ""),
+        "days_remaining": max(days_remaining, 0),
+    }
+
+    subject = (
+        GRACE_SUBJECT_TEMPLATE if is_grace else EXPIRY_SUBJECT_TEMPLATE
+    ).format(**template_vars)
+    html_body = (
+        GRACE_HTML_TEMPLATE if is_grace else EXPIRY_HTML_TEMPLATE
+    ).format(**template_vars)
+    text_body = EXPIRY_TEXT_TEMPLATE.format(**template_vars)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_address
+    msg["To"] = to_address
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=smtp_host,
+            port=smtp_port,
+            username=smtp_user or None,
+            password=smtp_password or None,
+            use_tls=use_tls,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Failed to send expiry email: %s", exc)
+        return False
 
 
 async def process_grace_transitions(pool: asyncpg.Pool) -> None:

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -7,6 +8,7 @@ interface PaginationControlsProps {
   totalCount: number;
   setOffset: (n: number) => void;
   setLimit: (n: number) => void;
+  showPagination?: boolean;
 }
 
 function PaginationControls({
@@ -15,7 +17,11 @@ function PaginationControls({
   totalCount,
   setOffset,
   setLimit,
+  showPagination = true,
 }: PaginationControlsProps) {
+  if (!showPagination) {
+    return null;
+  }
   return (
     <div className="flex items-center justify-between text-xs">
       <div className="flex items-center gap-2">
@@ -93,6 +99,11 @@ interface DeviceFiltersProps {
   totalCount: number;
   setOffset: (n: number) => void;
   setLimit: (n: number) => void;
+  q: string;
+  onQChange: (q: string) => void;
+  statusFilter: string;
+  onStatusFilterChange: (s: string) => void;
+  showPagination?: boolean;
 }
 
 export function DeviceFilters({
@@ -107,9 +118,95 @@ export function DeviceFilters({
   totalCount,
   setOffset,
   setLimit,
+  q,
+  onQChange,
+  statusFilter,
+  onStatusFilterChange,
+  showPagination = true,
 }: DeviceFiltersProps) {
+  const [searchText, setSearchText] = useState(q);
+
+  useEffect(() => {
+    setSearchText(q);
+  }, [q]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => onQChange(searchText), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchText, onQChange]);
+
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[280px] flex-1">
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Search by device ID, model, serial, site, or address"
+            className="h-8 w-full rounded-md border border-border bg-background px-8 pr-8 text-sm"
+            aria-label="Search devices"
+          />
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground">
+            🔍
+          </span>
+          {searchText && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                onQChange("");
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <label className="sr-only" htmlFor="device-status-filter">
+          Status filter
+        </label>
+        <select
+          id="device-status-filter"
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+          aria-label="Status filter"
+        >
+          <option value="">All statuses</option>
+          <option value="ONLINE">Online</option>
+          <option value="STALE">Stale</option>
+          <option value="OFFLINE">Offline</option>
+        </select>
+
+        <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            Online
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-yellow-500" />
+            Stale
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            Offline
+          </span>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={() => setTagFilterOpen(true)}
+          aria-label="Open tag filters"
+        >
+          Tags {selectedTags.length > 0 ? `(${selectedTags.length})` : ""}
+        </Button>
+      </div>
+
       {selectedTags.length > 0 && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
@@ -176,6 +273,7 @@ export function DeviceFilters({
         totalCount={totalCount}
         setOffset={setOffset}
         setLimit={setLimit}
+        showPagination={showPagination}
       />
     </>
   );

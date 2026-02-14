@@ -45,9 +45,12 @@ PG_PASS = os.getenv("PG_PASS", "iot_dev")
 API_RATE_LIMIT = int(os.getenv("API_RATE_LIMIT", "100"))
 API_RATE_WINDOW = int(os.getenv("API_RATE_WINDOW_SECONDS", "60"))
 WS_POLL_SECONDS = int(os.getenv("WS_POLL_SECONDS", "5"))
+WS_KEEPALIVE_SECONDS = float(os.getenv("WS_KEEPALIVE_SECONDS", "10"))
 
 
 pool: asyncpg.Pool | None = None
+_ws_notify_event = asyncio.Event()
+_ws_listener_conn: asyncpg.Connection | None = None
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -59,6 +62,70 @@ async def get_pool() -> asyncpg.Pool:
             min_size=1, max_size=5,
         )
     return pool
+
+
+def on_ws_notify(conn, pid, channel, payload):
+    """Called on device_state_changed/new_fleet_alert notifications."""
+    _ws_notify_event.set()
+
+
+async def fetch_fleet_summary_for_tenant(conn, tenant_id: str) -> dict:
+    """Fetch fleet summary payload for websocket fleet subscribers."""
+    device_rows = await conn.fetch(
+        """
+        SELECT status, COUNT(*) AS cnt
+        FROM device_state
+        WHERE tenant_id = $1
+        GROUP BY status
+        """,
+        tenant_id,
+    )
+    alert_count = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM fleet_alert
+        WHERE tenant_id = $1
+          AND status IN ('OPEN', 'ACKNOWLEDGED')
+        """,
+        tenant_id,
+    )
+    counts = {row["status"]: row["cnt"] for row in device_rows}
+    total = int(sum(counts.values()))
+    return {
+        "ONLINE": int(counts.get("ONLINE", 0)),
+        "STALE": int(counts.get("STALE", 0)),
+        "OFFLINE": int(counts.get("OFFLINE", 0)),
+        "total": total,
+        "active_alerts": int(alert_count or 0),
+    }
+
+
+async def setup_ws_listener() -> None:
+    """Create shared LISTEN connection used to wake websocket push loops."""
+    global _ws_listener_conn
+    if _ws_listener_conn is not None:
+        return
+    try:
+        _ws_listener_conn = await asyncpg.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            database=PG_DB,
+            user=PG_USER,
+            password=PG_PASS,
+        )
+        await _ws_listener_conn.add_listener("device_state_changed", on_ws_notify)
+        await _ws_listener_conn.add_listener("new_fleet_alert", on_ws_notify)
+        logger.info("[ws] LISTEN on device_state_changed + new_fleet_alert active")
+    except Exception as exc:
+        logger.warning("[ws] WARNING: LISTEN setup failed, using poll-only mode: %s", exc)
+        _ws_listener_conn = None
+
+
+async def shutdown_ws_listener() -> None:
+    global _ws_listener_conn
+    if _ws_listener_conn is not None:
+        await _ws_listener_conn.close()
+        _ws_listener_conn = None
 
 
 # --- In-memory rate limiter ---
@@ -102,22 +169,38 @@ router = APIRouter(
 # Separate router for WebSocket — no HTTP auth dependencies
 # (WebSocket auth is handled inside the endpoint via query param token)
 ws_router = APIRouter()
+VALID_DEVICE_STATUSES = {"ONLINE", "STALE", "OFFLINE"}
 
 
 @router.get("/devices")
 async def list_devices(
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    status: str | None = Query(None),
+    tags: str | None = Query(None),
+    q: str | None = Query(None, max_length=100),
+    site_id: str | None = Query(None),
 ):
     """List all devices for the authenticated tenant with full metric state."""
+    if status is not None and status.upper() not in VALID_DEVICE_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    status = status.upper() if status else None
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
     tenant_id = get_tenant_id()
     p = await get_pool()
     async with tenant_connection(p, tenant_id) as conn:
-        total = await conn.fetchval(
-            "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
+        result = await fetch_devices_v2(
+            conn,
             tenant_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+            tags=tag_list,
+            q=q,
+            site_id=site_id,
         )
-        devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
+    devices = result["devices"]
     for device in devices:
         state = device.get("state")
         if isinstance(state, dict):
@@ -135,7 +218,7 @@ async def list_devices(
         "tenant_id": tenant_id,
         "devices": devices,
         "count": len(devices),
-        "total": total or 0,
+        "total": result["total"],
         "limit": limit,
         "offset": offset,
     }))
@@ -582,7 +665,11 @@ async def _ws_push_loop(conn):
     """
     while True:
         try:
-            await asyncio.sleep(WS_POLL_SECONDS)
+            try:
+                await asyncio.wait_for(_ws_notify_event.wait(), timeout=WS_KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+            _ws_notify_event.clear()
 
             # Push telemetry for subscribed devices
             if conn.device_subscriptions:
@@ -617,6 +704,19 @@ async def _ws_push_loop(conn):
                     })
                 except Exception:
                     logger.debug("[ws] alert push failed")
+
+            # Push fleet summary
+            if conn.fleet_subscription:
+                try:
+                    p = await get_pool()
+                    async with tenant_connection(p, conn.tenant_id) as db_conn:
+                        summary = await fetch_fleet_summary_for_tenant(db_conn, conn.tenant_id)
+                    await conn.websocket.send_json({
+                        "type": "fleet_summary",
+                        "data": summary,
+                    })
+                except Exception:
+                    logger.debug("[ws] fleet summary push failed")
 
         except asyncio.CancelledError:
             raise
@@ -711,6 +811,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
                         "type": "subscribed",
                         "channel": "alerts",
                     })
+                elif sub_type == "fleet":
+                    ws_manager.subscribe_fleet(conn)
+                    await websocket.send_json({
+                        "type": "subscribed",
+                        "channel": "fleet",
+                    })
 
             elif action == "unsubscribe":
                 if sub_type == "device":
@@ -727,6 +833,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
                     await websocket.send_json({
                         "type": "unsubscribed",
                         "channel": "alerts",
+                    })
+                elif sub_type == "fleet":
+                    ws_manager.unsubscribe_fleet(conn)
+                    await websocket.send_json({
+                        "type": "unsubscribed",
+                        "channel": "fleet",
                     })
 
     except WebSocketDisconnect:

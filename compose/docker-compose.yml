@@ -30,6 +30,33 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1
+    container_name: iot-pgbouncer
+    environment:
+      DATABASE_URL: "postgres://iot:iot_dev@iot-postgres:5432/iotcloud"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_RESET_QUERY: DISCARD ALL
+      LOG_CONNECTIONS: 0
+      LOG_DISCONNECTIONS: 0
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   ingest:
     build:
       context: ../services
@@ -39,11 +66,12 @@ services:
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
       MQTT_TOPIC: "tenant/+/device/+/+"
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
       AUTO_PROVISION: "0"
       REQUIRE_TOKEN: "1"
       COUNTERS_ENABLED: "1"
@@ -68,6 +96,8 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     restart: unless-stopped
 
   evaluator:
@@ -76,11 +106,13 @@ services:
       dockerfile: evaluator_iot/Dockerfile
     container_name: iot-evaluator
     environment:
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
       POLL_SECONDS: "5"
       HEARTBEAT_STALE_SECONDS: "30"
     expose:
@@ -94,6 +126,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     restart: unless-stopped
 
   dispatcher:
@@ -102,11 +136,13 @@ services:
       dockerfile: dispatcher/Dockerfile
     container_name: iot-dispatcher
     environment:
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
       DISPATCH_POLL_SECONDS: "5"
       ALERT_LOOKBACK_MINUTES: "30"
       ALERT_LIMIT: "200"
@@ -122,6 +158,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     restart: unless-stopped
 
   delivery_worker:
@@ -130,11 +168,13 @@ services:
       dockerfile: delivery_worker/Dockerfile
     container_name: iot-delivery-worker
     environment:
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
       MODE: "${MODE:-DEV}"
       WORKER_POLL_SECONDS: "2"
       WORKER_BATCH_SIZE: "10"
@@ -154,6 +194,42 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ops_worker:
+    build:
+      context: ../services
+      dockerfile: ops_worker/Dockerfile
+    container_name: iot-ops-worker
+    environment:
+      PG_HOST: iot-pgbouncer
+      PG_PORT: "5432"
+      PG_DB: iotcloud
+      PG_USER: iot
+      PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      HEALTH_CHECK_INTERVAL: "60"
+      SYSTEM_ALERT_ENABLED: "true"
+      METRICS_COLLECTION_INTERVAL: "5"
+      INGEST_HEALTH_URL: "http://iot-ingest:8080"
+      EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
+      DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
+      DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      ingest:
+        condition: service_started
+      evaluator:
+        condition: service_started
+      dispatcher:
+        condition: service_started
+      delivery_worker:
+        condition: service_started
     restart: unless-stopped
 
   subscription-worker:
@@ -222,11 +298,12 @@ services:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
     environment:
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
       PROVISION_ADMIN_KEY: "change-me-now"
@@ -256,6 +333,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
       api:
         condition: service_started
     restart: unless-stopped
@@ -264,17 +343,20 @@ services:
     build: ../services/provision_api
     container_name: iot-api
     environment:
-      PG_HOST: iot-postgres
+      PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: iot_dev
+      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
       ADMIN_KEY: "change-me-now"
       ACTIVATION_TTL_MINUTES: "60"
     ports:
       - "8081:8081"
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
     restart: unless-stopped
 

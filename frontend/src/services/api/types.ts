@@ -38,7 +38,7 @@ export interface Device {
 export interface DeviceListResponse {
   tenant_id: string;
   devices: Device[];
-  count: number;
+  count?: number;
   total: number;
   limit: number;
   offset: number;
@@ -50,6 +50,9 @@ export interface DeviceDetailResponse {
 }
 
 export interface DeviceUpdate {
+  name?: string | null;
+  site_id?: string | null;
+  tags?: string[] | null;
   latitude?: number | null;
   longitude?: number | null;
   address?: string | null;
@@ -111,15 +114,20 @@ export interface AllTagsResponse {
 }
 
 export interface FleetSummary {
-  total_devices: number;
-  online: number;
-  stale: number;
-  offline: number;
-  alerts_open: number;
-  alerts_new_1h: number;
-  low_battery_count: number;
-  low_battery_threshold: number;
-  low_battery_devices: string[];
+  ONLINE: number;
+  STALE: number;
+  OFFLINE: number;
+  total: number;
+  // Legacy dashboard fields (optional while pages converge).
+  total_devices?: number;
+  online?: number;
+  stale?: number;
+  offline?: number;
+  alerts_open?: number;
+  alerts_new_1h?: number;
+  low_battery_count?: number;
+  low_battery_threshold?: number;
+  low_battery_devices?: string[];
 }
 
 // Alert types
@@ -127,21 +135,30 @@ export interface Alert {
   alert_id: number;
   tenant_id: string;
   device_id: string;
+  site_id?: string;
   alert_type: string;
   severity: number;
+  confidence?: number;
   summary: string;
   status: string;
   created_at: string;
   fingerprint: string;
   details: Record<string, unknown> | null;
   closed_at: string | null;
+  silenced_until?: string | null;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  escalation_level?: number;
+  escalated_at?: string | null;
 }
 
 export interface AlertListResponse {
   tenant_id: string;
   alerts: Alert[];
-  count: number;
-  status: string;
+  count?: number;
+  total: number;
+  status?: string;
+  status_filter?: string;
   limit: number;
   offset: number;
 }
@@ -156,13 +173,19 @@ export interface AlertRule {
   rule_id: number;
   tenant_id: string;
   name: string;
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
   metric_name: string;
   operator: string;
   threshold: number;
   severity: number;
+  duration_seconds: number;
   enabled: boolean;
   description: string | null;
   site_ids: string[] | null;
+  group_ids?: string[] | null;
+  conditions?: RuleConditions | null;
+  anomaly_conditions?: AnomalyConditions | null;
+  gap_conditions?: TelemetryGapConditions | null;
   created_at: string;
   updated_at: string;
 }
@@ -189,24 +212,60 @@ export interface TelemetryResponse {
 // Alert rule mutation types
 export interface AlertRuleCreate {
   name: string;
-  metric_name: string;
-  operator: "GT" | "LT" | "GTE" | "LTE";
-  threshold: number;
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
+  metric_name?: string;
+  operator?: "GT" | "LT" | "GTE" | "LTE";
+  threshold?: number;
   severity?: number;
+  duration_seconds?: number;
   description?: string | null;
   site_ids?: string[] | null;
+  group_ids?: string[] | null;
+  conditions?: RuleConditions | null;
+  anomaly_conditions?: AnomalyConditions | null;
+  gap_conditions?: TelemetryGapConditions | null;
   enabled?: boolean;
 }
 
 export interface AlertRuleUpdate {
   name?: string;
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
   metric_name?: string;
   operator?: "GT" | "LT" | "GTE" | "LTE";
   threshold?: number;
   severity?: number;
+  duration_seconds?: number;
   description?: string | null;
   site_ids?: string[] | null;
+  group_ids?: string[] | null;
+  conditions?: RuleConditions | null;
+  anomaly_conditions?: AnomalyConditions | null;
+  gap_conditions?: TelemetryGapConditions | null;
   enabled?: boolean;
+}
+
+export interface RuleCondition {
+  metric_name: string;
+  operator: "GT" | "LT" | "GTE" | "LTE";
+  threshold: number;
+}
+
+export interface RuleConditions {
+  combinator: "AND" | "OR";
+  conditions: RuleCondition[];
+}
+
+export interface AnomalyConditions {
+  metric_name: string;
+  window_minutes: number;
+  z_threshold: number;
+  min_samples: number;
+}
+
+export interface TelemetryGapConditions {
+  metric_name: string;
+  gap_minutes: number;
+  min_expected_per_hour?: number;
 }
 
 export interface RawMetricReference {
@@ -275,6 +334,7 @@ export interface WebhookIntegration {
   tenant_id: string;
   name: string;
   url: string;
+  body_template?: string | null;
   enabled: boolean;
   created_at: string;
 }
@@ -282,12 +342,14 @@ export interface WebhookIntegration {
 export interface WebhookIntegrationCreate {
   name: string;
   webhook_url: string;
+  body_template?: string | null;
   enabled?: boolean;
 }
 
 export interface WebhookIntegrationUpdate {
   name?: string;
   webhook_url?: string;
+  body_template?: string | null;
   enabled?: boolean;
 }
 
@@ -358,6 +420,8 @@ export interface EmailIntegration {
   from_address: string;
   recipient_count: number;
   template_format: "html" | "text";
+  subject_template?: string | null;
+  body_template?: string | null;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -433,6 +497,7 @@ export interface MqttIntegrationUpdate {
 // Test delivery response (shared across integration types)
 export interface TestDeliveryResult {
   success: boolean;
+  http_status?: number | null;
   integration_id?: string;
   integration_name?: string;
   destination?: string;

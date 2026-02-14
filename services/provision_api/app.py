@@ -9,14 +9,17 @@ import asyncpg
 import logging
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+from shared.logging import configure_logging, log_event
 
-logger = logging.getLogger(__name__)
+configure_logging("provision_api")
+logger = logging.getLogger("provision_api")
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 ADMIN_KEY = os.getenv("ADMIN_KEY", "change-me-now")
 ACTIVATION_TTL_MINUTES = int(os.getenv("ACTIVATION_TTL_MINUTES", "60"))
@@ -52,10 +55,13 @@ def normalize_config_json(value) -> dict:
 async def get_pool() -> asyncpg.Pool:
     global pool
     if pool is None:
-        pool = await asyncpg.create_pool(
-            host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-            min_size=1, max_size=5
-        )
+        if DATABASE_URL:
+            pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+        else:
+            pool = await asyncpg.create_pool(
+                host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
+                min_size=2, max_size=10, command_timeout=30
+            )
     return pool
 
 DDL = """
@@ -117,6 +123,7 @@ async def startup():
 
 def require_admin(x_admin_key: str | None):
     if x_admin_key is None or x_admin_key != ADMIN_KEY:
+        log_event(logger, "provision attempt failed", level="WARNING", reason="invalid_admin_key")
         raise HTTPException(status_code=401, detail="Unauthorized (missing/invalid X-Admin-Key)")
 
 # -------------------------
@@ -232,6 +239,13 @@ async def admin_create_device(payload: AdminCreateDevice, x_admin_key: str | Non
             payload.tenant_id, payload.device_id, activation_hash, payload.site_id, expires_at
         )
 
+    log_event(
+        logger,
+        "device provisioned",
+        tenant_id=payload.tenant_id,
+        device_id=payload.device_id,
+        site_id=payload.site_id,
+    )
     return AdminCreateDeviceResponse(
         tenant_id=payload.tenant_id,
         device_id=payload.device_id,
@@ -329,6 +343,7 @@ async def admin_rotate_token(tenant_id: str, device_id: str, x_admin_key: str | 
             tenant_id, device_id, token_hash
         )
 
+    log_event(logger, "device token rotated", tenant_id=tenant_id, device_id=device_id)
     return AdminRotateTokenResponse(tenant_id=tenant_id, device_id=device_id, new_provision_token=new_token)
 
 @app.post("/api/admin/integrations", response_model=AdminIntegrationResponse)
@@ -353,6 +368,13 @@ async def admin_create_integration(payload: AdminCreateIntegration, x_admin_key:
             json.dumps(config)
         )
 
+    log_event(
+        logger,
+        "integration created",
+        tenant_id=payload.tenant_id,
+        integration_id=str(row["integration_id"]),
+        integration_type="webhook",
+    )
     cfg = normalize_config_json(row["config_json"])
     return AdminIntegrationResponse(
         tenant_id=row["tenant_id"],
@@ -447,6 +469,13 @@ async def admin_create_route(payload: AdminCreateRoute, x_admin_key: str | None 
             payload.priority,
         )
 
+    log_event(
+        logger,
+        "integration route created",
+        tenant_id=payload.tenant_id,
+        route_id=str(row["route_id"]),
+        integration_id=str(payload.integration_id),
+    )
     return AdminRouteResponse(
         tenant_id=row["tenant_id"],
         route_id=str(row["route_id"]),
@@ -540,12 +569,39 @@ async def device_activate(payload: DeviceActivateRequest):
         )
 
         if row is None:
+            log_event(
+                logger,
+                "provision attempt failed",
+                level="WARNING",
+                reason="invalid_activation_code",
+                tenant_id=payload.tenant_id,
+                device_id=payload.device_id,
+                activation_code_prefix=payload.activation_code[:4] + "...",
+            )
             raise HTTPException(status_code=400, detail="Invalid activation code")
 
         if row["used_at"] is not None:
+            log_event(
+                logger,
+                "provision attempt failed",
+                level="WARNING",
+                reason="activation_code_used",
+                tenant_id=payload.tenant_id,
+                device_id=payload.device_id,
+                activation_code_prefix=payload.activation_code[:4] + "...",
+            )
             raise HTTPException(status_code=400, detail="Activation code already used")
 
         if now_utc() > row["expires_at"]:
+            log_event(
+                logger,
+                "provision attempt failed",
+                level="WARNING",
+                reason="activation_code_expired",
+                tenant_id=payload.tenant_id,
+                device_id=payload.device_id,
+                activation_code_prefix=payload.activation_code[:4] + "...",
+            )
             raise HTTPException(status_code=400, detail="Activation code expired")
 
         # issue new provision token
@@ -577,4 +633,10 @@ async def device_activate(payload: DeviceActivateRequest):
             payload.tenant_id, payload.device_id, token_hash
         )
 
+    log_event(
+        logger,
+        "device activated",
+        tenant_id=payload.tenant_id,
+        device_id=payload.device_id,
+    )
     return DeviceActivateResponse(tenant_id=payload.tenant_id, device_id=payload.device_id, provision_token=token)

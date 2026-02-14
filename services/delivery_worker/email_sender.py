@@ -10,6 +10,7 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
+from jinja2 import Environment, BaseLoader, TemplateError
 
 logger = logging.getLogger(__name__)
 
@@ -94,15 +95,35 @@ Timestamp: {timestamp}
 This alert was sent by OpsConductor Pulse.
 """
 
+_jinja_env = Environment(loader=BaseLoader(), autoescape=False)
 
-def render_template(template: str, **kwargs) -> str:
-    """Render a template with the given variables."""
+
+def severity_label_for(value: object) -> str:
     try:
-        kwargs["severity_lower"] = kwargs.get("severity", "info").lower()
-        return template.format(**kwargs)
-    except KeyError as e:
-        logger.warning(f"Template variable not found: {e}")
-        return template
+        severity = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "UNKNOWN"
+    return {0: "CRITICAL", 1: "CRITICAL", 2: "WARNING", 3: "INFO"}.get(severity, "UNKNOWN")
+
+
+def render_template(template_str: str, variables: dict | None = None, **kwargs) -> str:
+    """Render a template with Jinja2; fallback to legacy format style."""
+    context = dict(variables or {})
+    context.update(kwargs)
+    try:
+        tmpl = _jinja_env.from_string(template_str)
+        rendered = tmpl.render(**context)
+    except TemplateError as exc:
+        logger.warning("Template render error: %s", exc)
+        return template_str
+
+    # Keep runtime compatibility with legacy {var} templates without mutating stored config.
+    if "{{" not in template_str and "}}" not in template_str:
+        try:
+            rendered = rendered.format(**context)
+        except Exception:
+            pass
+    return rendered
 
 
 async def send_alert_email(
@@ -140,20 +161,26 @@ async def send_alert_email(
             "message": message,
             "alert_type": alert_type,
             "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
+            "site_id": "",
+            "summary": message,
+            "status": "OPEN",
+            "details": {},
         }
+        template_vars["severity_lower"] = str(template_vars.get("severity", "info")).lower()
+        template_vars["severity_label"] = severity_label_for(template_vars.get("severity"))
 
-        subject = render_template(subject_template or DEFAULT_SUBJECT_TEMPLATE, **template_vars)
+        subject = render_template(subject_template or DEFAULT_SUBJECT_TEMPLATE, template_vars)
 
         if body_template:
-            body = render_template(body_template, **template_vars)
+            body = render_template(body_template, template_vars)
         elif body_format == "html":
-            body = render_template(DEFAULT_HTML_TEMPLATE, **template_vars)
+            body = render_template(DEFAULT_HTML_TEMPLATE, template_vars)
         else:
-            body = render_template(DEFAULT_TEXT_TEMPLATE, **template_vars)
+            body = render_template(DEFAULT_TEXT_TEMPLATE, template_vars)
 
         if body_format == "html":
             msg = MIMEMultipart("alternative")
-            text_body = render_template(DEFAULT_TEXT_TEMPLATE, **template_vars)
+            text_body = render_template(DEFAULT_TEXT_TEMPLATE, template_vars)
             msg.attach(MIMEText(text_body, "plain"))
             msg.attach(MIMEText(body, "html"))
         else:

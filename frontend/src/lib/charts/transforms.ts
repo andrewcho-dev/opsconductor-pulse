@@ -98,6 +98,9 @@ export function getTimeRangeStart(range: string): string {
     case "7d":
       now.setDate(now.getDate() - 7);
       break;
+    case "30d":
+      now.setDate(now.getDate() - 30);
+      break;
     default:
       now.setHours(now.getHours() - 1);
   }
@@ -110,6 +113,7 @@ export const TIME_RANGES = [
   { value: "6h", label: "6 Hours" },
   { value: "24h", label: "24 Hours" },
   { value: "7d", label: "7 Days" },
+  { value: "30d", label: "30 Days" },
 ] as const;
 
 export type TimeRange = (typeof TIME_RANGES)[number]["value"];

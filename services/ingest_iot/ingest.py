@@ -8,6 +8,7 @@ from typing import Optional
 import asyncpg
 import paho.mqtt.client as mqtt
 from aiohttp import web
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
@@ -17,6 +18,8 @@ from shared.ingest_core import (
     TelemetryRecord,
 )
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.logging import configure_logging, log_event
+from shared.metrics import ingest_messages_total, ingest_queue_depth
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -27,6 +30,7 @@ PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 AUTO_PROVISION = os.getenv("AUTO_PROVISION", "0") == "1"
 REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
@@ -52,6 +56,8 @@ COUNTERS = {
 }
 INGESTOR_REF: Optional["Ingestor"] = None
 logger = logging.getLogger(__name__)
+configure_logging("ingest")
+logger = logging.getLogger("ingest")
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -69,6 +75,7 @@ async def health_handler(request):
         COUNTERS["messages_received"] = INGESTOR_REF.msg_received
         COUNTERS["messages_rejected"] = INGESTOR_REF.msg_dropped
         COUNTERS["queue_depth"] = INGESTOR_REF.queue.qsize()
+        ingest_queue_depth.set(INGESTOR_REF.queue.qsize())
         if INGESTOR_REF.batch_writer is not None:
             stats = INGESTOR_REF.batch_writer.get_stats()
             COUNTERS["messages_written"] = stats.get("records_written", 0)
@@ -87,14 +94,19 @@ async def health_handler(request):
     )
 
 
+async def metrics_handler(_request):
+    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
+
+
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
-    print("[health] ingest health server started on port 8080")
+    log_event(logger, "health server started", service_port=8080)
 
 def topic_extract(topic: str):
     parts = topic.split("/")
@@ -357,10 +369,18 @@ class Ingestor:
     async def init_db(self):
         for attempt in range(60):
             try:
-                self.pool = await asyncpg.create_pool(
-                    host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-                    min_size=2, max_size=10
-                )
+                if DATABASE_URL:
+                    self.pool = await asyncpg.create_pool(
+                        dsn=DATABASE_URL,
+                        min_size=2,
+                        max_size=10,
+                        command_timeout=30,
+                    )
+                else:
+                    self.pool = await asyncpg.create_pool(
+                        host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
+                        min_size=2, max_size=10, command_timeout=30
+                    )
                 async with self.pool.acquire() as conn:
                     for stmt in DDL.strip().split(";"):
                         s = stmt.strip()
@@ -432,14 +452,29 @@ class Ingestor:
             }
             if self.batch_writer is not None:
                 batch_stats = self.batch_writer.get_stats()
-            print(
-                f"[stats] received={self.msg_received} enqueued={self.msg_enqueued} dropped={self.msg_dropped} "
-                f"qsize={self.queue.qsize()} mode={self.mode} store_rejects={int(self.store_rejects)} mirror_rejects={int(self.mirror_rejects)} "
-                f"max_payload_bytes={self.max_payload_bytes} rps={self.rps} burst={self.burst} "
-                f"auth_cache_hits={cache_stats['hits']} auth_cache_misses={cache_stats['misses']} auth_cache_size={cache_stats['size']} "
-                f"ts_written={batch_stats['records_written']} ts_errors={batch_stats['write_errors']} "
-                f"ts_flushes={batch_stats['batches_flushed']} ts_pending={batch_stats['pending_records']} "
-                f"workers={INGEST_WORKER_COUNT} queue_max={INGEST_QUEUE_SIZE} queue_depth={self.queue.qsize()}"
+            log_event(
+                logger,
+                "ingest stats",
+                level="DEBUG",
+                received=self.msg_received,
+                enqueued=self.msg_enqueued,
+                dropped=self.msg_dropped,
+                queue_depth=self.queue.qsize(),
+                mode=self.mode,
+                store_rejects=int(self.store_rejects),
+                mirror_rejects=int(self.mirror_rejects),
+                max_payload_bytes=self.max_payload_bytes,
+                rps=self.rps,
+                burst=self.burst,
+                auth_cache_hits=cache_stats["hits"],
+                auth_cache_misses=cache_stats["misses"],
+                auth_cache_size=cache_stats["size"],
+                ts_written=batch_stats["records_written"],
+                ts_errors=batch_stats["write_errors"],
+                ts_flushes=batch_stats["batches_flushed"],
+                ts_pending=batch_stats["pending_records"],
+                workers=INGEST_WORKER_COUNT,
+                queue_max=INGEST_QUEUE_SIZE,
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -459,7 +494,18 @@ class Ingestor:
 
     async def _insert_quarantine(self, topic, tenant_id, site_id, device_id, msg_type, reason, payload, event_ts):
         _counter_inc("messages_rejected")
+        result = "rate_limited" if reason == "RATE_LIMITED" else "rejected"
+        ingest_messages_total.labels(tenant_id=tenant_id or "unknown", result=result).inc()
         await self._inc_counter(tenant_id, reason)
+        log_event(
+            logger,
+            "message quarantined",
+            level="WARNING",
+            reason=reason,
+            tenant_id=tenant_id,
+            device_id=device_id,
+            msg_type=msg_type,
+        )
 
         audit = get_audit_logger()
         if audit and tenant_id:
@@ -678,6 +724,16 @@ class Ingestor:
                 )
                 COUNTERS["last_write_at"] = utcnow().isoformat()
                 await self.batch_writer.add(record)
+                ingest_messages_total.labels(tenant_id=tenant_id, result="accepted").inc()
+                metrics = payload.get("metrics", {}) or {}
+                log_event(
+                    logger,
+                    "telemetry accepted",
+                    tenant_id=tenant_id,
+                    device_id=device_id,
+                    msg_type=msg_type,
+                    metrics_count=len(metrics),
+                )
 
                 lat_value = payload.get("lat")
                 if lat_value is None:
@@ -712,7 +768,6 @@ class Ingestor:
                             )
                 audit = get_audit_logger()
                 if audit:
-                    metrics = payload.get("metrics", {}) or {}
                     audit.device_telemetry(
                         tenant_id,
                         device_id,
@@ -731,7 +786,7 @@ class Ingestor:
                 self.queue.task_done()
 
     def on_connect(self, client, userdata, flags, rc):
-        print(f"[mqtt] connected rc={rc} subscribe={MQTT_TOPIC}")
+        log_event(logger, "mqtt connected", rc=rc, topic=MQTT_TOPIC)
         client.subscribe(MQTT_TOPIC)
 
     def on_message(self, client, userdata, msg):
@@ -745,16 +800,19 @@ class Ingestor:
             logger.warning("Invalid JSON in MQTT message: %s", exc)
             self.msg_dropped += 1
             _counter_inc("messages_rejected")
+            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
             return
         except UnicodeDecodeError as exc:
             logger.warning("Invalid encoding in MQTT message: %s", exc)
             self.msg_dropped += 1
             _counter_inc("messages_rejected")
+            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
             return
 
         if self.loop is None:
             self.msg_dropped += 1
             _counter_inc("messages_rejected")
+            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
             return
 
         def _enqueue():
@@ -764,6 +822,7 @@ class Ingestor:
             except asyncio.QueueFull:
                 self.msg_dropped += 1
                 _counter_inc("messages_rejected")
+                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
 
         self.loop.call_soon_threadsafe(_enqueue)
 

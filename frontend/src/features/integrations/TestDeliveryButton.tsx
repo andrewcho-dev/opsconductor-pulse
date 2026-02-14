@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { ApiError } from "@/services/api/client";
 
 interface TestDeliveryButtonProps {
-  onTest: () => Promise<unknown>;
+  onTest: () => Promise<{ success: boolean; http_status?: number | null; latency_ms?: number; error?: string }>;
   disabled?: boolean;
 }
 
@@ -48,20 +48,25 @@ export function TestDeliveryButton({ onTest, disabled }: TestDeliveryButtonProps
     setStatus("idle");
     setMessage("");
     try {
-      await onTest();
-      setStatus("success");
-      setMessage("Delivered");
+      const result = await onTest();
+      if (result.success) {
+        setStatus("success");
+        setMessage(`\u2713 Test sent - HTTP ${result.http_status ?? "?"} in ${result.latency_ms ?? 0}ms`);
+      } else {
+        setStatus("error");
+        setMessage(`\u2717 Failed - ${result.error ?? `HTTP ${result.http_status ?? "unknown"}`}`);
+      }
       timerRef.current = window.setTimeout(() => {
         setStatus("idle");
         setMessage("");
-      }, 3000);
+      }, 10000);
     } catch (err) {
       setStatus("error");
       setMessage(formatError(err));
       timerRef.current = window.setTimeout(() => {
         setStatus("idle");
         setMessage("");
-      }, 5000);
+      }, 10000);
     } finally {
       setIsTesting(false);
     }

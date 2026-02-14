@@ -205,6 +205,7 @@ export default function DeviceDetailPage() {
       <WidgetErrorBoundary widgetName="Telemetry Charts">
         <div className="h-[calc(100vh-320px)]">
           <TelemetryChartsSection
+            deviceId={deviceId || ""}
             metrics={metrics}
             points={points}
             isLoading={telemetryLoading}

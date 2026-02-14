@@ -1,7 +1,7 @@
 /** Messages sent FROM client TO server */
 export interface WsSubscribeMessage {
   action: "subscribe" | "unsubscribe";
-  type: "alerts" | "device";
+  type: "alerts" | "device" | "fleet";
   device_id?: string;
 }
 
@@ -43,15 +43,28 @@ export interface WsErrorMessage {
   message: string;
 }
 
+export interface WsFleetSummaryMessage {
+  type: "fleet_summary";
+  data: {
+    ONLINE: number;
+    STALE: number;
+    OFFLINE: number;
+    total: number;
+    active_alerts: number;
+  };
+}
+
 export type WsServerMessage =
   | WsAlertMessage
   | WsTelemetryMessage
+  | WsFleetSummaryMessage
   | WsSubscribedMessage
   | WsErrorMessage;
 
 /** Message bus topics */
 export type MessageTopic =
   | "alerts"
+  | "fleet"
   | `telemetry:${string}`
   | "connection"
   | "error";

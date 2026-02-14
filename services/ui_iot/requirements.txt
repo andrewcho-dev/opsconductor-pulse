@@ -17,3 +17,5 @@ pyasn1>=0.4.8,<0.6.0
 aiosmtplib>=3.0.0
 email-validator
 paho-mqtt>=2.0.0
+prometheus_client>=0.20.0
+slowapi>=0.1.9

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -37,6 +39,7 @@ import type {
   EmailIntegrationUpdate,
 } from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
+import { fetchTemplateVariables } from "@/services/api/integrations";
 import { DeleteIntegrationDialog } from "./DeleteIntegrationDialog";
 import { TestDeliveryButton } from "./TestDeliveryButton";
 
@@ -87,8 +90,17 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
   const [subjectTemplate, setSubjectTemplate] = useState(
     "[{severity}] {alert_type}: {device_id}"
   );
+  const [bodyTemplate, setBodyTemplate] = useState("");
   const [format, setFormat] = useState<EmailFormat>("html");
   const [enabled, setEnabled] = useState(true);
+  const [focusedTemplateField, setFocusedTemplateField] = useState<"subject" | "body">("body");
+  const [subjectCursor, setSubjectCursor] = useState(0);
+  const [bodyCursor, setBodyCursor] = useState(0);
+  const templateVars = useQuery({
+    queryKey: ["integration-template-vars", integration?.id],
+    queryFn: () => fetchTemplateVariables(integration?.id || ""),
+    enabled: !!integration?.id,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -103,7 +115,8 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
       setFromName("OpsConductor Alerts");
       setToRecipients("");
       setCcRecipients("");
-      setSubjectTemplate("[{severity}] {alert_type}: {device_id}");
+      setSubjectTemplate(integration.subject_template || "[{severity}] {alert_type}: {device_id}");
+      setBodyTemplate(integration.body_template || "");
       setFormat(integration.template_format);
       setEnabled(integration.enabled);
     } else {
@@ -118,6 +131,7 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
       setToRecipients("");
       setCcRecipients("");
       setSubjectTemplate("[{severity}] {alert_type}: {device_id}");
+      setBodyTemplate("");
       setFormat("html");
       setEnabled(true);
     }
@@ -156,6 +170,7 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
         },
         template: {
           subject_template: subjectTemplate,
+          body_template: bodyTemplate || undefined,
           format,
         },
         enabled,
@@ -206,9 +221,14 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
         cc: ccList.length ? ccList : undefined,
       };
     }
-    if (subjectTemplate || format !== integration.template_format) {
+    if (
+      subjectTemplate !== (integration.subject_template || "[{severity}] {alert_type}: {device_id}")
+      || bodyTemplate !== (integration.body_template || "")
+      || format !== integration.template_format
+    ) {
       updates.template = {
         subject_template: subjectTemplate,
+        body_template: bodyTemplate || undefined,
         format,
       };
     }
@@ -332,6 +352,9 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
                 id="subject-template"
                 value={subjectTemplate}
                 onChange={(e) => setSubjectTemplate(e.target.value)}
+                onFocus={() => setFocusedTemplateField("subject")}
+                onClick={(e) => setSubjectCursor((e.target as HTMLInputElement).selectionStart ?? 0)}
+                onKeyUp={(e) => setSubjectCursor((e.target as HTMLInputElement).selectionStart ?? 0)}
                 placeholder="[{severity}] {alert_type}: {device_id}"
               />
             </div>
@@ -347,6 +370,19 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="body-template">Body Template</Label>
+            <Textarea
+              id="body-template"
+              value={bodyTemplate}
+              onChange={(e) => setBodyTemplate(e.target.value)}
+              onFocus={() => setFocusedTemplateField("body")}
+              onClick={(e) => setBodyCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+              onKeyUp={(e) => setBodyCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+              placeholder="{{ summary }}"
+              rows={6}
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-md border border-border p-3">
@@ -369,12 +405,47 @@ function EmailDialog({ open, onClose, integration }: EmailDialogProps) {
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
 
-          <div className="rounded-md border border-border p-3">
-            <Label className="text-sm">Template variables</Label>
-            <p className="text-xs text-muted-foreground">
-              Use variables like {"{severity}"}, {"{alert_type}"}, {"{device_id}"}, {"{message}"}, {"{timestamp}"}.
-            </p>
-          </div>
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Variables Reference</summary>
+            <div className="mt-2 space-y-2">
+              {templateVars.data?.variables?.map((v) => (
+                <div key={v.name} className="flex items-center justify-between gap-2 text-xs">
+                  <span>
+                    {`{{ ${v.name} }}`} - {v.description}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const token = `{{ ${v.name} }}`;
+                      if (focusedTemplateField === "subject") {
+                        const at = subjectCursor;
+                        const next = `${subjectTemplate.slice(0, at)}${token}${subjectTemplate.slice(at)}`;
+                        setSubjectTemplate(next);
+                        setSubjectCursor(at + token.length);
+                        return;
+                      }
+                      const at = bodyCursor;
+                      const next = `${bodyTemplate.slice(0, at)}${token}${bodyTemplate.slice(at)}`;
+                      setBodyTemplate(next);
+                      setBodyCursor(at + token.length);
+                    }}
+                  >
+                    Insert
+                  </Button>
+                </div>
+              ))}
+              {templateVars.isLoading ? (
+                <p className="text-xs text-muted-foreground">Loading variables...</p>
+              ) : null}
+              {!integration?.id ? (
+                <p className="text-xs text-muted-foreground">
+                  Save integration first to load variables.
+                </p>
+              ) : null}
+            </div>
+          </details>
 
           {errorMessage && <div className="text-sm text-destructive">{errorMessage}</div>}
 

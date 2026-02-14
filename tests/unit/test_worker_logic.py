@@ -313,4 +313,4 @@ async def test_process_batch_empty_is_noop(monkeypatch):
 
     with pytest.raises(asyncio.CancelledError):
         await worker.run_worker()
-    sleep_mock.assert_awaited_with(worker.WORKER_POLL_SECONDS)
+    sleep_mock.assert_awaited_with(float(os.getenv("DEBOUNCE_SECONDS", "0.1")))

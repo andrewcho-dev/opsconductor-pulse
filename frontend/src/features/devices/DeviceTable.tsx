@@ -33,12 +33,16 @@ interface DeviceTableProps {
   devices: Device[];
   selectedTagsCount: number;
   onOpenTagFilter: () => void;
+  onEdit?: (device: Device) => void;
+  onDecommission?: (device: Device) => void;
 }
 
 export function DeviceTable({
   devices,
   selectedTagsCount,
   onOpenTagFilter,
+  onEdit,
+  onDecommission,
 }: DeviceTableProps) {
   return (
     <div className="rounded-md border border-border overflow-hidden">
@@ -55,6 +59,7 @@ export function DeviceTable({
               Tags {selectedTagsCount > 0 && `(${selectedTagsCount})`}
             </TableHead>
             <TableHead className="h-7 py-1 px-2">Last Seen</TableHead>
+            <TableHead className="h-7 py-1 px-2">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -74,6 +79,16 @@ export function DeviceTable({
               </TableCell>
               <TableCell className="py-1 px-2 text-muted-foreground whitespace-nowrap font-mono">
                 {d.last_seen_at ? formatTimestamp(d.last_seen_at) : "—"}
+              </TableCell>
+              <TableCell className="py-1 px-2">
+                <div className="flex items-center gap-2">
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => onEdit?.(d)}>
+                    Edit
+                  </button>
+                  <button type="button" className="text-xs text-destructive hover:underline" onClick={() => onDecommission?.(d)}>
+                    Decommission
+                  </button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

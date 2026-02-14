@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchDevices, fetchDevice } from "@/services/api/devices";
+import {
+  fetchDevices,
+  fetchDevice,
+  type DeviceListParams,
+} from "@/services/api/devices";
+import { useFleetSummaryWS } from "./use-fleet-summary-ws";
 
-export function useDevices(limit = 100, offset = 0) {
+export function useDevices(params: DeviceListParams = {}) {
   return useQuery({
-    queryKey: ["devices", limit, offset],
-    queryFn: () => fetchDevices(limit, offset),
+    queryKey: ["devices", params],
+    queryFn: () => fetchDevices(params),
   });
 }
 
@@ -14,4 +19,8 @@ export function useDevice(deviceId: string) {
     queryFn: () => fetchDevice(deviceId),
     enabled: !!deviceId,
   });
+}
+
+export function useFleetSummary() {
+  return useFleetSummaryWS();
 }

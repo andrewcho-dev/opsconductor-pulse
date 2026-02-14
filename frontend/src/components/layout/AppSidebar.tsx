@@ -34,9 +34,12 @@ import {
 
 const customerNav = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Sites", href: "/sites", icon: Building2 },
   { label: "Devices", href: "/devices", icon: Cpu },
+  { label: "Device Groups", href: "/device-groups", icon: Cpu },
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
+  { label: "Maintenance", href: "/maintenance-windows", icon: ShieldAlert },
   { label: "Activity Log", href: "/activity-log", icon: ScrollText },
   { label: "Metrics", href: "/metrics", icon: Gauge },
   { label: "Subscription", href: "/subscription", icon: CreditCard },
@@ -45,6 +48,7 @@ const customerNav = [
 
 const integrationNav = [
   { label: "Webhooks", href: "/integrations/webhooks", icon: Webhook },
+  { label: "Delivery Log", href: "/delivery-log", icon: Activity },
   { label: "SNMP", href: "/integrations/snmp", icon: Network },
   { label: "Email", href: "/integrations/email", icon: Mail },
   { label: "MQTT", href: "/integrations/mqtt", icon: Radio },
@@ -52,12 +56,13 @@ const integrationNav = [
 
 const operatorNav = [
   { label: "Overview", href: "/operator", icon: Monitor },
+  { label: "System Metrics", href: "/operator/system-metrics", icon: Gauge },
   { label: "All Devices", href: "/operator/devices", icon: Server },
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
-  { label: "Users", href: "/operator/users", icon: Users },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
   { label: "System", href: "/operator/system", icon: Activity },
-  { label: "Activity Log", href: "/operator/audit-log", icon: ScrollText },
+  { label: "Users", href: "/operator/users", icon: Users },
+  { label: "Audit Log", href: "/operator/audit-log", icon: ScrollText },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
 

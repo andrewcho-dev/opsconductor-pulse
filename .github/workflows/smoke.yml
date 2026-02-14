@@ -1,0 +1,52 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          pip install -r services/ui_iot/requirements.txt
+          pip install -r requirements-test.txt
+          playwright install chromium
+
+      - name: Start compose stack
+        run: docker compose -f compose/docker-compose.yml up -d --wait
+        timeout-minutes: 5
+
+      - name: Wait for services healthy
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            echo "Waiting... $i"
+            sleep 2
+          done
+
+      - name: Run smoke tests
+        env:
+          RUN_E2E: "true"
+          UI_BASE_URL: "http://localhost:8080"
+          KEYCLOAK_URL: "http://localhost:8180"
+          E2E_BASE_URL: "http://localhost:8080"
+        run: pytest -m "e2e and smoke" -v --timeout=30 tests/e2e/test_smoke.py
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f compose/docker-compose.yml logs --tail=100
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f compose/docker-compose.yml down -v

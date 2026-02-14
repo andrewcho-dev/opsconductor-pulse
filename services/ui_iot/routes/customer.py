@@ -1,16 +1,22 @@
 import logging
+import os
 import re
 from datetime import datetime, timezone, timedelta
+import time
 import json
+import csv
+import io
 import uuid
 from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 from starlette.requests import Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer, get_user
@@ -48,6 +54,7 @@ from db.queries import (
     fetch_delivery_attempts,
     fetch_device,
     fetch_devices_v2,
+    fetch_fleet_summary,
     fetch_integration,
     fetch_integration_route,
     fetch_integration_routes,
@@ -66,8 +73,29 @@ from dependencies import get_db_pool
 from shared.utils import check_delete_result, validate_uuid
 from dependencies import get_db_pool
 
+# PHASE 44b DIAGNOSIS — Operator Format:
+# DB constraint allows: '>', '<', '>=', '<=', '==', '!='
+# API VALID_OPERATORS: {'GT', 'LT', 'GTE', 'LTE'}
+# Evaluator expects: GT/LT/GTE/LTE (named form) in evaluate_threshold()
+# Currently stored in DB: '<' and '>' (from SELECT DISTINCT operator)
+# Translation layer: evaluator maps named -> symbols for display/SQL comparisons
+#   (OPERATOR_SYMBOLS and check_duration_window op_map), but there is no write-path
+#   translation between API payload and alert_rules.operator storage.
+# Decision: make named form canonical in DB constraint (prompt 002).
+
 
 logger = logging.getLogger(__name__)
+
+
+def get_rate_limit_key(request: Request) -> str:
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        return str(tenant_id)
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=get_rate_limit_key, headers_enabled=True)
+CUSTOMER_RATE_LIMIT = os.environ.get("RATE_LIMIT_CUSTOMER", "100/minute")
 
 
 
@@ -103,12 +131,14 @@ METRIC_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 class IntegrationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     webhook_url: str = Field(..., min_length=1)
+    body_template: str | None = None
     enabled: bool = True
 
 
 class IntegrationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     webhook_url: str | None = None
+    body_template: str | None = None
     enabled: bool | None = None
 
 
@@ -126,9 +156,89 @@ class RouteUpdate(BaseModel):
 
 
 VALID_OPERATORS = {"GT", "LT", "GTE", "LTE"}
+VALID_DEVICE_STATUSES = {"ONLINE", "STALE", "OFFLINE"}
+ALERT_RULE_TEMPLATES = [
+    {"template_id": "temp_high", "device_type": "temperature", "name": "High Temperature",
+     "metric_name": "temperature", "operator": "GT", "threshold": 85.0, "severity": 1,
+     "duration_seconds": 60, "description": "Temperature exceeds 85°C for 60s"},
+    {"template_id": "temp_low", "device_type": "temperature", "name": "Low Temperature",
+     "metric_name": "temperature", "operator": "LT", "threshold": -10.0, "severity": 1,
+     "duration_seconds": 60, "description": "Temperature below -10°C for 60s"},
+    {"template_id": "humidity_high", "device_type": "humidity", "name": "High Humidity",
+     "metric_name": "humidity", "operator": "GT", "threshold": 90.0, "severity": 2,
+     "duration_seconds": 120, "description": "Humidity exceeds 90% for 120s"},
+    {"template_id": "humidity_low", "device_type": "humidity", "name": "Low Humidity",
+     "metric_name": "humidity", "operator": "LT", "threshold": 10.0, "severity": 2,
+     "duration_seconds": 120, "description": "Humidity below 10% for 120s"},
+    {"template_id": "pressure_high", "device_type": "pressure", "name": "High Pressure",
+     "metric_name": "pressure", "operator": "GT", "threshold": 1100.0, "severity": 2,
+     "duration_seconds": 0, "description": "Pressure exceeds 1100 hPa"},
+    {"template_id": "pressure_low", "device_type": "pressure", "name": "Low Pressure",
+     "metric_name": "pressure", "operator": "LT", "threshold": 900.0, "severity": 2,
+     "duration_seconds": 0, "description": "Pressure below 900 hPa"},
+    {"template_id": "vibration_high", "device_type": "vibration", "name": "High Vibration",
+     "metric_name": "vibration", "operator": "GT", "threshold": 5.0, "severity": 1,
+     "duration_seconds": 30, "description": "Vibration exceeds 5 m/s² for 30s"},
+    {"template_id": "power_high", "device_type": "power", "name": "High Power Usage",
+     "metric_name": "power", "operator": "GT", "threshold": 95.0, "severity": 2,
+     "duration_seconds": 300, "description": "Power usage >95% for 5 minutes"},
+    {"template_id": "power_loss", "device_type": "power", "name": "Power Loss",
+     "metric_name": "power", "operator": "LT", "threshold": 5.0, "severity": 3,
+     "duration_seconds": 300, "description": "Power below 5% for 5 minutes"},
+    {"template_id": "flow_low", "device_type": "flow", "name": "Low Flow Rate",
+     "metric_name": "flow", "operator": "LT", "threshold": 1.0, "severity": 2,
+     "duration_seconds": 120, "description": "Flow rate below 1 unit for 120s"},
+    {"template_id": "level_high", "device_type": "level", "name": "High Level",
+     "metric_name": "level", "operator": "GT", "threshold": 90.0, "severity": 1,
+     "duration_seconds": 60, "description": "Level exceeds 90% for 60s"},
+    {"template_id": "level_low", "device_type": "level", "name": "Low Level",
+     "metric_name": "level", "operator": "LT", "threshold": 10.0, "severity": 1,
+     "duration_seconds": 60, "description": "Level below 10% for 60s"},
+]
+TEST_PAYLOAD = {
+    "test": True,
+    "alert_id": 0,
+    "site_id": "test-site",
+    "device_id": "test-device",
+    "alert_type": "TEST",
+    "severity": 3,
+    "summary": "This is a test notification from OpsConductor/Pulse",
+    "status": "OPEN",
+    "created_at": None,
+}
+VALID_TELEMETRY_RANGES = {
+    "1h": ("1 hour", "1 minute"),
+    "6h": ("6 hours", "5 minutes"),
+    "24h": ("24 hours", "15 minutes"),
+    "7d": ("7 days", "1 hour"),
+    "30d": ("30 days", "6 hours"),
+}
+EXPORT_RANGES = {
+    "1h": "1 hour",
+    "6h": "6 hours",
+    "24h": "24 hours",
+    "7d": "7 days",
+    "30d": "30 days",
+}
+TEMPLATE_VARIABLES = [
+    {"name": "alert_id", "type": "integer", "description": "Numeric alert ID"},
+    {"name": "device_id", "type": "string", "description": "Device identifier"},
+    {"name": "site_id", "type": "string", "description": "Site identifier"},
+    {"name": "tenant_id", "type": "string", "description": "Tenant identifier"},
+    {"name": "severity", "type": "integer", "description": "Severity level (0=critical, 3=info)"},
+    {"name": "severity_label", "type": "string", "description": "Severity label: CRITICAL, WARNING, INFO"},
+    {"name": "alert_type", "type": "string", "description": "Alert type: THRESHOLD, NO_HEARTBEAT, etc."},
+    {"name": "summary", "type": "string", "description": "Alert summary text"},
+    {"name": "status", "type": "string", "description": "Alert status: OPEN, ACKNOWLEDGED, CLOSED"},
+    {"name": "created_at", "type": "string", "description": "ISO 8601 creation timestamp"},
+    {"name": "details", "type": "object", "description": "Alert details (JSONB dict)"},
+]
 
 
 class DeviceUpdate(BaseModel):
+    name: str | None = None
+    site_id: str | None = None
+    tags: list[str] | None = None
     latitude: float | None = None
     longitude: float | None = None
     address: str | None = None
@@ -154,6 +264,37 @@ class TagListUpdate(BaseModel):
     tags: list[str]
 
 
+class DeviceGroupCreate(BaseModel):
+    group_id: str | None = None
+    name: str = Field(..., min_length=1, max_length=128)
+    description: str | None = None
+
+
+class DeviceGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = None
+
+
+class MaintenanceWindowCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    starts_at: datetime
+    ends_at: datetime | None = None
+    recurring: dict | None = None
+    site_ids: list[str] | None = None
+    device_types: list[str] | None = None
+    enabled: bool = True
+
+
+class MaintenanceWindowUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    recurring: dict | None = None
+    site_ids: list[str] | None = None
+    device_types: list[str] | None = None
+    enabled: bool | None = None
+
+
 class RenewalRequest(BaseModel):
     subscription_id: str
     plan_id: Optional[str] = None
@@ -162,26 +303,75 @@ class RenewalRequest(BaseModel):
     devices_to_deactivate: Optional[List[str]] = None
 
 
+class ApplyTemplatesRequest(BaseModel):
+    template_ids: list[str]
+    site_ids: list[str] | None = None
+
+
 class AlertRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    metric_name: str = Field(..., min_length=1, max_length=100)
-    operator: str = Field(...)
-    threshold: float
+    rule_type: Literal["threshold", "anomaly", "telemetry_gap"] = "threshold"
+    metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    operator: str | None = None
+    threshold: float | None = None
     severity: int = Field(default=3, ge=1, le=5)
+    duration_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Seconds threshold must be continuously breached before alert fires. 0 = immediate.",
+    )
     description: str | None = None
     site_ids: list[str] | None = None
+    group_ids: list[str] | None = None
+    conditions: "RuleConditions | None" = None
+    anomaly_conditions: "AnomalyConditions | None" = None
+    gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool = True
 
 
 class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    rule_type: Literal["threshold", "anomaly", "telemetry_gap"] | None = None
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
     operator: str | None = None
     threshold: float | None = None
     severity: int | None = Field(default=None, ge=1, le=5)
+    duration_seconds: int | None = Field(default=None, ge=0)
     description: str | None = None
     site_ids: list[str] | None = None
+    group_ids: list[str] | None = None
+    conditions: "RuleConditions | None" = None
+    anomaly_conditions: "AnomalyConditions | None" = None
+    gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool | None = None
+
+
+class RuleCondition(BaseModel):
+    metric_name: str
+    operator: Literal["GT", "LT", "GTE", "LTE"]
+    threshold: float
+
+
+class RuleConditions(BaseModel):
+    combinator: Literal["AND", "OR"] = "AND"
+    conditions: List[RuleCondition] = Field(..., min_length=1, max_length=10)
+
+
+class AnomalyConditions(BaseModel):
+    metric_name: str
+    window_minutes: int = Field(60, ge=5, le=1440)
+    z_threshold: float = Field(3.0, ge=1.0, le=10.0)
+    min_samples: int = Field(10, ge=3, le=1000)
+
+
+class TelemetryGapConditions(BaseModel):
+    metric_name: str
+    gap_minutes: int = Field(10, ge=1, le=1440)
+    min_expected_per_hour: int | None = Field(default=None, ge=1)
+
+
+AlertRuleCreate.model_rebuild()
+AlertRuleUpdate.model_rebuild()
 
 
 class MetricCatalogUpsert(BaseModel):
@@ -218,6 +408,11 @@ class MetricMappingUpdate(BaseModel):
     multiplier: float | None = None
     offset_value: float | None = None
 
+
+class SilenceRequest(BaseModel):
+    minutes: int = Field(..., ge=1, le=1440)
+
+
 async def require_customer_admin(request: Request):
     user = get_user()
     realm_access = user.get("realm_access", {}) or {}
@@ -238,7 +433,7 @@ def _validate_name(name: str) -> str:
     return cleaned
 
 
-ALERT_TYPES = {"NO_HEARTBEAT", "THRESHOLD"}
+ALERT_TYPES = {"NO_HEARTBEAT", "THRESHOLD", "ANOMALY", "NO_TELEMETRY"}
 SEVERITIES = {"CRITICAL", "WARNING", "INFO"}
 
 
@@ -262,6 +457,40 @@ def _normalize_list(values: list[str] | None, allowed: set[str], field_name: str
     if not cleaned:
         raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
     return cleaned
+
+
+def _normalize_optional_ids(values: list[str] | None, field_name: str) -> list[str] | None:
+    if values is None:
+        return None
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        item = str(value).strip()
+        if not item:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        cleaned.append(item)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
+    return cleaned
+
+
+def _with_rule_conditions(rule: dict) -> dict:
+    result = dict(rule)
+    if result.get("rule_type") == "anomaly":
+        result["anomaly_conditions"] = result.get("conditions")
+        result["gap_conditions"] = None
+    elif result.get("rule_type") == "telemetry_gap":
+        result["anomaly_conditions"] = None
+        result["gap_conditions"] = result.get("conditions")
+    else:
+        result["anomaly_conditions"] = None
+        result["gap_conditions"] = None
+    return result
 
 
 def _normalize_json(value) -> dict:
@@ -342,16 +571,40 @@ async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
 
 
 @router.get("/devices")
+@limiter.limit(CUSTOMER_RATE_LIMIT)
 async def list_devices(
-    limit: int = Query(100, ge=1, le=500),
+    request: Request,
+    response: Response,
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    status: str | None = Query(None),
+    tags: str | None = Query(None),
+    q: str | None = Query(None, max_length=100),
+    site_id: str | None = Query(None),
+    include_decommissioned: bool = Query(False),
     pool=Depends(get_db_pool),
 ):
+    if status is not None and status.upper() not in VALID_DEVICE_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    status = status.upper() if status else None
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
     tenant_id = get_tenant_id()
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
-            devices = await fetch_devices_v2(conn, tenant_id, limit=limit, offset=offset)
+            result = await fetch_devices_v2(
+                conn,
+                tenant_id,
+                limit=limit,
+                offset=offset,
+                status=status,
+                tags=tag_list,
+                q=q,
+                site_id=site_id,
+                include_decommissioned=include_decommissioned,
+            )
+            devices = result["devices"]
             if devices:
                 device_ids = [device["device_id"] for device in devices]
                 rows = await conn.fetch(
@@ -382,9 +635,108 @@ async def list_devices(
     return {
         "tenant_id": tenant_id,
         "devices": devices,
+        "total": result["total"],
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/sites", dependencies=[Depends(require_customer)])
+async def list_sites(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                s.site_id,
+                s.name,
+                s.location,
+                s.latitude,
+                s.longitude,
+                COUNT(DISTINCT dr.device_id) AS device_count,
+                COUNT(DISTINCT dr.device_id) FILTER (WHERE COALESCE(ds.status, 'OFFLINE') = 'ONLINE') AS online_count,
+                COUNT(DISTINCT dr.device_id) FILTER (WHERE COALESCE(ds.status, 'OFFLINE') = 'STALE') AS stale_count,
+                COUNT(DISTINCT dr.device_id) FILTER (WHERE COALESCE(ds.status, 'OFFLINE') = 'OFFLINE') AS offline_count,
+                COUNT(DISTINCT a.id) FILTER (WHERE a.status IN ('OPEN', 'ACKNOWLEDGED')) AS active_alert_count
+            FROM sites s
+            LEFT JOIN device_registry dr
+              ON dr.site_id = s.site_id AND dr.tenant_id = s.tenant_id
+            LEFT JOIN device_state ds
+              ON ds.device_id = dr.device_id AND ds.tenant_id = dr.tenant_id
+            LEFT JOIN fleet_alert a
+              ON a.site_id = s.site_id AND a.tenant_id = s.tenant_id
+            WHERE s.tenant_id = $1
+            GROUP BY s.site_id, s.name, s.location, s.latitude, s.longitude
+            ORDER BY s.name
+            """,
+            tenant_id,
+        )
+    return {"sites": [dict(row) for row in rows], "total": len(rows)}
+
+
+@router.get("/sites/{site_id}/summary", dependencies=[Depends(require_customer)])
+async def get_site_summary(site_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        site = await conn.fetchrow(
+            "SELECT site_id, name, location FROM sites WHERE tenant_id = $1 AND site_id = $2",
+            tenant_id,
+            site_id,
+        )
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+
+        devices = await conn.fetch(
+            """
+            SELECT
+                dr.device_id,
+                COALESCE(dr.model, dr.device_id) AS name,
+                COALESCE(ds.status, 'OFFLINE') AS status,
+                dr.device_type,
+                ds.last_seen_at
+            FROM device_registry dr
+            LEFT JOIN device_state ds
+              ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+            WHERE dr.tenant_id = $1 AND dr.site_id = $2
+              AND dr.decommissioned_at IS NULL
+            ORDER BY name
+            """,
+            tenant_id,
+            site_id,
+        )
+
+        alerts = await conn.fetch(
+            """
+            SELECT id, alert_type, severity, summary, status, created_at
+            FROM fleet_alert
+            WHERE tenant_id = $1 AND site_id = $2 AND status IN ('OPEN', 'ACKNOWLEDGED')
+            ORDER BY severity ASC, created_at DESC
+            LIMIT 20
+            """,
+            tenant_id,
+            site_id,
+        )
+
+    return {
+        "site": dict(site),
+        "devices": [dict(device) for device in devices],
+        "active_alerts": [dict(alert) for alert in alerts],
+        "device_count": len(devices),
+        "active_alert_count": len(alerts),
+    }
+
+
+@router.get("/devices/summary")
+async def get_fleet_summary(pool=Depends(get_db_pool)):
+    """Fleet status summary: counts of ONLINE/STALE/OFFLINE devices."""
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            summary = await fetch_fleet_summary(conn, tenant_id)
+    except Exception:
+        logger.exception("Failed to fetch fleet summary")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return summary
 
 
 @router.delete("/devices/{device_id}")
@@ -463,6 +815,130 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
         "events": events,
         "telemetry": telemetry,
     }
+
+
+@router.get("/devices/{device_id}/telemetry/history", dependencies=[Depends(require_customer)])
+async def get_telemetry_history(
+    device_id: str,
+    metric: str = Query(...),
+    range: str = Query("24h"),
+    pool=Depends(get_db_pool),
+):
+    if range not in VALID_TELEMETRY_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid range. Must be one of: {list(VALID_TELEMETRY_RANGES.keys())}",
+        )
+
+    tenant_id = get_tenant_id()
+    lookback, bucket = VALID_TELEMETRY_RANGES[range]
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                time_bucket($1::interval, time) AS bucket,
+                AVG((metrics->>$2)::numeric) AS avg_val,
+                MIN((metrics->>$2)::numeric) AS min_val,
+                MAX((metrics->>$2)::numeric) AS max_val,
+                COUNT(*) AS sample_count
+            FROM telemetry
+            WHERE tenant_id = $3
+              AND device_id = $4
+              AND time > now() - $5::interval
+              AND metrics ? $2
+            GROUP BY bucket
+            ORDER BY bucket ASC
+            """,
+            bucket,
+            metric,
+            tenant_id,
+            device_id,
+            lookback,
+        )
+
+    return {
+        "device_id": device_id,
+        "metric": metric,
+        "range": range,
+        "bucket_size": bucket,
+        "points": [
+            {
+                "time": row["bucket"].isoformat(),
+                "avg": float(row["avg_val"]) if row["avg_val"] is not None else None,
+                "min": float(row["min_val"]) if row["min_val"] is not None else None,
+                "max": float(row["max_val"]) if row["max_val"] is not None else None,
+                "count": row["sample_count"],
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.get("/devices/{device_id}/telemetry/export", dependencies=[Depends(require_customer)])
+async def export_telemetry_csv(
+    device_id: str,
+    range: str = Query("24h"),
+    limit: int = Query(5000, ge=1, le=10000),
+    pool=Depends(get_db_pool),
+):
+    if range not in EXPORT_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid range. Must be one of: {list(EXPORT_RANGES.keys())}",
+        )
+
+    tenant_id = get_tenant_id()
+    lookback = EXPORT_RANGES[range]
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT time, device_id, site_id, seq, metrics
+            FROM telemetry
+            WHERE tenant_id = $1
+              AND device_id = $2
+              AND time > now() - $3::interval
+            ORDER BY time ASC
+            LIMIT $4
+            """,
+            tenant_id,
+            device_id,
+            lookback,
+            limit,
+        )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    if not rows:
+        writer.writerow(["time", "device_id", "site_id", "seq"])
+    else:
+        metric_keys = sorted(
+            {
+                key
+                for row in rows
+                for key in ((row["metrics"] or {}).keys())
+            }
+        )
+        headers = ["time", "device_id", "site_id", "seq", *metric_keys]
+        writer.writerow(headers)
+        for row in rows:
+            metrics = row["metrics"] or {}
+            writer.writerow(
+                [
+                    row["time"].isoformat(),
+                    row["device_id"],
+                    row["site_id"] or "",
+                    row["seq"],
+                    *[metrics.get(k, "") for k in metric_keys],
+                ]
+            )
+    output.seek(0)
+    filename = f"{device_id}_telemetry_{range}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/subscriptions")
@@ -803,6 +1279,10 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided")
 
+    tags_update = update_data.pop("tags", None)
+    if "name" in update_data:
+        update_data["model"] = update_data.pop("name")
+
     if update_data.get("address") and not (
         update_data.get("latitude") is not None and update_data.get("longitude") is not None
     ):
@@ -814,6 +1294,7 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
         update_data["location_source"] = "manual"
 
     fields = [
+        "site_id",
         "latitude",
         "longitude",
         "address",
@@ -864,6 +1345,23 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
             if not row:
                 raise HTTPException(status_code=404, detail="Device not found")
 
+            if tags_update is not None:
+                normalized_tags = _normalize_tags(tags_update)
+                await conn.execute(
+                    "DELETE FROM device_tags WHERE tenant_id = $1 AND device_id = $2",
+                    tenant_id,
+                    device_id,
+                )
+                if normalized_tags:
+                    await conn.executemany(
+                        """
+                        INSERT INTO device_tags (tenant_id, device_id, tag)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [(tenant_id, device_id, tag) for tag in normalized_tags],
+                    )
+
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
@@ -874,6 +1372,30 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"tenant_id": tenant_id, "device": device}
+
+
+@router.patch("/devices/{device_id}/decommission", dependencies=[Depends(require_customer)])
+async def decommission_device(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE device_registry
+                SET decommissioned_at = now(), status = 'REVOKED'
+                WHERE tenant_id = $1 AND device_id = $2 AND decommissioned_at IS NULL
+                RETURNING device_id, decommissioned_at
+                """,
+                tenant_id,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to decommission device")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Device not found or already decommissioned")
+    return {"device_id": row["device_id"], "decommissioned_at": row["decommissioned_at"].isoformat()}
 
 
 def _normalize_tags(tags: list[str]) -> list[str]:
@@ -1057,6 +1579,332 @@ async def list_tags(pool=Depends(get_db_pool)):
     return {"tenant_id": tenant_id, "tags": [r["tag"] for r in rows]}
 
 
+@router.get("/device-groups")
+async def list_device_groups(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT g.group_id, g.name, g.description, g.created_at,
+                       COUNT(m.device_id)::int AS member_count
+                FROM device_groups g
+                LEFT JOIN device_group_members m
+                    ON m.tenant_id = g.tenant_id AND m.group_id = g.group_id
+                WHERE g.tenant_id = $1
+                GROUP BY g.group_id, g.name, g.description, g.created_at
+                ORDER BY g.name
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch device groups")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"groups": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.post("/device-groups", status_code=201)
+async def create_device_group(body: DeviceGroupCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    group_id = (body.group_id or f"grp-{uuid.uuid4().hex[:8]}").strip()
+    if not group_id:
+        raise HTTPException(status_code=400, detail="Invalid group_id")
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO device_groups (tenant_id, group_id, name, description)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (tenant_id, group_id) DO NOTHING
+                RETURNING group_id, name, description, created_at, updated_at
+                """,
+                tenant_id,
+                group_id,
+                body.name.strip(),
+                body.description,
+            )
+    except Exception:
+        logger.exception("Failed to create device group")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=409, detail="Group ID already exists")
+    return dict(row)
+
+
+@router.patch("/device-groups/{group_id}")
+async def update_device_group(group_id: str, body: DeviceGroupUpdate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "name" in updates:
+        updates["name"] = str(updates["name"]).strip()
+        if not updates["name"]:
+            raise HTTPException(status_code=400, detail="Invalid name")
+
+    set_parts = [f"{field} = ${idx + 2}" for idx, field in enumerate(updates.keys())]
+    params = [tenant_id] + list(updates.values()) + [group_id]
+    set_clause = ", ".join(set_parts) + ", updated_at = now()"
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE device_groups
+                SET {set_clause}
+                WHERE tenant_id = $1 AND group_id = ${len(params)}
+                RETURNING group_id, tenant_id, name, description, created_at, updated_at
+                """,
+                *params,
+            )
+    except Exception:
+        logger.exception("Failed to update device group")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return dict(row)
+
+
+@router.delete("/device-groups/{group_id}")
+async def delete_device_group(group_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                DELETE FROM device_groups
+                WHERE tenant_id = $1 AND group_id = $2
+                RETURNING group_id
+                """,
+                tenant_id,
+                group_id,
+            )
+    except Exception:
+        logger.exception("Failed to delete device group")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return {"group_id": group_id, "deleted": True}
+
+
+@router.get("/device-groups/{group_id}/devices")
+async def list_group_members(group_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    dr.device_id,
+                    COALESCE(dr.metadata->>'name', dr.device_id) AS name,
+                    COALESCE(ds.status, 'UNKNOWN') AS status,
+                    dr.site_id,
+                    m.added_at
+                FROM device_group_members m
+                JOIN device_registry dr
+                    ON dr.tenant_id = m.tenant_id AND dr.device_id = m.device_id
+                LEFT JOIN device_state ds
+                    ON ds.tenant_id = m.tenant_id AND ds.device_id = m.device_id
+                WHERE m.tenant_id = $1 AND m.group_id = $2
+                ORDER BY name, dr.device_id
+                """,
+                tenant_id,
+                group_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch group members")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"group_id": group_id, "members": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.put("/device-groups/{group_id}/devices/{device_id}")
+async def add_group_member(group_id: str, device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            group = await conn.fetchrow(
+                "SELECT group_id FROM device_groups WHERE tenant_id = $1 AND group_id = $2",
+                tenant_id,
+                group_id,
+            )
+            if not group:
+                raise HTTPException(status_code=404, detail="Group not found")
+            device_exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not device_exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+            await conn.execute(
+                """
+                INSERT INTO device_group_members (tenant_id, group_id, device_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT DO NOTHING
+                """,
+                tenant_id,
+                group_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to add group member")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"group_id": group_id, "device_id": device_id, "action": "added"}
+
+
+@router.delete("/device-groups/{group_id}/devices/{device_id}")
+async def remove_group_member(group_id: str, device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                DELETE FROM device_group_members
+                WHERE tenant_id = $1 AND group_id = $2 AND device_id = $3
+                RETURNING device_id
+                """,
+                tenant_id,
+                group_id,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to remove group member")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Device not in group")
+    return {"group_id": group_id, "device_id": device_id, "action": "removed"}
+
+
+@router.get("/maintenance-windows")
+async def list_maintenance_windows(pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT *
+                FROM alert_maintenance_windows
+                WHERE tenant_id = $1
+                ORDER BY starts_at DESC
+                """,
+                tenant_id,
+            )
+    except Exception:
+        logger.exception("Failed to fetch maintenance windows")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"windows": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.post("/maintenance-windows", status_code=201)
+async def create_maintenance_window(body: MaintenanceWindowCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    window_id = f"mw-{uuid.uuid4().hex[:8]}"
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO alert_maintenance_windows
+                    (tenant_id, window_id, name, starts_at, ends_at, recurring, site_ids, device_types, enabled)
+                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
+                RETURNING *
+                """,
+                tenant_id,
+                window_id,
+                body.name,
+                body.starts_at,
+                body.ends_at,
+                json.dumps(body.recurring) if body.recurring is not None else None,
+                _normalize_optional_ids(body.site_ids, "site_ids"),
+                _normalize_optional_ids(body.device_types, "device_types"),
+                body.enabled,
+            )
+    except Exception:
+        logger.exception("Failed to create maintenance window")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return dict(row)
+
+
+@router.patch("/maintenance-windows/{window_id}")
+async def update_maintenance_window(
+    window_id: str,
+    body: MaintenanceWindowUpdate,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "site_ids" in updates:
+        updates["site_ids"] = _normalize_optional_ids(updates["site_ids"], "site_ids")
+    if "device_types" in updates:
+        updates["device_types"] = _normalize_optional_ids(updates["device_types"], "device_types")
+    if "recurring" in updates:
+        updates["recurring"] = json.dumps(updates["recurring"])
+
+    set_parts: list[str] = []
+    params: list = [tenant_id]
+    idx = 2
+    for key, value in updates.items():
+        cast = "::jsonb" if key == "recurring" else ""
+        set_parts.append(f"{key} = ${idx}{cast}")
+        params.append(value)
+        idx += 1
+    params.append(window_id)
+    set_clause = ", ".join(set_parts)
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE alert_maintenance_windows
+                SET {set_clause}
+                WHERE tenant_id = $1 AND window_id = ${len(params)}
+                RETURNING *
+                """,
+                *params,
+            )
+    except Exception:
+        logger.exception("Failed to update maintenance window")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Window not found")
+    return dict(row)
+
+
+@router.delete("/maintenance-windows/{window_id}")
+async def delete_maintenance_window(window_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        p = pool
+        async with tenant_connection(p, tenant_id) as conn:
+            row = await conn.fetchrow(
+                """
+                DELETE FROM alert_maintenance_windows
+                WHERE tenant_id = $1 AND window_id = $2
+                RETURNING window_id
+                """,
+                tenant_id,
+                window_id,
+            )
+    except Exception:
+        logger.exception("Failed to delete maintenance window")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Window not found")
+    return {"window_id": window_id, "deleted": True}
+
+
 @router.get("/geocode")
 async def geocode_address_endpoint(address: str = Query(..., min_length=3)):
     """Geocode an address using Nominatim (proxied to avoid CORS)."""
@@ -1089,21 +1937,54 @@ async def geocode_address_endpoint(address: str = Query(..., min_length=3)):
 
 
 @router.get("/alerts")
+@limiter.limit(CUSTOMER_RATE_LIMIT)
 async def list_alerts(
-    status: str = Query("OPEN"),
-    limit: int = Query(100, ge=1, le=500),
+    request: Request,
+    response: Response,
+    status: str = Query("OPEN"),  # OPEN | ACKNOWLEDGED | CLOSED | ALL
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     pool=Depends(get_db_pool),
 ):
+    valid = {"OPEN", "ACKNOWLEDGED", "CLOSED", "ALL"}
+    status_filter = status.upper()
+    if status_filter not in valid:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
     tenant_id = get_tenant_id()
     try:
-        p = pool
-        async with tenant_connection(p, tenant_id) as conn:
-            alerts = await fetch_alerts(conn, tenant_id, status=status, limit=limit)
+        where = "tenant_id = $1" if status_filter == "ALL" else "tenant_id = $1 AND status = $2"
+        params = [tenant_id] if status_filter == "ALL" else [tenant_id, status_filter]
+        async with tenant_connection(pool, tenant_id) as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT id AS alert_id, tenant_id, created_at, closed_at, device_id, site_id, alert_type,
+                       fingerprint, status, severity, confidence, summary, details,
+                       silenced_until, acknowledged_by, acknowledged_at,
+                       escalation_level, escalated_at
+                FROM fleet_alert
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT {limit} OFFSET {offset}
+                """,
+                *params,
+            )
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM fleet_alert WHERE {where}",
+                *params,
+            )
     except Exception:
         logger.exception("Failed to fetch tenant alerts")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return {"tenant_id": tenant_id, "alerts": alerts, "status": status, "limit": limit}
+    return {
+        "tenant_id": tenant_id,
+        "alerts": [dict(r) for r in rows],
+        "total": int(total or 0),
+        "status_filter": status_filter,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/alerts/{alert_id}")
@@ -1130,6 +2011,126 @@ async def get_alert(alert_id: str, pool=Depends(get_db_pool)):
         raise HTTPException(status_code=404, detail="Alert not found")
 
     return {"tenant_id": tenant_id, "alert": dict(row)}
+
+
+@router.patch("/alerts/{alert_id}/acknowledge", dependencies=[Depends(require_customer)])
+async def acknowledge_alert(alert_id: str, request: Request, pool=Depends(get_db_pool)):
+    try:
+        alert_id_int = int(alert_id)
+        if alert_id_int <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid alert_id")
+
+    tenant_id = get_tenant_id()
+    user = get_user() or {}
+    user_ref = user.get("email") or user.get("preferred_username") or user.get("sub", "unknown")
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE fleet_alert
+            SET status = 'ACKNOWLEDGED',
+                acknowledged_by = $3,
+                acknowledged_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
+            RETURNING id, status
+            """,
+            tenant_id,
+            alert_id_int,
+            user_ref,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Alert not found or not OPEN")
+
+    logger.info(
+        "alert acknowledged",
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "tenant_id": tenant_id,
+            "alert_id": alert_id_int,
+            "acknowledged_by": user_ref,
+        },
+    )
+    return {"alert_id": alert_id, "status": "ACKNOWLEDGED", "acknowledged_by": user_ref}
+
+
+@router.patch("/alerts/{alert_id}/close", dependencies=[Depends(require_customer)])
+async def close_alert_endpoint(alert_id: str, request: Request, pool=Depends(get_db_pool)):
+    try:
+        alert_id_int = int(alert_id)
+        if alert_id_int <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid alert_id")
+
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE fleet_alert
+            SET status = 'CLOSED', closed_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN', 'ACKNOWLEDGED')
+            RETURNING id, status
+            """,
+            tenant_id,
+            alert_id_int,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Alert not found or already closed")
+
+    logger.info(
+        "alert closed",
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "tenant_id": tenant_id,
+            "alert_id": alert_id_int,
+        },
+    )
+    return {"alert_id": alert_id, "status": "CLOSED"}
+
+
+@router.patch("/alerts/{alert_id}/silence", dependencies=[Depends(require_customer)])
+async def silence_alert(
+    alert_id: str,
+    body: SilenceRequest,
+    request: Request,
+    pool=Depends(get_db_pool),
+):
+    try:
+        alert_id_int = int(alert_id)
+        if alert_id_int <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid alert_id")
+
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE fleet_alert
+            SET silenced_until = now() + ($3 || ' minutes')::interval
+            WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN', 'ACKNOWLEDGED')
+            RETURNING id, silenced_until
+            """,
+            tenant_id,
+            alert_id_int,
+            str(body.minutes),
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Alert not found or closed")
+
+    silenced_until = row["silenced_until"]
+    logger.info(
+        "alert silenced",
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "tenant_id": tenant_id,
+            "alert_id": alert_id_int,
+            "minutes": body.minutes,
+            "silenced_until": silenced_until.isoformat() if silenced_until else None,
+        },
+    )
+    return {"alert_id": alert_id, "silenced_until": silenced_until.isoformat()}
 
 
 @router.get("/integrations")
@@ -1822,6 +2823,8 @@ async def list_email_integrations(pool=Depends(get_db_pool)):
                 from_address=email_config.get("from_address", ""),
                 recipient_count=len(email_recipients.get("to", [])),
                 template_format=email_template.get("format", "html"),
+                subject_template=email_template.get("subject_template"),
+                body_template=email_template.get("body_template"),
                 enabled=row["enabled"],
                 created_at=row["created_at"].isoformat(),
                 updated_at=row["updated_at"].isoformat(),
@@ -1870,6 +2873,8 @@ async def get_email_integration(integration_id: str, pool=Depends(get_db_pool)):
         from_address=email_config.get("from_address", ""),
         recipient_count=len(email_recipients.get("to", [])),
         template_format=email_template.get("format", "html"),
+        subject_template=email_template.get("subject_template"),
+        body_template=email_template.get("body_template"),
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
@@ -1942,6 +2947,8 @@ async def create_email_integration(data: EmailIntegrationCreate, pool=Depends(ge
         from_address=email_config.get("from_address", ""),
         recipient_count=len(email_recipients.get("to", [])),
         template_format=email_template.get("format", "html"),
+        subject_template=email_template.get("subject_template"),
+        body_template=email_template.get("body_template"),
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
@@ -2064,6 +3071,8 @@ async def update_email_integration(integration_id: str, data: EmailIntegrationUp
         from_address=email_config.get("from_address", ""),
         recipient_count=len(email_recipients.get("to", [])),
         template_format=email_template.get("format", "html"),
+        subject_template=email_template.get("subject_template"),
+        body_template=email_template.get("body_template"),
         enabled=row["enabled"],
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
@@ -2441,6 +3450,7 @@ async def create_integration_route(body: IntegrationCreate, pool=Depends(get_db_
                 tenant_id=tenant_id,
                 name=name,
                 webhook_url=body.webhook_url,
+                body_template=body.body_template,
                 enabled=body.enabled,
             )
     except Exception:
@@ -2469,7 +3479,7 @@ async def get_integration(integration_id: str, pool=Depends(get_db_pool)):
 @router.patch("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
 async def patch_integration(integration_id: str, body: IntegrationUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
-    if body.name is None and body.webhook_url is None and body.enabled is None:
+    if body.name is None and body.webhook_url is None and body.body_template is None and body.enabled is None:
         raise HTTPException(status_code=400, detail="No fields to update")
 
     name = _validate_name(body.name) if body.name is not None else None
@@ -2487,6 +3497,7 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate, pool=D
                 integration_id=integration_id,
                 name=name,
                 webhook_url=body.webhook_url,
+                body_template=body.body_template,
                 enabled=body.enabled,
             )
     except Exception:
@@ -2496,6 +3507,26 @@ async def patch_integration(integration_id: str, body: IntegrationUpdate, pool=D
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
     return integration
+
+
+@router.get("/integrations/{integration_id}/template-variables", dependencies=[Depends(require_customer)])
+async def get_template_variables(integration_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            "SELECT integration_id, type FROM integrations WHERE tenant_id=$1 AND integration_id=$2",
+            tenant_id,
+            integration_id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    return {
+        "integration_id": integration_id,
+        "type": row["type"],
+        "variables": TEMPLATE_VARIABLES,
+        "syntax": "Jinja2 - use {{ variable_name }} syntax",
+        "example": "Alert {{ alert_id }}: {{ severity_label }} - {{ summary }}",
+    }
 
 
 @router.delete("/integrations/{integration_id}", dependencies=[Depends(require_customer_admin)])
@@ -2813,6 +3844,63 @@ async def test_integration_delivery(integration_id: str, pool=Depends(get_db_poo
         }
 
 
+@router.post("/integrations/{integration_id}/test-send", dependencies=[Depends(require_customer)])
+async def test_send_integration(integration_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT integration_id, type, config_json, enabled
+            FROM integrations
+            WHERE tenant_id = $1 AND integration_id = $2
+            """,
+            tenant_id,
+            integration_id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    if row["type"] != "webhook":
+        raise HTTPException(status_code=400, detail="Test send only supported for webhook integrations")
+    if not row["enabled"]:
+        raise HTTPException(status_code=400, detail="Integration is disabled")
+
+    config = row["config_json"] or {}
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except Exception:
+            config = {}
+    url = config.get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="Webhook URL not configured")
+
+    valid, reason = await validate_webhook_url(url, allow_http=True)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Webhook URL blocked: {reason}")
+
+    headers = config.get("headers", {})
+    payload = {**TEST_PAYLOAD, "created_at": datetime.now(timezone.utc).isoformat()}
+
+    start = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "success": resp.status_code < 400,
+            "http_status": resp.status_code,
+            "latency_ms": latency_ms,
+        }
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "success": False,
+            "http_status": None,
+            "latency_ms": latency_ms,
+            "error": str(exc),
+        }
+
+
 @router.get("/integration-routes")
 async def list_integration_routes(limit: int = Query(100, ge=1, le=500), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
@@ -2927,6 +4015,69 @@ async def delete_integration_route_endpoint(route_id: str, pool=Depends(get_db_p
     return Response(status_code=204)
 
 
+@router.get("/alert-rule-templates", dependencies=[Depends(require_customer)])
+async def list_alert_rule_templates(device_type: str | None = Query(None)):
+    templates = ALERT_RULE_TEMPLATES
+    if device_type:
+        templates = [tmpl for tmpl in templates if tmpl["device_type"] == device_type]
+    return {"templates": templates, "total": len(templates)}
+
+
+@router.post("/alert-rule-templates/apply", dependencies=[Depends(require_customer)])
+@limiter.limit(CUSTOMER_RATE_LIMIT)
+async def apply_alert_rule_templates(
+    request: Request,
+    response: Response,
+    body: ApplyTemplatesRequest,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    template_map = {tmpl["template_id"]: tmpl for tmpl in ALERT_RULE_TEMPLATES}
+
+    requested = [template_map[tid] for tid in body.template_ids if tid in template_map]
+    if not requested:
+        raise HTTPException(status_code=400, detail="No valid template_ids provided")
+
+    created = []
+    skipped = []
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        for tmpl in requested:
+            existing = await conn.fetchval(
+                "SELECT id FROM alert_rules WHERE tenant_id = $1 AND name = $2",
+                tenant_id,
+                tmpl["name"],
+            )
+            if existing:
+                skipped.append(tmpl["template_id"])
+                continue
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO alert_rules
+                    (tenant_id, name, description, metric_name, operator, threshold,
+                     severity, duration_seconds, device_type, site_ids, enabled)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
+                RETURNING id, name
+                """,
+                tenant_id,
+                tmpl["name"],
+                tmpl["description"],
+                tmpl["metric_name"],
+                tmpl["operator"],
+                tmpl["threshold"],
+                tmpl["severity"],
+                tmpl["duration_seconds"],
+                tmpl["device_type"],
+                body.site_ids or None,
+            )
+            created.append(
+                {"id": row["id"], "name": row["name"], "template_id": tmpl["template_id"]}
+            )
+
+    return {"created": created, "skipped": skipped}
+
+
 @router.get("/alert-rules")
 async def list_alert_rules(pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
@@ -2938,7 +4089,7 @@ async def list_alert_rules(pool=Depends(get_db_pool)):
         logger.exception("Failed to fetch alert rules")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return {"tenant_id": tenant_id, "rules": rules}
+    return {"tenant_id": tenant_id, "rules": [_with_rule_conditions(rule) for rule in rules]}
 
 
 @router.get("/alert-rules/{rule_id}")
@@ -2956,20 +4107,65 @@ async def get_alert_rule(rule_id: str, pool=Depends(get_db_pool)):
         raise HTTPException(status_code=500, detail="Internal server error")
     if not rule:
         raise HTTPException(status_code=404, detail="Alert rule not found")
-    return rule
+    return _with_rule_conditions(rule)
 
 
 @router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
 async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
-    if body.operator not in VALID_OPERATORS:
-        raise HTTPException(status_code=400, detail="Invalid operator value")
-    if not METRIC_NAME_PATTERN.match(body.metric_name):
-        raise HTTPException(status_code=400, detail="Invalid metric_name format")
+    conditions_json = body.conditions.model_dump() if body.conditions else None
+    anomaly_conditions_json = (
+        body.anomaly_conditions.model_dump() if body.anomaly_conditions else None
+    )
+    gap_conditions_json = body.gap_conditions.model_dump() if body.gap_conditions else None
+    rule_type = body.rule_type
+
+    if rule_type == "anomaly":
+        if anomaly_conditions_json is None:
+            raise HTTPException(status_code=422, detail="anomaly_conditions is required")
+        metric_name = anomaly_conditions_json["metric_name"]
+        if not METRIC_NAME_PATTERN.match(metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        operator = "GT"
+        threshold = float(anomaly_conditions_json["z_threshold"])
+        conditions_payload = anomaly_conditions_json
+    elif rule_type == "telemetry_gap":
+        if gap_conditions_json is None:
+            raise HTTPException(status_code=422, detail="gap_conditions is required")
+        metric_name = gap_conditions_json["metric_name"]
+        if not METRIC_NAME_PATTERN.match(metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        operator = "GT"
+        threshold = float(gap_conditions_json["gap_minutes"])
+        conditions_payload = gap_conditions_json
+    elif conditions_json:
+        first_condition = conditions_json["conditions"][0]
+        metric_name = first_condition["metric_name"]
+        operator = first_condition["operator"]
+        threshold = first_condition["threshold"]
+        for cond in conditions_json["conditions"]:
+            if cond["operator"] not in VALID_OPERATORS:
+                raise HTTPException(status_code=400, detail="Invalid operator value")
+            if not METRIC_NAME_PATTERN.match(cond["metric_name"]):
+                raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        conditions_payload = conditions_json
+    else:
+        if body.operator not in VALID_OPERATORS:
+            raise HTTPException(status_code=400, detail="Invalid operator value")
+        if body.metric_name is None or not METRIC_NAME_PATTERN.match(body.metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        if body.threshold is None:
+            raise HTTPException(status_code=400, detail="threshold is required")
+        metric_name = body.metric_name
+        operator = body.operator
+        threshold = body.threshold
+        conditions_payload = None
+
     if body.site_ids is not None:
         for site_id in body.site_ids:
             if site_id is None or not str(site_id).strip():
                 raise HTTPException(status_code=400, detail="Invalid site_id value")
+    group_ids = _normalize_optional_ids(body.group_ids, "group_ids")
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
@@ -2977,12 +4173,16 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 conn,
                 tenant_id=tenant_id,
                 name=body.name,
-                metric_name=body.metric_name,
-                operator=body.operator,
-                threshold=body.threshold,
+                rule_type=rule_type,
+                metric_name=metric_name,
+                operator=operator,
+                threshold=threshold,
                 severity=body.severity,
+                duration_seconds=body.duration_seconds,
                 description=body.description,
                 site_ids=body.site_ids,
+                group_ids=group_ids,
+                conditions=conditions_payload,
                 enabled=body.enabled,
             )
     except Exception:
@@ -3006,9 +4206,9 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
             user_id=user.get("sub") or "unknown",
             username=username,
             ip_address=request.client.host if request.client else None,
-            details={"metric": body.metric_name, "threshold": body.threshold},
+            details={"metric": metric_name, "threshold": threshold},
         )
-    return JSONResponse(status_code=201, content=jsonable_encoder(rule))
+    return JSONResponse(status_code=201, content=jsonable_encoder(_with_rule_conditions(rule)))
 
 
 @router.patch("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
@@ -3018,24 +4218,70 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
 
     if (
         body.name is None
+        and body.rule_type is None
         and body.metric_name is None
         and body.operator is None
         and body.threshold is None
         and body.severity is None
+        and body.duration_seconds is None
         and body.description is None
         and body.site_ids is None
+        and body.group_ids is None
+        and body.conditions is None
+        and body.anomaly_conditions is None
+        and body.gap_conditions is None
         and body.enabled is None
     ):
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    if body.operator is not None and body.operator not in VALID_OPERATORS:
-        raise HTTPException(status_code=400, detail="Invalid operator value")
-    if body.metric_name is not None and not METRIC_NAME_PATTERN.match(body.metric_name):
-        raise HTTPException(status_code=400, detail="Invalid metric_name format")
+    conditions_json = body.conditions.model_dump() if body.conditions else None
+    anomaly_conditions_json = (
+        body.anomaly_conditions.model_dump() if body.anomaly_conditions else None
+    )
+    gap_conditions_json = body.gap_conditions.model_dump() if body.gap_conditions else None
+    if body.rule_type == "anomaly":
+        if anomaly_conditions_json is None:
+            raise HTTPException(status_code=422, detail="anomaly_conditions is required")
+        metric_name = anomaly_conditions_json["metric_name"]
+        if not METRIC_NAME_PATTERN.match(metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        operator = "GT"
+        threshold = float(anomaly_conditions_json["z_threshold"])
+        conditions_payload = anomaly_conditions_json
+    elif body.rule_type == "telemetry_gap":
+        if gap_conditions_json is None:
+            raise HTTPException(status_code=422, detail="gap_conditions is required")
+        metric_name = gap_conditions_json["metric_name"]
+        if not METRIC_NAME_PATTERN.match(metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        operator = "GT"
+        threshold = float(gap_conditions_json["gap_minutes"])
+        conditions_payload = gap_conditions_json
+    elif conditions_json:
+        for cond in conditions_json["conditions"]:
+            if cond["operator"] not in VALID_OPERATORS:
+                raise HTTPException(status_code=400, detail="Invalid operator value")
+            if not METRIC_NAME_PATTERN.match(cond["metric_name"]):
+                raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        first_condition = conditions_json["conditions"][0]
+        metric_name = first_condition["metric_name"]
+        operator = first_condition["operator"]
+        threshold = first_condition["threshold"]
+        conditions_payload = conditions_json
+    else:
+        metric_name = body.metric_name
+        operator = body.operator
+        threshold = body.threshold
+        conditions_payload = None
+        if operator is not None and operator not in VALID_OPERATORS:
+            raise HTTPException(status_code=400, detail="Invalid operator value")
+        if metric_name is not None and not METRIC_NAME_PATTERN.match(metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
     if body.site_ids is not None:
         for site_id in body.site_ids:
             if site_id is None or not str(site_id).strip():
                 raise HTTPException(status_code=400, detail="Invalid site_id value")
+    group_ids = _normalize_optional_ids(body.group_ids, "group_ids")
 
     tenant_id = get_tenant_id()
     try:
@@ -3046,12 +4292,16 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 tenant_id=tenant_id,
                 rule_id=rule_id,
                 name=body.name,
-                metric_name=body.metric_name,
-                operator=body.operator,
-                threshold=body.threshold,
+                rule_type=body.rule_type,
+                metric_name=metric_name,
+                operator=operator,
+                threshold=threshold,
                 severity=body.severity,
+                duration_seconds=body.duration_seconds,
                 description=body.description,
                 site_ids=body.site_ids,
+                group_ids=group_ids,
+                conditions=conditions_payload,
                 enabled=body.enabled,
             )
     except Exception:
@@ -3059,7 +4309,7 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         raise HTTPException(status_code=500, detail="Internal server error")
     if not rule:
         raise HTTPException(status_code=404, detail="Alert rule not found")
-    return rule
+    return _with_rule_conditions(rule)
 
 
 @router.delete("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
@@ -3079,6 +4329,74 @@ async def delete_alert_rule_endpoint(rule_id: str, pool=Depends(get_db_pool)):
     if not deleted:
         raise HTTPException(status_code=404, detail="Alert rule not found")
     return Response(status_code=204)
+
+
+@router.get("/delivery-jobs", dependencies=[Depends(require_customer)])
+async def list_delivery_jobs(
+    status: str | None = Query(None),
+    integration_id: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    conditions = ["tenant_id = $1"]
+    params: list[object] = [tenant_id]
+
+    if status:
+        valid_statuses = {"PENDING", "PROCESSING", "COMPLETED", "FAILED"}
+        normalized = status.upper()
+        if normalized not in valid_statuses:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        params.append(normalized)
+        conditions.append(f"status = ${len(params)}")
+
+    if integration_id:
+        params.append(integration_id)
+        conditions.append(f"integration_id = ${len(params)}")
+
+    where = " AND ".join(conditions)
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT job_id, alert_id, integration_id, route_id, status,
+                   attempts, last_error, deliver_on_event, created_at, updated_at
+            FROM delivery_jobs
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT {limit} OFFSET {offset}
+            """,
+            *params,
+        )
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM delivery_jobs WHERE {where}",
+            *params,
+        )
+
+    return {"jobs": [dict(row) for row in rows], "total": int(total or 0)}
+
+
+@router.get("/delivery-jobs/{job_id}/attempts", dependencies=[Depends(require_customer)])
+async def get_delivery_job_attempts(job_id: int, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        job = await conn.fetchrow(
+            "SELECT job_id FROM delivery_jobs WHERE tenant_id = $1 AND job_id = $2",
+            tenant_id,
+            job_id,
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        attempts = await conn.fetch(
+            """
+            SELECT attempt_no, ok, http_status, latency_ms, error, started_at, finished_at
+            FROM delivery_attempts
+            WHERE job_id = $1
+            ORDER BY attempt_no ASC
+            """,
+            job_id,
+        )
+    return {"job_id": job_id, "attempts": [dict(a) for a in attempts]}
 
 
 @router.get("/delivery-status")

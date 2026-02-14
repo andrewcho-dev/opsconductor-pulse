@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { useDevice, useDevices } from "./use-devices";
+import { useDevice, useDevices, useFleetSummary } from "./use-devices";
 import * as devicesApi from "@/services/api/devices";
 
 vi.mock("@/services/api/devices");
@@ -37,14 +37,14 @@ describe("useDevices", () => {
 
     vi.mocked(devicesApi.fetchDevices).mockResolvedValue(mockDevices as never);
 
-    const { result } = renderHook(() => useDevices(100, 0), {
+    const { result } = renderHook(() => useDevices({ limit: 100, offset: 0 }), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data).toEqual(mockDevices);
-    expect(devicesApi.fetchDevices).toHaveBeenCalledWith(100, 0);
+    expect(devicesApi.fetchDevices).toHaveBeenCalledWith({ limit: 100, offset: 0 });
   });
 
   it("handles fetch error", async () => {
@@ -56,6 +56,24 @@ describe("useDevices", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeDefined();
+  });
+});
+
+describe("useFleetSummary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fetches fleet summary", async () => {
+    const mockSummary = { ONLINE: 2, STALE: 1, OFFLINE: 0, total: 3 };
+    vi.mocked(devicesApi.fetchFleetSummary).mockResolvedValue(mockSummary as never);
+
+    const { result } = renderHook(() => useFleetSummary(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(mockSummary);
   });
 });
 

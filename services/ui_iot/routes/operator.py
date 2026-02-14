@@ -98,6 +98,8 @@ class DeviceSubscriptionAssign(BaseModel):
     notes: Optional[str] = None
 
 
+
+
 async def get_pool() -> asyncpg.Pool:
     global pool
     if pool is None:
@@ -153,6 +155,8 @@ router = APIRouter(
         Depends(require_operator),
     ],
 )
+
+
 
 
 @router.get("/tenants")
@@ -470,6 +474,42 @@ async def list_subscriptions(
             ],
             "count": len(rows),
         }
+
+
+@router.get("/subscriptions/expiring-notifications")
+async def list_expiring_notifications(
+    status: Optional[str] = Query(None),
+    tenant_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """List subscription expiry notification records."""
+    conditions: list[str] = []
+    params: list[str | int] = []
+
+    if status:
+        params.append(status.upper())
+        conditions.append(f"status = ${len(params)}")
+    if tenant_id:
+        params.append(tenant_id)
+        conditions.append(f"tenant_id = ${len(params)}")
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(limit)
+
+    p = await get_pool()
+    async with operator_connection(p) as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, tenant_id, notification_type, scheduled_at, sent_at,
+                   channel, status, error
+            FROM subscription_notifications
+            {where_clause}
+            ORDER BY scheduled_at DESC
+            LIMIT ${len(params)}
+            """,
+            *params,
+        )
+    return {"notifications": [dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/subscriptions/{subscription_id}")

@@ -2,11 +2,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { TimeSeriesChart, TIME_RANGES, type TimeRange } from "@/lib/charts";
 import type { TelemetryPoint } from "@/services/api/types";
-import { memo } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { downloadTelemetryCSV, fetchTelemetryHistory } from "@/services/api/devices";
+import { Loader2 } from "lucide-react";
+import { memo, useState } from "react";
 
 interface TelemetryChartsSectionProps {
+  deviceId: string;
   metrics: string[];
   points: TelemetryPoint[];
   isLoading: boolean;
@@ -17,6 +22,7 @@ interface TelemetryChartsSectionProps {
 }
 
 function TelemetryChartsSectionInner({
+  deviceId,
   metrics,
   points,
   isLoading,
@@ -25,6 +31,8 @@ function TelemetryChartsSectionInner({
   timeRange,
   onTimeRangeChange,
 }: TelemetryChartsSectionProps) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const priorityMetrics = [
     "battery_pct",
     "temp_c",
@@ -39,6 +47,24 @@ function TelemetryChartsSectionInner({
     ...metrics.filter((m) => !priorityMetrics.includes(m)),
   ];
   const metricsToShow = ordered.slice(0, 6);
+  const historyQueries = useQueries({
+    queries: metricsToShow.map((metricName) => ({
+      queryKey: ["telemetry-history", deviceId, metricName, timeRange],
+      queryFn: () => fetchTelemetryHistory(deviceId, metricName, timeRange),
+      enabled: !!deviceId,
+    })),
+  });
+  async function handleDownloadCSV() {
+    try {
+      setDownloadError(null);
+      setDownloading(true);
+      await downloadTelemetryCSV(deviceId, timeRange);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <Card>
@@ -55,21 +81,35 @@ function TelemetryChartsSectionInner({
           )}
         </div>
 
-        <Tabs
-          value={timeRange}
-          onValueChange={(v) => onTimeRangeChange(v as TimeRange)}
-        >
-          <TabsList>
-            {TIME_RANGES.map((tr) => (
-              <TabsTrigger key={tr.value} value={tr.value}>
-                {tr.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          <Tabs
+            value={timeRange}
+            onValueChange={(v) => onTimeRangeChange(v as TimeRange)}
+          >
+            <TabsList>
+              {TIME_RANGES.map((tr) => (
+                <TabsTrigger key={tr.value} value={tr.value}>
+                  {tr.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={downloading}
+            onClick={handleDownloadCSV}
+          >
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Download CSV
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="pt-2">
+        {downloadError ? (
+          <p className="text-xs text-destructive mb-2">{downloadError}</p>
+        ) : null}
         {isLoading ? (
           <div className="grid grid-cols-3 gap-2">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -87,12 +127,26 @@ function TelemetryChartsSectionInner({
                 <div className="text-[10px] text-muted-foreground mb-1">
                   {metricName}
                 </div>
+                {historyQueries[idx]?.data?.points?.length ? (
+                  <TimeSeriesChart
+                    metricName={metricName}
+                    points={historyQueries[idx].data.points
+                      .filter((p) => p.avg !== null)
+                      .map((p) => ({
+                        timestamp: p.time,
+                        metrics: { [metricName]: p.avg as number },
+                      }))}
+                    colorIndex={idx}
+                    height={128}
+                  />
+                ) : (
                 <TimeSeriesChart
                   metricName={metricName}
                   points={points}
                   colorIndex={idx}
                   height={128}
                 />
+                )}
               </div>
             ))}
           </div>

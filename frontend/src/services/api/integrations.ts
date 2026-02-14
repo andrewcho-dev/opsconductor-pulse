@@ -16,6 +16,12 @@ import type {
   TestDeliveryResult,
 } from "./types";
 
+export interface TemplateVariable {
+  name: string;
+  type: string;
+  description: string;
+}
+
 // --- Webhook ---
 export async function fetchWebhooks(): Promise<WebhookListResponse> {
   return apiGet("/customer/integrations?type=webhook");
@@ -39,7 +45,21 @@ export async function deleteWebhook(id: string): Promise<void> {
 }
 
 export async function testWebhook(id: string): Promise<TestDeliveryResult> {
-  return apiPost(`/customer/integrations/${encodeURIComponent(id)}/test`, {});
+  return apiPost(`/customer/integrations/${encodeURIComponent(id)}/test-send`, {});
+}
+
+export async function testSendIntegration(id: string): Promise<TestDeliveryResult> {
+  return apiPost(`/customer/integrations/${encodeURIComponent(id)}/test-send`, {});
+}
+
+export async function fetchTemplateVariables(integrationId: string): Promise<{
+  variables: TemplateVariable[];
+  syntax: string;
+  example: string;
+}> {
+  return apiGet(
+    `/customer/integrations/${encodeURIComponent(integrationId)}/template-variables`
+  );
 }
 
 // --- SNMP ---

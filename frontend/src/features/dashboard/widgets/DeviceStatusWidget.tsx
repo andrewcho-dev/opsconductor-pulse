@@ -8,7 +8,7 @@ import type { EChartsOption } from "echarts";
 import { useUIStore } from "@/stores/ui-store";
 
 function DeviceStatusWidgetInner() {
-  const { data, isLoading } = useDevices(500, 0);
+  const { data, isLoading } = useDevices({ limit: 500, offset: 0 });
   const devices = data?.devices || [];
   const resolvedTheme = useUIStore((s) => s.resolvedTheme);
   const isDark = resolvedTheme === "dark";

@@ -14,6 +14,7 @@ class WSConnection:
     user: dict
     device_subscriptions: set = field(default_factory=set)
     alert_subscription: bool = False
+    fleet_subscription: bool = False
 
 
 class ConnectionManager:
@@ -51,6 +52,27 @@ class ConnectionManager:
     def unsubscribe_alerts(self, conn: WSConnection):
         """Disable alert push for this connection."""
         conn.alert_subscription = False
+
+    def subscribe_fleet(self, conn: WSConnection):
+        """Enable fleet summary push for this connection."""
+        conn.fleet_subscription = True
+
+    def unsubscribe_fleet(self, conn: WSConnection):
+        """Disable fleet summary push for this connection."""
+        conn.fleet_subscription = False
+
+    async def broadcast_fleet_summary(self, tenant_id: str, summary: dict) -> None:
+        """Push fleet summary to all fleet-subscribed connections for a tenant."""
+        stale: list[WSConnection] = []
+        for conn in self.connections:
+            if conn.tenant_id != tenant_id or not conn.fleet_subscription:
+                continue
+            try:
+                await conn.websocket.send_json({"type": "fleet_summary", "data": summary})
+            except Exception:
+                stale.append(conn)
+        for conn in stale:
+            await self.disconnect(conn)
 
     @property
     def connection_count(self) -> int:

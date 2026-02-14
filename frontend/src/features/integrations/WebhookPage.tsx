@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Webhook } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
 import {
@@ -25,6 +27,7 @@ import {
 } from "@/hooks/use-integrations";
 import type { WebhookIntegration, WebhookIntegrationCreate, WebhookIntegrationUpdate } from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
+import { fetchTemplateVariables } from "@/services/api/integrations";
 import { DeleteIntegrationDialog } from "./DeleteIntegrationDialog";
 import { TestDeliveryButton } from "./TestDeliveryButton";
 
@@ -55,17 +58,26 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
 
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [bodyTemplate, setBodyTemplate] = useState("");
+  const [bodyTemplateCursor, setBodyTemplateCursor] = useState(0);
   const [enabled, setEnabled] = useState(true);
+  const templateVars = useQuery({
+    queryKey: ["integration-template-vars", webhook?.integration_id],
+    queryFn: () => fetchTemplateVariables(webhook?.integration_id || ""),
+    enabled: !!webhook?.integration_id,
+  });
 
   useEffect(() => {
     if (!open) return;
     if (webhook) {
       setName(webhook.name);
       setUrl(webhook.url);
+      setBodyTemplate(webhook.body_template || "");
       setEnabled(webhook.enabled);
     } else {
       setName("");
       setUrl("");
+      setBodyTemplate("");
       setEnabled(true);
     }
   }, [open, webhook]);
@@ -83,6 +95,7 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
       const payload: WebhookIntegrationCreate = {
         name,
         webhook_url: url,
+        body_template: bodyTemplate.trim() ? bodyTemplate : null,
         enabled,
       };
       await createMutation.mutateAsync(payload);
@@ -94,6 +107,9 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
     const updates: WebhookIntegrationUpdate = {};
     if (name !== webhook.name) updates.name = name;
     if (url !== webhook.url) updates.webhook_url = url;
+    if ((bodyTemplate || "") !== (webhook.body_template || "")) {
+      updates.body_template = bodyTemplate;
+    }
     if (enabled !== webhook.enabled) updates.enabled = enabled;
 
     if (Object.keys(updates).length === 0) {
@@ -137,6 +153,61 @@ function WebhookDialog({ open, onClose, webhook }: WebhookDialogProps) {
               required
               placeholder="https://example.com/hook"
             />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="webhook-body-template">Body Template (optional)</Label>
+            <Textarea
+              id="webhook-body-template"
+              value={bodyTemplate}
+              onChange={(e) => setBodyTemplate(e.target.value)}
+              onClick={(e) =>
+                setBodyTemplateCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)
+              }
+              onKeyUp={(e) =>
+                setBodyTemplateCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)
+              }
+              placeholder='{"alert":"{{ summary }}","severity":"{{ severity_label }}"}'
+              rows={5}
+            />
+            <p className="text-xs text-muted-foreground">
+              If blank, raw alert payload JSON is sent.
+            </p>
+            <details className="rounded-md border border-border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Variables Reference
+              </summary>
+              <div className="mt-2 space-y-2">
+                {templateVars.data?.variables?.map((v) => (
+                  <div key={v.name} className="flex items-center justify-between gap-2 text-xs">
+                    <span>
+                      {`{{ ${v.name} }}`} - {v.description}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const token = `{{ ${v.name} }}`;
+                        const at = bodyTemplateCursor;
+                        const next = `${bodyTemplate.slice(0, at)}${token}${bodyTemplate.slice(at)}`;
+                        setBodyTemplate(next);
+                        setBodyTemplateCursor(at + token.length);
+                      }}
+                    >
+                      Insert
+                    </Button>
+                  </div>
+                ))}
+                {templateVars.isLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading variables...</p>
+                ) : null}
+                {!webhook?.integration_id ? (
+                  <p className="text-xs text-muted-foreground">
+                    Save integration first to load variables.
+                  </p>
+                ) : null}
+              </div>
+            </details>
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div>

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import logging
 from aiohttp import web
 import socket
 import time
@@ -12,15 +13,23 @@ import asyncpg
 import httpx
 
 from snmp_sender import send_alert_trap, SNMPTrapResult, PYSNMP_AVAILABLE
-from email_sender import send_alert_email, EmailResult, AIOSMTPLIB_AVAILABLE
+from email_sender import (
+    send_alert_email,
+    EmailResult,
+    AIOSMTPLIB_AVAILABLE,
+    render_template,
+    severity_label_for,
+)
 from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.logging import configure_logging, log_event
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 MODE = os.getenv("MODE", "DEV").upper()
 WORKER_POLL_SECONDS = int(os.getenv("WORKER_POLL_SECONDS", "2"))
@@ -30,6 +39,8 @@ WORKER_MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "5"))
 WORKER_BACKOFF_BASE_SECONDS = int(os.getenv("WORKER_BACKOFF_BASE_SECONDS", "30"))
 WORKER_BACKOFF_MAX_SECONDS = int(os.getenv("WORKER_BACKOFF_MAX_SECONDS", "7200"))
 STUCK_JOB_MINUTES = int(os.getenv("STUCK_JOB_MINUTES", "5"))
+configure_logging("delivery_worker")
+logger = logging.getLogger("delivery_worker")
 
 BLOCKED_NETWORKS = [
     ip_network("127.0.0.0/8"),
@@ -49,6 +60,8 @@ COUNTERS = {
     "jobs_pending": 0,
     "last_delivery_at": None,
 }
+
+_notify_event = asyncio.Event()
 
 async def health_handler(request: web.Request) -> web.Response:
     return web.json_response(
@@ -73,7 +86,7 @@ async def start_health_server() -> None:
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
-    print("[health] delivery worker health server started on port 8080")
+    log_event(logger, "health server started", service_port=8080)
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -159,15 +172,43 @@ def backoff_seconds(attempt_no: int) -> int:
 
 
 async def get_pool() -> asyncpg.Pool:
+    if DATABASE_URL:
+        return await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
     return await asyncpg.create_pool(
         host=PG_HOST,
         port=PG_PORT,
         database=PG_DB,
         user=PG_USER,
         password=PG_PASS,
-        min_size=1,
-        max_size=5,
+        min_size=2,
+        max_size=10,
+        command_timeout=30,
     )
+
+
+async def create_listener_conn(host, port, database, user, password):
+    """Create a dedicated asyncpg connection for LISTEN (not from pool)."""
+    return await asyncpg.connect(
+        host=host, port=port, database=database, user=user, password=password
+    )
+
+
+def resolve_notify_dsn() -> str:
+    return os.environ.get("NOTIFY_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+
+
+async def init_notify_listener(channel: str, callback):
+    notify_dsn = resolve_notify_dsn()
+    if notify_dsn:
+        conn = await asyncpg.connect(notify_dsn)
+    else:
+        conn = await create_listener_conn(PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS)
+    await conn.add_listener(channel, callback)
+    return conn
+
+
+def on_delivery_job_notify(conn, pid, channel, payload):
+    _notify_event.set()
 
 
 async def requeue_stuck_jobs(conn: asyncpg.Connection) -> int:
@@ -384,11 +425,28 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
 
     if ok:
         COUNTERS["jobs_succeeded"] += 1
+        log_event(
+            logger,
+            "delivery sent",
+            job_id=str(job_id),
+            integration_type=integration_type if integration is not None else "unknown",
+            tenant_id=tenant_id,
+            attempt=attempt_no,
+        )
         await update_job_success(conn, job_id, attempt_no)
         return
 
     if attempt_no >= WORKER_MAX_ATTEMPTS:
         COUNTERS["jobs_failed"] += 1
+        log_event(
+            logger,
+            "delivery failed",
+            level="ERROR",
+            job_id=str(job_id),
+            tenant_id=tenant_id,
+            attempt=attempt_no,
+            error=error or "failed",
+        )
         await update_job_failed(conn, job_id, attempt_no, error or "failed")
         return
 
@@ -400,6 +458,7 @@ async def deliver_webhook(integration: dict, job: asyncpg.Record) -> tuple[bool,
     config = normalize_config(integration.get("config_json"))
     url = config.get("url")
     headers = config.get("headers") or {}
+    body_template = config.get("body_template")
 
     if not url:
         return False, None, "missing_url"
@@ -411,11 +470,31 @@ async def deliver_webhook(integration: dict, job: asyncpg.Record) -> tuple[bool,
     payload = job["payload_json"]
     if isinstance(payload, str):
         payload = json.loads(payload)
+    request_body = payload
+    if body_template:
+        variables = {
+            "alert_id": payload.get("alert_id"),
+            "device_id": payload.get("device_id"),
+            "site_id": payload.get("site_id", ""),
+            "tenant_id": payload.get("tenant_id", job.get("tenant_id")),
+            "severity": payload.get("severity", 3),
+            "severity_label": severity_label_for(payload.get("severity", 3)),
+            "alert_type": payload.get("alert_type", ""),
+            "summary": payload.get("summary", payload.get("message", "")),
+            "status": payload.get("status", "OPEN"),
+            "created_at": payload.get("created_at", ""),
+            "details": payload.get("details", {}),
+        }
+        rendered = render_template(body_template, variables)
+        try:
+            request_body = json.loads(rendered)
+        except Exception:
+            request_body = {"message": rendered}
 
     try:
         timeout = httpx.Timeout(WORKER_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.post(url, json=request_body, headers=headers)
             http_status = resp.status_code
             ok = 200 <= resp.status_code < 300
             error = None if ok else f"http_{resp.status_code}"
@@ -584,34 +663,75 @@ async def run_worker() -> None:
     await start_health_server()
     audit = init_audit_logger(pool, "delivery_worker")
     await audit.start()
-    print(
-        "[worker] startup mode={} ssrf_strict={} snmp_available={} email_available={} mqtt_available={}".format(
-            MODE,
-            ssrf_strict,
-            PYSNMP_AVAILABLE,
-            AIOSMTPLIB_AVAILABLE,
-            PAHO_MQTT_AVAILABLE,
-        )
+    log_event(
+        logger,
+        "worker startup",
+        mode=MODE,
+        ssrf_strict=ssrf_strict,
+        snmp_available=PYSNMP_AVAILABLE,
+        email_available=AIOSMTPLIB_AVAILABLE,
+        mqtt_available=PAHO_MQTT_AVAILABLE,
     )
 
-    while True:
-        try:
-            async with pool.acquire() as conn:
-                stuck = await requeue_stuck_jobs(conn)
-                if stuck:
-                    print(f"[worker] requeued_stuck={stuck} ts={now_utc().isoformat()}")
+    fallback_poll_seconds = int(os.getenv("FALLBACK_POLL_SECONDS", "15"))
+    debounce_seconds = float(os.getenv("DEBOUNCE_SECONDS", "0.1"))
 
-                jobs = await fetch_jobs(conn)
-                COUNTERS["jobs_pending"] = len(jobs)
-                if not jobs:
-                    await asyncio.sleep(WORKER_POLL_SECONDS)
-                    continue
+    listener_conn = None
+    try:
+        listener_conn = await init_notify_listener("new_delivery_job", on_delivery_job_notify)
+        log_event(logger, "listen channel active", channel="new_delivery_job")
+    except Exception as exc:
+        log_event(
+            logger,
+            "listen setup failed, using poll-only mode",
+            level="WARNING",
+            error=str(exc),
+        )
+        listener_conn = None
 
-                for job in jobs:
-                    await process_job(conn, job)
-        except Exception as exc:
-            print(f"[worker] error={type(exc).__name__} {exc}")
-            await asyncio.sleep(WORKER_POLL_SECONDS)
+    try:
+        while True:
+            try:
+                try:
+                    await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
+                except asyncio.TimeoutError:
+                    log_event(
+                        logger,
+                        "fallback poll triggered",
+                        level="WARNING",
+                        reason="no notifications",
+                    )
+
+                _notify_event.clear()
+                await asyncio.sleep(debounce_seconds)
+                _notify_event.clear()
+
+                async with pool.acquire() as conn:
+                    stuck = await requeue_stuck_jobs(conn)
+                    if stuck:
+                        log_event(logger, "stuck jobs requeued", count=stuck)
+
+                    jobs = await fetch_jobs(conn)
+                    COUNTERS["jobs_pending"] = len(jobs)
+                    if not jobs:
+                        continue
+
+                    for job in jobs:
+                        await process_job(conn, job)
+            except Exception as exc:
+                logger.error(
+                    "delivery worker loop failed",
+                    extra={"error_type": type(exc).__name__, "error": str(exc)},
+                    exc_info=True,
+                )
+                await asyncio.sleep(1)
+    finally:
+        if listener_conn is not None:
+            try:
+                await listener_conn.remove_listener("new_delivery_job", on_delivery_job_notify)
+            except Exception:
+                pass
+            await listener_conn.close()
 
 
 if __name__ == "__main__":

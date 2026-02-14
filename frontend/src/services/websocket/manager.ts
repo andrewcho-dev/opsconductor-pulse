@@ -107,9 +107,9 @@ export class WebSocketManager {
   /**
    * Subscribe to a channel. Persists across reconnects.
    */
-  subscribe(type: "alerts"): void;
+  subscribe(type: "alerts" | "fleet"): void;
   subscribe(type: "device", deviceId: string): void;
-  subscribe(type: "alerts" | "device", deviceId?: string): void {
+  subscribe(type: "alerts" | "device" | "fleet", deviceId?: string): void {
     const msg: WsSubscribeMessage = { action: "subscribe", type };
     if (type === "device" && deviceId) {
       msg.device_id = deviceId;
@@ -129,9 +129,9 @@ export class WebSocketManager {
   /**
    * Unsubscribe from a channel.
    */
-  unsubscribe(type: "alerts"): void;
+  unsubscribe(type: "alerts" | "fleet"): void;
   unsubscribe(type: "device", deviceId: string): void;
-  unsubscribe(type: "alerts" | "device", deviceId?: string): void {
+  unsubscribe(type: "alerts" | "device" | "fleet", deviceId?: string): void {
     const msg: WsSubscribeMessage = { action: "unsubscribe", type };
     if (type === "device" && deviceId) {
       msg.device_id = deviceId;
@@ -168,6 +168,10 @@ export class WebSocketManager {
 
       case "telemetry":
         messageBus.emit(`telemetry:${msg.device_id}`, msg.data);
+        break;
+
+      case "fleet_summary":
+        messageBus.emit("fleet", msg.data);
         break;
 
       case "subscribed":

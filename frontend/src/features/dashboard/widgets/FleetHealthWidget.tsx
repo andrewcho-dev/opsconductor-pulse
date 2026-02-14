@@ -35,10 +35,16 @@ function FleetHealthWidgetInner() {
     );
   }
 
+  const totalDevices = data.total_devices ?? data.total ?? 0;
+  const onlineDevices = data.online ?? data.ONLINE ?? 0;
+  const staleDevices = data.stale ?? data.STALE ?? 0;
+  const openAlerts = data.alerts_open ?? 0;
+  const alertsNew1h = data.alerts_new_1h ?? 0;
+  const lowBatteryCount = data.low_battery_count ?? 0;
+  const lowBatteryThreshold = data.low_battery_threshold ?? 20;
+  const lowBatteryDevices = data.low_battery_devices ?? [];
   const onlinePct =
-    data.total_devices > 0
-      ? Math.round((data.online / data.total_devices) * 100)
-      : 0;
+    totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0;
 
   return (
     <Card>
@@ -53,7 +59,7 @@ function FleetHealthWidgetInner() {
           <StatusCard
             icon={Wifi}
             label="Online"
-            value={`${data.online}/${data.total_devices}`}
+            value={`${onlineDevices}/${totalDevices}`}
             subtext={`${onlinePct}%`}
             status={onlinePct >= 95 ? "success" : onlinePct >= 80 ? "warning" : "error"}
           />
@@ -62,21 +68,21 @@ function FleetHealthWidgetInner() {
             <StatusCard
               icon={AlertTriangle}
               label="Open Alerts"
-              value={data.alerts_open.toString()}
-              subtext={data.alerts_new_1h > 0 ? `▲ ${data.alerts_new_1h} new/1h` : "—"}
-              status={data.alerts_open > 0 ? "error" : "success"}
+              value={openAlerts.toString()}
+              subtext={alertsNew1h > 0 ? `▲ ${alertsNew1h} new/1h` : "—"}
+              status={openAlerts > 0 ? "error" : "success"}
             />
           </Link>
 
           <StatusCard
             icon={Battery}
             label="Low Battery"
-            value={data.low_battery_count.toString()}
-            subtext={`< ${data.low_battery_threshold}%`}
-            status={data.low_battery_count > 0 ? "warning" : "success"}
+            value={lowBatteryCount.toString()}
+            subtext={`< ${lowBatteryThreshold}%`}
+            status={lowBatteryCount > 0 ? "warning" : "success"}
             tooltip={
-              data.low_battery_devices.length > 0
-                ? data.low_battery_devices.join(", ")
+              lowBatteryDevices.length > 0
+                ? lowBatteryDevices.join(", ")
                 : undefined
             }
           />
@@ -85,9 +91,9 @@ function FleetHealthWidgetInner() {
             <StatusCard
               icon={Clock}
               label="Stale"
-              value={data.stale.toString()}
+              value={staleDevices.toString()}
               subtext="> 5 min"
-              status={data.stale > 0 ? "warning" : "success"}
+              status={staleDevices > 0 ? "warning" : "success"}
             />
           </Link>
         </div>

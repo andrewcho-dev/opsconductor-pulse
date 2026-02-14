@@ -61,12 +61,28 @@ def _auth_header():
     return {"Authorization": "Bearer test-token", "X-CSRF-Token": "csrf"}
 
 
+def _mock_user_payload(role: str, tenant_id: str) -> dict:
+    role_map = {
+        "customer_admin": ["customer", "tenant-admin"],
+        "customer_viewer": ["customer"],
+        "operator": ["operator"],
+        "operator_admin": ["operator-admin"],
+    }
+    return {
+        "sub": "user-1",
+        "tenant_id": tenant_id,
+        "organization": {tenant_id: {}},
+        "realm_access": {"roles": role_map.get(role, [role])},
+    }
+
+
 def _mock_customer_deps(monkeypatch, conn, role="customer_admin", tenant_id="tenant-a"):
-    tenant_module.set_tenant_context(tenant_id, {"role": role, "tenant_id": tenant_id})
+    user_payload = _mock_user_payload(role, tenant_id)
+    tenant_module.set_tenant_context(tenant_id, user_payload)
     monkeypatch.setattr(
         auth_module,
         "validate_token",
-        AsyncMock(return_value={"sub": "user-1", "role": role, "tenant_id": tenant_id}),
+        AsyncMock(return_value=user_payload),
     )
     async def _override_get_db_pool(_request=None):
         return FakePool(conn)
@@ -102,11 +118,57 @@ async def client():
 async def test_devices_json_format(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_devices_v2", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        customer_routes,
+        "fetch_devices_v2",
+        AsyncMock(return_value={"devices": [], "total": 0}),
+    )
 
     resp = await client.get("/customer/devices", headers=_auth_header())
     assert resp.status_code == 200
     assert "application/json" in resp.headers["content-type"]
+
+
+async def test_list_devices_endpoint_returns_total(client, monkeypatch):
+    conn = FakeConn()
+    _mock_customer_deps(monkeypatch, conn)
+    monkeypatch.setattr(
+        customer_routes,
+        "fetch_devices_v2",
+        AsyncMock(
+            return_value={
+                "devices": [{"device_id": "d1", "site_id": "s1", "status": "ONLINE"}],
+                "total": 42,
+            }
+        ),
+    )
+    conn.fetch_result = []
+
+    resp = await client.get("/customer/devices", headers=_auth_header())
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 42
+
+
+async def test_list_devices_invalid_status_returns_400(client, monkeypatch):
+    conn = FakeConn()
+    _mock_customer_deps(monkeypatch, conn)
+    resp = await client.get("/customer/devices?status=INVALID", headers=_auth_header())
+    assert resp.status_code == 400
+
+
+async def test_fleet_summary_endpoint(client, monkeypatch):
+    conn = FakeConn()
+    _mock_customer_deps(monkeypatch, conn)
+    monkeypatch.setattr(
+        customer_routes,
+        "fetch_fleet_summary",
+        AsyncMock(return_value={"ONLINE": 5, "STALE": 2, "OFFLINE": 1, "total": 8}),
+    )
+
+    resp = await client.get("/customer/devices/summary", headers=_auth_header())
+    assert resp.status_code == 200
+    assert resp.json()["ONLINE"] == 5
+    assert resp.json()["total"] == 8
 
 
 async def test_alerts_json_format(client, monkeypatch):
