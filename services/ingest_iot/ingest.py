@@ -303,6 +303,17 @@ async def auto_provision_device(
     return True
 
 
+async def _set_tenant_write_context(conn: asyncpg.Connection, tenant_id: str | None) -> None:
+    """
+    Set DB role + tenant context for write operations.
+    """
+    await conn.execute("SET LOCAL ROLE pulse_app")
+    await conn.execute(
+        "SELECT set_config('app.tenant_id', $1, true)",
+        str(tenant_id or "__unknown__"),
+    )
+
+
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
@@ -482,15 +493,17 @@ class Ingestor:
             return
         assert self.pool is not None
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO quarantine_counters_minute (bucket_minute, tenant_id, reason, cnt)
-                VALUES (date_trunc('minute', now()), $1, $2, 1)
-                ON CONFLICT (bucket_minute, tenant_id, reason)
-                DO UPDATE SET cnt = quarantine_counters_minute.cnt + 1
-                """,
-                tenant_id, reason
-            )
+            async with conn.transaction():
+                await _set_tenant_write_context(conn, tenant_id)
+                await conn.execute(
+                    """
+                    INSERT INTO quarantine_counters_minute (bucket_minute, tenant_id, reason, cnt)
+                    VALUES (date_trunc('minute', now()), $1, $2, 1)
+                    ON CONFLICT (bucket_minute, tenant_id, reason)
+                    DO UPDATE SET cnt = quarantine_counters_minute.cnt + 1
+                    """,
+                    tenant_id, reason
+                )
 
     async def _insert_quarantine(self, topic, tenant_id, site_id, device_id, msg_type, reason, payload, event_ts):
         _counter_inc("messages_rejected")
@@ -519,13 +532,15 @@ class Ingestor:
         if self.store_rejects:
             assert self.pool is not None
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
-                    """,
-                    event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, json.dumps(payload)
-                )
+                async with conn.transaction():
+                    await _set_tenant_write_context(conn, tenant_id)
+                    await conn.execute(
+                        """
+                        INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+                        """,
+                        event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, json.dumps(payload)
+                    )
 
     def _rate_limit_ok(self, tenant_id: str, device_id: str) -> bool:
         now = time.time()
@@ -625,6 +640,7 @@ class Ingestor:
                         if reg is None:
                             if AUTO_PROVISION:
                                 async with conn.transaction():
+                                    await _set_tenant_write_context(conn, tenant_id)
                                     success = await auto_provision_device(
                                         conn,
                                         tenant_id,
@@ -752,20 +768,22 @@ class Ingestor:
                     if lat is not None and lng is not None:
                         assert self.pool is not None
                         async with self.pool.acquire() as conn:
-                            await conn.execute(
-                                """
-                                UPDATE device_registry
-                                SET latitude = $3,
-                                    longitude = $4,
-                                    location_source = COALESCE(location_source, 'auto')
-                                WHERE tenant_id = $1 AND device_id = $2
-                                  AND (location_source = 'auto' OR location_source IS NULL)
-                                """,
-                                tenant_id,
-                                device_id,
-                                lat,
-                                lng,
-                            )
+                            async with conn.transaction():
+                                await _set_tenant_write_context(conn, tenant_id)
+                                await conn.execute(
+                                    """
+                                    UPDATE device_registry
+                                    SET latitude = $3,
+                                        longitude = $4,
+                                        location_source = COALESCE(location_source, 'auto')
+                                    WHERE tenant_id = $1 AND device_id = $2
+                                      AND (location_source = 'auto' OR location_source IS NULL)
+                                    """,
+                                    tenant_id,
+                                    device_id,
+                                    lat,
+                                    lng,
+                                )
                 audit = get_audit_logger()
                 if audit:
                     audit.device_telemetry(
@@ -831,6 +849,9 @@ class Ingestor:
         await start_health_server()
         self.loop = asyncio.get_running_loop()
         assert self.pool is not None
+        # SECURITY: telemetry batch writes may include multiple tenants per flush.
+        # Tenant isolation is enforced before enqueue by topic_extract() + device auth cache
+        # validation (tenant/device/token/site checks), so the writer accepts only validated rows.
         self.batch_writer = TimescaleBatchWriter(
             pool=self.pool,
             batch_size=BATCH_SIZE,
