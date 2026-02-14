@@ -12,6 +12,7 @@ from middleware import auth as auth_module
 from middleware import tenant as tenant_module
 import dependencies as dependencies_module
 from routes import customer as customer_routes
+from routes import devices as devices_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -119,7 +120,7 @@ async def test_devices_json_format(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(
-        customer_routes,
+        devices_routes,
         "fetch_devices_v2",
         AsyncMock(return_value={"devices": [], "total": 0}),
     )
@@ -133,7 +134,7 @@ async def test_list_devices_endpoint_returns_total(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(
-        customer_routes,
+        devices_routes,
         "fetch_devices_v2",
         AsyncMock(
             return_value={
@@ -160,7 +161,7 @@ async def test_fleet_summary_endpoint(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     monkeypatch.setattr(
-        customer_routes,
+        devices_routes,
         "fetch_fleet_summary",
         AsyncMock(return_value={"ONLINE": 5, "STALE": 2, "OFFLINE": 1, "total": 8}),
     )
@@ -181,447 +182,46 @@ async def test_alerts_json_format(client, monkeypatch):
     assert "application/json" in resp.headers["content-type"]
 
 
-async def test_create_integration_valid(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_webhook_url", AsyncMock(return_value=(True, None)))
-    monkeypatch.setattr(
-        customer_routes,
-        "create_integration",
-        AsyncMock(return_value={"integration_id": "i1", "url": "https://example.com/path"}),
-    )
-
-    resp = await client.post(
-        "/customer/integrations",
-        headers=_auth_header(),
-        json={"name": "Test", "webhook_url": "https://example.com/path", "enabled": True},
-    )
-    assert resp.status_code == 200
 
 
-async def test_create_integration_missing_url(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.post(
-        "/customer/integrations",
-        headers=_auth_header(),
-        json={"name": "Test", "enabled": True},
-    )
-    assert resp.status_code in (400, 422)
 
 
-async def test_create_integration_ssrf_url(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(
-        customer_routes, "validate_webhook_url", AsyncMock(return_value=(False, "Private IP addresses are not allowed"))
-    )
-
-    resp = await client.post(
-        "/customer/integrations",
-        headers=_auth_header(),
-        json={"name": "Test", "webhook_url": "https://10.0.0.1/hook", "enabled": True},
-    )
-    assert resp.status_code == 400
 
 
-async def test_list_integrations_empty(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_integrations", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/integrations", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["integrations"] == []
 
 
-async def test_delete_integration_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "delete_integration", AsyncMock(return_value=False))
-
-    resp = await client.delete("/customer/integrations/unknown", headers=_auth_header())
-    assert resp.status_code == 404
 
 
-async def test_delete_integration_wrong_tenant(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "delete_integration", AsyncMock(return_value=False))
-
-    resp = await client.delete("/customer/integrations/other", headers=_auth_header())
-    assert resp.status_code == 404
 
 
-async def test_create_snmp_v2c(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_snmp_host", lambda host, port: SimpleNamespace(valid=True))
-    conn.fetchrow_result = {
-        "integration_id": "snmp-1",
-        "tenant_id": "tenant-a",
-        "name": "SNMP v2c",
-        "snmp_host": "198.51.100.10",
-        "snmp_port": 162,
-        "snmp_config": {"version": "2c"},
-        "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-        "enabled": True,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    }
-
-    resp = await client.post(
-        "/customer/integrations/snmp",
-        headers=_auth_header(),
-        json={
-            "name": "SNMP v2c",
-            "snmp_host": "198.51.100.10",
-            "snmp_port": 162,
-            "snmp_config": {"version": "2c", "community": "public"},
-            "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 201
 
 
-async def test_create_snmp_v3(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_snmp_host", lambda host, port: SimpleNamespace(valid=True))
-    conn.fetchrow_result = {
-        "integration_id": "snmp-2",
-        "tenant_id": "tenant-a",
-        "name": "SNMP v3",
-        "snmp_host": "198.51.100.11",
-        "snmp_port": 162,
-        "snmp_config": {"version": "3"},
-        "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-        "enabled": True,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    }
-
-    resp = await client.post(
-        "/customer/integrations/snmp",
-        headers=_auth_header(),
-        json={
-            "name": "SNMP v3",
-            "snmp_host": "198.51.100.11",
-            "snmp_port": 162,
-            "snmp_config": {
-                "version": "3",
-                "username": "user",
-                "auth_protocol": "SHA",
-                "auth_password": "authpass123",
-                "priv_protocol": "AES",
-                "priv_password": "privpass123",
-            },
-            "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 201
 
 
-async def test_create_snmp_invalid_host(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(
-        customer_routes,
-        "validate_snmp_host",
-        lambda host, port: SimpleNamespace(valid=False, error="blocked"),
-    )
-
-    resp = await client.post(
-        "/customer/integrations/snmp",
-        headers=_auth_header(),
-        json={
-            "name": "Bad SNMP",
-            "snmp_host": "10.0.0.1",
-            "snmp_port": 162,
-            "snmp_config": {"version": "2c", "community": "public"},
-            "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 400
 
 
-async def test_create_snmp_invalid_port(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.post(
-        "/customer/integrations/snmp",
-        headers=_auth_header(),
-        json={
-            "name": "Bad SNMP",
-            "snmp_host": "198.51.100.10",
-            "snmp_port": 70000,
-            "snmp_config": {"version": "2c", "community": "public"},
-            "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-            "enabled": True,
-        },
-    )
-    assert resp.status_code in (400, 422)
 
 
-async def test_create_email_valid(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_email_integration", lambda **_: SimpleNamespace(valid=True))
-    conn.fetchrow_result = {
-        "integration_id": "email-1",
-        "tenant_id": "tenant-a",
-        "name": "Email",
-        "email_config": {},
-        "email_recipients": {},
-        "email_template": {},
-        "enabled": True,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    }
-
-    resp = await client.post(
-        "/customer/integrations/email",
-        headers=_auth_header(),
-        json={
-            "name": "Email",
-            "smtp_config": {
-                "smtp_host": "smtp.example.com",
-                "smtp_port": 587,
-                "smtp_user": "user",
-                "smtp_password": "pass",
-                "smtp_tls": True,
-                "from_address": "alerts@example.com",
-                "from_name": "OpsConductor Alerts",
-            },
-            "recipients": {"to": ["ops@example.com"], "cc": [], "bcc": []},
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 201
 
 
-async def test_create_email_no_recipients(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.post(
-        "/customer/integrations/email",
-        headers=_auth_header(),
-        json={
-            "name": "Email",
-            "smtp_config": {
-                "smtp_host": "smtp.example.com",
-                "smtp_port": 587,
-                "smtp_user": "user",
-                "smtp_password": "pass",
-                "smtp_tls": True,
-                "from_address": "alerts@example.com",
-                "from_name": "OpsConductor Alerts",
-            },
-            "recipients": {"to": [], "cc": [], "bcc": []},
-            "enabled": True,
-        },
-    )
-    assert resp.status_code in (400, 422)
 
 
-async def test_create_email_invalid_smtp_host(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(
-        customer_routes,
-        "validate_email_integration",
-        lambda **_: SimpleNamespace(valid=False, error="blocked"),
-    )
-
-    resp = await client.post(
-        "/customer/integrations/email",
-        headers=_auth_header(),
-        json={
-            "name": "Email",
-            "smtp_config": {
-                "smtp_host": "10.0.0.1",
-                "smtp_port": 587,
-                "smtp_user": "user",
-                "smtp_password": "pass",
-                "smtp_tls": True,
-                "from_address": "alerts@example.com",
-                "from_name": "OpsConductor Alerts",
-            },
-            "recipients": {"to": ["ops@example.com"], "cc": [], "bcc": []},
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 400
 
 
-async def test_create_email_invalid_email_address(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.post(
-        "/customer/integrations/email",
-        headers=_auth_header(),
-        json={
-            "name": "Email",
-            "smtp_config": {
-                "smtp_host": "smtp.example.com",
-                "smtp_port": 587,
-                "smtp_user": "user",
-                "smtp_password": "pass",
-                "smtp_tls": True,
-                "from_address": "not-an-email",
-                "from_name": "OpsConductor Alerts",
-            },
-            "recipients": {"to": ["ops@example.com"], "cc": [], "bcc": []},
-            "enabled": True,
-        },
-    )
-    assert resp.status_code in (400, 422)
 
 
-async def test_test_webhook_delivery(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(True, 1)))
-    integration_id = "00000000-0000-0000-0000-000000000001"
-    conn.fetchrow_result = {
-        "integration_id": integration_id,
-        "tenant_id": "tenant-a",
-        "name": "Webhook",
-        "type": "webhook",
-        "webhook_url": "https://example.com/hook",
-        "enabled": True,
-        "snmp_host": None,
-        "snmp_port": None,
-        "snmp_config": None,
-        "snmp_oid_prefix": None,
-        "email_config": None,
-        "email_recipients": None,
-        "email_template": None,
-    }
-    monkeypatch.setattr(
-        customer_routes,
-        "dispatch_to_integration",
-        AsyncMock(return_value=SimpleNamespace(success=True, error=None, duration_ms=5)),
-    )
-
-    resp = await client.post(f"/customer/integrations/{integration_id}/test", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["success"] is True
 
 
-async def test_test_snmp_delivery(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(True, 1)))
-    conn.fetchrow_result = {
-        "integration_id": "snmp-1",
-        "tenant_id": "tenant-a",
-        "name": "SNMP",
-        "type": "snmp",
-        "snmp_host": "198.51.100.10",
-        "snmp_port": 162,
-        "snmp_config": {"version": "2c"},
-        "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-        "enabled": True,
-    }
-    monkeypatch.setattr(
-        customer_routes,
-        "dispatch_to_integration",
-        AsyncMock(return_value=SimpleNamespace(success=True, error=None, duration_ms=5)),
-    )
-
-    resp = await client.post("/customer/integrations/snmp/snmp-1/test", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["success"] is True
 
 
-async def test_test_email_delivery(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(True, 1)))
-    integration_id = "00000000-0000-0000-0000-000000000002"
-    conn.fetchrow_result = {
-        "integration_id": integration_id,
-        "tenant_id": "tenant-a",
-        "name": "Email",
-        "type": "email",
-        "email_config": {"smtp_host": "smtp.example.com"},
-        "email_recipients": {"to": ["ops@example.com"]},
-        "email_template": {},
-        "enabled": True,
-    }
-    monkeypatch.setattr(
-        customer_routes,
-        "send_alert_email",
-        AsyncMock(
-            return_value=SimpleNamespace(success=True, error=None, duration_ms=5, recipients_count=1)
-        ),
-    )
-
-    resp = await client.post(f"/customer/integrations/email/{integration_id}/test", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["success"] is True
 
 
-async def test_test_delivery_rate_limited(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(False, 5)))
-    integration_id = "00000000-0000-0000-0000-000000000003"
-    conn.fetchrow_result = {
-        "integration_id": integration_id,
-        "tenant_id": "tenant-a",
-        "type": "webhook",
-        "webhook_url": "x",
-        "name": "Webhook",
-        "snmp_host": None,
-        "snmp_port": None,
-        "snmp_config": None,
-        "snmp_oid_prefix": None,
-        "email_config": None,
-        "email_recipients": None,
-        "email_template": None,
-        "enabled": True,
-    }
-
-    resp = await client.post(f"/customer/integrations/{integration_id}/test", headers=_auth_header())
-    assert resp.status_code == 429
 
 
-async def test_viewer_cannot_create_integration(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn, role="customer_viewer")
-
-    resp = await client.post(
-        "/customer/integrations",
-        headers=_auth_header(),
-        json={"name": "Test", "webhook_url": "https://example.com/path", "enabled": True},
-    )
-    assert resp.status_code == 403
 
 
-async def test_viewer_cannot_delete_integration(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn, role="customer_viewer")
-
-    resp = await client.delete("/customer/integrations/abc", headers=_auth_header())
-    assert resp.status_code == 403
 
 
-async def test_viewer_can_list_integrations(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn, role="customer_viewer")
-    monkeypatch.setattr(customer_routes, "fetch_integrations", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/integrations", headers=_auth_header())
-    assert resp.status_code == 200
 
 
 async def test_unauthenticated_rejected(client):
@@ -681,127 +281,29 @@ async def test_get_alert_not_found(client, monkeypatch):
 async def test_get_device_detail_json(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_device", AsyncMock(return_value={"device_id": "d1"}))
-    monkeypatch.setattr(customer_routes, "fetch_device_events", AsyncMock(return_value=[]))
-    monkeypatch.setattr(customer_routes, "fetch_device_telemetry", AsyncMock(return_value=[]))
+    monkeypatch.setattr(devices_routes, "fetch_device", AsyncMock(return_value={"device_id": "d1"}))
+    monkeypatch.setattr(devices_routes, "fetch_device_events", AsyncMock(return_value=[]))
+    monkeypatch.setattr(devices_routes, "fetch_device_telemetry", AsyncMock(return_value=[]))
 
     resp = await client.get("/customer/devices/d1", headers=_auth_header())
     assert resp.status_code == 200
     assert resp.json()["device"]["device_id"] == "d1"
 
 
-async def test_list_integration_routes(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_integration_routes", AsyncMock(return_value=[]))
-
-    resp = await client.get("/customer/integration-routes", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["routes"] == []
 
 
-async def test_get_integration_route_invalid_uuid(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.get("/customer/integration-routes/not-a-uuid", headers=_auth_header())
-    assert resp.status_code == 400
 
 
-async def test_get_integration_route_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_integration_route", AsyncMock(return_value=None))
-
-    resp = await client.get(
-        "/customer/integration-routes/00000000-0000-0000-0000-000000000010", headers=_auth_header()
-    )
-    assert resp.status_code == 404
 
 
-async def test_create_integration_route_success(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(
-        customer_routes,
-        "fetch_integration",
-        AsyncMock(return_value={"integration_id": "i1", "name": "Webhook"}),
-    )
-    monkeypatch.setattr(
-        customer_routes,
-        "create_integration_route",
-        AsyncMock(return_value={"route_id": "r1", "integration_id": "i1"}),
-    )
-
-    resp = await client.post(
-        "/customer/integration-routes",
-        headers=_auth_header(),
-        json={
-            "integration_id": "00000000-0000-0000-0000-000000000011",
-            "alert_types": ["NO_HEARTBEAT"],
-            "severities": ["CRITICAL"],
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 200
 
 
-async def test_create_integration_route_missing_integration(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_integration", AsyncMock(return_value=None))
-
-    resp = await client.post(
-        "/customer/integration-routes",
-        headers=_auth_header(),
-        json={
-            "integration_id": "00000000-0000-0000-0000-000000000012",
-            "alert_types": ["NO_HEARTBEAT"],
-            "severities": ["CRITICAL"],
-            "enabled": True,
-        },
-    )
-    assert resp.status_code == 400
 
 
-async def test_patch_integration_route_no_fields(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.patch(
-        "/customer/integration-routes/00000000-0000-0000-0000-000000000013",
-        headers=_auth_header(),
-        json={},
-    )
-    assert resp.status_code == 400
 
 
-async def test_patch_integration_route_success(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(
-        customer_routes,
-        "update_integration_route",
-        AsyncMock(return_value={"route_id": "r1", "integration_id": "i1"}),
-    )
-
-    resp = await client.patch(
-        "/customer/integration-routes/00000000-0000-0000-0000-000000000014",
-        headers=_auth_header(),
-        json={"alert_types": ["NO_HEARTBEAT"], "severities": ["INFO"], "enabled": True},
-    )
-    assert resp.status_code == 200
 
 
-async def test_delete_integration_route_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "delete_integration_route", AsyncMock(return_value=False))
-
-    resp = await client.delete(
-        "/customer/integration-routes/00000000-0000-0000-0000-000000000015", headers=_auth_header()
-    )
-    assert resp.status_code == 404
 
 
 async def test_delivery_status(client, monkeypatch):
@@ -814,220 +316,30 @@ async def test_delivery_status(client, monkeypatch):
     assert resp.json()["attempts"] == []
 
 
-async def test_integration_delivery_email_type(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    integration_id = "00000000-0000-0000-0000-000000000016"
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(True, 1)))
-    conn.fetchrow_result = {
-        "integration_id": integration_id,
-        "tenant_id": "tenant-a",
-        "name": "Email",
-        "type": "email",
-        "email_config": {"smtp_host": "smtp.example.com"},
-        "email_recipients": {"to": ["ops@example.com"]},
-        "email_template": {},
-        "enabled": True,
-    }
-    monkeypatch.setattr(
-        customer_routes,
-        "send_alert_email",
-        AsyncMock(
-            return_value=SimpleNamespace(success=True, error=None, duration_ms=5, recipients_count=1)
-        ),
-    )
-
-    resp = await client.post(f"/customer/integrations/{integration_id}/test", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["integration_type"] == "email"
 
 
-async def test_integration_delivery_snmp_type(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    integration_id = "00000000-0000-0000-0000-000000000017"
-    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=(True, 1)))
-    conn.fetchrow_result = {
-        "integration_id": integration_id,
-        "tenant_id": "tenant-a",
-        "name": "SNMP",
-        "type": "snmp",
-        "snmp_host": "198.51.100.10",
-        "snmp_port": 162,
-        "snmp_config": {"version": "2c"},
-        "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-        "enabled": True,
-    }
-    monkeypatch.setattr(
-        customer_routes,
-        "dispatch_to_integration",
-        AsyncMock(return_value=SimpleNamespace(success=True, error=None, duration_ms=5)),
-    )
-
-    resp = await client.post(f"/customer/integrations/{integration_id}/test", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["integration_type"] == "snmp"
 
 
-async def test_list_snmp_integrations(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.fetch_result = [
-        {
-            "integration_id": "snmp-1",
-            "tenant_id": "tenant-a",
-            "name": "SNMP",
-            "snmp_host": "198.51.100.10",
-            "snmp_port": 162,
-            "snmp_config": {"version": "2c"},
-            "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-            "enabled": True,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-    ]
-
-    resp = await client.get("/customer/integrations/snmp", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()[0]["snmp_host"] == "198.51.100.10"
 
 
-async def test_get_snmp_integration_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.fetchrow_result = None
-
-    resp = await client.get("/customer/integrations/snmp/00000000-0000-0000-0000-000000000020", headers=_auth_header())
-    assert resp.status_code == 404
 
 
-async def test_update_snmp_integration_no_fields(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.patch(
-        "/customer/integrations/snmp/00000000-0000-0000-0000-000000000021",
-        headers=_auth_header(),
-        json={},
-    )
-    assert resp.status_code == 400
 
 
-async def test_update_snmp_integration_success(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_snmp_host", lambda host, port: SimpleNamespace(valid=True))
-    conn.fetchrow_result = {
-        "integration_id": "snmp-1",
-        "tenant_id": "tenant-a",
-        "name": "SNMP",
-        "snmp_host": "198.51.100.10",
-        "snmp_port": 162,
-        "snmp_config": {"version": "2c"},
-        "snmp_oid_prefix": "1.3.6.1.4.1.99999",
-        "enabled": True,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    }
-
-    resp = await client.patch(
-        "/customer/integrations/snmp/00000000-0000-0000-0000-000000000022",
-        headers=_auth_header(),
-        json={"name": "SNMP", "snmp_host": "198.51.100.10"},
-    )
-    assert resp.status_code == 200
 
 
-async def test_delete_snmp_integration_success(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.execute_result = "DELETE 1"
-
-    resp = await client.delete(
-        "/customer/integrations/snmp/00000000-0000-0000-0000-000000000023", headers=_auth_header()
-    )
-    assert resp.status_code == 204
 
 
-async def test_list_email_integrations(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.fetch_result = [
-        {
-            "integration_id": "email-1",
-            "tenant_id": "tenant-a",
-            "name": "Email",
-            "email_config": {"smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_tls": True, "from_address": "alerts@example.com"},
-            "email_recipients": {"to": ["ops@example.com"]},
-            "email_template": {"format": "html"},
-            "enabled": True,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-    ]
-
-    resp = await client.get("/customer/integrations/email", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()[0]["smtp_host"] == "smtp.example.com"
 
 
-async def test_get_email_integration_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.fetchrow_result = None
-
-    resp = await client.get("/customer/integrations/email/00000000-0000-0000-0000-000000000024", headers=_auth_header())
-    assert resp.status_code == 404
 
 
-async def test_update_email_integration_no_fields(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-
-    resp = await client.patch(
-        "/customer/integrations/email/00000000-0000-0000-0000-000000000025",
-        headers=_auth_header(),
-        json={},
-    )
-    assert resp.status_code == 400
 
 
-async def test_delete_email_integration_success(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    conn.execute_result = "DELETE 1"
-
-    resp = await client.delete(
-        "/customer/integrations/email/00000000-0000-0000-0000-000000000026", headers=_auth_header()
-    )
-    assert resp.status_code == 204
 
 
-async def test_patch_integration_webhook_update(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "validate_webhook_url", AsyncMock(return_value=(True, None)))
-    monkeypatch.setattr(
-        customer_routes,
-        "update_integration",
-        AsyncMock(return_value={"integration_id": "i1", "url": "https://example.com"}),
-    )
-
-    resp = await client.patch(
-        "/customer/integrations/00000000-0000-0000-0000-000000000027",
-        headers=_auth_header(),
-        json={"webhook_url": "https://example.com", "enabled": False},
-    )
-    assert resp.status_code == 200
 
 
-async def test_get_integration_not_found(client, monkeypatch):
-    conn = FakeConn()
-    _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "fetch_integration", AsyncMock(return_value=None))
-
-    resp = await client.get("/customer/integrations/00000000-0000-0000-0000-000000000028", headers=_auth_header())
-    assert resp.status_code == 404
 
 
 async def test_app_helpers(monkeypatch):

@@ -1,6 +1,8 @@
 """Alert and alert rule management routes."""
 
 from routes.customer import *  # noqa: F401,F403
+from routes.customer import _normalize_optional_ids
+from routes.customer import _with_rule_conditions
 
 router = APIRouter(
     prefix="/customer",

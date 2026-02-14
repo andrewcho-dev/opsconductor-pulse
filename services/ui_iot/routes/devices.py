@@ -1,6 +1,8 @@
 """Device management routes - CRUD, tokens, uptime, tags, groups, maintenance windows."""
 
 from routes.customer import *  # noqa: F401,F403
+from routes.customer import _normalize_optional_ids
+from routes.customer import _normalize_tags
 
 router = APIRouter(
     prefix="/customer",

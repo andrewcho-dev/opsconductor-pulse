@@ -10,6 +10,7 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from routes import alerts as alerts_routes
 from routes import customer as customer_routes
 
 services_dir = os.path.join(
@@ -173,7 +174,7 @@ async def test_api_create_rule_with_conditions(client, monkeypatch):
             "enabled": True,
         }
     )
-    monkeypatch.setattr(customer_routes, "create_alert_rule", create_mock)
+    monkeypatch.setattr(alerts_routes, "create_alert_rule", create_mock)
     resp = await client.post(
         "/customer/alert-rules",
         headers=_auth_header(),
@@ -205,7 +206,7 @@ async def test_api_create_rule_without_conditions(client, monkeypatch):
             "enabled": True,
         }
     )
-    monkeypatch.setattr(customer_routes, "create_alert_rule", create_mock)
+    monkeypatch.setattr(alerts_routes, "create_alert_rule", create_mock)
     resp = await client.post(
         "/customer/alert-rules",
         headers=_auth_header(),

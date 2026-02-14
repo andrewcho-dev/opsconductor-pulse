@@ -9,6 +9,7 @@ import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
 from routes import customer as customer_routes
+from routes import devices as devices_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -85,7 +86,7 @@ async def test_import_valid_csv(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     create_mock = AsyncMock(return_value={"device_id": "dev"})
-    monkeypatch.setattr(customer_routes, "create_device_on_subscription", create_mock)
+    monkeypatch.setattr(devices_routes, "create_device_on_subscription", create_mock)
     csv_data = "name,device_type,site_id,tags\nsensor-a,temperature,site-1,\"a,b\"\nsensor-b,pressure,,\n"
     resp = await client.post(
         "/customer/devices/import",
@@ -101,7 +102,7 @@ async def test_import_valid_csv(client, monkeypatch):
 async def test_import_invalid_row_missing_name(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "create_device_on_subscription", AsyncMock())
+    monkeypatch.setattr(devices_routes, "create_device_on_subscription", AsyncMock())
     csv_data = "name,device_type\n,temperature\n"
     resp = await client.post(
         "/customer/devices/import",
@@ -143,7 +144,7 @@ async def test_import_partial_success(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
     create_mock = AsyncMock(return_value={"device_id": "dev"})
-    monkeypatch.setattr(customer_routes, "create_device_on_subscription", create_mock)
+    monkeypatch.setattr(devices_routes, "create_device_on_subscription", create_mock)
     csv_data = (
         "name,device_type\n"
         "sensor-a,temperature\n"

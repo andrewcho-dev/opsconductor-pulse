@@ -9,6 +9,7 @@ import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
 from routes import customer as customer_routes
+from routes import devices as devices_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -78,7 +79,7 @@ async def client():
 async def test_provision_device_returns_credentials(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "create_device_on_subscription", AsyncMock(return_value=None))
+    monkeypatch.setattr(devices_routes, "create_device_on_subscription", AsyncMock(return_value=None))
     conn.fetchrow_result = {"subscription_id": "sub-1"}
     resp = await client.post(
         "/customer/devices",
@@ -113,7 +114,7 @@ async def test_apply_template_after_provision(client, monkeypatch):
 async def test_wizard_backend_flow(client, monkeypatch):
     conn = FakeConn()
     _mock_customer_deps(monkeypatch, conn)
-    monkeypatch.setattr(customer_routes, "create_device_on_subscription", AsyncMock(return_value=None))
+    monkeypatch.setattr(devices_routes, "create_device_on_subscription", AsyncMock(return_value=None))
     conn.fetchrow_result = {"subscription_id": "sub-1"}
     provision_resp = await client.post(
         "/customer/devices",

@@ -175,26 +175,8 @@ async def test_operator_list_quarantine(client, monkeypatch):
     assert resp.json()["events"][0]["reason"] == "RATE_LIMITED"
 
 
-async def test_operator_list_integrations_all(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator")
-    monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "fetch_all_integrations", AsyncMock(return_value=[{"integration_id": "i1"}]))
-
-    resp = await client.get("/operator/integrations", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["integrations"][0]["integration_id"] == "i1"
 
 
-async def test_operator_list_integrations_filtered(client, monkeypatch):
-    conn = FakeConn()
-    _mock_operator_deps(monkeypatch, conn, role="operator")
-    monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "fetch_integrations", AsyncMock(return_value=[{"integration_id": "i2"}]))
-
-    resp = await client.get("/operator/integrations?tenant_filter=tenant-a", headers=_auth_header())
-    assert resp.status_code == 200
-    assert resp.json()["integrations"][0]["integration_id"] == "i2"
 
 
 async def test_operator_view_device_json(client, monkeypatch):

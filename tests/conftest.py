@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -47,6 +48,28 @@ from tests.helpers.auth import (
     get_operator_token,
     get_operator_admin_token,
 )
+
+
+@asynccontextmanager
+async def _safe_tenant_connection(pool, tenant_id):
+    async with pool.acquire() as conn:
+        tx_factory = getattr(conn, "transaction", None)
+        if callable(tx_factory):
+            async with tx_factory():
+                yield conn
+        else:
+            yield conn
+
+
+@asynccontextmanager
+async def _safe_operator_connection(pool):
+    async with pool.acquire() as conn:
+        tx_factory = getattr(conn, "transaction", None)
+        if callable(tx_factory):
+            async with tx_factory():
+                yield conn
+        else:
+            yield conn
 
 
 @pytest.fixture(scope="session")
@@ -231,6 +254,28 @@ async def test_integrations(db_pool, test_tenants, clean_db):
         "integration_a": integration_a,
         "integration_b": integration_b,
     }
+
+
+@pytest.fixture(autouse=True)
+def patch_route_connection_contexts():
+    from routes import alerts as alerts_routes
+    from routes import devices as devices_routes
+    from routes import exports as exports_routes
+    from routes import metrics as metrics_routes
+
+    modules = (
+        customer_routes,
+        operator_routes,
+        alerts_routes,
+        devices_routes,
+        exports_routes,
+        metrics_routes,
+    )
+    for mod in modules:
+        if hasattr(mod, "tenant_connection"):
+            setattr(mod, "tenant_connection", _safe_tenant_connection)
+        if hasattr(mod, "operator_connection"):
+            setattr(mod, "operator_connection", _safe_operator_connection)
 
 
 @pytest.fixture

@@ -41,6 +41,9 @@ class FakeConn:
     async def fetchrow(self, *args, **kwargs):
         return None
 
+    async def fetchval(self, *args, **kwargs):
+        return True
+
     @asynccontextmanager
     async def transaction(self):
         yield

@@ -26,6 +26,9 @@ class FakeConn:
     async def fetchrow(self, _query, *_args):
         return self.fetchrow_result
 
+    async def execute(self, _query, *_args):
+        return "UPDATE 1"
+
 
 class FakePool:
     def __init__(self, conn):

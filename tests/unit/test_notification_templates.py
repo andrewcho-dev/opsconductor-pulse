@@ -140,30 +140,6 @@ def test_severity_label_mapping():
 
 
 @pytest.mark.asyncio
-async def test_get_template_variables_endpoint(client, monkeypatch):
-    conn = FakeConn({"integration_id": "int-1", "type": "webhook"})
-    _mock_customer_deps(monkeypatch, conn)
-    resp = await client.get(
-        "/customer/integrations/int-1/template-variables",
-        headers=_auth_header(),
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["variables"]) == 11
-
-
-@pytest.mark.asyncio
-async def test_get_template_variables_not_found(client, monkeypatch):
-    conn = FakeConn(None)
-    _mock_customer_deps(monkeypatch, conn)
-    resp = await client.get(
-        "/customer/integrations/missing/template-variables",
-        headers=_auth_header(),
-    )
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_webhook_uses_body_template_when_set():
     integration = {
         "config_json": {

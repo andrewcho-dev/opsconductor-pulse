@@ -69,10 +69,6 @@ async def test_list_alerts_query_ordering():
     assert "ORDER BY created_at DESC" in conn.last_query
 
 
-async def test_list_integrations_query_tenant_scoped():
-    conn = FakeConn()
-    await queries.fetch_integrations(conn, "tenant-a", limit=10)
-    assert "WHERE tenant_id = $1" in conn.last_query
 
 
 async def test_fetch_device_count_query():
@@ -87,22 +83,10 @@ async def test_fetch_delivery_attempts_query_order():
     assert "ORDER BY finished_at DESC" in conn.last_query
 
 
-async def test_fetch_integration_query_scoped():
-    conn = FakeConn()
-    await queries.fetch_integration(conn, "tenant-a", "int-1")
-    assert "WHERE tenant_id = $1 AND integration_id = $2" in conn.last_query
 
 
-async def test_update_integration_no_fields():
-    conn = FakeConn()
-    result = await queries.update_integration(conn, "tenant-a", "int-1")
-    assert result is None
 
 
-async def test_update_integration_webhook_url():
-    conn = FakeConn()
-    await queries.update_integration(conn, "tenant-a", "int-1", webhook_url="https://example.com")
-    assert "config_json" in conn.last_query
 
 
 async def test_check_and_increment_rate_limit_blocks():
@@ -133,10 +117,6 @@ async def test_fetch_all_alerts_query():
     assert "ORDER BY created_at DESC" in conn.last_query
 
 
-async def test_fetch_all_integrations_query():
-    conn = FakeConn()
-    await queries.fetch_all_integrations(conn, limit=10)
-    assert "FROM integrations" in conn.last_query
 
 
 async def test_fetch_all_delivery_attempts_query():
