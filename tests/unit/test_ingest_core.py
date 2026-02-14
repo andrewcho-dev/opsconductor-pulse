@@ -11,8 +11,10 @@ from services.shared.ingest_core import (
     TelemetryRecord,
     TimescaleBatchWriter,
     TokenBucket,
+    normalize_metric,
     validate_and_prepare,
 )
+from services.ingest_iot.ingest import topic_extract
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -33,6 +35,9 @@ class FakeConn:
 
     async def copy_records_to_table(self, _table, records, columns):
         self.copy_calls.append((records, columns))
+
+    async def execute(self, *_args, **_kwargs):
+        return "SELECT 1"
 
 
 class FakePool:
@@ -480,3 +485,22 @@ async def test_batch_writer_large_batch_uses_copy():
     writer = TimescaleBatchWriter(pool=FakePool(conn), batch_size=101, flush_interval_ms=10000)
     await writer.add_many([_record(i) for i in range(101)])
     assert len(conn.copy_calls) == 1
+
+
+async def test_topic_extract_valid_topic():
+    tenant_id, device_id, msg_type = topic_extract("tenant/acme/device/sensor-01/telemetry")
+    assert tenant_id == "acme"
+    assert device_id == "sensor-01"
+    assert msg_type == "telemetry"
+
+
+async def test_topic_extract_bad_topic():
+    tenant_id, device_id, msg_type = topic_extract("bad/topic")
+    assert tenant_id is None
+    assert device_id is None
+    assert msg_type is None
+
+
+async def test_normalize_metric_multiplier_and_offset():
+    assert normalize_metric(1000, multiplier=0.1, offset=0) == pytest.approx(100.0)
+    assert normalize_metric(0, multiplier=1.0, offset=-273.15) == pytest.approx(-273.15)

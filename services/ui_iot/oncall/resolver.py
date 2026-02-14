@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def get_current_responder(layer: dict, now: datetime) -> str:
@@ -12,7 +12,7 @@ def get_current_responder(layer: dict, now: datetime) -> str:
     handoff_day = int(layer.get("handoff_day") or 1)
     handoff_hour = int(layer.get("handoff_hour") or 9)
 
-    now_utc = now.astimezone(UTC)
+    now_utc = now.astimezone(timezone.utc)
     # Compute start anchor as last handoff weekday/hour before "now".
     day_delta = (now_utc.weekday() - handoff_day) % 7
     anchor = now_utc - timedelta(days=day_delta)
@@ -32,7 +32,7 @@ def get_shift_end(layer: dict, now: datetime) -> datetime:
     handoff_day = int(layer.get("handoff_day") or 1)
     handoff_hour = int(layer.get("handoff_hour") or 9)
 
-    now_utc = now.astimezone(UTC)
+    now_utc = now.astimezone(timezone.utc)
     day_delta = (now_utc.weekday() - handoff_day) % 7
     anchor = now_utc - timedelta(days=day_delta)
     anchor = anchor.replace(hour=handoff_hour, minute=0, second=0, microsecond=0)

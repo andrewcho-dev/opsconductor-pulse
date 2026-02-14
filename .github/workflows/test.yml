@@ -163,7 +163,7 @@ jobs:
           mkdir -p test-results
           pytest -m integration -v --tb=short \
             --cov=services/ui_iot --cov=services/dispatcher --cov=services/delivery_worker \
-            --cov-report=xml --cov-report=term-missing \
+            --cov-report=xml --cov-report=term-missing --cov-fail-under=65 \
             --junitxml=test-results/integration.xml
 
       - name: Enforce coverage thresholds

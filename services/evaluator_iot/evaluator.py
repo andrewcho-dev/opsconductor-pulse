@@ -388,6 +388,18 @@ def evaluate_threshold(value, operator, threshold):
         return value >= threshold
     elif operator == "LTE":
         return value <= threshold
+    elif operator in ("EQ", "=="):
+        return value == threshold
+    elif operator in ("NE", "!="):
+        return value != threshold
+    elif operator == ">":
+        return value > threshold
+    elif operator == "<":
+        return value < threshold
+    elif operator == ">=":
+        return value >= threshold
+    elif operator == "<=":
+        return value <= threshold
     return False
 
 
@@ -461,6 +473,12 @@ def normalize_value(raw_value, multiplier, offset_value):
     except (TypeError, ValueError):
         offset = 0.0
     return (numeric_value * mult) + offset
+
+
+def should_fire_heartbeat_alert(last_seen: datetime, timeout_seconds: int) -> bool:
+    if last_seen is None:
+        return True
+    return (now_utc() - last_seen).total_seconds() > max(0, int(timeout_seconds))
 
 async def fetch_tenant_rules(pg_conn, tenant_id):
     """Load enabled alert rules for a tenant from PostgreSQL."""

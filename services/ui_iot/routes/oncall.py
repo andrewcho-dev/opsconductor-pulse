@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -351,7 +351,7 @@ async def delete_override(schedule_id: int, override_id: int, pool=Depends(get_d
 @router.get("/oncall-schedules/{schedule_id}/current")
 async def current_oncall(schedule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     async with tenant_connection(pool, tenant_id) as conn:
         schedule = await _fetch_schedule(conn, tenant_id, schedule_id)
         if not schedule:
@@ -386,7 +386,7 @@ async def current_oncall(schedule_id: int, pool=Depends(get_db_pool)):
 @router.get("/oncall-schedules/{schedule_id}/timeline")
 async def timeline(schedule_id: int, days: int = Query(14, ge=1, le=60), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     end = now + timedelta(days=days)
     async with tenant_connection(pool, tenant_id) as conn:
         schedule = await _fetch_schedule(conn, tenant_id, schedule_id)

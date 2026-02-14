@@ -36,6 +36,24 @@ def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
+def normalize_metric(raw_value, multiplier=1.0, offset=0.0):
+    if raw_value is None:
+        return None
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        mult = float(multiplier)
+    except (TypeError, ValueError):
+        mult = 1.0
+    try:
+        off = float(offset)
+    except (TypeError, ValueError):
+        off = 0.0
+    return (value * mult) + off
+
+
 class TokenBucket:
     def __init__(self):
         self.tokens = 0.0
