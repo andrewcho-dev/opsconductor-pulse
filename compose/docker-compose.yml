@@ -17,7 +17,7 @@ services:
     environment:
       POSTGRES_DB: iotcloud
       POSTGRES_USER: iot
-      POSTGRES_PASSWORD: iot_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -35,7 +35,7 @@ services:
     image: edoburu/pgbouncer:latest
     container_name: iot-pgbouncer
     environment:
-      DATABASE_URL: "postgres://iot:iot_dev@iot-postgres:5432/iotcloud"
+      DATABASE_URL: "postgres://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 200
       DEFAULT_POOL_SIZE: 20
@@ -72,8 +72,8 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       AUTO_PROVISION: "0"
       REQUIRE_TOKEN: "1"
       COUNTERS_ENABLED: "1"
@@ -113,9 +113,9 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
-      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
       POLL_SECONDS: "5"
       HEARTBEAT_STALE_SECONDS: "30"
     expose:
@@ -144,9 +144,9 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
-      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
       DISPATCH_POLL_SECONDS: "5"
       ALERT_LOOKBACK_MINUTES: "30"
       ALERT_LIMIT: "200"
@@ -177,9 +177,9 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
-      NOTIFY_DATABASE_URL: "postgresql://iot:iot_dev@iot-postgres:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
       MODE: "${MODE:-DEV}"
       WORKER_POLL_SECONDS: "2"
       WORKER_BATCH_SIZE: "10"
@@ -214,8 +214,8 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       HEALTH_CHECK_INTERVAL: "60"
       SYSTEM_ALERT_ENABLED: "true"
       METRICS_COLLECTION_INTERVAL: "5"
@@ -243,7 +243,7 @@ services:
       context: ../services/subscription_worker
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://iot:iot_dev@postgres:5432/iotcloud
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       WORKER_INTERVAL_SECONDS: "3600"
       # NOTIFICATION_WEBHOOK_URL: "https://your-webhook.example.com/notify"
     depends_on:
@@ -265,7 +265,7 @@ services:
       SITES_COUNT: "5"
       DEVICE_COUNT: "500"
       PROVISION_API_URL: "http://iot-api:8081"
-      PROVISION_ADMIN_KEY: "change-me-now"
+      PROVISION_ADMIN_KEY: ${PROVISION_ADMIN_KEY}
       SENSOR_PROFILE_MIX: "temperature_sensor:20,door_sensor:10,energy_meter:10,pressure_sensor:10,motion_sensor:10,hvac_controller:10,water_meter:10,air_quality:5,vibration_sensor:10,gps_tracker:5"
       INTERVAL_JITTER_PCT: "0.1"
       BATTERY_FLOOR: "10"
@@ -309,18 +309,18 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
-      PROVISION_ADMIN_KEY: "change-me-now"
+      PROVISION_ADMIN_KEY: ${PROVISION_ADMIN_KEY}
       MODE: "${MODE:-DEV}"
       KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
-      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-https://192.168.10.53}"
+      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL}"
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
       KEYCLOAK_JWKS_URI: "http://pulse-keycloak:8080/realms/pulse/protocol/openid-connect/certs"
       KEYCLOAK_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
-      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:-admin_dev}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
       VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       MQTT_HOST: iot-mqtt
@@ -356,9 +356,9 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
-      DATABASE_URL: "postgresql://iot:iot_dev@iot-pgbouncer:5432/iotcloud"
-      ADMIN_KEY: "change-me-now"
+      PG_PASS: ${PG_PASS}
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      ADMIN_KEY: ${ADMIN_KEY}
       ACTIVATION_TTL_MINUTES: "60"
     ports:
       - "8081:8081"
@@ -379,7 +379,7 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
+      PG_PASS: ${PG_PASS}
     depends_on:
       - postgres
     command: >
@@ -398,7 +398,7 @@ services:
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
-      PG_PASS: iot_dev
+      PG_PASS: ${PG_PASS}
       NUM_DEVICES_PER_TENANT: "3"
       TELEMETRY_INTERVAL: "10"
       HEARTBEAT_INTERVAL: "30"
@@ -424,13 +424,13 @@ services:
     image: quay.io/keycloak/keycloak:26.0
     container_name: pulse-keycloak
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin_dev
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://iot-postgres:5432/iotcloud
       KC_DB_USERNAME: iot
-      KC_DB_PASSWORD: iot_dev
-      KC_HOSTNAME: "192.168.10.53"
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HOSTNAME: ${KC_HOSTNAME}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: "xforwarded"

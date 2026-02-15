@@ -5,14 +5,15 @@ Or: docker compose exec -T postgres psql ... (run SQL directly)
 """
 import asyncio
 import json
-import logging
 import os
 from datetime import datetime, timedelta
 from typing import Dict
 
 import asyncpg
+from shared.log import configure_root_logger, get_logger
 
-logger = logging.getLogger(__name__)
+configure_root_logger()
+logger = get_logger(__name__)
 
 RETENTION_DAYS: Dict[str, int] = {
     "operator_audit_log": 365,
@@ -127,13 +128,9 @@ async def run_cleanup(database_url: str) -> None:
 
 
 async def main() -> None:
-    url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://iot:iot_dev@localhost:5432/iotcloud",
-    )
+    url = os.environ["DATABASE_URL"]
     await run_cleanup(url)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

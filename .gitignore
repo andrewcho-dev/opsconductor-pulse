@@ -9,6 +9,8 @@ test-results/
 # secrets
 .env
 .env.*
+compose/.env
+!compose/.env.example
 *.secret
 *.key
 *.pem

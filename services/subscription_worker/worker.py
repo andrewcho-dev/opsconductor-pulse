@@ -7,7 +7,6 @@ Subscription Worker - Scheduled job for:
 """
 import asyncio
 import os
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any
 import asyncpg
@@ -32,12 +31,12 @@ except ImportError:
         GRACE_HTML_TEMPLATE,
     )
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from shared.log import configure_root_logger, get_logger
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://iot:iot_dev@postgres:5432/iotcloud"
-)
+configure_root_logger()
+logger = get_logger(__name__)
+
+DATABASE_URL = os.environ["DATABASE_URL"]
 NOTIFICATION_WEBHOOK_URL = os.getenv("NOTIFICATION_WEBHOOK_URL")
 NOTIFICATION_DAYS = [90, 60, 30, 14, 7, 1]
 GRACE_PERIOD_DAYS = 14

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
 KEYCLOAK_ADMIN_USERNAME = os.getenv("KEYCLOAK_ADMIN_USERNAME", "admin")
-KEYCLOAK_ADMIN_PASSWORD = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "admin_dev")
+KEYCLOAK_ADMIN_PASSWORD = os.environ["KEYCLOAK_ADMIN_PASSWORD"]
 
 # Token cache
 _token_cache: dict[str, Any] = {"token": None, "expires_at": None}

@@ -40,7 +40,7 @@ PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_PASS = os.environ["PG_PASS"]
 
 API_RATE_LIMIT = int(os.getenv("API_RATE_LIMIT", "100"))
 API_RATE_WINDOW = int(os.getenv("API_RATE_WINDOW_SECONDS", "60"))
