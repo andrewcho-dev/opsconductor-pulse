@@ -35,6 +35,7 @@ import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import ReportsPage from "@/features/reports/ReportsPage";
+import JobsPage from "@/features/jobs/JobsPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 
 function HomeRedirect() {
@@ -99,6 +100,7 @@ export const router = createBrowserRouter(
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
             { path: "delivery-log", element: <DeliveryLogPage /> },
+            { path: "jobs", element: <JobsPage /> },
             { path: "reports", element: <ReportsPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },

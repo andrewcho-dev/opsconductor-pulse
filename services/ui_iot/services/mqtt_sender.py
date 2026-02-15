@@ -53,7 +53,8 @@ async def publish_alert(
             try:
                 info = client.publish(topic, payload, qos=qos, retain=retain)
                 info.wait_for_publish(timeout=timeout)
-                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                rc = getattr(info, "rc", mqtt.MQTT_ERR_SUCCESS)
+                if isinstance(rc, int) and rc != mqtt.MQTT_ERR_SUCCESS:
                     raise RuntimeError(f"MQTT publish failed with rc={info.rc}")
             finally:
                 client.loop_stop()

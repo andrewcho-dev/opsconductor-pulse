@@ -84,6 +84,13 @@ def _as_json_dict(value) -> dict:
     return {}
 
 
+DEVICE_ALLOWED_TRANSITIONS = {
+    "QUEUED": {"IN_PROGRESS"},
+    "IN_PROGRESS": {"SUCCEEDED", "FAILED", "REJECTED"},
+}
+TERMINAL_STATUSES = {"SUCCEEDED", "FAILED", "TIMED_OUT", "REJECTED"}
+
+
 async def health_handler(request):
     """Health check endpoint with metrics."""
     if INGESTOR_REF is not None:
@@ -215,12 +222,234 @@ async def device_report_shadow(request: web.Request):
     return web.json_response({"accepted": True, "version": version})
 
 
+async def device_get_pending_jobs(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        await _set_tenant_write_context(conn, tenant_id)
+        rows = await conn.fetch(
+            """
+            SELECT
+                e.job_id,
+                e.execution_number,
+                e.queued_at,
+                j.document_type,
+                j.document_params,
+                j.expires_at
+            FROM job_executions e
+            JOIN jobs j USING (tenant_id, job_id)
+            WHERE e.tenant_id = $1
+              AND e.device_id = $2
+              AND e.status = 'QUEUED'
+              AND (j.expires_at IS NULL OR j.expires_at > NOW())
+            ORDER BY e.queued_at ASC
+            LIMIT 10
+            """,
+            tenant_id,
+            device_id,
+        )
+    return web.json_response(
+        {
+            "jobs": [
+                {
+                    "job_id": r["job_id"],
+                    "execution_number": r["execution_number"],
+                    "document": {
+                        "type": r["document_type"],
+                        "params": _as_json_dict(r["document_params"]),
+                    },
+                    "queued_at": r["queued_at"].isoformat(),
+                    "expires_at": r["expires_at"].isoformat() if r["expires_at"] else None,
+                }
+                for r in rows
+            ]
+        }
+    )
+
+
+async def device_update_job_execution(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+    job_id = request.match_info.get("job_id")
+    if not job_id:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Missing job_id"}),
+            content_type="application/json",
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Invalid JSON body"}),
+            content_type="application/json",
+        )
+    new_status = body.get("status")
+    status_details = body.get("status_details")
+    execution_number = body.get("execution_number")
+
+    if new_status not in ("IN_PROGRESS", "SUCCEEDED", "FAILED", "REJECTED"):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": f"Invalid status: {new_status}"}),
+            content_type="application/json",
+        )
+    if status_details is not None and not isinstance(status_details, dict):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "status_details must be an object"}),
+            content_type="application/json",
+        )
+    if execution_number is not None and not isinstance(execution_number, int):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "execution_number must be an integer"}),
+            content_type="application/json",
+        )
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        await _set_tenant_write_context(conn, tenant_id)
+        execution = await conn.fetchrow(
+            """
+            SELECT status, execution_number
+            FROM job_executions
+            WHERE tenant_id=$1 AND job_id=$2 AND device_id=$3
+            """,
+            tenant_id,
+            job_id,
+            device_id,
+        )
+        if not execution:
+            raise web.HTTPNotFound(
+                text=json.dumps({"detail": "Job execution not found"}),
+                content_type="application/json",
+            )
+        current_status = execution["status"]
+        allowed = DEVICE_ALLOWED_TRANSITIONS.get(current_status, set())
+        if new_status not in allowed:
+            raise web.HTTPBadRequest(
+                text=json.dumps({"detail": f"Cannot transition from {current_status} to {new_status}"}),
+                content_type="application/json",
+            )
+        if execution_number is not None and execution_number != execution["execution_number"]:
+            raise web.HTTPConflict(
+                text=json.dumps({"detail": "Execution number mismatch - stale update"}),
+                content_type="application/json",
+            )
+
+        started_fragment = ", started_at = NOW()" if new_status == "IN_PROGRESS" else ""
+        await conn.execute(
+            f"""
+            UPDATE job_executions
+            SET status = $1,
+                status_details = $2::jsonb,
+                execution_number = execution_number + 1,
+                last_updated_at = NOW()
+                {started_fragment}
+            WHERE tenant_id=$3 AND job_id=$4 AND device_id=$5
+            """,
+            new_status,
+            json.dumps(status_details) if status_details is not None else None,
+            tenant_id,
+            job_id,
+            device_id,
+        )
+
+        if new_status in TERMINAL_STATUSES:
+            remaining = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM job_executions
+                WHERE tenant_id=$1 AND job_id=$2
+                  AND status NOT IN ('SUCCEEDED','FAILED','TIMED_OUT','REJECTED')
+                """,
+                tenant_id,
+                job_id,
+            )
+            if remaining == 0:
+                await conn.execute(
+                    "UPDATE jobs SET status='COMPLETED', updated_at=NOW() WHERE tenant_id=$1 AND job_id=$2",
+                    tenant_id,
+                    job_id,
+                )
+    return web.json_response({"job_id": job_id, "device_id": device_id, "status": new_status})
+
+
+async def device_get_job_execution(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+    job_id = request.match_info.get("job_id")
+    if not job_id:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Missing job_id"}),
+            content_type="application/json",
+        )
+    async with INGESTOR_REF.pool.acquire() as conn:
+        await _set_tenant_write_context(conn, tenant_id)
+        row = await conn.fetchrow(
+            """
+            SELECT
+                e.status, e.status_details, e.execution_number,
+                e.queued_at, e.started_at, e.last_updated_at,
+                j.document_type, j.document_params, j.expires_at
+            FROM job_executions e
+            JOIN jobs j USING (tenant_id, job_id)
+            WHERE e.tenant_id=$1 AND e.job_id=$2 AND e.device_id=$3
+            """,
+            tenant_id,
+            job_id,
+            device_id,
+        )
+    if not row:
+        raise web.HTTPNotFound(
+            text=json.dumps({"detail": "Execution not found"}),
+            content_type="application/json",
+        )
+    return web.json_response(
+        {
+            "job_id": job_id,
+            "device_id": device_id,
+            "status": row["status"],
+            "status_details": _as_json_dict(row["status_details"]) if row["status_details"] is not None else None,
+            "execution_number": row["execution_number"],
+            "document": {
+                "type": row["document_type"],
+                "params": _as_json_dict(row["document_params"]),
+            },
+            "queued_at": row["queued_at"].isoformat(),
+            "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+        }
+    )
+
+
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
     app.router.add_get("/metrics", metrics_handler)
     app.router.add_get("/device/v1/shadow", device_get_shadow)
     app.router.add_post("/device/v1/shadow/reported", device_report_shadow)
+    app.router.add_get("/device/v1/jobs/pending", device_get_pending_jobs)
+    app.router.add_put("/device/v1/jobs/{job_id}/execution", device_update_job_execution)
+    app.router.add_get("/device/v1/jobs/{job_id}/execution", device_get_job_execution)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)

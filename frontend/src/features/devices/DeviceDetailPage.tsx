@@ -13,6 +13,7 @@ import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
+import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 import { ArrowLeft } from "lucide-react";
 import {
   getDeviceTags,
@@ -50,6 +51,7 @@ export default function DeviceDetailPage() {
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
+  const [showCreateJob, setShowCreateJob] = useState(false);
 
   useEffect(() => {
     if (!device) return;
@@ -195,6 +197,11 @@ export default function DeviceDetailPage() {
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceUptimePanel deviceId={deviceId} />}
       {deviceId && <DeviceTwinPanel deviceId={deviceId} />}
+      <div>
+        <Button size="sm" variant="outline" onClick={() => setShowCreateJob(true)}>
+          Create Job
+        </Button>
+      </div>
 
       <div className="grid grid-cols-4 gap-2">
         {metrics.slice(0, 8).map((metricName) => (
@@ -243,6 +250,13 @@ export default function DeviceDetailPage() {
           open={editModalOpen}
           onSave={handleSaveDevice}
           onClose={() => setEditModalOpen(false)}
+        />
+      )}
+      {showCreateJob && device && (
+        <CreateJobModal
+          prefilledDeviceId={device.device_id}
+          onClose={() => setShowCreateJob(false)}
+          onCreated={() => setShowCreateJob(false)}
         />
       )}
     </div>

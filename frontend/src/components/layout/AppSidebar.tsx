@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   Wand2,
   CalendarOff,
+  ClipboardList,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
@@ -59,6 +60,7 @@ const customerFleetNav: NavItem[] = [
 
 const customerMonitoringNav: NavItem[] = [
   { label: "Alerts", href: "/alerts", icon: Bell },
+  { label: "Jobs", href: "/jobs", icon: ClipboardList },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
   { label: "Escalation", href: "/escalation-policies", icon: ShieldAlert },
   { label: "Notifications", href: "/notifications", icon: Webhook },
