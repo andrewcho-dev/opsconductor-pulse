@@ -159,7 +159,7 @@ export async function deleteUser(userId: string): Promise<void> {
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {
-  await apiPost(`/operator/users/${encodeURIComponent(userId)}/send-password-reset`, {});
+  await apiPost(`/operator/users/${encodeURIComponent(userId)}/reset-password`, {});
 }
 
 export async function fetchUserDetail(userId: string): Promise<KeycloakUser> {

@@ -79,6 +79,16 @@
             "userinfo.token.claim": "true",
             "multivalued": "false"
           }
+        },
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "access.token.claim": "true"
+          }
         }
       ]
     },
@@ -132,7 +142,7 @@
         { "type": "password", "value": "test123", "temporary": false }
       ],
       "attributes": {
-        "tenant_id": ["tenant-a"]
+        "tenant_id": ["acme-industrial"]
       },
       "realmRoles": ["customer", "tenant-admin"]
     },
@@ -146,7 +156,7 @@
         { "type": "password", "value": "test123", "temporary": false }
       ],
       "attributes": {
-        "tenant_id": ["tenant-b"]
+        "tenant_id": ["acme-industrial"]
       },
       "realmRoles": ["customer"]
     },
