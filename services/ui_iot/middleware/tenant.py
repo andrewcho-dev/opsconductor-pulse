@@ -91,6 +91,7 @@ async def require_customer(request: Request, _: None = Depends(inject_tenant_con
         raise HTTPException(status_code=403, detail="Customer access required")
 
 
+
 async def require_operator(request: Request, _: None = Depends(inject_tenant_context)) -> None:
     if not is_operator():
         raise HTTPException(status_code=403, detail="Operator access required")

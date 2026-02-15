@@ -362,7 +362,7 @@ services:
       KEYCLOAK_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
       KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
       VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
-      UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
+      UI_BASE_URL: "${UI_BASE_URL}"
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
       MQTT_USERNAME: "service_pulse"
@@ -497,9 +497,8 @@ services:
       KC_DB_PASSWORD: ${KC_DB_USER_PASSWORD}
       KC_HOSTNAME: ${KC_HOSTNAME}
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
-      KC_PROXY: edge
+      KC_PROXY_HEADERS: "xforwarded"
       KC_HEALTH_ENABLED: "true"
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}

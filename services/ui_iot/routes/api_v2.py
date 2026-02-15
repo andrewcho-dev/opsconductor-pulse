@@ -767,7 +767,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
     if not tenant_id:
         tenant_id = payload.get("tenant_id")
 
-    # Extract roles from realm_access.roles (new format).
+    # Extract roles from realm_access.roles (standard Keycloak roles scope).
     realm_access = payload.get("realm_access", {}) or {}
     roles = realm_access.get("roles", []) or []
     if not isinstance(roles, list):
