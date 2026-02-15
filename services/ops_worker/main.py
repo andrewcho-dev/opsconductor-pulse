@@ -7,6 +7,7 @@ import asyncpg
 from health_monitor import run_health_monitor
 from metrics_collector import run_metrics_collector
 from shared.logging import configure_logging
+from workers.commands_worker import run_commands_expiry_tick
 from workers.escalation_worker import run_escalation_tick
 from workers.jobs_worker import run_jobs_expiry_tick
 from workers.report_worker import run_report_tick
@@ -67,6 +68,7 @@ async def main() -> None:
         run_metrics_collector(),
         worker_loop(run_escalation_tick, pool, interval=60),
         worker_loop(run_jobs_expiry_tick, pool, interval=60),
+        worker_loop(run_commands_expiry_tick, pool, interval=60),
         worker_loop(run_report_tick, pool, interval=86400),
     )
 

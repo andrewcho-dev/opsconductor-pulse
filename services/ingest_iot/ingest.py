@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 import logging
 import uuid
@@ -27,6 +28,8 @@ MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
 SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
+COMMAND_ACK_TOPIC = "tenant/+/device/+/commands/ack"
+COMMAND_ACK_RE = re.compile(r"^tenant/(?P<tenant_id>[^/]+)/device/(?P<device_id>[^/]+)/commands/ack$")
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -275,6 +278,109 @@ async def device_get_pending_jobs(request: web.Request):
     )
 
 
+async def device_get_pending_commands(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        async with conn.transaction():
+            await _set_tenant_write_context(conn, tenant_id)
+            rows = await conn.fetch(
+                """
+                SELECT command_id, command_type, command_params, expires_at, created_at
+                FROM device_commands
+                WHERE tenant_id = $1
+                  AND device_id = $2
+                  AND status = 'queued'
+                  AND expires_at > NOW()
+                ORDER BY created_at ASC
+                LIMIT 20
+                """,
+                tenant_id,
+                device_id,
+            )
+
+    return web.json_response(
+        {
+            "commands": [
+                {
+                    "command_id": row["command_id"],
+                    "type": row["command_type"],
+                    "params": _as_json_dict(row["command_params"]),
+                    "expires_at": row["expires_at"].isoformat(),
+                }
+                for row in rows
+            ]
+        }
+    )
+
+
+async def device_ack_command(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+    command_id = request.match_info.get("command_id")
+    if not command_id:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Missing command_id"}),
+            content_type="application/json",
+        )
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Invalid JSON body"}),
+            content_type="application/json",
+        )
+
+    status = body.get("status", "ok")
+    details = body.get("details")
+    if details is not None and not isinstance(details, dict):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "details must be an object"}),
+            content_type="application/json",
+        )
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        async with conn.transaction():
+            await _set_tenant_write_context(conn, tenant_id)
+            updated = await conn.execute(
+                """
+                UPDATE device_commands
+                SET status = 'delivered',
+                    acked_at = NOW(),
+                    ack_details = $1::jsonb
+                WHERE tenant_id = $2
+                  AND command_id = $3
+                  AND device_id = $4
+                  AND status = 'queued'
+                """,
+                json.dumps({"status": status, "details": details}),
+                tenant_id,
+                command_id,
+                device_id,
+            )
+    if updated == "UPDATE 0":
+        raise web.HTTPNotFound(
+            text=json.dumps({"detail": "Command not found or already acknowledged"}),
+            content_type="application/json",
+        )
+    return web.json_response({"command_id": command_id, "acknowledged": True})
+
+
 async def device_update_job_execution(request: web.Request):
     if INGESTOR_REF is None or INGESTOR_REF.pool is None:
         raise web.HTTPServiceUnavailable(text="ingestor unavailable")
@@ -447,6 +553,8 @@ async def start_health_server():
     app.router.add_get("/metrics", metrics_handler)
     app.router.add_get("/device/v1/shadow", device_get_shadow)
     app.router.add_post("/device/v1/shadow/reported", device_report_shadow)
+    app.router.add_get("/device/v1/commands/pending", device_get_pending_commands)
+    app.router.add_post("/device/v1/commands/{command_id}/ack", device_ack_command)
     app.router.add_get("/device/v1/jobs/pending", device_get_pending_jobs)
     app.router.add_put("/device/v1/jobs/{job_id}/execution", device_update_job_execution)
     app.router.add_get("/device/v1/jobs/{job_id}/execution", device_get_job_execution)
@@ -1163,6 +1271,7 @@ class Ingestor:
         log_event(logger, "mqtt connected", rc=rc, topic=MQTT_TOPIC)
         client.subscribe(MQTT_TOPIC)
         client.subscribe(SHADOW_REPORTED_TOPIC)
+        client.subscribe(COMMAND_ACK_TOPIC)
 
     async def handle_shadow_reported(self, topic: str, payload: dict) -> None:
         trace_token = trace_id_var.set(str(uuid.uuid4()))
@@ -1214,6 +1323,60 @@ class Ingestor:
         finally:
             trace_id_var.reset(trace_token)
 
+    async def handle_command_ack(self, topic: str, payload: dict) -> None:
+        trace_token = trace_id_var.set(str(uuid.uuid4()))
+        try:
+            match = COMMAND_ACK_RE.match(topic)
+            if not match:
+                return
+            if self.pool is None:
+                return
+
+            tenant_id = match.group("tenant_id")
+            device_id = match.group("device_id")
+            command_id = payload.get("command_id")
+            if not command_id:
+                logger.warning("command_ack_missing_id", extra={"topic": topic})
+                return
+
+            ack_status = payload.get("status", "ok")
+            ack_details = payload.get("details")
+            if ack_details is not None and not isinstance(ack_details, dict):
+                logger.warning("command_ack_invalid_details", extra={"topic": topic})
+                return
+
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await _set_tenant_write_context(conn, tenant_id)
+                    updated = await conn.execute(
+                        """
+                        UPDATE device_commands
+                        SET status = 'delivered',
+                            acked_at = NOW(),
+                            ack_details = $1::jsonb
+                        WHERE tenant_id = $2
+                          AND command_id = $3
+                          AND device_id = $4
+                          AND status = 'queued'
+                        """,
+                        json.dumps({"status": ack_status, "details": ack_details}),
+                        tenant_id,
+                        command_id,
+                        device_id,
+                    )
+            logger.info(
+                "command_acked",
+                extra={
+                    "tenant_id": tenant_id,
+                    "device_id": device_id,
+                    "command_id": command_id,
+                    "ack_status": ack_status,
+                    "db_updated": updated != "UPDATE 0",
+                },
+            )
+        finally:
+            trace_id_var.reset(trace_token)
+
     def on_message(self, client, userdata, msg):
         trace_token = trace_id_var.set(str(uuid.uuid4()))
         try:
@@ -1245,6 +1408,11 @@ class Ingestor:
             if msg.topic.endswith("/shadow/reported"):
                 self.loop.call_soon_threadsafe(
                     lambda: asyncio.create_task(self.handle_shadow_reported(msg.topic, payload))
+                )
+                return
+            if COMMAND_ACK_RE.match(msg.topic):
+                self.loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(self.handle_command_ack(msg.topic, payload))
                 )
                 return
 

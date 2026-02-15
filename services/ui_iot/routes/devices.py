@@ -3,7 +3,7 @@
 from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
-from typing import Any
+from typing import Any, Optional
 
 from shared.log import get_logger
 from shared.twin import compute_delta, sync_status
@@ -19,6 +19,7 @@ router = APIRouter(
 )
 
 twin_logger = get_logger("pulse.twin")
+commands_logger = get_logger("pulse.commands")
 
 
 class TwinDesiredUpdate(BaseModel):
@@ -34,6 +35,12 @@ class TwinResponse(BaseModel):
     reported_version: int
     sync_status: str
     shadow_updated_at: str | None
+
+
+class CommandCreate(BaseModel):
+    command_type: str = Field(..., min_length=1, max_length=100)
+    command_params: dict[str, Any] = Field(default_factory=dict)
+    expires_in_minutes: int = Field(default=60, ge=1, le=10080)
 
 
 async def _publish_shadow_desired(
@@ -1038,6 +1045,131 @@ async def get_twin_delta(device_id: str, pool=Depends(get_db_pool)):
         "desired_version": row["desired_version"],
         "reported_version": row["reported_version"],
     }
+
+
+@router.post("/devices/{device_id}/commands", status_code=201)
+async def send_command(device_id: str, body: CommandCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    user = get_user()
+    command_id = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=body.expires_in_minutes)
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM device_state WHERE tenant_id = $1 AND device_id = $2",
+            tenant_id,
+            device_id,
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="Device not found")
+
+        await conn.execute(
+            """
+            INSERT INTO device_commands
+              (command_id, tenant_id, device_id, command_type, command_params, expires_at, created_by)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+            """,
+            command_id,
+            tenant_id,
+            device_id,
+            body.command_type,
+            json.dumps(body.command_params),
+            expires_at,
+            user.get("sub") if user else None,
+        )
+
+    topic = f"tenant/{tenant_id}/device/{device_id}/commands"
+    payload = json.dumps(
+        {
+            "command_id": command_id,
+            "type": body.command_type,
+            "params": body.command_params,
+            "expires_at": expires_at.isoformat(),
+        }
+    )
+    broker_url = os.getenv("MQTT_BROKER_URL", "mqtt://iot-mqtt:1883")
+    result = await publish_alert(
+        broker_url=broker_url,
+        topic=topic,
+        payload=payload,
+        qos=1,
+        retain=False,
+    )
+
+    if result.success:
+        async with tenant_connection(pool, tenant_id) as conn:
+            await conn.execute(
+                """
+                UPDATE device_commands
+                SET published_at = NOW(), status = 'queued'
+                WHERE tenant_id = $1 AND command_id = $2
+                """,
+                tenant_id,
+                command_id,
+            )
+
+    commands_logger.info(
+        "command_dispatched",
+        extra={
+            "tenant_id": tenant_id,
+            "command_id": command_id,
+            "device_id": device_id,
+            "command_type": body.command_type,
+            "mqtt_ok": result.success,
+        },
+    )
+
+    return {
+        "command_id": command_id,
+        "status": "queued",
+        "mqtt_published": result.success,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@router.get("/devices/{device_id}/commands")
+async def list_device_commands(
+    device_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    status: Optional[str] = Query(default=None),
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        conditions = ["tenant_id = $1", "device_id = $2"]
+        params: list[object] = [tenant_id, device_id]
+
+        if status:
+            normalized_status = status.lower()
+            if normalized_status not in {"queued", "delivered", "missed", "expired"}:
+                raise HTTPException(status_code=400, detail="Invalid status")
+            params.append(normalized_status)
+            conditions.append(f"status = ${len(params)}")
+
+        where = " AND ".join(conditions)
+        params.append(limit)
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                command_id,
+                command_type,
+                command_params,
+                status,
+                published_at,
+                acked_at,
+                ack_details,
+                expires_at,
+                created_by,
+                created_at
+            FROM device_commands
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT ${len(params)}
+            """,
+            *params,
+        )
+
+    return [dict(r) for r in rows]
 
 
 @router.get("/devices/{device_id}/tags")

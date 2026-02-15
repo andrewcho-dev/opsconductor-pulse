@@ -65,6 +65,26 @@ export interface TwinDocument {
   shadow_updated_at: string | null;
 }
 
+export type CommandStatus = "queued" | "delivered" | "missed" | "expired";
+
+export interface DeviceCommand {
+  command_id: string;
+  command_type: string;
+  command_params: Record<string, unknown>;
+  status: CommandStatus;
+  published_at: string | null;
+  acked_at: string | null;
+  expires_at: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface SendCommandPayload {
+  command_type: string;
+  command_params: Record<string, unknown>;
+  expires_in_minutes?: number;
+}
+
 export async function fetchDevices(
   params: DeviceListParams = {}
 ): Promise<DeviceListResponse> {
@@ -134,6 +154,23 @@ export async function getDeviceTwin(deviceId: string): Promise<TwinDocument> {
 
 export async function updateDesiredState(deviceId: string, desired: TwinDesired): Promise<void> {
   await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, { desired });
+}
+
+export async function sendCommand(
+  deviceId: string,
+  payload: SendCommandPayload
+): Promise<{ command_id: string; status: string; mqtt_published: boolean }> {
+  return apiPost(`/customer/devices/${encodeURIComponent(deviceId)}/commands`, payload);
+}
+
+export async function listDeviceCommands(
+  deviceId: string,
+  status?: string
+): Promise<DeviceCommand[]> {
+  const path = status
+    ? `/customer/devices/${encodeURIComponent(deviceId)}/commands?status=${encodeURIComponent(status)}`
+    : `/customer/devices/${encodeURIComponent(deviceId)}/commands`;
+  return apiGet(path);
 }
 
 export async function getDeviceTags(deviceId: string): Promise<DeviceTagsResponse> {

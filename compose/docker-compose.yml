@@ -325,6 +325,7 @@ services:
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
+      MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
