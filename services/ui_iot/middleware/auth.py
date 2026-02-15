@@ -1,10 +1,8 @@
-import asyncio
 import os
 import time
 import logging
 from collections import defaultdict
 
-import httpx
 from jose import jwk, jwt
 from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 from fastapi import HTTPException, Request
@@ -32,11 +30,6 @@ KEYCLOAK_JWKS_URI = os.getenv(
 AUTH_RATE_LIMIT = 100
 AUTH_RATE_WINDOW = 60
 _auth_attempts: dict[str, list[float]] = defaultdict(list)
-_jwks_cache: dict | None = None
-_jwks_cache_time = 0.0
-_jwks_lock = asyncio.Lock()
-
-
 def _get_or_init_cache():
     cache = get_jwks_cache()
     if cache is None:
@@ -44,33 +37,14 @@ def _get_or_init_cache():
     return cache
 
 
-async def fetch_jwks() -> dict:
-    jwks_url = f"{KEYCLOAK_INTERNAL_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(jwks_url)
-            response.raise_for_status()
-            payload = response.json()
-            return payload
-    except Exception:
-        logger.exception("Failed to fetch JWKS from Keycloak")
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-
-
 async def get_jwks() -> dict:
-    global _jwks_cache, _jwks_cache_time
-
-    now = time.time()
-    if _jwks_cache and (now - _jwks_cache_time) < JWKS_CACHE_TTL:
-        return _jwks_cache
-
-    async with _jwks_lock:
-        now = time.time()
-        if _jwks_cache and (now - _jwks_cache_time) < JWKS_CACHE_TTL:
-            return _jwks_cache
-        _jwks_cache = await fetch_jwks()
-        _jwks_cache_time = now
-        return _jwks_cache
+    cache = _get_or_init_cache()
+    try:
+        keys = await cache.get()
+    except Exception:
+        logger.exception("Failed to fetch JWKS from cache/provider")
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
+    return {"keys": keys}
 
 
 def get_signing_key(token: str, jwks: dict) -> dict:

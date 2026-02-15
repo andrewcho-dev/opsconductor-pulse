@@ -451,7 +451,9 @@ async def list_devices(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     status: str | None = Query(None),
+    search: str | None = Query(None, max_length=200),
     tags: str | None = Query(None),
+    tag: str | None = Query(None, description="Filter by a single tag"),
     q: str | None = Query(None, max_length=100),
     site_id: str | None = Query(None),
     include_decommissioned: bool = Query(False),
@@ -461,6 +463,10 @@ async def list_devices(
         raise HTTPException(status_code=400, detail="Invalid status value")
     status = status.upper() if status else None
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+    if tag:
+        tag_list = list(dict.fromkeys((tag_list or []) + [tag.strip()]))
+    if search and not q:
+        q = search
 
     tenant_id = get_tenant_id()
     try:

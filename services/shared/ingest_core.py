@@ -11,6 +11,7 @@ from typing import Optional
 import asyncpg
 
 logger = logging.getLogger(__name__)
+SUPPORTED_ENVELOPE_VERSIONS = {"1"}
 
 
 def parse_ts(v):
@@ -301,6 +302,10 @@ async def validate_and_prepare(
     burst: float,
     require_token: bool,
 ) -> IngestResult:
+    version = str((payload or {}).get("version", "1"))
+    if version not in SUPPORTED_ENVELOPE_VERSIONS:
+        return IngestResult(False, f"unsupported_envelope_version:{version}")
+
     try:
         payload_bytes = len(json.dumps(payload).encode("utf-8"))
     except Exception:

@@ -58,6 +58,7 @@ async def is_known_device(pool, tenant_id: str, device_id: str) -> bool:
 
 
 class IngestPayload(BaseModel):
+    version: str | None = None
     ts: str | None = None
     site_id: str
     seq: int = 0
@@ -65,6 +66,7 @@ class IngestPayload(BaseModel):
 
 
 class BatchMessage(BaseModel):
+    version: str | None = None
     tenant_id: str
     device_id: str
     msg_type: str
@@ -151,6 +153,7 @@ async def ingest_single(
 
     # Build payload dict
     payload_dict = {
+        "version": payload.version,
         "ts": payload.ts,
         "site_id": payload.site_id,
         "seq": payload.seq,
@@ -280,6 +283,7 @@ async def ingest_batch(request: Request, batch: BatchRequest):
 
         # Build payload dict
         payload_dict = {
+            "version": msg.version,
             "ts": msg.ts,
             "site_id": msg.site_id,
             "seq": msg.seq,

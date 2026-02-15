@@ -4,11 +4,13 @@ import os
 import logging
 import time
 import contextlib
+import uuid
 from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.log import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import (
     evaluator_rules_evaluated_total,
@@ -485,7 +487,7 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
     rows = await pg_conn.fetch(
         """
         SELECT rule_id, name, rule_type, metric_name, operator, threshold, severity,
-               site_ids, group_ids, conditions, duration_seconds
+               site_ids, group_ids, conditions, duration_seconds, duration_minutes
         FROM alert_rules
         WHERE tenant_id = $1 AND enabled = true
         """,
@@ -615,6 +617,31 @@ async def check_duration_window(
         and total_count > 0
         and failing_count is not None
         and failing_count == 0
+    )
+
+
+async def _condition_holds_for_window(
+    conn,
+    tenant_id: str,
+    device_id: str,
+    metric_name: str,
+    operator: str,
+    threshold: float,
+    duration_minutes: int,
+    mappings: list[dict] | None = None,
+) -> bool:
+    """
+    Compatibility wrapper for minute-based rule windows.
+    """
+    return await check_duration_window(
+        conn=conn,
+        tenant_id=tenant_id,
+        device_id=device_id,
+        metric_name=metric_name,
+        operator=operator,
+        threshold=threshold,
+        duration_seconds=int(duration_minutes) * 60,
+        mappings=mappings,
     )
 
 
@@ -827,8 +854,10 @@ async def main():
     try:
         last_escalation_check = 0.0
         while True:
+            trace_token = trace_id_var.set(str(uuid.uuid4()))
             conn = None
             try:
+                log_event(logger, "tick_start", tick="evaluator")
                 try:
                     await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
                 except asyncio.TimeoutError:
@@ -1084,8 +1113,27 @@ async def main():
                             fired = evaluate_conditions(latest_metrics_snapshot, conditions_json)
                             if fired:
                                 # Limitation for this phase: duration window applies to first condition.
+                                duration_minutes = rule.get("duration_minutes") or 0
                                 duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_seconds > 0:
+                                if duration_minutes > 0:
+                                    first = conditions_json["conditions"][0]
+                                    first_metric = first.get("metric_name")
+                                    first_operator = first.get("operator")
+                                    first_threshold = first.get("threshold")
+                                    first_mappings = mappings_by_normalized.get(first_metric, [])
+                                    window_met = await _condition_holds_for_window(
+                                        conn,
+                                        tenant_id,
+                                        device_id,
+                                        first_metric,
+                                        first_operator,
+                                        first_threshold,
+                                        duration_minutes,
+                                        mappings=first_mappings if first_mappings else None,
+                                    )
+                                    if not window_met:
+                                        continue
+                                elif duration_seconds > 0:
                                     first = conditions_json["conditions"][0]
                                     first_metric = first.get("metric_name")
                                     first_operator = first.get("operator")
@@ -1160,8 +1208,22 @@ async def main():
                                     break
 
                             if triggered and triggered_details:
+                                duration_minutes = rule.get("duration_minutes") or 0
                                 duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_seconds > 0:
+                                if duration_minutes > 0:
+                                    window_met = await _condition_holds_for_window(
+                                        conn,
+                                        tenant_id,
+                                        device_id,
+                                        metric_name,
+                                        operator,
+                                        threshold,
+                                        duration_minutes,
+                                        mappings=mappings_by_normalized.get(metric_name, []),
+                                    )
+                                    if not window_met:
+                                        continue  # Threshold met but window not yet satisfied
+                                elif duration_seconds > 0:
                                     window_met = await check_duration_window(
                                         conn,
                                         tenant_id,
@@ -1249,8 +1311,22 @@ async def main():
                             if metric_value is not None and evaluate_threshold(
                                 metric_value, operator, threshold
                             ):
+                                duration_minutes = rule.get("duration_minutes") or 0
                                 duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_seconds > 0:
+                                if duration_minutes > 0:
+                                    window_met = await _condition_holds_for_window(
+                                        conn,
+                                        tenant_id,
+                                        device_id,
+                                        metric_name,
+                                        operator,
+                                        threshold,
+                                        duration_minutes,
+                                        mappings=None,
+                                    )
+                                    if not window_met:
+                                        continue  # Skip alert - window not yet satisfied
+                                elif duration_seconds > 0:
                                     window_met = await check_duration_window(
                                         conn,
                                         tenant_id,
@@ -1336,6 +1412,7 @@ async def main():
                     last_escalation_check = current_monotonic
                 if conn is not None:
                     await pool.release(conn)
+                log_event(logger, "tick_done", tick="evaluator")
             except Exception as exc:
                 if conn is not None:
                     with contextlib.suppress(Exception):
@@ -1348,6 +1425,8 @@ async def main():
                     exc_info=True,
                 )
                 await asyncio.sleep(1)
+            finally:
+                trace_id_var.reset(trace_token)
     finally:
         stop_listener.set()
         listener_task.cancel()

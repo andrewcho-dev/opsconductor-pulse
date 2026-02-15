@@ -98,7 +98,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [operator, setOperator] = useState<OperatorValue>("GT");
   const [threshold, setThreshold] = useState("");
   const [severity, setSeverity] = useState("3");
-  const [durationSeconds, setDurationSeconds] = useState("0");
+  const [durationMinutes, setDurationMinutes] = useState("");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
@@ -123,7 +123,13 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setOperator(rule.operator as OperatorValue);
       setThreshold(String(rule.threshold));
       setSeverity(String(rule.severity ?? 3));
-      setDurationSeconds(String(rule.duration_seconds ?? 0));
+      setDurationMinutes(
+        rule.duration_minutes != null
+          ? String(rule.duration_minutes)
+          : rule.duration_seconds && rule.duration_seconds > 0
+          ? String(Math.ceil(rule.duration_seconds / 60))
+          : ""
+      );
       setDescription(rule.description ?? "");
       setEnabled(rule.enabled);
       setSelectedGroupIds(rule.group_ids ?? []);
@@ -162,7 +168,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setOperator("GT");
       setThreshold("");
       setSeverity("3");
-      setDurationSeconds("0");
+      setDurationMinutes("");
       setDescription("");
       setEnabled(true);
       setSelectedTemplateId("");
@@ -223,7 +229,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     setOperator(template.operator);
     setThreshold(String(template.threshold));
     setSeverity(String(template.severity));
-    setDurationSeconds(String(template.duration_seconds));
+    setDurationMinutes(template.duration_seconds > 0 ? String(Math.ceil(template.duration_seconds / 60)) : "");
     setDescription(template.description ?? "");
     setRuleMode("simple");
   }
@@ -260,14 +266,18 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     }
     const normalizedDescription = description.trim() || null;
     const severityValue = Number(severity);
-    const durationValue = Number(durationSeconds);
-    if (!Number.isInteger(durationValue) || durationValue < 0) return;
+    const durationValue =
+      durationMinutes.trim() === "" ? null : Number(durationMinutes);
+    if (durationValue !== null && (!Number.isInteger(durationValue) || durationValue < 1)) {
+      return;
+    }
 
     if (!isEditing) {
       const payload: AlertRuleCreate = {
         name,
         severity: Number.isNaN(severityValue) ? undefined : severityValue,
-        duration_seconds: durationValue,
+        duration_minutes: durationValue,
+        duration_seconds: durationValue == null ? 0 : durationValue * 60,
         description: normalizedDescription,
         enabled,
         group_ids: selectedGroupIds.length ? selectedGroupIds : null,
@@ -344,8 +354,12 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       updates.gap_conditions = null;
     }
     if (severityValue !== rule.severity) updates.severity = severityValue;
-    if (durationValue !== (rule.duration_seconds ?? 0)) {
-      updates.duration_seconds = durationValue;
+    const currentDurationMinutes =
+      rule.duration_minutes ??
+      ((rule.duration_seconds ?? 0) > 0 ? Math.ceil((rule.duration_seconds ?? 0) / 60) : null);
+    if (durationValue !== currentDurationMinutes) {
+      updates.duration_minutes = durationValue;
+      updates.duration_seconds = durationValue == null ? 0 : durationValue * 60;
     }
     if (normalizedDescription !== (rule.description ?? null)) {
       updates.description = normalizedDescription;
@@ -780,17 +794,18 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="duration-seconds">Duration (seconds)</Label>
+            <Label htmlFor="duration-minutes">Duration (minutes)</Label>
             <Input
-              id="duration-seconds"
+              id="duration-minutes"
               type="number"
-              min={0}
+              min={1}
               step={1}
-              value={durationSeconds}
-              onChange={(e) => setDurationSeconds(e.target.value)}
+              placeholder="Instant (leave blank)"
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              0 = alert immediately. Set to 60+ to require sustained condition.
+              Fire only after condition holds for this many minutes. Leave blank to fire immediately.
             </p>
           </div>
 

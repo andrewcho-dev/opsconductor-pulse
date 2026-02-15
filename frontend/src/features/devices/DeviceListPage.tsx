@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
@@ -12,6 +12,7 @@ import type { Device } from "@/services/api/types";
 import { AddDeviceModal } from "./AddDeviceModal";
 import { useAlerts } from "@/hooks/use-alerts";
 import { DeviceDetailPane } from "./DeviceDetailPane";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 interface DeviceListFilters {
   limit: number;
@@ -50,11 +51,17 @@ export default function DeviceListPage() {
   });
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, q: debouncedSearch, offset: 0 }));
+  }, [debouncedSearch]);
   const { data, isLoading, error } = useDevices({
     limit: filters.limit,
     offset: filters.offset,
     status: filters.status,
-    q: filters.q,
+    search: debouncedSearch,
+    q: debouncedSearch,
     site_id: filters.site_id,
   });
   const { data: sitesData } = useQuery({
@@ -128,9 +135,9 @@ export default function DeviceListPage() {
           <div className="flex h-[calc(100vh-210px)] flex-col rounded-md border border-border">
             <div className="space-y-2 border-b border-border p-3">
               <input
-                value={filters.q}
+                value={searchInput}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, q: e.target.value, offset: 0 }))
+                  setSearchInput(e.target.value)
                 }
                 placeholder="Search devices..."
                 className="h-8 w-full rounded border border-border bg-background px-2 text-sm"

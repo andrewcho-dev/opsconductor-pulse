@@ -179,6 +179,7 @@ export interface AlertRule {
   threshold: number;
   severity: number;
   duration_seconds: number;
+  duration_minutes?: number | null;
   enabled: boolean;
   description: string | null;
   site_ids: string[] | null;
@@ -218,6 +219,7 @@ export interface AlertRuleCreate {
   threshold?: number;
   severity?: number;
   duration_seconds?: number;
+  duration_minutes?: number | null;
   description?: string | null;
   site_ids?: string[] | null;
   group_ids?: string[] | null;
@@ -235,6 +237,7 @@ export interface AlertRuleUpdate {
   threshold?: number;
   severity?: number;
   duration_seconds?: number;
+  duration_minutes?: number | null;
   description?: string | null;
   site_ids?: string[] | null;
   group_ids?: string[] | null;

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 
 import asyncpg
 from health_monitor import run_health_monitor
@@ -8,6 +9,7 @@ from metrics_collector import run_metrics_collector
 from shared.logging import configure_logging
 from workers.escalation_worker import run_escalation_tick
 from workers.report_worker import run_report_tick
+from shared.log import trace_id_var
 
 configure_logging("ops_worker")
 logger = logging.getLogger(__name__)
@@ -43,12 +45,17 @@ async def get_pool() -> asyncpg.Pool:
 
 async def worker_loop(fn, pool_obj, interval: int) -> None:
     while True:
+        trace_token = trace_id_var.set(str(uuid.uuid4()))
         try:
+            logger.info("tick_start", extra={"tick": getattr(fn, "__name__", "unknown")})
             await fn(pool_obj)
+            logger.info("tick_done", extra={"tick": getattr(fn, "__name__", "unknown")})
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Worker loop failed", extra={"worker": getattr(fn, "__name__", "unknown")})
+        finally:
+            trace_id_var.reset(trace_token)
         await asyncio.sleep(interval)
 
 

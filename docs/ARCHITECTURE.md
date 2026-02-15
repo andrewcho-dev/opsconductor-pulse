@@ -115,6 +115,8 @@ MQTT device ingestion. Multi-worker async pipeline:
 - Writes telemetry to TimescaleDB using batched COPY for high throughput (~20k msg/sec)
 - Quarantines invalid messages to `quarantine_events`
 
+> 📋 **Ingest envelope spec**: See [PULSE_ENVELOPE_V1.md](PULSE_ENVELOPE_V1.md)
+
 ### evaluator (`services/evaluator_iot/`)
 State tracking and alert generation:
 - Reads telemetry from TimescaleDB

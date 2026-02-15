@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from typing import Any, Optional
+from shared.log import trace_id_var
 
 
 class JsonFormatter(logging.Formatter):
@@ -22,7 +23,9 @@ class JsonFormatter(logging.Formatter):
             "ts": ts,
             "level": record.levelname,
             "service": self.service,
+            "logger": record.name,
             "msg": record.getMessage(),
+            "trace_id": trace_id_var.get(""),
         }
         for key, value in record.__dict__.items():
             if key not in {
@@ -59,6 +62,7 @@ class JsonFormatter(logging.Formatter):
 
 def configure_logging(service: str, level: str | None = None) -> None:
     """Call once at service startup to configure JSON logging."""
+    service_name = os.getenv("SERVICE_NAME", service)
     log_level = getattr(
         logging,
         (level or os.getenv("LOG_LEVEL", "INFO")).upper(),
@@ -67,7 +71,7 @@ def configure_logging(service: str, level: str | None = None) -> None:
     root = logging.getLogger()
     root.handlers.clear()
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(service))
+    handler.setFormatter(JsonFormatter(service_name))
     root.addHandler(handler)
     root.setLevel(log_level)
 

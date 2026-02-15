@@ -82,6 +82,9 @@ export default function AlertRulesPage() {
   }
 
   function formatDuration(rule: AlertRule) {
+    if (rule.duration_minutes != null && rule.duration_minutes > 0) {
+      return `${rule.duration_minutes}m`;
+    }
     const seconds = rule.duration_seconds ?? 0;
     if (seconds <= 0) return "Immediate";
     if (seconds % 60 === 0) return `${seconds / 60}m`;

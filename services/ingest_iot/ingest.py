@@ -3,6 +3,7 @@ import json
 import os
 import time
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
@@ -18,6 +19,7 @@ from shared.ingest_core import (
     TelemetryRecord,
 )
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.log import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import ingest_messages_total, ingest_queue_depth
 
@@ -536,10 +538,18 @@ class Ingestor:
                     await _set_tenant_write_context(conn, tenant_id)
                     await conn.execute(
                         """
-                        INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+                        INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload, envelope_version)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
                         """,
-                        event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, json.dumps(payload)
+                        event_ts,
+                        topic,
+                        tenant_id,
+                        site_id,
+                        device_id,
+                        msg_type,
+                        reason,
+                        json.dumps(payload),
+                        str((payload or {}).get("version", "1")),
                     )
 
     def _rate_limit_ok(self, tenant_id: str, device_id: str) -> bool:
@@ -808,41 +818,45 @@ class Ingestor:
         client.subscribe(MQTT_TOPIC)
 
     def on_message(self, client, userdata, msg):
-        self.msg_received += 1
-        _counter_inc("messages_received")
+        trace_token = trace_id_var.set(str(uuid.uuid4()))
         try:
-            payload = json.loads(msg.payload.decode("utf-8"))
-            if "ts" not in payload:
-                payload["ts"] = utcnow().isoformat()
-        except json.JSONDecodeError as exc:
-            logger.warning("Invalid JSON in MQTT message: %s", exc)
-            self.msg_dropped += 1
-            _counter_inc("messages_rejected")
-            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-            return
-        except UnicodeDecodeError as exc:
-            logger.warning("Invalid encoding in MQTT message: %s", exc)
-            self.msg_dropped += 1
-            _counter_inc("messages_rejected")
-            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-            return
-
-        if self.loop is None:
-            self.msg_dropped += 1
-            _counter_inc("messages_rejected")
-            ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-            return
-
-        def _enqueue():
+            self.msg_received += 1
+            _counter_inc("messages_received")
             try:
-                self.queue.put_nowait((msg.topic, payload))
-                self.msg_enqueued += 1
-            except asyncio.QueueFull:
+                payload = json.loads(msg.payload.decode("utf-8"))
+                if "ts" not in payload:
+                    payload["ts"] = utcnow().isoformat()
+            except json.JSONDecodeError as exc:
+                logger.warning("Invalid JSON in MQTT message: %s", exc)
                 self.msg_dropped += 1
                 _counter_inc("messages_rejected")
                 ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
+                return
+            except UnicodeDecodeError as exc:
+                logger.warning("Invalid encoding in MQTT message: %s", exc)
+                self.msg_dropped += 1
+                _counter_inc("messages_rejected")
+                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
+                return
 
-        self.loop.call_soon_threadsafe(_enqueue)
+            if self.loop is None:
+                self.msg_dropped += 1
+                _counter_inc("messages_rejected")
+                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
+                return
+
+            def _enqueue():
+                try:
+                    self.queue.put_nowait((msg.topic, payload))
+                    self.msg_enqueued += 1
+                except asyncio.QueueFull:
+                    self.msg_dropped += 1
+                    _counter_inc("messages_rejected")
+                    ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
+
+            self.loop.call_soon_threadsafe(_enqueue)
+        finally:
+            trace_id_var.reset(trace_token)
 
     async def run(self):
         await self.init_db()

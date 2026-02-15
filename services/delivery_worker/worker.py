@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import logging
+import uuid
 from aiohttp import web
 import socket
 import time
@@ -22,6 +23,7 @@ from email_sender import (
 )
 from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.log import trace_id_var
 from shared.logging import configure_logging, log_event
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
@@ -920,7 +922,9 @@ async def run_worker() -> None:
 
     try:
         while True:
+            trace_token = trace_id_var.set(str(uuid.uuid4()))
             try:
+                log_event(logger, "tick_start", tick="delivery_worker")
                 try:
                     await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
                 except asyncio.TimeoutError:
@@ -948,6 +952,7 @@ async def run_worker() -> None:
                     notification_jobs = await fetch_notification_jobs(conn, WORKER_BATCH_SIZE)
                     for notification_job in notification_jobs:
                         await process_notification_job(conn, notification_job)
+                log_event(logger, "tick_done", tick="delivery_worker")
             except Exception as exc:
                 logger.error(
                     "delivery worker loop failed",
@@ -955,6 +960,8 @@ async def run_worker() -> None:
                     exc_info=True,
                 )
                 await asyncio.sleep(1)
+            finally:
+                trace_id_var.reset(trace_token)
     finally:
         if listener_conn is not None:
             try:

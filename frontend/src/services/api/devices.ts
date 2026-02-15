@@ -14,6 +14,8 @@ export interface DeviceListParams {
   offset?: number;
   status?: string;
   tags?: string[];
+  tag?: string;
+  search?: string;
   q?: string;
   site_id?: string;
 }
@@ -51,12 +53,14 @@ export interface TelemetryHistoryResponse {
 export async function fetchDevices(
   params: DeviceListParams = {}
 ): Promise<DeviceListResponse> {
-  const { limit = 100, offset = 0, status, tags, q, site_id } = params;
+  const { limit = 100, offset = 0, status, tags, tag, search, q, site_id } = params;
   const searchParams = new URLSearchParams();
   searchParams.set("limit", String(limit));
   searchParams.set("offset", String(offset));
   if (status) searchParams.set("status", status);
   if (tags && tags.length > 0) searchParams.set("tags", tags.join(","));
+  if (tag) searchParams.set("tag", tag);
+  if (search) searchParams.set("search", search);
   if (q) searchParams.set("q", q);
   if (site_id) searchParams.set("site_id", site_id);
 

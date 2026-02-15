@@ -665,7 +665,7 @@ async def fetch_alert_rules(
     rows = await conn.fetch(
         """
         SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-               severity, description, site_ids, group_ids, conditions, duration_seconds, created_at, updated_at
+               severity, description, site_ids, group_ids, conditions, duration_seconds, duration_minutes, created_at, updated_at
         FROM alert_rules
         WHERE tenant_id = $1
         ORDER BY created_at DESC
@@ -686,7 +686,7 @@ async def fetch_alert_rule(
     row = await conn.fetchrow(
         """
         SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-               severity, description, site_ids, group_ids, conditions, duration_seconds, created_at, updated_at
+               severity, description, site_ids, group_ids, conditions, duration_seconds, duration_minutes, created_at, updated_at
         FROM alert_rules
         WHERE tenant_id = $1 AND rule_id = $2
         """,
@@ -709,6 +709,7 @@ async def create_alert_rule(
     group_ids: List[str] | None = None,
     conditions: Dict[str, Any] | None = None,
     duration_seconds: int = 0,
+    duration_minutes: int | None = None,
     enabled: bool = True,
     rule_type: str = "threshold",
 ) -> Dict[str, Any]:
@@ -718,10 +719,10 @@ async def create_alert_rule(
         """
         INSERT INTO alert_rules
             (tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-             severity, description, site_ids, group_ids, conditions, duration_seconds, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, now(), now())
+             severity, description, site_ids, group_ids, conditions, duration_seconds, duration_minutes, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, now(), now())
         RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-                  severity, description, site_ids, group_ids, conditions, duration_seconds, created_at, updated_at
+                  severity, description, site_ids, group_ids, conditions, duration_seconds, duration_minutes, created_at, updated_at
         """,
         tenant_id,
         rule_id,
@@ -737,6 +738,7 @@ async def create_alert_rule(
         group_ids,
         json.dumps(conditions) if conditions is not None else None,
         duration_seconds,
+        duration_minutes,
     )
     return dict(row)
 
@@ -755,6 +757,7 @@ async def update_alert_rule(
     group_ids: List[str] | None = None,
     conditions: Dict[str, Any] | None = None,
     duration_seconds: int | None = None,
+    duration_minutes: int | None = None,
     enabled: bool | None = None,
     rule_type: str | None = None,
 ) -> Dict[str, Any] | None:
@@ -808,6 +811,10 @@ async def update_alert_rule(
         sets.append(f"duration_seconds = ${idx}")
         params.append(duration_seconds)
         idx += 1
+    if duration_minutes is not None:
+        sets.append(f"duration_minutes = ${idx}")
+        params.append(duration_minutes)
+        idx += 1
     if enabled is not None:
         sets.append(f"enabled = ${idx}")
         params.append(enabled)
@@ -820,7 +827,7 @@ async def update_alert_rule(
         + ", ".join(sets)
         + " WHERE tenant_id = $1 AND rule_id = $2 "
         + "RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold, "
-        + "severity, description, site_ids, group_ids, conditions, duration_seconds, created_at, updated_at"
+        + "severity, description, site_ids, group_ids, conditions, duration_seconds, duration_minutes, created_at, updated_at"
     )
     row = await conn.fetchrow(query, *params)
     return dict(row) if row else None

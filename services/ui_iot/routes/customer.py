@@ -332,6 +332,11 @@ class AlertRuleCreate(BaseModel):
         ge=0,
         description="Seconds threshold must be continuously breached before alert fires. 0 = immediate.",
     )
+    duration_minutes: int | None = Field(
+        default=None,
+        ge=1,
+        description="If set, alert fires only after condition holds for this many minutes.",
+    )
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
@@ -349,6 +354,7 @@ class AlertRuleUpdate(BaseModel):
     threshold: float | None = None
     severity: int | None = Field(default=None, ge=1, le=5)
     duration_seconds: int | None = Field(default=None, ge=0)
+    duration_minutes: int | None = Field(default=None, ge=1)
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
@@ -509,6 +515,10 @@ def _normalize_optional_ids(values: list[str] | None, field_name: str) -> list[s
 
 def _with_rule_conditions(rule: dict) -> dict:
     result = dict(rule)
+    if result.get("duration_minutes") is None:
+        secs = result.get("duration_seconds")
+        if isinstance(secs, int) and secs > 0 and secs % 60 == 0:
+            result["duration_minutes"] = secs // 60
     if result.get("rule_type") == "anomaly":
         result["anomaly_conditions"] = result.get("conditions")
         result["gap_conditions"] = None

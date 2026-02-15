@@ -19,6 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from middleware.trace import TraceMiddleware
 
 from routes.customer import router as customer_router, limiter
 from routes.devices import router as devices_router
@@ -126,6 +127,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(TraceMiddleware)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -342,11 +344,11 @@ async def startup():
     jwks_ttl = int(os.getenv("JWKS_TTL_SECONDS", "300"))
     try:
         cache = init_jwks_cache(jwks_uri=jwks_uri, ttl_seconds=jwks_ttl)
-        await cache.get_keys()
-        logger.info("JWKS cache pre-warm succeeded")
+        await cache.start()
+        logger.info("JWKS cache started")
     except Exception:
         # Non-fatal: auth middleware can retry/refresh lazily.
-        logger.warning("JWKS cache pre-warm failed", exc_info=True)
+        logger.warning("JWKS cache startup failed", exc_info=True)
 
     await setup_ws_listener()
 
@@ -356,6 +358,12 @@ async def shutdown():
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
         await app.state.audit.stop()
+    try:
+        cache = get_jwks_cache()
+        if cache is not None:
+            await cache.stop()
+    except Exception:
+        pass
     try:
         from shared.sampled_logger import get_sampled_logger
         get_sampled_logger().shutdown()

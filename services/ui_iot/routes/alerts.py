@@ -416,6 +416,10 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
             if site_id is None or not str(site_id).strip():
                 raise HTTPException(status_code=400, detail="Invalid site_id value")
     group_ids = _normalize_optional_ids(body.group_ids, "group_ids")
+    duration_minutes = body.duration_minutes
+    duration_seconds = body.duration_seconds
+    if duration_minutes is not None:
+        duration_seconds = duration_minutes * 60
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
@@ -428,7 +432,8 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 operator=operator,
                 threshold=threshold,
                 severity=body.severity,
-                duration_seconds=body.duration_seconds,
+                duration_seconds=duration_seconds,
+                duration_minutes=duration_minutes,
                 description=body.description,
                 site_ids=body.site_ids,
                 group_ids=group_ids,
@@ -532,6 +537,10 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
             if site_id is None or not str(site_id).strip():
                 raise HTTPException(status_code=400, detail="Invalid site_id value")
     group_ids = _normalize_optional_ids(body.group_ids, "group_ids")
+    duration_minutes = body.duration_minutes
+    duration_seconds = body.duration_seconds
+    if duration_minutes is not None:
+        duration_seconds = duration_minutes * 60
 
     tenant_id = get_tenant_id()
     try:
@@ -547,7 +556,8 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 operator=operator,
                 threshold=threshold,
                 severity=body.severity,
-                duration_seconds=body.duration_seconds,
+                duration_seconds=duration_seconds,
+                duration_minutes=duration_minutes,
                 description=body.description,
                 site_ids=body.site_ids,
                 group_ids=group_ids,

@@ -64,6 +64,7 @@ services:
       dockerfile: ingest_iot/Dockerfile
     container_name: iot-ingest
     environment:
+      SERVICE_NAME: ingest_iot
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
       MQTT_TOPIC: "tenant/+/device/+/+"
@@ -107,6 +108,7 @@ services:
       dockerfile: evaluator_iot/Dockerfile
     container_name: iot-evaluator
     environment:
+      SERVICE_NAME: evaluator
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -137,6 +139,7 @@ services:
       dockerfile: dispatcher/Dockerfile
     container_name: iot-dispatcher
     environment:
+      SERVICE_NAME: dispatcher
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -169,6 +172,7 @@ services:
       dockerfile: delivery_worker/Dockerfile
     container_name: iot-delivery-worker
     environment:
+      SERVICE_NAME: delivery_worker
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -205,6 +209,7 @@ services:
       dockerfile: ops_worker/Dockerfile
     container_name: iot-ops-worker
     environment:
+      SERVICE_NAME: ops_worker
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -299,6 +304,7 @@ services:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
     environment:
+      SERVICE_NAME: ui_iot
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -312,6 +318,7 @@ services:
       KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
       KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_URL:-https://192.168.10.53}"
       KEYCLOAK_INTERNAL_URL: "http://pulse-keycloak:8080"
+      KEYCLOAK_JWKS_URI: "http://pulse-keycloak:8080/realms/pulse/protocol/openid-connect/certs"
       KEYCLOAK_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
       KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:-admin_dev}"
       VITE_KEYCLOAK_URL: "${KEYCLOAK_URL:-http://localhost:8180}"
