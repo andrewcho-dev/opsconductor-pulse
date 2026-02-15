@@ -363,7 +363,18 @@ async def get_alert_rule(rule_id: str, pool=Depends(get_db_pool)):
 @router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
 async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
-    conditions_json = body.conditions.model_dump() if body.conditions else None
+    conditions_json = None
+    match_mode = body.match_mode
+    conditions_list = None
+    if isinstance(body.conditions, list):
+        conditions_json = [condition.model_dump() for condition in body.conditions]
+        conditions_list = conditions_json
+    elif body.conditions is not None:
+        conditions_obj = body.conditions.model_dump()
+        conditions_json = conditions_obj
+        conditions_list = conditions_obj.get("conditions")
+        if body.match_mode == "all":
+            match_mode = "any" if conditions_obj.get("combinator") == "OR" else "all"
     anomaly_conditions_json = (
         body.anomaly_conditions.model_dump() if body.anomaly_conditions else None
     )
@@ -388,12 +399,12 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
         operator = "GT"
         threshold = float(gap_conditions_json["gap_minutes"])
         conditions_payload = gap_conditions_json
-    elif conditions_json:
-        first_condition = conditions_json["conditions"][0]
+    elif conditions_list:
+        first_condition = conditions_list[0]
         metric_name = first_condition["metric_name"]
         operator = first_condition["operator"]
         threshold = first_condition["threshold"]
-        for cond in conditions_json["conditions"]:
+        for cond in conditions_list:
             if cond["operator"] not in VALID_OPERATORS:
                 raise HTTPException(status_code=400, detail="Invalid operator value")
             if not METRIC_NAME_PATTERN.match(cond["metric_name"]):
@@ -438,6 +449,7 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 site_ids=body.site_ids,
                 group_ids=group_ids,
                 conditions=conditions_payload,
+                match_mode=match_mode,
                 enabled=body.enabled,
             )
     except Exception:
@@ -483,13 +495,25 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         and body.site_ids is None
         and body.group_ids is None
         and body.conditions is None
+        and body.match_mode is None
         and body.anomaly_conditions is None
         and body.gap_conditions is None
         and body.enabled is None
     ):
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    conditions_json = body.conditions.model_dump() if body.conditions else None
+    conditions_json = None
+    match_mode = body.match_mode
+    conditions_list = None
+    if isinstance(body.conditions, list):
+        conditions_json = [condition.model_dump() for condition in body.conditions]
+        conditions_list = conditions_json
+    elif body.conditions is not None:
+        conditions_obj = body.conditions.model_dump()
+        conditions_json = conditions_obj
+        conditions_list = conditions_obj.get("conditions")
+        if body.match_mode is None:
+            match_mode = "any" if conditions_obj.get("combinator") == "OR" else "all"
     anomaly_conditions_json = (
         body.anomaly_conditions.model_dump() if body.anomaly_conditions else None
     )
@@ -512,13 +536,13 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         operator = "GT"
         threshold = float(gap_conditions_json["gap_minutes"])
         conditions_payload = gap_conditions_json
-    elif conditions_json:
-        for cond in conditions_json["conditions"]:
+    elif conditions_list:
+        for cond in conditions_list:
             if cond["operator"] not in VALID_OPERATORS:
                 raise HTTPException(status_code=400, detail="Invalid operator value")
             if not METRIC_NAME_PATTERN.match(cond["metric_name"]):
                 raise HTTPException(status_code=400, detail="Invalid metric_name format")
-        first_condition = conditions_json["conditions"][0]
+        first_condition = conditions_list[0]
         metric_name = first_condition["metric_name"]
         operator = first_condition["operator"]
         threshold = first_condition["threshold"]
@@ -562,6 +586,7 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 site_ids=body.site_ids,
                 group_ids=group_ids,
                 conditions=conditions_payload,
+                match_mode=match_mode,
                 enabled=body.enabled,
             )
     except Exception:

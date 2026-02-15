@@ -340,7 +340,8 @@ class AlertRuleCreate(BaseModel):
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
-    conditions: "RuleConditions | None" = None
+    conditions: List["RuleCondition"] | "RuleConditions" | None = None
+    match_mode: Literal["all", "any"] = "all"
     anomaly_conditions: "AnomalyConditions | None" = None
     gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool = True
@@ -358,7 +359,8 @@ class AlertRuleUpdate(BaseModel):
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
-    conditions: "RuleConditions | None" = None
+    conditions: List["RuleCondition"] | "RuleConditions" | None = None
+    match_mode: Literal["all", "any"] | None = None
     anomaly_conditions: "AnomalyConditions | None" = None
     gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool | None = None
@@ -368,6 +370,7 @@ class RuleCondition(BaseModel):
     metric_name: str
     operator: Literal["GT", "LT", "GTE", "LTE"]
     threshold: float
+    duration_minutes: int | None = Field(default=None, ge=1)
 
 
 class RuleConditions(BaseModel):
@@ -515,17 +518,35 @@ def _normalize_optional_ids(values: list[str] | None, field_name: str) -> list[s
 
 def _with_rule_conditions(rule: dict) -> dict:
     result = dict(rule)
+    if not result.get("match_mode"):
+        result["match_mode"] = "all"
+    raw_conditions = result.get("conditions")
+    if isinstance(raw_conditions, str):
+        try:
+            raw_conditions = json.loads(raw_conditions)
+        except Exception:
+            raw_conditions = None
     if result.get("duration_minutes") is None:
         secs = result.get("duration_seconds")
         if isinstance(secs, int) and secs > 0 and secs % 60 == 0:
             result["duration_minutes"] = secs // 60
     if result.get("rule_type") == "anomaly":
+        result["conditions"] = raw_conditions if isinstance(raw_conditions, dict) else {}
         result["anomaly_conditions"] = result.get("conditions")
         result["gap_conditions"] = None
     elif result.get("rule_type") == "telemetry_gap":
+        result["conditions"] = raw_conditions if isinstance(raw_conditions, dict) else {}
         result["anomaly_conditions"] = None
         result["gap_conditions"] = result.get("conditions")
     else:
+        if isinstance(raw_conditions, dict) and isinstance(raw_conditions.get("conditions"), list):
+            result["conditions"] = raw_conditions["conditions"]
+            if result.get("match_mode") not in {"all", "any"}:
+                result["match_mode"] = "any" if raw_conditions.get("combinator") == "OR" else "all"
+        elif isinstance(raw_conditions, list):
+            result["conditions"] = raw_conditions
+        else:
+            result["conditions"] = []
         result["anomaly_conditions"] = None
         result["gap_conditions"] = None
     return result

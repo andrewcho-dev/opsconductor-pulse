@@ -38,9 +38,11 @@ import type {
   AlertRuleCreate,
   AlertRuleUpdate,
   AnomalyConditions,
+  MatchMode,
   NormalizedMetricReference,
   RawMetricReference,
   RuleCondition,
+  RuleOperator,
   TelemetryGapConditions,
 } from "@/services/api/types";
 import { ApiError } from "@/services/api/client";
@@ -49,8 +51,8 @@ import {
   fetchAlertRuleTemplates,
   type AlertRuleTemplate,
 } from "@/services/api/alert-rules";
+import { ConditionRow } from "./ConditionRow";
 
-type OperatorValue = "GT" | "LT" | "GTE" | "LTE";
 type RuleMode = "simple" | "multi" | "anomaly" | "gap";
 
 interface AlertRuleDialogProps {
@@ -95,7 +97,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
   const [name, setName] = useState("");
   const [metricName, setMetricName] = useState("");
-  const [operator, setOperator] = useState<OperatorValue>("GT");
+  const [operator, setOperator] = useState<RuleOperator>("GT");
   const [threshold, setThreshold] = useState("");
   const [severity, setSeverity] = useState("3");
   const [durationMinutes, setDurationMinutes] = useState("");
@@ -103,9 +105,9 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [enabled, setEnabled] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [ruleMode, setRuleMode] = useState<RuleMode>("simple");
-  const [combinator, setCombinator] = useState<"AND" | "OR">("AND");
+  const [matchMode, setMatchMode] = useState<MatchMode>("all");
   const [multiConditions, setMultiConditions] = useState<RuleCondition[]>([
-    { metric_name: "", operator: "GT", threshold: 0 },
+    { metric_name: "", operator: "GT", threshold: 0, duration_minutes: null },
   ]);
   const [anomalyMetricName, setAnomalyMetricName] = useState("");
   const [anomalyWindowMinutes, setAnomalyWindowMinutes] = useState("60");
@@ -120,7 +122,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     if (rule) {
       setName(rule.name);
       setMetricName(rule.metric_name);
-      setOperator(rule.operator as OperatorValue);
+      setOperator(rule.operator as RuleOperator);
       setThreshold(String(rule.threshold));
       setSeverity(String(rule.severity ?? 3));
       setDurationMinutes(
@@ -139,22 +141,27 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         setAnomalyWindowMinutes(String(rule.anomaly_conditions.window_minutes));
         setAnomalyZThreshold(String(rule.anomaly_conditions.z_threshold));
         setAnomalyMinSamples(String(rule.anomaly_conditions.min_samples));
-        setCombinator("AND");
-        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0 }]);
+        setMatchMode("all");
+        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }]);
       } else if (rule.rule_type === "telemetry_gap" && rule.gap_conditions) {
         setRuleMode("gap");
         setGapMetricName(rule.gap_conditions.metric_name);
         setGapMinutes(String(rule.gap_conditions.gap_minutes));
-        setCombinator("AND");
-        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0 }]);
-      } else if (rule.conditions?.conditions?.length) {
+        setMatchMode("all");
+        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }]);
+      } else if (Array.isArray(rule.conditions) && rule.conditions.length) {
         setRuleMode("multi");
-        setCombinator(rule.conditions.combinator);
-        setMultiConditions(rule.conditions.conditions);
+        setMatchMode(rule.match_mode ?? "all");
+        setMultiConditions(
+          rule.conditions.map((condition) => ({
+            ...condition,
+            duration_minutes: condition.duration_minutes ?? null,
+          }))
+        );
       } else {
         setRuleMode("simple");
-        setCombinator("AND");
-        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0 }]);
+        setMatchMode("all");
+        setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }]);
         setAnomalyMetricName("");
         setAnomalyWindowMinutes("60");
         setAnomalyZThreshold("3");
@@ -173,8 +180,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setEnabled(true);
       setSelectedTemplateId("");
       setRuleMode("simple");
-      setCombinator("AND");
-      setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0 }]);
+      setMatchMode("all");
+      setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }]);
       setAnomalyMetricName("");
       setAnomalyWindowMinutes("60");
       setAnomalyZThreshold("3");
@@ -234,6 +241,23 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     setRuleMode("simple");
   }
 
+  function updateCondition(index: number, updated: RuleCondition) {
+    setMultiConditions((previous) =>
+      previous.map((condition, rowIndex) => (rowIndex === index ? updated : condition))
+    );
+  }
+
+  function removeCondition(index: number) {
+    setMultiConditions((previous) => previous.filter((_, rowIndex) => rowIndex !== index));
+  }
+
+  function addCondition() {
+    setMultiConditions((previous) => [
+      ...previous,
+      { metric_name: "", operator: "GT", threshold: 0, duration_minutes: null },
+    ]);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (ruleMode === "simple" && !metricName.trim()) return;
@@ -290,16 +314,16 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         payload.gap_conditions = gapConditions;
       } else if (ruleMode === "multi") {
         payload.rule_type = "threshold";
-        payload.conditions = {
-          combinator,
-          conditions: multiConditions
-            .filter((c) => c.metric_name.trim())
-            .map((c) => ({
-              metric_name: c.metric_name.trim(),
-              operator: c.operator,
-              threshold: Number(c.threshold),
-            })),
-        };
+        payload.match_mode = matchMode;
+        payload.conditions = multiConditions
+          .filter((condition) => condition.metric_name.trim())
+          .map((condition) => ({
+            metric_name: condition.metric_name.trim(),
+            operator: condition.operator,
+            threshold: Number(condition.threshold),
+            duration_minutes:
+              condition.duration_minutes == null ? null : Number(condition.duration_minutes),
+          }));
       } else {
         payload.rule_type = "threshold";
         payload.metric_name = metricName;
@@ -332,16 +356,16 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       updates.threshold = gapConditions.gap_minutes;
     } else if (ruleMode === "multi") {
       updates.rule_type = "threshold";
-      updates.conditions = {
-        combinator,
-        conditions: multiConditions
-          .filter((c) => c.metric_name.trim())
-          .map((c) => ({
-            metric_name: c.metric_name.trim(),
-            operator: c.operator,
-            threshold: Number(c.threshold),
-          })),
-      };
+      updates.match_mode = matchMode;
+      updates.conditions = multiConditions
+        .filter((condition) => condition.metric_name.trim())
+        .map((condition) => ({
+          metric_name: condition.metric_name.trim(),
+          operator: condition.operator,
+          threshold: Number(condition.threshold),
+          duration_minutes:
+            condition.duration_minutes == null ? null : Number(condition.duration_minutes),
+        }));
       updates.anomaly_conditions = null;
       updates.gap_conditions = null;
     } else {
@@ -565,7 +589,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
               <div className="grid gap-2">
                 <Label>Operator</Label>
-                <Select value={operator} onValueChange={(v) => setOperator(v as OperatorValue)}>
+                <Select value={operator} onValueChange={(v) => setOperator(v as RuleOperator)}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select operator" />
                   </SelectTrigger>
@@ -592,94 +616,51 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
             </>
           ) : ruleMode === "multi" ? (
             <div className="space-y-3 rounded-md border border-border p-3">
-              <div className="flex items-center gap-2">
-                <Label>Combinator</Label>
-                <Button
-                  type="button"
-                  variant={combinator === "AND" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCombinator("AND")}
-                >
-                  AND
-                </Button>
-                <Button
-                  type="button"
-                  variant={combinator === "OR" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCombinator("OR")}
-                >
-                  OR
-                </Button>
-              </div>
-              {multiConditions.map((condition, idx) => (
-                <div key={idx} className="grid gap-2 md:grid-cols-[1fr_140px_160px_auto]">
-                  <Input
-                    placeholder="metric_name"
-                    value={condition.metric_name}
-                    onChange={(e) =>
-                      setMultiConditions((prev) =>
-                        prev.map((c, i) =>
-                          i === idx ? { ...c, metric_name: e.target.value } : c
-                        )
-                      )
-                    }
-                  />
-                  <Select
-                    value={condition.operator}
-                    onValueChange={(v) =>
-                      setMultiConditions((prev) =>
-                        prev.map((c, i) =>
-                          i === idx ? { ...c, operator: v as OperatorValue } : c
-                        )
-                      )
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GT">GT</SelectItem>
-                      <SelectItem value="LT">LT</SelectItem>
-                      <SelectItem value="GTE">GTE</SelectItem>
-                      <SelectItem value="LTE">LTE</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={condition.threshold}
-                    onChange={(e) =>
-                      setMultiConditions((prev) =>
-                        prev.map((c, i) =>
-                          i === idx
-                            ? { ...c, threshold: Number(e.target.value || 0) }
-                            : c
-                        )
-                      )
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={multiConditions.length <= 1}
-                    onClick={() =>
-                      setMultiConditions((prev) => prev.filter((_, i) => i !== idx))
-                    }
-                  >
-                    Remove
-                  </Button>
+              {multiConditions.length > 1 && (
+                <div className="flex items-center gap-3">
+                  <Label>Match</Label>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      value="all"
+                      checked={matchMode === "all"}
+                      onChange={() => setMatchMode("all")}
+                    />
+                    ALL (AND)
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      value="any"
+                      checked={matchMode === "any"}
+                      onChange={() => setMatchMode("any")}
+                    />
+                    ANY (OR)
+                  </label>
                 </div>
+              )}
+              <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-[1fr_210px_120px_160px_auto]">
+                <span>Metric</span>
+                <span>Operator</span>
+                <span>Threshold</span>
+                <span>Duration (min)</span>
+                <span />
+              </div>
+              {multiConditions.map((condition, index) => (
+                <ConditionRow
+                  key={`${index}-${condition.metric_name}`}
+                  condition={condition}
+                  index={index}
+                  onChange={updateCondition}
+                  onRemove={removeCondition}
+                  canRemove={multiConditions.length > 1}
+                />
               ))}
               <Button
                 type="button"
                 variant="outline"
                 disabled={multiConditions.length >= 10}
-                onClick={() =>
-                  setMultiConditions((prev) => [
-                    ...prev,
-                    { metric_name: "", operator: "GT", threshold: 0 },
-                  ])
-                }
+                onClick={addCondition}
               >
                 Add Condition
               </Button>

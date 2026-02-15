@@ -77,6 +77,20 @@ export default function AlertRulesPage() {
   }
 
   function formatCondition(rule: AlertRule) {
+    if (Array.isArray(rule.conditions) && rule.conditions.length > 0) {
+      if (rule.conditions.length === 1) {
+        const condition = rule.conditions[0];
+        const op = OPERATOR_LABELS[condition.operator] || condition.operator;
+        return `${condition.metric_name} ${op} ${condition.threshold}`;
+      }
+      const joiner = rule.match_mode === "any" ? " OR " : " AND ";
+      return rule.conditions
+        .map((condition) => {
+          const op = OPERATOR_LABELS[condition.operator] || condition.operator;
+          return `${condition.metric_name} ${op} ${condition.threshold}`;
+        })
+        .join(joiner);
+    }
     const op = OPERATOR_LABELS[rule.operator] || rule.operator;
     return `${rule.metric_name} ${op} ${rule.threshold}`;
   }

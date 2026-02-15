@@ -184,7 +184,8 @@ export interface AlertRule {
   description: string | null;
   site_ids: string[] | null;
   group_ids?: string[] | null;
-  conditions?: RuleConditions | null;
+  conditions?: RuleCondition[] | null;
+  match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
   created_at: string;
@@ -223,7 +224,8 @@ export interface AlertRuleCreate {
   description?: string | null;
   site_ids?: string[] | null;
   group_ids?: string[] | null;
-  conditions?: RuleConditions | null;
+  conditions?: RuleCondition[] | null;
+  match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
   enabled?: boolean;
@@ -241,21 +243,21 @@ export interface AlertRuleUpdate {
   description?: string | null;
   site_ids?: string[] | null;
   group_ids?: string[] | null;
-  conditions?: RuleConditions | null;
+  conditions?: RuleCondition[] | null;
+  match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
   enabled?: boolean;
 }
 
+export type RuleOperator = "GT" | "GTE" | "LT" | "LTE";
+export type MatchMode = "all" | "any";
+
 export interface RuleCondition {
   metric_name: string;
-  operator: "GT" | "LT" | "GTE" | "LTE";
+  operator: RuleOperator;
   threshold: number;
-}
-
-export interface RuleConditions {
-  combinator: "AND" | "OR";
-  conditions: RuleCondition[];
+  duration_minutes?: number | null;
 }
 
 export interface AnomalyConditions {

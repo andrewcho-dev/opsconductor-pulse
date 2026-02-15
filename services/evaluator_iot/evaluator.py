@@ -46,7 +46,8 @@ logger = logging.getLogger("evaluator")
 
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
 HEARTBEAT_STALE_SECONDS = int(os.getenv("HEARTBEAT_STALE_SECONDS", "30"))
-OPERATOR_SYMBOLS = {"GT": ">", "LT": "<", "GTE": ">=", "LTE": "<="}
+OPERATOR_SQL = {"GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
+OPERATOR_SYMBOLS = OPERATOR_SQL
 
 COUNTERS = {
     "rules_evaluated": 0,
@@ -487,7 +488,7 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
     rows = await pg_conn.fetch(
         """
         SELECT rule_id, name, rule_type, metric_name, operator, threshold, severity,
-               site_ids, group_ids, conditions, duration_seconds, duration_minutes
+               site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes
         FROM alert_rules
         WHERE tenant_id = $1 AND enabled = true
         """,
@@ -496,30 +497,193 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
     return [dict(r) for r in rows]
 
 
-def evaluate_conditions(metrics_snapshot: dict, conditions_json: dict) -> bool:
-    """Evaluate multi-condition rules against a metric snapshot."""
-    combinator = str(conditions_json.get("combinator", "AND")).upper()
-    conditions = conditions_json.get("conditions", [])
-    if not conditions:
+def _evaluate_single_condition(
+    metric_value: float | None,
+    operator: str,
+    threshold: float,
+) -> bool:
+    """Evaluate one condition against a scalar metric value."""
+    if metric_value is None:
+        return False
+    op = OPERATOR_SQL.get(operator)
+    if op is None:
+        return False
+    if op == ">":
+        return metric_value > threshold
+    if op == ">=":
+        return metric_value >= threshold
+    if op == "<":
+        return metric_value < threshold
+    if op == "<=":
+        return metric_value <= threshold
+    return False
+
+
+async def _evaluate_condition_with_window(
+    conn,
+    tenant_id: str,
+    device_id: str,
+    condition: dict,
+    rule_duration_minutes: int | None,
+    latest_metrics_snapshot: dict,
+    mappings_by_normalized: dict[str, list[dict]],
+) -> bool:
+    """
+    Evaluate a single condition.
+    Per-condition duration takes precedence over the rule-level duration.
+    """
+    metric_name = condition.get("metric_name")
+    operator = condition.get("operator")
+    threshold = condition.get("threshold")
+    if metric_name is None or operator is None or threshold is None:
+        return False
+    try:
+        threshold_value = float(threshold)
+    except (TypeError, ValueError):
+        return False
+
+    duration = condition.get("duration_minutes")
+    if duration is None:
+        duration = rule_duration_minutes
+    if duration:
+        try:
+            duration_value = int(duration)
+        except (TypeError, ValueError):
+            return False
+        if duration_value <= 0:
+            return False
+        mappings = mappings_by_normalized.get(metric_name, [])
+        return await _condition_holds_for_window(
+            conn,
+            tenant_id,
+            device_id,
+            metric_name,
+            operator,
+            threshold_value,
+            duration_value,
+            mappings=mappings if mappings else None,
+        )
+
+    latest_value = latest_metrics_snapshot.get(metric_name)
+    try:
+        numeric_value = float(latest_value) if latest_value is not None else None
+    except (TypeError, ValueError):
+        numeric_value = None
+    return _evaluate_single_condition(numeric_value, operator, threshold_value)
+
+
+async def _evaluate_rule_conditions(
+    conn,
+    tenant_id: str,
+    device_id: str,
+    rule: dict,
+    latest_metrics_snapshot: dict,
+    mappings_by_normalized: dict[str, list[dict]],
+) -> bool:
+    """
+    Evaluate all conditions for a rule applying match_mode (all/any).
+    Falls back to legacy metric_name/operator/threshold when conditions is empty.
+    """
+    conditions = rule.get("conditions")
+    match_mode = str(rule.get("match_mode") or "all").lower()
+
+    if isinstance(conditions, dict):
+        # Backwards compatibility for old JSON shape:
+        # {"combinator":"AND|OR","conditions":[...]}
+        combinator = str(conditions.get("combinator", "AND")).upper()
+        legacy_conditions = conditions.get("conditions")
+        if isinstance(legacy_conditions, list):
+            conditions = legacy_conditions
+            if match_mode not in {"all", "any"}:
+                match_mode = "any" if combinator == "OR" else "all"
+
+    if not isinstance(conditions, list) or not conditions:
+        metric_name = rule.get("metric_name")
+        operator = rule.get("operator")
+        threshold = rule.get("threshold")
+        if metric_name is None or operator is None or threshold is None:
+            return False
+        latest_value = latest_metrics_snapshot.get(metric_name)
+        try:
+            numeric_value = float(latest_value) if latest_value is not None else None
+            threshold_value = float(threshold)
+        except (TypeError, ValueError):
+            return False
+        duration_minutes = rule.get("duration_minutes")
+        if duration_minutes:
+            try:
+                duration_value = int(duration_minutes)
+            except (TypeError, ValueError):
+                return False
+            mappings = mappings_by_normalized.get(metric_name, [])
+            return await _condition_holds_for_window(
+                conn,
+                tenant_id,
+                device_id,
+                metric_name,
+                operator,
+                threshold_value,
+                duration_value,
+                mappings=mappings if mappings else None,
+            )
+        return _evaluate_single_condition(numeric_value, operator, threshold_value)
+
+    if match_mode not in {"all", "any"}:
+        match_mode = "all"
+
+    results: list[bool] = []
+    for condition in conditions:
+        result = await _evaluate_condition_with_window(
+            conn=conn,
+            tenant_id=tenant_id,
+            device_id=device_id,
+            condition=condition,
+            rule_duration_minutes=rule.get("duration_minutes"),
+            latest_metrics_snapshot=latest_metrics_snapshot,
+            mappings_by_normalized=mappings_by_normalized,
+        )
+        results.append(result)
+        if match_mode == "any" and result:
+            return True
+        if match_mode == "all" and not result:
+            return False
+    return all(results) if match_mode == "all" else any(results)
+
+
+def evaluate_conditions(metrics_snapshot: dict, conditions_json) -> bool:
+    """Compatibility helper used by existing unit tests."""
+    conditions = conditions_json
+    match_mode = "all"
+    if isinstance(conditions_json, dict):
+        if isinstance(conditions_json.get("conditions"), list):
+            conditions = conditions_json.get("conditions")
+            combinator = str(conditions_json.get("combinator", "AND")).upper()
+            match_mode = "any" if combinator == "OR" else "all"
+    if not isinstance(conditions, list) or not conditions:
         return False
 
     results: list[bool] = []
-    for cond in conditions:
-        metric_name = cond.get("metric_name")
-        operator = cond.get("operator")
-        threshold = cond.get("threshold")
-        if metric_name not in metrics_snapshot:
+    for condition in conditions:
+        metric_name = condition.get("metric_name")
+        operator = condition.get("operator")
+        threshold = condition.get("threshold")
+        if metric_name is None or operator is None or threshold is None:
             results.append(False)
             continue
-        value = metrics_snapshot[metric_name]
+        metric_value = metrics_snapshot.get(metric_name)
         try:
-            results.append(evaluate_threshold(float(value), operator, float(threshold)))
+            numeric_value = float(metric_value) if metric_value is not None else None
+            threshold_value = float(threshold)
         except (TypeError, ValueError):
             results.append(False)
-
-    if combinator == "OR":
-        return any(results)
-    return all(results)
+            continue
+        result = _evaluate_single_condition(numeric_value, operator, threshold_value)
+        results.append(result)
+        if match_mode == "any" and result:
+            return True
+        if match_mode == "all" and not result:
+            return False
+    return all(results) if match_mode == "all" else any(results)
 
 
 async def check_duration_window(
@@ -547,12 +711,9 @@ async def check_duration_window(
     if duration_seconds <= 0:
         return True  # No window required — fire immediately
 
-    op_map = {"GT": ">", "LT": "<", "GTE": ">=", "LTE": "<="}
-    op_sql = op_map.get(operator)
+    op_sql = OPERATOR_SQL.get(operator)
     if not op_sql:
         return False
-
-    interval = f"{duration_seconds} seconds"
 
     if mappings:
         m = mappings[0]
@@ -567,12 +728,12 @@ async def check_duration_window(
             WHERE tenant_id = $1
               AND device_id = $2
               AND metrics ? $3
-              AND time >= now() - $4::interval
+              AND time >= now() - make_interval(secs => $4::int)
               AND (
                 (metrics->>$3)::numeric * $5 + $6
-              ) {op_sql} $7 = false
+              ) {op_sql} $7 IS NOT TRUE
             """,
-            tenant_id, device_id, raw_metric, interval, mult, offset, threshold
+            tenant_id, device_id, raw_metric, duration_seconds, mult, offset, threshold
         )
 
         total_count = await conn.fetchval(
@@ -582,9 +743,9 @@ async def check_duration_window(
             WHERE tenant_id = $1
               AND device_id = $2
               AND metrics ? $3
-              AND time >= now() - $4::interval
+              AND time >= now() - make_interval(secs => $4::int)
             """,
-            tenant_id, device_id, raw_metric, interval
+            tenant_id, device_id, raw_metric, duration_seconds
         )
     else:
         failing_count = await conn.fetchval(
@@ -594,10 +755,10 @@ async def check_duration_window(
             WHERE tenant_id = $1
               AND device_id = $2
               AND metrics ? $3
-              AND time >= now() - $4::interval
-              AND (metrics->>$3)::numeric {op_sql} $5 = false
+              AND time >= now() - make_interval(secs => $4::int)
+              AND (metrics->>$3)::numeric {op_sql} $5 IS NOT TRUE
             """,
-            tenant_id, device_id, metric_name, interval, threshold
+            tenant_id, device_id, metric_name, duration_seconds, threshold
         )
 
         total_count = await conn.fetchval(
@@ -607,9 +768,9 @@ async def check_duration_window(
             WHERE tenant_id = $1
               AND device_id = $2
               AND metrics ? $3
-              AND time >= now() - $4::interval
+              AND time >= now() - make_interval(secs => $4::int)
             """,
-            tenant_id, device_id, metric_name, interval
+            tenant_id, device_id, metric_name, duration_seconds
         )
 
     return (
@@ -1030,7 +1191,6 @@ async def main():
                                 continue
 
                         fp_rule = f"RULE:{rule_id}:{device_id}"
-                        op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
                         conditions_json = rule.get("conditions")
                         if isinstance(conditions_json, str):
                             try:
@@ -1109,290 +1269,109 @@ async def main():
                             )
                             continue
 
-                        if conditions_json and conditions_json.get("conditions"):
-                            fired = evaluate_conditions(latest_metrics_snapshot, conditions_json)
-                            if fired:
-                                # Limitation for this phase: duration window applies to first condition.
-                                duration_minutes = rule.get("duration_minutes") or 0
-                                duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_minutes > 0:
-                                    first = conditions_json["conditions"][0]
-                                    first_metric = first.get("metric_name")
-                                    first_operator = first.get("operator")
-                                    first_threshold = first.get("threshold")
-                                    first_mappings = mappings_by_normalized.get(first_metric, [])
-                                    window_met = await _condition_holds_for_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        first_metric,
-                                        first_operator,
-                                        first_threshold,
-                                        duration_minutes,
-                                        mappings=first_mappings if first_mappings else None,
-                                    )
-                                    if not window_met:
-                                        continue
-                                elif duration_seconds > 0:
-                                    first = conditions_json["conditions"][0]
-                                    first_metric = first.get("metric_name")
-                                    first_operator = first.get("operator")
-                                    first_threshold = first.get("threshold")
-                                    first_mappings = mappings_by_normalized.get(first_metric, [])
-                                    window_met = await check_duration_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        first_metric,
-                                        first_operator,
-                                        first_threshold,
-                                        duration_seconds,
-                                        mappings=first_mappings if first_mappings else None,
-                                    )
-                                    if not window_met:
-                                        continue
-                                if await is_silenced(conn, tenant_id, fp_rule):
-                                    continue
-                                if await is_in_maintenance(
-                                    conn,
-                                    tenant_id,
-                                    site_id=site_id,
-                                    device_type=rule.get("device_type"),
-                                ):
-                                    continue
-                                summary = (
-                                    f"{site_id}: {device_id} multi-condition rule '{rule['name']}' triggered"
-                                )
-                                await open_or_update_alert(
-                                    conn,
-                                    tenant_id,
-                                    site_id,
-                                    device_id,
-                                    "THRESHOLD",
-                                    fp_rule,
-                                    rule_severity,
-                                    1.0,
-                                    summary,
-                                    {
-                                        "rule_id": rule_id,
-                                        "rule_name": rule["name"],
-                                        "conditions": conditions_json,
-                                        "combinator": conditions_json.get("combinator", "AND"),
-                                    },
-                                )
-                            else:
-                                await close_alert(conn, tenant_id, fp_rule)
+                        rule_for_eval = dict(rule)
+                        rule_for_eval["conditions"] = conditions_json
+                        fired = await _evaluate_rule_conditions(
+                            conn=conn,
+                            tenant_id=tenant_id,
+                            device_id=device_id,
+                            rule=rule_for_eval,
+                            latest_metrics_snapshot=latest_metrics_snapshot,
+                            mappings_by_normalized=mappings_by_normalized,
+                        )
+                        if not fired:
+                            await close_alert(conn, tenant_id, fp_rule)
                             continue
 
-                        if metric_name in mappings_by_normalized:
-                            triggered = False
-                            triggered_details = None
-                            for mapping in mappings_by_normalized[metric_name]:
-                                raw_metric = mapping["raw_metric"]
-                                raw_value = metrics.get(raw_metric)
-                                normalized_value = normalize_value(
-                                    raw_value, mapping["multiplier"], mapping["offset_value"]
-                                )
-                                if normalized_value is None:
-                                    continue
-                                if evaluate_threshold(normalized_value, operator, threshold):
-                                    triggered = True
-                                    triggered_details = {
-                                        "raw_metric": raw_metric,
-                                        "raw_value": raw_value,
-                                        "normalized_name": metric_name,
-                                        "normalized_value": normalized_value,
-                                        "multiplier": mapping["multiplier"],
-                                        "offset": mapping["offset_value"],
-                                    }
-                                    break
+                        if await is_silenced(conn, tenant_id, fp_rule):
+                            continue
+                        if await is_in_maintenance(
+                            conn,
+                            tenant_id,
+                            site_id=site_id,
+                            device_type=rule.get("device_type"),
+                        ):
+                            continue
 
-                            if triggered and triggered_details:
-                                duration_minutes = rule.get("duration_minutes") or 0
-                                duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_minutes > 0:
-                                    window_met = await _condition_holds_for_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        metric_name,
-                                        operator,
-                                        threshold,
-                                        duration_minutes,
-                                        mappings=mappings_by_normalized.get(metric_name, []),
-                                    )
-                                    if not window_met:
-                                        continue  # Threshold met but window not yet satisfied
-                                elif duration_seconds > 0:
-                                    window_met = await check_duration_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        metric_name,
-                                        operator,
-                                        threshold,
-                                        duration_seconds,
-                                        mappings=mappings_by_normalized.get(metric_name, []),
-                                    )
-                                    if not window_met:
-                                        continue  # Threshold met but window not yet satisfied
-                                if await is_silenced(conn, tenant_id, fp_rule):
-                                    continue
-                                if await is_in_maintenance(
-                                    conn,
-                                    tenant_id,
-                                    site_id=site_id,
-                                    device_type=rule.get("device_type"),
-                                ):
-                                    continue
-                                alert_id, inserted = await open_or_update_alert(
-                                    conn, tenant_id, site_id, device_id,
-                                    "THRESHOLD", fp_rule,
-                                    rule_severity, 1.0,
-                                    (
-                                        f"{site_id}: {device_id} {metric_name} "
-                                        f"({triggered_details['normalized_value']}) "
-                                        f"{op_symbol} {threshold} "
-                                        f"(raw {triggered_details['raw_metric']}="
-                                        f"{triggered_details['raw_value']})"
-                                    ),
-                                    {
-                                        "rule_id": rule_id,
-                                        "rule_name": rule["name"],
-                                        "metric_name": metric_name,
-                                        "metric_value": triggered_details["normalized_value"],
-                                        "raw_metric": triggered_details["raw_metric"],
-                                        "raw_value": triggered_details["raw_value"],
-                                        "multiplier": triggered_details["multiplier"],
-                                        "offset": triggered_details["offset"],
-                                        "operator": operator,
-                                        "threshold": threshold,
-                                    }
+                        active_conditions = conditions_json if isinstance(conditions_json, list) else []
+                        if not active_conditions and metric_name and operator and threshold is not None:
+                            active_conditions = [
+                                {
+                                    "metric_name": metric_name,
+                                    "operator": operator,
+                                    "threshold": threshold,
+                                    "duration_minutes": rule.get("duration_minutes"),
+                                }
+                            ]
+                        first_condition = active_conditions[0] if active_conditions else {}
+                        detail_metric = first_condition.get("metric_name", metric_name)
+                        detail_operator = first_condition.get("operator", operator)
+                        detail_threshold = first_condition.get("threshold", threshold)
+                        detail_value = latest_metrics_snapshot.get(detail_metric) if detail_metric else None
+                        detail_match_mode = str(rule.get("match_mode") or "all")
+
+                        summary = (
+                            f"{site_id}: {device_id} rule '{rule['name']}' triggered "
+                            f"({detail_match_mode})"
+                        )
+                        alert_id, inserted = await open_or_update_alert(
+                            conn,
+                            tenant_id,
+                            site_id,
+                            device_id,
+                            "THRESHOLD",
+                            fp_rule,
+                            rule_severity,
+                            1.0,
+                            summary,
+                            {
+                                "rule_id": rule_id,
+                                "rule_name": rule["name"],
+                                "metric_name": detail_metric,
+                                "metric_value": detail_value,
+                                "operator": detail_operator,
+                                "threshold": detail_threshold,
+                                "match_mode": detail_match_mode,
+                                "conditions": active_conditions,
+                            },
+                        )
+                        audit = get_audit_logger()
+                        if audit and detail_metric and detail_operator and detail_threshold is not None:
+                            try:
+                                metric_value_numeric = float(detail_value) if detail_value is not None else 0.0
+                            except (TypeError, ValueError):
+                                metric_value_numeric = 0.0
+                            try:
+                                threshold_numeric = float(detail_threshold)
+                            except (TypeError, ValueError):
+                                threshold_numeric = 0.0
+                            audit.rule_triggered(
+                                tenant_id,
+                                str(rule_id),
+                                rule["name"],
+                                device_id,
+                                detail_metric,
+                                metric_value_numeric,
+                                threshold_numeric,
+                                detail_operator,
+                            )
+                            if inserted:
+                                log_event(
+                                    logger,
+                                    "alert created",
+                                    tenant_id=tenant_id,
+                                    device_id=device_id,
+                                    alert_type="THRESHOLD",
+                                    alert_id=str(alert_id),
+                                    fingerprint=fp_rule,
                                 )
-                                audit = get_audit_logger()
-                                if audit:
-                                    audit.rule_triggered(
-                                        tenant_id,
-                                        str(rule_id),
-                                        rule["name"],
-                                        device_id,
-                                        metric_name,
-                                        float(triggered_details["normalized_value"]),
-                                        float(threshold),
-                                        operator,
-                                    )
-                                    if inserted:
-                                        log_event(
-                                            logger,
-                                            "alert created",
-                                            tenant_id=tenant_id,
-                                            device_id=device_id,
-                                            alert_type="THRESHOLD",
-                                            alert_id=str(alert_id),
-                                            fingerprint=fp_rule,
-                                        )
-                                        audit.alert_created(
-                                            tenant_id,
-                                            str(alert_id),
-                                            "THRESHOLD",
-                                            device_id,
-                                            (
-                                                f"{site_id}: {device_id} {metric_name} "
-                                                f"({triggered_details['normalized_value']}) "
-                                                f"{op_symbol} {threshold} "
-                                                f"(raw {triggered_details['raw_metric']}="
-                                                f"{triggered_details['raw_value']})"
-                                            ),
-                                        )
-                            else:
-                                await close_alert(conn, tenant_id, fp_rule)
-                        else:
-                            metric_value = metrics.get(metric_name)
-                            if metric_value is not None and evaluate_threshold(
-                                metric_value, operator, threshold
-                            ):
-                                duration_minutes = rule.get("duration_minutes") or 0
-                                duration_seconds = rule.get("duration_seconds", 0) or 0
-                                if duration_minutes > 0:
-                                    window_met = await _condition_holds_for_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        metric_name,
-                                        operator,
-                                        threshold,
-                                        duration_minutes,
-                                        mappings=None,
-                                    )
-                                    if not window_met:
-                                        continue  # Skip alert - window not yet satisfied
-                                elif duration_seconds > 0:
-                                    window_met = await check_duration_window(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        metric_name,
-                                        operator,
-                                        threshold,
-                                        duration_seconds,
-                                        mappings=None,
-                                    )
-                                    if not window_met:
-                                        continue  # Skip alert — window not yet satisfied
-                                if await is_silenced(conn, tenant_id, fp_rule):
-                                    continue
-                                if await is_in_maintenance(
-                                    conn,
+                                audit.alert_created(
                                     tenant_id,
-                                    site_id=site_id,
-                                    device_type=rule.get("device_type"),
-                                ):
-                                    continue
-                                alert_id, inserted = await open_or_update_alert(
-                                    conn, tenant_id, site_id, device_id,
-                                    "THRESHOLD", fp_rule,
-                                    rule_severity, 1.0,
-                                    f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
-                                    {
-                                        "rule_id": rule_id,
-                                        "rule_name": rule["name"],
-                                        "metric_name": metric_name,
-                                        "metric_value": metric_value,
-                                        "operator": operator,
-                                        "threshold": threshold,
-                                    }
+                                    str(alert_id),
+                                    "THRESHOLD",
+                                    device_id,
+                                    summary,
                                 )
-                                audit = get_audit_logger()
-                                if audit:
-                                    audit.rule_triggered(
-                                        tenant_id,
-                                        str(rule_id),
-                                        rule["name"],
-                                        device_id,
-                                        metric_name,
-                                        float(metric_value),
-                                        float(threshold),
-                                        operator,
-                                    )
-                                    if inserted:
-                                        log_event(
-                                            logger,
-                                            "alert created",
-                                            tenant_id=tenant_id,
-                                            device_id=device_id,
-                                            alert_type="THRESHOLD",
-                                            alert_id=str(alert_id),
-                                            fingerprint=fp_rule,
-                                        )
-                                        audit.alert_created(
-                                            tenant_id,
-                                            str(alert_id),
-                                            "THRESHOLD",
-                                            device_id,
-                                            f"{site_id}: {device_id} {metric_name} ({metric_value}) {op_symbol} {threshold}",
-                                        )
-                            else:
-                                await close_alert(conn, tenant_id, fp_rule)
 
                 total_rules = sum(len(v) for v in tenant_rules_cache.values())
                 log_event(
