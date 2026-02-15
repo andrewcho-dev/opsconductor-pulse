@@ -3,12 +3,14 @@ services:
     image: eclipse-mosquitto@sha256:e011726bdfa757011bc8b8716e03b7c35d2c3f623d9f658c2c6bf66e909ea42e
     container_name: iot-mqtt
     ports:
-      - "1883:1883"
+      - "8883:8883"
       - "9001:9001"
     volumes:
-      - ../data/mosquitto/config:/mosquitto/config
-      - ../data/mosquitto/data:/mosquitto/data
-      - ../data/mosquitto/log:/mosquitto/log
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/acl.conf:/mosquitto/config/acl.conf
+      - ./mosquitto/certs:/mosquitto/certs
+      - mosquitto-passwd:/mosquitto/passwd
+      - mosquitto-data:/mosquitto/data
     restart: unless-stopped
 
   postgres:
@@ -79,6 +81,8 @@ services:
       SERVICE_NAME: ingest_iot
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_TOPIC: "tenant/+/device/+/+"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
@@ -361,6 +365,8 @@ services:
       UI_BASE_URL: "${UI_BASE_URL:-http://localhost:8080}"
       MQTT_HOST: iot-mqtt
       MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
@@ -384,8 +390,10 @@ services:
         condition: service_completed_successfully
       api:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -406,6 +414,7 @@ services:
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       ADMIN_KEY: ${ADMIN_KEY}
       ACTIVATION_TTL_MINUTES: "60"
+      MQTT_PASSWD_FILE: "/mosquitto/passwd/passwd"
     ports:
       - "8081:8081"
     depends_on:
@@ -415,6 +424,8 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
+    volumes:
+      - mosquitto-passwd:/mosquitto/passwd
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s
@@ -481,14 +492,24 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://iot-postgres:5432/iotcloud
-      KC_DB_USERNAME: iot
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_DB_URL: "jdbc:postgresql://iot-postgres:5432/keycloak_db"
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_USER_PASSWORD}
       KC_HOSTNAME: ${KC_HOSTNAME}
       KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: "xforwarded"
-    command: start-dev --import-realm --features=organization
+      KC_PROXY: edge
+      KC_HEALTH_ENABLED: "true"
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_FROM_DISPLAY_NAME: ${SMTP_FROM_DISPLAY_NAME}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_SSL: ${SMTP_SSL}
+      SMTP_STARTTLS: ${SMTP_STARTTLS}
+    command: start --import-realm --features=organization
     volumes:
       - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json
     expose:
@@ -496,8 +517,45 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/localhost/9000; echo -e \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; read -r line <&3; echo \"$$line\" | grep -q \"200\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
+
+  keycloak-db-init:
+    image: timescale/timescaledb@sha256:9e9f50161784dc57d3f547b89ded4af73553f9acb4677345ed05f45af7c7f664
+    container_name: iot-keycloak-db-init
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_USER_PASSWORD: ${KC_DB_USER_PASSWORD}
+    command: >
+      bash -lc "psql -h iot-postgres -U iot -d postgres
+      -c \"DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'keycloak') THEN CREATE USER keycloak WITH PASSWORD '${KC_DB_USER_PASSWORD}'; END IF; END \\\$\\\$;\"
+      -c \"ALTER USER keycloak WITH PASSWORD '${KC_DB_USER_PASSWORD}';\" &&
+      (psql -h iot-postgres -U iot -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='keycloak_db'\" | grep -q 1 ||
+       psql -h iot-postgres -U iot -d postgres -c \"CREATE DATABASE keycloak_db OWNER keycloak\") &&
+      psql -h iot-postgres -U iot -d postgres -c \"GRANT ALL PRIVILEGES ON DATABASE keycloak_db TO keycloak;\""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: iot-mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    profiles:
+      - dev
 
 volumes:
   caddy_data:
   caddy_config:
+  mosquitto-data:
+  mosquitto-passwd:

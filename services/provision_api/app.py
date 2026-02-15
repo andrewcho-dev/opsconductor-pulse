@@ -2,6 +2,8 @@ import os
 import json
 import hashlib
 import secrets
+import shutil
+import subprocess
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
@@ -23,9 +25,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 ADMIN_KEY = os.environ["ADMIN_KEY"]
 ACTIVATION_TTL_MINUTES = int(os.getenv("ACTIVATION_TTL_MINUTES", "60"))
+MQTT_PASSWD_FILE = os.getenv("MQTT_PASSWD_FILE", "/mosquitto/passwd/passwd")
 app = FastAPI(title="IoT Provisioning API", version="0.1")
 
 pool: asyncpg.Pool | None = None
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -51,6 +59,42 @@ def normalize_config_json(value) -> dict:
             return {}
         return parsed if isinstance(parsed, dict) else {}
     return {}
+
+
+def add_device_mqtt_credentials(tenant_id: str, device_id: str, password: str) -> bool:
+    """
+    Add or update device MQTT credentials in Mosquitto password file.
+    Non-fatal if tooling/volume is unavailable.
+    """
+    passwd_tool = shutil.which("mosquitto_passwd")
+    if not passwd_tool:
+        logger.warning("mqtt_passwd_tool_missing", extra={"device_id": device_id})
+        return False
+    if not os.path.exists(MQTT_PASSWD_FILE):
+        logger.warning("mqtt_passwd_file_missing", extra={"passwd_file": MQTT_PASSWD_FILE})
+        return False
+
+    safe_tenant = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in tenant_id)
+    safe_device = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in device_id)
+    username = f"device_{safe_tenant}_{safe_device}"
+    try:
+        result = subprocess.run(
+            [passwd_tool, "-b", MQTT_PASSWD_FILE, username, password],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "mqtt_passwd_add_failed",
+                extra={"device_id": device_id, "error": result.stderr.strip()},
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("mqtt_passwd_add_error", extra={"device_id": device_id, "error": str(exc)})
+        return False
 
 async def get_pool() -> asyncpg.Pool:
     global pool
@@ -344,6 +388,7 @@ async def admin_rotate_token(tenant_id: str, device_id: str, x_admin_key: str | 
         )
 
     log_event(logger, "device token rotated", tenant_id=tenant_id, device_id=device_id)
+    add_device_mqtt_credentials(tenant_id, device_id, new_token)
     return AdminRotateTokenResponse(tenant_id=tenant_id, device_id=device_id, new_provision_token=new_token)
 
 @app.post("/api/admin/integrations", response_model=AdminIntegrationResponse)
@@ -639,4 +684,5 @@ async def device_activate(payload: DeviceActivateRequest):
         tenant_id=payload.tenant_id,
         device_id=payload.device_id,
     )
+    add_device_mqtt_credentials(payload.tenant_id, payload.device_id, token)
     return DeviceActivateResponse(tenant_id=payload.tenant_id, device_id=payload.device_id, provision_token=token)

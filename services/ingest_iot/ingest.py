@@ -27,6 +27,8 @@ from shared.metrics import ingest_messages_total, ingest_queue_depth
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
+MQTT_USERNAME = os.getenv("MQTT_USERNAME")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
 COMMAND_ACK_TOPIC = "tenant/+/device/+/commands/ack"
 COMMAND_ACK_RE = re.compile(r"^tenant/(?P<tenant_id>[^/]+)/device/(?P<device_id>[^/]+)/commands/ack$")
@@ -1365,6 +1367,8 @@ class Ingestor:
         asyncio.create_task(self.stats_worker())
 
         client = mqtt.Client()
+        if MQTT_USERNAME and MQTT_PASSWORD:
+            client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         client.on_connect = self.on_connect
         client.on_message = self.on_message
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)

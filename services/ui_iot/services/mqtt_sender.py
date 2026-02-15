@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
@@ -47,7 +48,11 @@ async def publish_alert(
         port = parsed.port or 1883
 
         def _publish_blocking() -> None:
+            mqtt_username = os.getenv("MQTT_USERNAME")
+            mqtt_password = os.getenv("MQTT_PASSWORD")
             client = mqtt.Client()
+            if mqtt_username and mqtt_password:
+                client.username_pw_set(mqtt_username, mqtt_password)
             client.connect(host, port, keepalive=timeout)
             client.loop_start()
             try:

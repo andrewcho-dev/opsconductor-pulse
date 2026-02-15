@@ -11,6 +11,10 @@ test-results/
 .env.*
 compose/.env
 !compose/.env.example
+compose/mosquitto/passwd
+compose/mosquitto/certs/*.key
+compose/mosquitto/certs/*.csr
+compose/mosquitto/certs/*.srl
 *.secret
 *.key
 *.pem

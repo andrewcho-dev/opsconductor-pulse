@@ -117,6 +117,17 @@
       ]
     }
   ],
+  "smtpServer": {
+    "host": "${env.SMTP_HOST}",
+    "port": "${env.SMTP_PORT}",
+    "from": "${env.SMTP_FROM}",
+    "fromDisplayName": "${env.SMTP_FROM_DISPLAY_NAME}",
+    "auth": "true",
+    "user": "${env.SMTP_USERNAME}",
+    "password": "${env.SMTP_PASSWORD}",
+    "ssl": "${env.SMTP_SSL}",
+    "starttls": "${env.SMTP_STARTTLS}"
+  },
   "users": [
     {
       "username": "customer1",
