@@ -12,6 +12,7 @@ import { DeviceEditModal } from "./DeviceEditModal";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
+import { DeviceTwinPanel } from "./DeviceTwinPanel";
 import { ArrowLeft } from "lucide-react";
 import {
   getDeviceTags,
@@ -193,6 +194,7 @@ export default function DeviceDetailPage() {
 
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceUptimePanel deviceId={deviceId} />}
+      {deviceId && <DeviceTwinPanel deviceId={deviceId} />}
 
       <div className="grid grid-cols-4 gap-2">
         {metrics.slice(0, 8).map((metricName) => (

@@ -3,6 +3,10 @@
 from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
+from typing import Any
+
+from shared.log import get_logger
+from shared.twin import compute_delta, sync_status
 
 router = APIRouter(
     prefix="/customer",
@@ -13,6 +17,79 @@ router = APIRouter(
         Depends(require_customer),
     ],
 )
+
+twin_logger = get_logger("pulse.twin")
+
+
+class TwinDesiredUpdate(BaseModel):
+    desired: dict[str, Any]
+
+
+class TwinResponse(BaseModel):
+    device_id: str
+    desired: dict[str, Any]
+    reported: dict[str, Any]
+    delta: dict[str, Any]
+    desired_version: int
+    reported_version: int
+    sync_status: str
+    shadow_updated_at: str | None
+
+
+async def _publish_shadow_desired(
+    tenant_id: str, device_id: str, desired: dict[str, Any], desired_version: int
+) -> None:
+    topic = f"tenant/{tenant_id}/device/{device_id}/shadow/desired"
+    payload = json.dumps(
+        {
+            "desired": desired,
+            "version": desired_version,
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+    )
+    result = await publish_alert(
+        topic=topic,
+        payload=payload,
+        qos=1,
+        retain=True,
+    )
+    if result.success:
+        twin_logger.info(
+            "shadow_desired_published",
+            extra={"device_id": device_id, "version": desired_version},
+        )
+        return
+    twin_logger.warning(
+        "shadow_desired_publish_failed",
+        extra={"device_id": device_id, "error": result.error or "unknown_error"},
+    )
+
+
+async def _clear_shadow_desired_retained(tenant_id: str, device_id: str) -> None:
+    topic = f"tenant/{tenant_id}/device/{device_id}/shadow/desired"
+    result = await publish_alert(
+        topic=topic,
+        payload="",
+        qos=1,
+        retain=True,
+    )
+    if not result.success:
+        twin_logger.warning(
+            "shadow_clear_failed",
+            extra={"device_id": device_id, "error": result.error or "unknown_error"},
+        )
+
+
+def _jsonb_to_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
 
 @router.post("/devices", status_code=201)
 async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
@@ -858,7 +935,109 @@ async def decommission_device(device_id: str, pool=Depends(get_db_pool)):
 
     if not row:
         raise HTTPException(status_code=404, detail="Device not found or already decommissioned")
+    await _clear_shadow_desired_retained(tenant_id, device_id)
     return {"device_id": row["device_id"], "decommissioned_at": row["decommissioned_at"].isoformat()}
+
+
+@router.get("/devices/{device_id}/twin", response_model=TwinResponse)
+async def get_device_twin(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              device_id,
+              desired_state,
+              reported_state,
+              desired_version,
+              reported_version,
+              shadow_updated_at,
+              last_seen_at AS last_seen
+            FROM device_state
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    desired = _jsonb_to_dict(row["desired_state"])
+    reported = _jsonb_to_dict(row["reported_state"])
+    shadow_updated_at = row["shadow_updated_at"]
+    return {
+        "device_id": device_id,
+        "desired": desired,
+        "reported": reported,
+        "delta": compute_delta(desired, reported),
+        "desired_version": row["desired_version"],
+        "reported_version": row["reported_version"],
+        "sync_status": sync_status(
+            row["desired_version"],
+            row["reported_version"],
+            row["last_seen"],
+        ),
+        "shadow_updated_at": shadow_updated_at.isoformat() if shadow_updated_at else None,
+    }
+
+
+@router.patch("/devices/{device_id}/twin/desired")
+async def update_desired_state(
+    device_id: str, body: TwinDesiredUpdate, pool=Depends(get_db_pool)
+):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE device_state
+            SET desired_state = $1::jsonb,
+                desired_version = desired_version + 1,
+                shadow_updated_at = NOW()
+            WHERE tenant_id = $2 AND device_id = $3
+            RETURNING device_id, desired_state, desired_version
+            """,
+            json.dumps(body.desired),
+            tenant_id,
+            device_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    await _publish_shadow_desired(
+        tenant_id,
+        device_id,
+        _jsonb_to_dict(row["desired_state"]),
+        row["desired_version"],
+    )
+    return {
+        "device_id": device_id,
+        "desired": _jsonb_to_dict(row["desired_state"]),
+        "desired_version": row["desired_version"],
+    }
+
+
+@router.get("/devices/{device_id}/twin/delta")
+async def get_twin_delta(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT desired_state, reported_state, desired_version, reported_version
+            FROM device_state
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    delta = compute_delta(_jsonb_to_dict(row["desired_state"]), _jsonb_to_dict(row["reported_state"]))
+    return {
+        "device_id": device_id,
+        "delta": delta,
+        "in_sync": len(delta) == 0,
+        "desired_version": row["desired_version"],
+        "reported_version": row["reported_version"],
+    }
 
 
 @router.get("/devices/{device_id}/tags")

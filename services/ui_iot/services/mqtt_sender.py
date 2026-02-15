@@ -49,8 +49,15 @@ async def publish_alert(
         def _publish_blocking() -> None:
             client = mqtt.Client()
             client.connect(host, port, keepalive=timeout)
-            client.publish(topic, payload, qos=qos, retain=retain)
-            client.disconnect()
+            client.loop_start()
+            try:
+                info = client.publish(topic, payload, qos=qos, retain=retain)
+                info.wait_for_publish(timeout=timeout)
+                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    raise RuntimeError(f"MQTT publish failed with rc={info.rc}")
+            finally:
+                client.loop_stop()
+                client.disconnect()
 
         await asyncio.get_event_loop().run_in_executor(None, _publish_blocking)
 

@@ -50,6 +50,21 @@ export interface TelemetryHistoryResponse {
   points: TelemetryHistoryPoint[];
 }
 
+export interface TwinDesired {
+  [key: string]: unknown;
+}
+
+export interface TwinDocument {
+  device_id: string;
+  desired: TwinDesired;
+  reported: Record<string, unknown>;
+  delta: Record<string, unknown>;
+  desired_version: number;
+  reported_version: number;
+  sync_status: "synced" | "pending" | "stale";
+  shadow_updated_at: string | null;
+}
+
 export async function fetchDevices(
   params: DeviceListParams = {}
 ): Promise<DeviceListResponse> {
@@ -111,6 +126,14 @@ export async function provisionDevice(
 
 export async function decommissionDevice(deviceId: string): Promise<void> {
   await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/decommission`, {});
+}
+
+export async function getDeviceTwin(deviceId: string): Promise<TwinDocument> {
+  return apiGet(`/customer/devices/${encodeURIComponent(deviceId)}/twin`);
+}
+
+export async function updateDesiredState(deviceId: string, desired: TwinDesired): Promise<void> {
+  await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, { desired });
 }
 
 export async function getDeviceTags(deviceId: string): Promise<DeviceTagsResponse> {

@@ -11,6 +11,7 @@ import { decommissionDevice, getDeviceTags } from "@/services/api/devices";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
+import { DeviceTwinPanel } from "./DeviceTwinPanel";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { EditDeviceModal } from "./EditDeviceModal";
 
@@ -143,6 +144,7 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
             <TabsTrigger value="alerts">Alerts</TabsTrigger>
+            <TabsTrigger value="twin">Twin</TabsTrigger>
             <TabsTrigger value="tokens">Tokens</TabsTrigger>
             <TabsTrigger value="uptime">Uptime</TabsTrigger>
           </TabsList>
@@ -256,6 +258,10 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
                 </div>
               ))
             )}
+          </TabsContent>
+
+          <TabsContent value="twin" className="pt-2">
+            <DeviceTwinPanel deviceId={deviceId} />
           </TabsContent>
 
           <TabsContent value="tokens" className="pt-2">

@@ -26,6 +26,7 @@ from shared.metrics import ingest_messages_total, ingest_queue_depth
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
+SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -71,6 +72,18 @@ def _counter_inc(key: str, delta: int = 1) -> None:
     COUNTERS[key] += delta
 
 
+def _as_json_dict(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 async def health_handler(request):
     """Health check endpoint with metrics."""
     if INGESTOR_REF is not None:
@@ -100,10 +113,114 @@ async def metrics_handler(_request):
     return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
 
 
+async def _resolve_device_by_token(token: str, pool: asyncpg.Pool) -> tuple[str, str]:
+    token_hash = sha256_hex(token)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT tenant_id, device_id
+            FROM device_registry
+            WHERE provision_token_hash = $1
+              AND status != 'REVOKED'
+            LIMIT 1
+            """,
+            token_hash,
+        )
+    if row is None:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Invalid provision token"}),
+            content_type="application/json",
+        )
+    return row["tenant_id"], row["device_id"]
+
+
+async def device_get_shadow(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        await _set_tenant_write_context(conn, tenant_id)
+        row = await conn.fetchrow(
+            """
+            SELECT desired_state, desired_version
+            FROM device_state
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+    if row is None:
+        raise web.HTTPNotFound(
+            text=json.dumps({"detail": "Device not found"}),
+            content_type="application/json",
+        )
+
+    return web.json_response(
+        {
+            "desired": _as_json_dict(row["desired_state"]),
+            "version": row["desired_version"],
+        }
+    )
+
+
+async def device_report_shadow(request: web.Request):
+    if INGESTOR_REF is None or INGESTOR_REF.pool is None:
+        raise web.HTTPServiceUnavailable(text="ingestor unavailable")
+    token = request.headers.get("X-Provision-Token")
+    if not token:
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"detail": "Missing provision token"}),
+            content_type="application/json",
+        )
+    tenant_id, device_id = await _resolve_device_by_token(token, INGESTOR_REF.pool)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Invalid JSON body"}),
+            content_type="application/json",
+        )
+    reported = body.get("reported", {})
+    version = body.get("version")
+    if not isinstance(reported, dict) or not isinstance(version, int):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"detail": "Payload must include reported object and version integer"}),
+            content_type="application/json",
+        )
+
+    async with INGESTOR_REF.pool.acquire() as conn:
+        await _set_tenant_write_context(conn, tenant_id)
+        await conn.execute(
+            """
+            UPDATE device_state
+            SET reported_state = $1::jsonb,
+                reported_version = GREATEST(reported_version, $2),
+                last_seen_at = NOW()
+            WHERE tenant_id = $3 AND device_id = $4
+            """,
+            json.dumps(reported),
+            version,
+            tenant_id,
+            device_id,
+        )
+
+    return web.json_response({"accepted": True, "version": version})
+
+
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
     app.router.add_get("/metrics", metrics_handler)
+    app.router.add_get("/device/v1/shadow", device_get_shadow)
+    app.router.add_post("/device/v1/shadow/reported", device_report_shadow)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -816,6 +933,57 @@ class Ingestor:
     def on_connect(self, client, userdata, flags, rc):
         log_event(logger, "mqtt connected", rc=rc, topic=MQTT_TOPIC)
         client.subscribe(MQTT_TOPIC)
+        client.subscribe(SHADOW_REPORTED_TOPIC)
+
+    async def handle_shadow_reported(self, topic: str, payload: dict) -> None:
+        trace_token = trace_id_var.set(str(uuid.uuid4()))
+        try:
+            parts = topic.split("/")
+            if (
+                len(parts) != 6
+                or parts[0] != "tenant"
+                or parts[2] != "device"
+                or parts[4] != "shadow"
+                or parts[5] != "reported"
+            ):
+                return
+            if self.pool is None:
+                return
+            tenant_id = parts[1]
+            device_id = parts[3]
+
+            reported = payload.get("reported", {})
+            version = payload.get("version", 0)
+            if not isinstance(reported, dict):
+                logger.warning("shadow_reported_invalid_payload", extra={"topic": topic})
+                return
+            if not isinstance(version, int):
+                try:
+                    version = int(version)
+                except (TypeError, ValueError):
+                    version = 0
+
+            async with self.pool.acquire() as conn:
+                await _set_tenant_write_context(conn, tenant_id)
+                await conn.execute(
+                    """
+                    UPDATE device_state
+                    SET reported_state = $1::jsonb,
+                        reported_version = GREATEST(reported_version, $2),
+                        last_seen_at = NOW()
+                    WHERE tenant_id = $3 AND device_id = $4
+                    """,
+                    json.dumps(reported),
+                    version,
+                    tenant_id,
+                    device_id,
+                )
+            logger.info(
+                "shadow_reported_accepted",
+                extra={"tenant_id": tenant_id, "device_id": device_id, "version": version},
+            )
+        finally:
+            trace_id_var.reset(trace_token)
 
     def on_message(self, client, userdata, msg):
         trace_token = trace_id_var.set(str(uuid.uuid4()))
@@ -843,6 +1011,12 @@ class Ingestor:
                 self.msg_dropped += 1
                 _counter_inc("messages_rejected")
                 ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
+                return
+
+            if msg.topic.endswith("/shadow/reported"):
+                self.loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(self.handle_shadow_reported(msg.topic, payload))
+                )
                 return
 
             def _enqueue():
