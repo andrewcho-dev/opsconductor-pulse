@@ -1,6 +1,6 @@
 services:
   mqtt:
-    image: eclipse-mosquitto:2.0
+    image: eclipse-mosquitto@sha256:e011726bdfa757011bc8b8716e03b7c35d2c3f623d9f658c2c6bf66e909ea42e
     container_name: iot-mqtt
     ports:
       - "1883:1883"
@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb@sha256:9e9f50161784dc57d3f547b89ded4af73553f9acb4677345ed05f45af7c7f664
     container_name: iot-postgres
     environment:
       POSTGRES_DB: iotcloud
@@ -31,8 +31,7 @@ services:
     restart: unless-stopped
 
   pgbouncer:
-    # 1.22.1 tag was removed from Docker Hub; keep pullable with latest.
-    image: edoburu/pgbouncer:latest
+    image: edoburu/pgbouncer@sha256:85d1e38593617af1b5f7f285e97d407e56c29939683cc7cfe4c8f6dc19f1268b
     container_name: iot-pgbouncer
     environment:
       DATABASE_URL: "postgres://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
@@ -57,6 +56,19 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+
+  migrator:
+    build:
+      context: ../db
+      dockerfile: Dockerfile.migrator
+    container_name: iot-migrator
+    environment:
+      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   ingest:
     build:
@@ -100,6 +112,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   evaluator:
@@ -131,6 +145,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   dispatcher:
@@ -164,6 +180,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   delivery_worker:
@@ -201,6 +219,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ops_worker:
@@ -228,6 +248,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       ingest:
         condition: service_started
       evaluator:
@@ -236,6 +258,11 @@ services:
         condition: service_started
       delivery_worker:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   subscription-worker:
@@ -249,6 +276,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # Device simulator (500 devices) - opt-in via profile to avoid zombie traffic
@@ -283,7 +319,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy@sha256:7f4c19ed8c32f961644681823de1a2fe5b74c84a45d0f3995286010c84b6c554
     container_name: iot-caddy
     ports:
       - "80:80"
@@ -344,12 +380,22 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       api:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   api:
-    build: ../services/provision_api
+    build:
+      context: ../services
+      dockerfile: provision_api/Dockerfile
     container_name: iot-api
     environment:
       PG_HOST: iot-pgbouncer
@@ -367,6 +413,14 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   seed:
@@ -421,7 +475,7 @@ services:
     restart: unless-stopped
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858
     container_name: pulse-keycloak
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}

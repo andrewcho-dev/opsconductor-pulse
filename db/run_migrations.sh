@@ -1,4 +1,6 @@
 #!/bin/bash
+# DEPRECATED: Use the migrator container (docker compose up migrator) instead.
+# This script is kept for emergency manual use only.
 # Run all database migrations in order
 # Usage: ./run_migrations.sh [host] [port] [database] [user]
 
@@ -19,7 +21,7 @@ echo ""
 for migration in $(ls "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
     filename=$(basename "$migration")
     echo "Running: $filename"
-    PGPASSWORD="${PGPASSWORD:-iot_dev}" psql -h "$HOST" -p "$PORT" -U "$USER" -d "$DATABASE" -f "$migration" -v ON_ERROR_STOP=1
+    psql -h "$HOST" -p "$PORT" -U "$USER" -d "$DATABASE" -f "$migration" -v ON_ERROR_STOP=1
     echo "  Done: $filename"
     echo ""
 done

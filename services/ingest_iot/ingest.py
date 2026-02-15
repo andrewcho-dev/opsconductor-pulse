@@ -573,90 +573,6 @@ def topic_extract(topic: str):
         msg_type = parts[4]
     return tenant_id, device_id, msg_type
 
-DDL = """
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key        TEXT PRIMARY KEY,
-  value      TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-INSERT INTO app_settings (key, value)
-VALUES
-  ('MODE','PROD'),
-  ('STORE_REJECTS','0'),
-  ('MIRROR_REJECTS_TO_RAW','0'),
-  ('MAX_PAYLOAD_BYTES','8192'),
-  ('RATE_LIMIT_RPS','5'),
-  ('RATE_LIMIT_BURST','20')
-ON CONFLICT (key) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS device_registry (
-  tenant_id            TEXT NOT NULL,
-  device_id            TEXT NOT NULL,
-  site_id              TEXT NOT NULL,
-  status               TEXT NOT NULL DEFAULT 'ACTIVE',
-  provisioned_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  provision_token_hash TEXT NULL,
-  device_pubkey        TEXT NULL,
-  fw_version           TEXT NULL,
-  metadata             JSONB NOT NULL DEFAULT '{}'::jsonb,
-  latitude             DOUBLE PRECISION NULL,
-  longitude            DOUBLE PRECISION NULL,
-  address              TEXT NULL,
-  location_source      TEXT NULL,
-  mac_address          TEXT NULL,
-  imei                 TEXT NULL,
-  iccid                TEXT NULL,
-  serial_number        TEXT NULL,
-  model                TEXT NULL,
-  manufacturer         TEXT NULL,
-  hw_revision          TEXT NULL,
-  notes                TEXT NULL,
-  PRIMARY KEY (tenant_id, device_id)
-);
-
-ALTER TABLE device_registry
-  ADD COLUMN IF NOT EXISTS provision_token_hash TEXT,
-  ADD COLUMN IF NOT EXISTS device_pubkey TEXT,
-  ADD COLUMN IF NOT EXISTS fw_version TEXT,
-  ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS address TEXT,
-  ADD COLUMN IF NOT EXISTS location_source TEXT,
-  ADD COLUMN IF NOT EXISTS mac_address TEXT,
-  ADD COLUMN IF NOT EXISTS imei TEXT,
-  ADD COLUMN IF NOT EXISTS iccid TEXT,
-  ADD COLUMN IF NOT EXISTS serial_number TEXT,
-  ADD COLUMN IF NOT EXISTS model TEXT,
-  ADD COLUMN IF NOT EXISTS manufacturer TEXT,
-  ADD COLUMN IF NOT EXISTS hw_revision TEXT,
-  ADD COLUMN IF NOT EXISTS notes TEXT;
-
-CREATE TABLE IF NOT EXISTS quarantine_events (
-  id          BIGSERIAL PRIMARY KEY,
-  ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  event_ts    TIMESTAMPTZ NULL,
-  topic       TEXT NOT NULL,
-  tenant_id   TEXT NULL,
-  site_id     TEXT NULL,
-  device_id   TEXT NULL,
-  msg_type    TEXT NULL,
-  reason      TEXT NOT NULL,
-  payload     JSONB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS quarantine_counters_minute (
-  bucket_minute TIMESTAMPTZ NOT NULL,
-  tenant_id     TEXT NOT NULL,
-  reason        TEXT NOT NULL,
-  cnt           BIGINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (bucket_minute, tenant_id, reason)
-);
-"""
-
-
 class DeviceSubscriptionCache:
     """Cache device subscription status to avoid DB lookups on every message."""
 
@@ -833,7 +749,7 @@ class Ingestor:
         await self.device_subscription_cache.put(tenant_id, device_id, subscription_id, status)
         return subscription_id, status
 
-    async def init_db(self):
+    async def init_pool(self):
         for attempt in range(60):
             try:
                 if DATABASE_URL:
@@ -848,11 +764,6 @@ class Ingestor:
                         host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
                         min_size=2, max_size=10, command_timeout=30
                     )
-                async with self.pool.acquire() as conn:
-                    for stmt in DDL.strip().split(";"):
-                        s = stmt.strip()
-                        if s:
-                            await conn.execute(s + ";")
                 return
             except Exception:
                 if attempt == 59:
@@ -1430,7 +1341,7 @@ class Ingestor:
             trace_id_var.reset(trace_token)
 
     async def run(self):
-        await self.init_db()
+        await self.init_pool()
         await start_health_server()
         self.loop = asyncio.get_running_loop()
         assert self.pool is not None
