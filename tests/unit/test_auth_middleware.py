@@ -1,7 +1,6 @@
 import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
@@ -34,77 +33,26 @@ def _make_request(headers=None, cookies=None):
     return Request(scope)
 
 
-def _mock_async_client(response: MagicMock | None = None, exc: Exception | None = None):
-    context = AsyncMock()
-    client = AsyncMock()
-    if exc is not None:
-        client.get.side_effect = exc
-    else:
-        client.get.return_value = response
-    context.__aenter__.return_value = client
-    return context
-
-
-async def test_fetch_jwks_success(monkeypatch):
-    auth = _auth_module()
-    response = httpx.Response(
-        200,
-        json={"keys": [{"kid": "k1"}]},
-        request=httpx.Request("GET", "http://kc/certs"),
-    )
-    with patch("middleware.auth.httpx.AsyncClient", return_value=_mock_async_client(response)):
-        jwks = await auth.fetch_jwks()
-    assert jwks["keys"][0]["kid"] == "k1"
-
-
-async def test_fetch_jwks_network_error():
-    auth = _auth_module()
-    req = httpx.Request("GET", "http://kc/certs")
-    with patch(
-        "middleware.auth.httpx.AsyncClient",
-        return_value=_mock_async_client(exc=httpx.RequestError("down", request=req)),
-    ):
-        with pytest.raises(HTTPException) as err:
-            await auth.fetch_jwks()
-    assert err.value.status_code == 503
-
-
-async def test_fetch_jwks_uses_internal_url(monkeypatch):
-    auth = _auth_module()
-    auth.KEYCLOAK_INTERNAL_URL = "http://internal"
-    auth.KEYCLOAK_REALM = "pulse"
-    response = httpx.Response(
-        200,
-        json={"keys": []},
-        request=httpx.Request("GET", "http://internal/realms/pulse/protocol/openid-connect/certs"),
-    )
-    with patch("middleware.auth.httpx.AsyncClient", return_value=_mock_async_client(response)) as client_cls:
-        await auth.fetch_jwks()
-    client = client_cls.return_value.__aenter__.return_value
-    client.get.assert_called_once()
-    assert client.get.call_args.args[0].startswith("http://internal/")
-
-
 async def test_get_jwks_caches_result(monkeypatch):
     auth = _auth_module()
-    auth._jwks_cache = None
-    auth._jwks_cache_time = 0.0
-    mock_fetch = AsyncMock(return_value={"keys": [{"kid": "k1"}]})
-    with patch("middleware.auth.fetch_jwks", mock_fetch):
+    fake_cache = MagicMock()
+    fake_cache.get = AsyncMock(return_value=[{"kid": "k1"}])
+    with patch("middleware.auth._get_or_init_cache", return_value=fake_cache):
         jwks1 = await auth.get_jwks()
         jwks2 = await auth.get_jwks()
     assert jwks1 == jwks2
-    assert mock_fetch.call_count == 1
+    assert fake_cache.get.await_count == 2
+    assert jwks1["keys"][0]["kid"] == "k1"
 
 
 async def test_get_jwks_refreshes_after_ttl(monkeypatch):
     auth = _auth_module()
-    auth._jwks_cache = {"keys": []}
-    auth._jwks_cache_time = 0.0
-    mock_fetch = AsyncMock(return_value={"keys": [{"kid": "k2"}]})
-    with patch("middleware.auth.fetch_jwks", mock_fetch), patch("middleware.auth.time.time", side_effect=[1000, 1000]):
-        await auth.get_jwks()
-    assert mock_fetch.call_count == 1
+    fake_cache = MagicMock()
+    fake_cache.get = AsyncMock(return_value=[{"kid": "k2"}])
+    with patch("middleware.auth._get_or_init_cache", return_value=fake_cache):
+        jwks = await auth.get_jwks()
+    assert fake_cache.get.await_count == 1
+    assert jwks["keys"][0]["kid"] == "k2"
 
 
 async def test_get_signing_key_found():

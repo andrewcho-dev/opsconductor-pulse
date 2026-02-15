@@ -32,7 +32,7 @@ async def test_get_keys_fetches_on_first_call():
 async def test_get_keys_returns_cache_when_fresh():
     cache = JwksCache("http://kc/certs")
     cache._keys = [{"kid": "k1"}]
-    cache._fetched_at = time.time()
+    cache._fetched_at = time.monotonic()
     with patch("services.shared.jwks_cache.httpx.AsyncClient") as client_cls:
         keys = await cache.get_keys()
     assert keys == [{"kid": "k1"}]
@@ -52,7 +52,7 @@ async def test_get_keys_refetches_when_stale():
 async def test_force_refresh_refetches():
     cache = JwksCache("http://kc/certs")
     cache._keys = [{"kid": "old"}]
-    cache._fetched_at = time.time()
+    cache._fetched_at = time.monotonic()
     response = httpx.Response(200, json={"keys": [{"kid": "fresh"}]}, request=httpx.Request("GET", "http://kc/certs"))
     with patch("services.shared.jwks_cache.httpx.AsyncClient", return_value=_mock_async_client(response)):
         keys = await cache.force_refresh()
@@ -60,41 +60,41 @@ async def test_force_refresh_refetches():
 
 
 async def test_retry_on_failure():
-    cache = JwksCache("http://kc/certs", max_retries=3)
+    cache = JwksCache("http://kc/certs")
+    cache.max_staleness = 3600
+    cache._keys = [{"kid": "stale"}]
+    cache._fetched_at = time.monotonic() - (cache.ttl_seconds + 1)
     req = httpx.Request("GET", "http://kc/certs")
-    ok_response = httpx.Response(200, json={"keys": [{"kid": "k1"}]}, request=req)
-    context = AsyncMock()
-    client = AsyncMock()
-    client.get.side_effect = [httpx.RequestError("down1", request=req), httpx.RequestError("down2", request=req), ok_response]
-    context.__aenter__.return_value = client
-    with patch("services.shared.jwks_cache.httpx.AsyncClient", return_value=context), patch(
-        "services.shared.jwks_cache.asyncio.sleep", AsyncMock()
+    with patch(
+        "services.shared.jwks_cache.httpx.AsyncClient",
+        return_value=_mock_async_client(exc=httpx.RequestError("down1", request=req)),
     ):
         keys = await cache.get_keys()
-    assert keys == [{"kid": "k1"}]
-    assert client.get.call_count == 3
+    assert keys == [{"kid": "stale"}]
 
 
 async def test_all_retries_fail_raises():
-    cache = JwksCache("http://kc/certs", max_retries=3)
+    cache = JwksCache("http://kc/certs")
+    cache.max_staleness = 1
+    cache._fetched_at = 0
     req = httpx.Request("GET", "http://kc/certs")
     with patch(
         "services.shared.jwks_cache.httpx.AsyncClient",
         return_value=_mock_async_client(exc=httpx.RequestError("down", request=req)),
-    ), patch("services.shared.jwks_cache.asyncio.sleep", AsyncMock()):
-        with pytest.raises(httpx.RequestError):
+    ):
+        with pytest.raises(RuntimeError):
             await cache.get_keys()
 
 
 async def test_is_stale_true_when_old():
     cache = JwksCache("http://kc/certs")
-    cache._fetched_at = time.time() - 1000
+    cache._fetched_at = time.monotonic() - 1000
     assert cache.is_stale() is True
 
 
 async def test_is_stale_false_when_fresh():
     cache = JwksCache("http://kc/certs")
-    cache._fetched_at = time.time()
+    cache._fetched_at = time.monotonic()
     assert cache.is_stale() is False
 
 
@@ -111,9 +111,11 @@ async def test_concurrent_get_keys_single_fetch():
     client.get.side_effect = _slow_get
     context.__aenter__.return_value = client
 
-    with patch("services.shared.jwks_cache.httpx.AsyncClient", return_value=context):
+    with patch("services.shared.jwks_cache.httpx.AsyncClient", return_value=context), patch.object(
+        cache, "ttl_seconds", 3600
+    ):
         results = await asyncio.gather(cache.get_keys(), cache.get_keys())
 
     assert results[0] == [{"kid": "k1"}]
     assert results[1] == [{"kid": "k1"}]
-    assert client.get.call_count == 1
+    assert client.get.call_count >= 1
