@@ -20,7 +20,7 @@ from shared.ingest_core import (
     TelemetryRecord,
 )
 from shared.audit import init_audit_logger, get_audit_logger
-from shared.log import trace_id_var
+from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import ingest_messages_total, ingest_queue_depth
 

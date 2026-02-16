@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import asyncpg
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from shared.audit import init_audit_logger, get_audit_logger
-from shared.log import trace_id_var
+from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import (
     evaluator_rules_evaluated_total,

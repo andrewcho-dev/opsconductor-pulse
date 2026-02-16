@@ -23,7 +23,7 @@ from email_sender import (
 )
 from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
 from shared.audit import init_audit_logger, get_audit_logger
-from shared.log import trace_id_var
+from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")

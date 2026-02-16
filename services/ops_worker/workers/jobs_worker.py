@@ -1,6 +1,6 @@
 import uuid
 
-from shared.log import get_logger, trace_id_var
+from shared.logging import get_logger, trace_id_var
 
 logger = get_logger("pulse.jobs_worker")
 

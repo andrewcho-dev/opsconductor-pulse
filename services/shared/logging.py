@@ -5,8 +5,10 @@ import json
 import logging
 import os
 import time
+from contextvars import ContextVar
 from typing import Any, Optional
-from shared.log import trace_id_var
+
+trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
 
 
 class JsonFormatter(logging.Formatter):

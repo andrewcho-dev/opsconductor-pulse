@@ -5,7 +5,7 @@ from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
 from typing import Any, Optional
 
-from shared.log import get_logger
+from shared.logging import get_logger
 from shared.twin import compute_delta, sync_status
 
 router = APIRouter(

@@ -11,7 +11,7 @@ from workers.commands_worker import run_commands_expiry_tick
 from workers.escalation_worker import run_escalation_tick
 from workers.jobs_worker import run_jobs_expiry_tick
 from workers.report_worker import run_report_tick
-from shared.log import trace_id_var
+from shared.logging import trace_id_var
 
 configure_logging("ops_worker")
 logger = logging.getLogger(__name__)
