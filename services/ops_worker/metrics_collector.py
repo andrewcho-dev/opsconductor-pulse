@@ -7,6 +7,8 @@ from typing import Optional
 import asyncpg
 import httpx
 
+from shared.http_client import traced_client
+
 logger = logging.getLogger(__name__)
 
 COLLECTION_INTERVAL = int(os.getenv("METRICS_COLLECTION_INTERVAL", "5"))
@@ -76,7 +78,7 @@ class MetricsCollector:
         now = datetime.now(timezone.utc)
         metrics = []
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with traced_client(timeout=5.0) as client:
             ingest_data = await self._fetch_service_health(client, "ingest", INGEST_URL)
             if ingest_data:
                 counters = ingest_data.get("counters", {})

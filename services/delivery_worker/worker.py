@@ -23,6 +23,7 @@ from email_sender import (
 )
 from mqtt_sender import publish_alert, MQTTResult, PAHO_MQTT_AVAILABLE
 from shared.audit import init_audit_logger, get_audit_logger
+from shared.http_client import traced_client
 from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 
@@ -398,7 +399,7 @@ async def process_notification_job(conn: asyncpg.Connection, job: asyncpg.Record
                     }
                 ],
             }
-            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+            async with traced_client(timeout=float(WORKER_TIMEOUT_SECONDS)) as client:
                 resp = await client.post(cfg.get("webhook_url"), json=payload_msg)
                 if resp.status_code >= 400:
                     raise RuntimeError(f"slack_http_{resp.status_code}")
@@ -414,7 +415,7 @@ async def process_notification_job(conn: asyncpg.Connection, job: asyncpg.Record
                     }
                 ],
             }
-            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+            async with traced_client(timeout=float(WORKER_TIMEOUT_SECONDS)) as client:
                 resp = await client.post(cfg.get("webhook_url"), json=payload_msg)
                 if resp.status_code >= 400:
                     raise RuntimeError(f"teams_http_{resp.status_code}")
@@ -432,7 +433,7 @@ async def process_notification_job(conn: asyncpg.Connection, job: asyncpg.Record
                     "custom_details": payload,
                 },
             }
-            async with httpx.AsyncClient(timeout=WORKER_TIMEOUT_SECONDS) as client:
+            async with traced_client(timeout=float(WORKER_TIMEOUT_SECONDS)) as client:
                 resp = await client.post("https://events.pagerduty.com/v2/enqueue", json=pd_payload)
                 if resp.status_code >= 400:
                     raise RuntimeError(f"pagerduty_http_{resp.status_code}")
@@ -719,8 +720,7 @@ async def deliver_webhook(integration: dict, job: asyncpg.Record) -> tuple[bool,
             request_body = {"message": rendered}
 
     try:
-        timeout = httpx.Timeout(WORKER_TIMEOUT_SECONDS)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with traced_client(timeout=float(WORKER_TIMEOUT_SECONDS)) as client:
             resp = await client.post(url, json=request_body, headers=headers)
             http_status = resp.status_code
             ok = 200 <= resp.status_code < 300
@@ -858,6 +858,11 @@ async def deliver_mqtt(integration: dict, job: asyncpg.Record) -> tuple[bool, st
     payload = job["payload_json"]
     if isinstance(payload, str):
         payload = json.loads(payload)
+
+    # Add trace_id to MQTT payload
+    trace_id = trace_id_var.get("")
+    if trace_id:
+        payload["trace_id"] = trace_id
 
     resolved_topic = mqtt_topic
     replacements = {

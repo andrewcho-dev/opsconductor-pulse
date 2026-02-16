@@ -4,6 +4,7 @@ from datetime import timedelta
 import httpx
 from notifications.dispatcher import dispatch_alert
 from oncall.resolver import get_current_responder
+from shared.http_client import traced_client
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ async def run_escalation_tick(pool):
             webhook = level["notify_webhook"]
             if webhook:
                 try:
-                    async with httpx.AsyncClient(timeout=5.0) as client:
+                    async with traced_client(timeout=5.0) as client:
                         await client.post(webhook, json=payload)
                 except Exception:
                     logger.exception("Escalation webhook send failed")

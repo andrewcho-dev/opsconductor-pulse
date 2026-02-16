@@ -7,6 +7,8 @@ import time
 import asyncpg
 import httpx
 
+from shared.http_client import traced_client
+
 logger = logging.getLogger(__name__)
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
@@ -126,7 +128,7 @@ async def resolve_system_alert(conn: asyncpg.Connection, service_name: str) -> N
 async def check_service(name: str, url: str) -> dict:
     start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with traced_client(timeout=5.0) as client:
             resp = await client.get(f"{url}/health")
             latency = int((time.time() - start) * 1000)
             if resp.status_code == 200:

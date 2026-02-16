@@ -46,6 +46,7 @@ from routes.jobs import router as jobs_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
+from shared.http_client import traced_client
 from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
 from shared.metrics import fleet_active_alerts, fleet_devices_by_status
@@ -448,7 +449,7 @@ async def healthz():
             checks["keycloak"] = "uninitialized"
         elif cache.is_stale():
             jwks_uri = os.getenv("KEYCLOAK_JWKS_URI", "")
-            async with httpx.AsyncClient(timeout=2.0) as client:
+            async with traced_client(timeout=2.0) as client:
                 r = await client.get(jwks_uri)
             checks["keycloak"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
         else:
@@ -584,7 +585,7 @@ async def oauth_callback(request: Request, code: str | None = Query(None), state
     token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with traced_client(timeout=10.0) as client:
             response = await client.post(
                 token_url,
                 data={
@@ -710,7 +711,7 @@ async def auth_refresh(request: Request):
     token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with traced_client(timeout=10.0) as client:
             response = await client.post(
                 token_url,
                 data={
@@ -800,7 +801,7 @@ async def debug_auth(request: Request):
     keycloak_reachable = False
     keycloak_issuer = None
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with traced_client(timeout=5.0) as client:
             r = await client.get(
                 f"{keycloak_internal}/realms/{os.getenv('KEYCLOAK_REALM', 'pulse')}/.well-known/openid-configuration"
             )
