@@ -48,6 +48,11 @@ from routes.jobs import router as jobs_router
 from routes.ota import router as ota_router
 from routes.preferences import router as preferences_router
 from routes.message_routing import router as message_routing_router
+from routes.telemetry_stream import (
+    ws_router as telemetry_ws_router,
+    sse_router as telemetry_sse_router,
+    status_router as telemetry_status_router,
+)
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
@@ -60,6 +65,7 @@ from shared.metrics import (
     pulse_db_pool_size,
     pulse_db_pool_free,
 )
+from telemetry_stream import stream_manager
 
 # PHASE 43 AUDIT — Background Tasks
 #
@@ -356,6 +362,9 @@ app.include_router(ota_router)
 app.include_router(roles_router)
 app.include_router(preferences_router)
 app.include_router(message_routing_router)
+app.include_router(telemetry_ws_router)
+app.include_router(telemetry_sse_router)
+app.include_router(telemetry_status_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
@@ -570,6 +579,8 @@ async def startup():
         logger.warning("JWKS cache startup failed", exc_info=True)
 
     await setup_ws_listener()
+    # Start telemetry stream manager for real-time export
+    stream_manager.start(asyncio.get_running_loop())
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -590,6 +601,10 @@ async def shutdown():
         pass
     try:
         await shutdown_ws_listener()
+    except Exception:
+        pass
+    try:
+        stream_manager.stop()
     except Exception:
         pass
     for task in background_tasks:
