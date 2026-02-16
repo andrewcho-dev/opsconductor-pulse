@@ -11,9 +11,23 @@ CREATE TABLE IF NOT EXISTS device_connection_events (
 );
 
 -- Constrain event_type values
-ALTER TABLE device_connection_events
-    ADD CONSTRAINT chk_connection_event_type
-    CHECK (event_type IN ('CONNECTED', 'DISCONNECTED', 'CONNECTION_LOST'));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'chk_connection_event_type'
+          AND t.relname = 'device_connection_events'
+          AND n.nspname = 'public'
+    ) THEN
+        ALTER TABLE device_connection_events
+            ADD CONSTRAINT chk_connection_event_type
+            CHECK (event_type IN ('CONNECTED', 'DISCONNECTED', 'CONNECTION_LOST'));
+    END IF;
+END
+$$;
 
 -- Primary query pattern: device event timeline, newest first
 CREATE INDEX IF NOT EXISTS idx_device_conn_events_lookup
