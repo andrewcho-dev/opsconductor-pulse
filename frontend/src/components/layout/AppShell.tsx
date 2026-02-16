@@ -4,6 +4,7 @@ import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { SubscriptionBanner } from "./SubscriptionBanner";
+import { Toaster } from "sonner";
 
 export default function AppShell() {
   useWebSocket(); // Connect WebSocket on mount
@@ -18,6 +19,7 @@ export default function AppShell() {
           <main className="flex-1 p-6 overflow-auto">
             <Outlet />
           </main>
+          <Toaster richColors position="bottom-right" />
         </div>
       </div>
     </SidebarProvider>

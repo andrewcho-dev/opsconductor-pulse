@@ -4,6 +4,16 @@ import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { fetchSites } from "@/services/api/sites";
 import { fetchAlertRules } from "@/services/api/alert-rules";
 import { provisionDevice } from "@/services/api/devices";
@@ -71,6 +81,7 @@ const initialState: WizardState = {
 export default function SetupWizard() {
   const [step, setStep] = useState<WizardStep>(1);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const { data: sitesData } = useQuery({
@@ -333,7 +344,10 @@ export default function SetupWizard() {
           <Button
             variant="ghost"
             onClick={() => {
-              if (step > 1 && !window.confirm("Abandon setup? Your device won't be provisioned.")) return;
+              if (step > 1) {
+                setConfirmAbandon(true);
+                return;
+              }
               setStep(1);
             }}
           >
@@ -341,6 +355,28 @@ export default function SetupWizard() {
           </Button>
         )}
       </div>
+
+      <AlertDialog open={confirmAbandon} onOpenChange={setConfirmAbandon}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Abandon Setup</AlertDialogTitle>
+            <AlertDialogDescription>
+              Abandon setup? Your device won't be provisioned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setStep(1);
+                setConfirmAbandon(false);
+              }}
+            >
+              Abandon
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

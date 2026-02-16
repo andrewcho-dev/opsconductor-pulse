@@ -4,6 +4,17 @@ import { Key, MoreHorizontal, Pencil, Plus, Search, Shield, UserMinus } from "lu
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +54,7 @@ export default function UsersPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [changeRoleUserId, setChangeRoleUserId] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{ userId: string; username: string } | null>(null);
 
   const users = data?.users || [];
   const total = data?.total ?? 0;
@@ -52,15 +64,19 @@ export default function UsersPage() {
     setPage(1);
   };
 
-  const handleRemove = async (userId: string, username: string) => {
-    if (window.confirm(`Remove ${username} from this tenant?`)) {
-      await removeMutation.mutateAsync(userId);
-    }
+  const handleRemove = (userId: string, username: string) => {
+    setConfirmRemove({ userId, username });
   };
 
   const handleResetPassword = async (userId: string) => {
     await resetPasswordMutation.mutateAsync(userId);
-    window.alert("Password reset email sent");
+    toast.success("Password reset email sent");
+  };
+
+  const confirmRemoveUser = async () => {
+    if (!confirmRemove) return;
+    await removeMutation.mutateAsync(confirmRemove.userId);
+    setConfirmRemove(null);
   };
 
   const getRoleLabel = (roles: string[]) => {
@@ -272,6 +288,23 @@ export default function UsersPage() {
           }}
         />
       )}
+
+      <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Team Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove {confirmRemove?.username} from this tenant? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmRemoveUser()}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

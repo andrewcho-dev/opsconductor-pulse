@@ -3,6 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   createChannel,
   deleteChannel,
@@ -21,6 +32,7 @@ export default function NotificationChannelsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<NotificationChannel | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
   const channelsQuery = useQuery({
     queryKey: ["notification-channels"],
@@ -111,7 +123,11 @@ export default function NotificationChannelsPage() {
                       size="sm"
                       onClick={async () => {
                         const result = await testMutation.mutateAsync(channel.channel_id);
-                        window.alert(result.ok ? "Test sent" : `Test failed: ${result.error ?? "Unknown error"}`);
+                        if (result.ok) {
+                          toast.success("Test sent successfully");
+                        } else {
+                          toast.error(`Test failed: ${result.error ?? "Unknown error"}`);
+                        }
                       }}
                     >
                       Test
@@ -136,10 +152,7 @@ export default function NotificationChannelsPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={async () => {
-                        if (!window.confirm("Delete this channel?")) return;
-                        await deleteMutation.mutateAsync(channel.channel_id);
-                      }}
+                      onClick={() => setConfirmDelete(channel.channel_id)}
                     >
                       Delete
                     </Button>
@@ -194,6 +207,28 @@ export default function NotificationChannelsPage() {
           }
         }}
       />
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(openState) => !openState && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Channel</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this notification channel? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (confirmDelete) await deleteMutation.mutateAsync(confirmDelete);
+                setConfirmDelete(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

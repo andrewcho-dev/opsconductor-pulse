@@ -5,6 +5,16 @@ import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useDeleteRole, useRoles } from "@/hooks/use-roles";
 import { usePermissions } from "@/services/auth";
 import type { Role } from "@/services/api/roles";
@@ -59,6 +69,7 @@ export default function RolesPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [confirmDeleteRole, setConfirmDeleteRole] = useState<Role | null>(null);
 
   const systemRoles = useMemo(() => data?.roles?.filter((r) => r.is_system) ?? [], [data]);
   const customRoles = useMemo(() => data?.roles?.filter((r) => !r.is_system) ?? [], [data]);
@@ -76,10 +87,8 @@ export default function RolesPage() {
     });
   };
 
-  const handleDelete = async (role: Role) => {
-    if (window.confirm(`Delete role "${role.name}"? This will remove it from all users.`)) {
-      await deleteMutation.mutateAsync(role.id);
-    }
+  const handleDelete = (role: Role) => {
+    setConfirmDeleteRole(role);
   };
 
   return (
@@ -182,6 +191,28 @@ export default function RolesPage() {
           refetch();
         }}
       />
+
+      <AlertDialog open={!!confirmDeleteRole} onOpenChange={(open) => !open && setConfirmDeleteRole(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Role</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete role "{confirmDeleteRole?.name}"? This will remove it from all users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (confirmDeleteRole) await deleteMutation.mutateAsync(confirmDeleteRole.id);
+                setConfirmDeleteRole(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -4,6 +4,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
 import { useDeviceAlerts } from "@/hooks/use-device-alerts";
@@ -48,6 +58,7 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState("overview");
   const [editOpen, setEditOpen] = useState(false);
+  const [confirmDecommission, setConfirmDecommission] = useState<string | null>(null);
   const { data: deviceData } = useDevice(deviceId);
   const { data: tagData } = useQuery({
     queryKey: ["device-tags", deviceId],
@@ -118,9 +129,7 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
               <div className="absolute right-0 z-10 mt-1 w-40 rounded border border-border bg-background p-1 shadow-md">
                 <button
                   onClick={async () => {
-                    if (!window.confirm(`Decommission ${device.device_id}?`)) return;
-                    await decommissionDevice(device.device_id);
-                    await refresh();
+                    setConfirmDecommission(device.device_id);
                   }}
                   className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                 >
@@ -280,6 +289,30 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
         onClose={() => setEditOpen(false)}
         onSaved={refresh}
       />
+
+      <AlertDialog open={!!confirmDecommission} onOpenChange={(open) => !open && setConfirmDecommission(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Decommission Device</AlertDialogTitle>
+            <AlertDialogDescription>
+              Decommission {confirmDecommission}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!confirmDecommission) return;
+                await decommissionDevice(confirmDecommission);
+                await refresh();
+                setConfirmDecommission(null);
+              }}
+            >
+              Decommission
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

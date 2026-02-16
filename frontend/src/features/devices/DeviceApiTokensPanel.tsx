@@ -52,6 +52,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
   const queryClient = useQueryClient();
   const [credentials, setCredentials] = useState<ProvisionDeviceResponse | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmRevokeToken, setConfirmRevokeToken] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["device-tokens", deviceId],
@@ -134,10 +135,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={async () => {
-                          if (!window.confirm("Revoke this token?")) return;
-                          await revokeMutation.mutateAsync(token.id);
-                        }}
+                        onClick={() => setConfirmRevokeToken(token.id)}
                       >
                         Revoke
                       </Button>
@@ -169,6 +167,31 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
               }}
             >
               Generate Token
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!confirmRevokeToken}
+        onOpenChange={(open) => !open && setConfirmRevokeToken(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke Token</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to revoke this token? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (confirmRevokeToken) await revokeMutation.mutateAsync(confirmRevokeToken);
+                setConfirmRevokeToken(null);
+              }}
+            >
+              Revoke
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

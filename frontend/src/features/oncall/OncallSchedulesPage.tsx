@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   createSchedule,
   deleteSchedule,
   getCurrentOncall,
@@ -43,6 +53,7 @@ export default function OncallSchedulesPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OncallSchedule | null>(null);
+  const [confirmDeleteSchedule, setConfirmDeleteSchedule] = useState<number | null>(null);
   const schedulesQuery = useQuery({
     queryKey: ["oncall-schedules"],
     queryFn: listSchedules,
@@ -103,10 +114,7 @@ export default function OncallSchedulesPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={async () => {
-                  if (!window.confirm("Delete schedule?")) return;
-                  await deleteMutation.mutateAsync(schedule.schedule_id);
-                }}
+                onClick={() => setConfirmDeleteSchedule(schedule.schedule_id)}
               >
                 Delete
               </Button>
@@ -128,6 +136,31 @@ export default function OncallSchedulesPage() {
           }
         }}
       />
+
+      <AlertDialog
+        open={!!confirmDeleteSchedule}
+        onOpenChange={(open) => !open && setConfirmDeleteSchedule(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this schedule? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (confirmDeleteSchedule) await deleteMutation.mutateAsync(confirmDeleteSchedule);
+                setConfirmDeleteSchedule(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

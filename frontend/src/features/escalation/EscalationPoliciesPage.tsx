@@ -4,6 +4,16 @@ import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   createEscalationPolicy,
   deleteEscalationPolicy,
   listEscalationPolicies,
@@ -28,6 +38,7 @@ export default function EscalationPoliciesPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EscalationPolicy | null>(null);
+  const [confirmDeletePolicy, setConfirmDeletePolicy] = useState<EscalationPolicy | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["escalation-policies"],
@@ -127,10 +138,7 @@ export default function EscalationPoliciesPage() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={async () => {
-                        if (!window.confirm("Delete this escalation policy?")) return;
-                        await deleteMutation.mutateAsync(policy.policy_id);
-                      }}
+                      onClick={() => setConfirmDeletePolicy(policy)}
                     >
                       Delete
                     </Button>
@@ -154,6 +162,28 @@ export default function EscalationPoliciesPage() {
           }
         }}
       />
+
+      <AlertDialog open={!!confirmDeletePolicy} onOpenChange={(openState) => !openState && setConfirmDeletePolicy(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Escalation Policy</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete this escalation policy? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (confirmDeletePolicy) await deleteMutation.mutateAsync(confirmDeletePolicy.policy_id);
+                setConfirmDeletePolicy(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

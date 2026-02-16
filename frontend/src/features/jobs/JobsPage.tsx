@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { cancelJob, getJob, listJobs, type Job } from "@/services/api/jobs";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CreateJobModal } from "./CreateJobModal";
 
 const STATUS_CLASS: Record<string, string> = {
@@ -15,6 +25,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -33,13 +44,18 @@ export default function JobsPage() {
     setSelectedJob(await getJob(jobId));
   };
 
-  const handleCancel = async (jobId: string) => {
-    if (!window.confirm(`Cancel job ${jobId}?`)) return;
-    await cancelJob(jobId);
+  const handleCancel = (jobId: string) => {
+    setConfirmCancel(jobId);
+  };
+
+  const confirmCancelJob = async () => {
+    if (!confirmCancel) return;
+    await cancelJob(confirmCancel);
     await load();
-    if (selectedJob?.job_id === jobId) {
-      setSelectedJob(await getJob(jobId));
+    if (selectedJob?.job_id === confirmCancel) {
+      setSelectedJob(await getJob(confirmCancel));
     }
+    setConfirmCancel(null);
   };
 
   if (loading) return <div className="p-4 text-sm text-muted-foreground">Loading jobs...</div>;
@@ -98,7 +114,7 @@ export default function JobsPage() {
                       variant="outline"
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleCancel(job.job_id);
+                        handleCancel(job.job_id);
                       }}
                     >
                       Cancel
@@ -179,6 +195,23 @@ export default function JobsPage() {
           }}
         />
       )}
+
+      <AlertDialog open={!!confirmCancel} onOpenChange={(open) => !open && setConfirmCancel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Job</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel job {confirmCancel?.slice(0, 8)}...?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmCancelJob()}>
+              Yes, cancel job
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

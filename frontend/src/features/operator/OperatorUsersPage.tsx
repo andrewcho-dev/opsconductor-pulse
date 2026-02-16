@@ -1,9 +1,20 @@
 import { useState } from "react";
 import { Building2, Key, MoreHorizontal, Pencil, Plus, Search, Shield, Trash2, UserCheck, UserX } from "lucide-react";
+import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +71,7 @@ export default function OperatorUsersPage() {
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [assignTenantUserId, setAssignTenantUserId] = useState<string | null>(null);
   const [assignRoleUserId, setAssignRoleUserId] = useState<string | null>(null);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<string | null>(null);
 
   const users = data?.users || [];
   const total = data?.total ?? 0;
@@ -77,15 +89,19 @@ export default function OperatorUsersPage() {
     await disableMutation.mutateAsync(userId);
   };
 
-  const handleDelete = async (userId: string) => {
-    if (window.confirm("Are you sure you want to delete this user?")) {
-      await deleteMutation.mutateAsync(userId);
-    }
+  const handleDelete = (userId: string) => {
+    setConfirmDeleteUser(userId);
   };
 
   const handleResetPassword = async (userId: string) => {
     await resetPasswordMutation.mutateAsync(userId);
-    window.alert("Password reset email sent");
+    toast.success("Password reset email sent");
+  };
+
+  const confirmDeleteOperatorUser = async () => {
+    if (!confirmDeleteUser) return;
+    await deleteMutation.mutateAsync(confirmDeleteUser);
+    setConfirmDeleteUser(null);
   };
 
   const getRoleBadgeVariant = (role: string) => {
@@ -341,6 +357,23 @@ export default function OperatorUsersPage() {
           }}
         />
       )}
+
+      <AlertDialog open={!!confirmDeleteUser} onOpenChange={(open) => !open && setConfirmDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this user? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmDeleteOperatorUser()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

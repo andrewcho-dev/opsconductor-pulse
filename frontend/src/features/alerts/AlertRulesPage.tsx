@@ -25,6 +25,7 @@ import {
   applyAlertRuleTemplates,
   fetchAlertRuleTemplates,
 } from "@/services/api/alert-rules";
+import { toast } from "sonner";
 
 const OPERATOR_LABELS: Record<string, string> = {
   GT: ">",
@@ -69,7 +70,7 @@ export default function AlertRulesPage() {
       const result = await applyAlertRuleTemplates(
         templates.map((tmpl) => tmpl.template_id)
       );
-      window.alert(`Created ${result.created.length} rules, skipped ${result.skipped.length} (already exist)`);
+      toast.success(`Created ${result.created.length} rules, skipped ${result.skipped.length} (already exist)`);
       await queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
     } finally {
       setApplyingDefaults(false);
