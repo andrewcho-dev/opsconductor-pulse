@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from shared.jwks_cache import get_jwks_cache, init_jwks_cache
 from shared.audit import get_audit_logger
+from shared.metrics import pulse_auth_failures_total
 
 logger = logging.getLogger(__name__)
 
@@ -146,22 +147,23 @@ class JWTBearer(HTTPBearer):
             audit = get_audit_logger()
             if audit:
                 audit.auth_failure(reason="missing_token", ip_address=client_ip)
+            pulse_auth_failures_total.labels(reason="missing_token").inc()
             raise HTTPException(status_code=401, detail="Missing authorization")
 
         try:
             payload = await validate_token(token)
         except HTTPException as exc:
+            reason_map = {
+                "Token expired": "expired",
+                "Invalid token claims": "invalid_claims",
+                "Invalid token": "invalid_token",
+                "Unknown signing key": "unknown_key",
+                "Auth service unavailable": "auth_unavailable",
+            }
+            reason = reason_map.get(exc.detail, "unknown")
+            pulse_auth_failures_total.labels(reason=reason).inc()
             audit = get_audit_logger()
             if audit:
-                # Map the detail string to a failure reason
-                reason_map = {
-                    "Token expired": "expired",
-                    "Invalid token claims": "invalid_claims",
-                    "Invalid token": "invalid_token",
-                    "Unknown signing key": "unknown_key",
-                    "Auth service unavailable": "auth_unavailable",
-                }
-                reason = reason_map.get(exc.detail, "unknown")
                 audit.auth_failure(reason=reason, ip_address=client_ip)
             raise
 
