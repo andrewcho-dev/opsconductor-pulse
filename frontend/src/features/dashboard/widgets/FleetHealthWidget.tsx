@@ -1,142 +1,117 @@
-import type { ElementType } from "react";
-import { memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { fetchFleetSummary } from "@/services/api/devices";
-import { Activity, AlertTriangle, Battery, Clock, Wifi } from "lucide-react";
+import { fetchFleetHealth } from "@/services/api/devices";
 
-function FleetHealthWidgetInner() {
+function scoreColor(score: number): string {
+  if (score > 80) return "text-green-500";
+  if (score >= 50) return "text-yellow-500";
+  return "text-red-500";
+}
+
+function strokeColor(score: number): string {
+  if (score > 80) return "stroke-green-500";
+  if (score >= 50) return "stroke-yellow-500";
+  return "stroke-red-500";
+}
+
+function trackColor(score: number): string {
+  if (score > 80) return "stroke-green-500/20";
+  if (score >= 50) return "stroke-yellow-500/20";
+  return "stroke-red-500/20";
+}
+
+export function FleetHealthWidget() {
   const { data, isLoading } = useQuery({
-    queryKey: ["fleet-summary"],
-    queryFn: fetchFleetSummary,
-    refetchInterval: 10_000,
+    queryKey: ["fleet-health"],
+    queryFn: fetchFleetHealth,
+    refetchInterval: 30000,
   });
 
-  if (isLoading || !data) {
+  const score = data?.score ?? 0;
+  const total = data?.total_devices ?? 0;
+  const online = data?.online ?? 0;
+  const critical = data?.critical_alerts ?? 0;
+  const healthy = Math.max(0, online - critical);
+
+  // SVG circular gauge parameters
+  const size = 120;
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = (score / 100) * circumference;
+  const dashOffset = circumference - progress;
+
+  if (isLoading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-4 w-4" />
-            Fleet Health
-          </CardTitle>
+          <CardTitle className="text-base">Fleet Health</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Skeleton className="h-[120px]" />
-            <Skeleton className="h-[120px]" />
-            <Skeleton className="h-[120px]" />
-            <Skeleton className="h-[120px]" />
-          </div>
+        <CardContent className="flex items-center justify-center py-8">
+          <div className="h-[120px] w-[120px] animate-pulse rounded-full bg-muted" />
         </CardContent>
       </Card>
     );
   }
 
-  const totalDevices = data.total_devices ?? data.total ?? 0;
-  const onlineDevices = data.online ?? data.ONLINE ?? 0;
-  const staleDevices = data.stale ?? data.STALE ?? 0;
-  const openAlerts = data.alerts_open ?? 0;
-  const alertsNew1h = data.alerts_new_1h ?? 0;
-  const lowBatteryCount = data.low_battery_count ?? 0;
-  const lowBatteryThreshold = data.low_battery_threshold ?? 20;
-  const lowBatteryDevices = data.low_battery_devices ?? [];
-  const onlinePct =
-    totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0;
-
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="h-4 w-4" />
-          Fleet Health
-        </CardTitle>
+      <CardHeader>
+        <CardTitle className="text-base">Fleet Health</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <StatusCard
-            icon={Wifi}
-            label="Online"
-            value={`${onlineDevices}/${totalDevices}`}
-            subtext={`${onlinePct}%`}
-            status={onlinePct >= 95 ? "success" : onlinePct >= 80 ? "warning" : "error"}
-          />
+        <div className="flex items-center gap-6">
+          <div className="relative flex-shrink-0">
+            <svg
+              width={size}
+              height={size}
+              viewBox={`0 0 ${size} ${size}`}
+              className="-rotate-90"
+            >
+              <circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                strokeWidth={strokeWidth}
+                className={trackColor(score)}
+              />
+              <circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={dashOffset}
+                className={`${strokeColor(score)} transition-all duration-700`}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className={`text-2xl font-bold ${scoreColor(score)}`}>{score}%</span>
+            </div>
+          </div>
 
-          <Link to="/alerts?status=open" className="block">
-            <StatusCard
-              icon={AlertTriangle}
-              label="Open Alerts"
-              value={openAlerts.toString()}
-              subtext={alertsNew1h > 0 ? `▲ ${alertsNew1h} new/1h` : "—"}
-              status={openAlerts > 0 ? "error" : "success"}
-            />
-          </Link>
-
-          <StatusCard
-            icon={Battery}
-            label="Low Battery"
-            value={lowBatteryCount.toString()}
-            subtext={`< ${lowBatteryThreshold}%`}
-            status={lowBatteryCount > 0 ? "warning" : "success"}
-            tooltip={
-              lowBatteryDevices.length > 0
-                ? lowBatteryDevices.join(", ")
-                : undefined
-            }
-          />
-
-          <Link to="/devices?state=stale" className="block">
-            <StatusCard
-              icon={Clock}
-              label="Stale"
-              value={staleDevices.toString()}
-              subtext="> 5 min"
-              status={staleDevices > 0 ? "warning" : "success"}
-            />
-          </Link>
+          <div className="space-y-1 text-sm">
+            <div>
+              <span className="font-medium">{healthy}</span>
+              <span className="text-muted-foreground">/{total} devices healthy</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {online} online, {critical} with critical alerts
+            </div>
+            {score <= 50 && (
+              <div className="text-xs font-medium text-red-500">Fleet health is degraded</div>
+            )}
+            {score > 50 && score <= 80 && (
+              <div className="text-xs font-medium text-yellow-500">
+                Some devices need attention
+              </div>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
   );
 }
-
-interface StatusCardProps {
-  icon: ElementType;
-  label: string;
-  value: string;
-  subtext: string;
-  status: "success" | "warning" | "error";
-  tooltip?: string;
-}
-
-function StatusCard({ icon: Icon, label, value, subtext, status, tooltip }: StatusCardProps) {
-  const colors = {
-    success: "text-green-600 dark:text-green-400",
-    warning: "text-yellow-600 dark:text-yellow-400",
-    error: "text-red-600 dark:text-red-400",
-  };
-
-  const bgColors = {
-    success: "bg-green-50 dark:bg-green-950",
-    warning: "bg-yellow-50 dark:bg-yellow-950",
-    error: "bg-red-50 dark:bg-red-950",
-  };
-
-  return (
-    <div
-      className={`rounded-lg p-3 transition hover:opacity-80 ${bgColors[status]}`}
-      title={tooltip}
-    >
-      <div className="mb-1 flex items-center gap-2">
-        <Icon className={`h-4 w-4 ${colors[status]}`} />
-        <span className="text-xs text-muted-foreground">{label}</span>
-      </div>
-      <div className={`text-2xl font-bold ${colors[status]}`}>{value}</div>
-      <div className="text-xs text-muted-foreground">{subtext}</div>
-    </div>
-  );
-}
-
-export const FleetHealthWidget = memo(FleetHealthWidgetInner);

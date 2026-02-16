@@ -2169,3 +2169,73 @@ async def delete_maintenance_window(window_id: str, pool=Depends(get_db_pool)):
         raise HTTPException(status_code=404, detail="Window not found")
     return {"window_id": window_id, "deleted": True}
 
+
+@router.get("/fleet/health")
+@limiter.limit(CUSTOMER_RATE_LIMIT)
+async def get_fleet_health(
+    request: Request,
+    response: Response,
+    pool=Depends(get_db_pool),
+):
+    """
+    Returns a fleet health score: percentage of online devices not affected by critical alerts.
+
+    Score = ((online_devices - critical_alert_devices) / total_devices) * 100
+    Clamped to [0, 100]. Returns 100 if total_devices is 0.
+    """
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            # Total active devices
+            total_devices = await conn.fetchval(
+                """
+                SELECT COUNT(*)
+                FROM device_registry
+                WHERE tenant_id = $1 AND status = 'ACTIVE'
+                """,
+                tenant_id,
+            )
+            total_devices = int(total_devices or 0)
+
+            # Online devices (have recent heartbeat in device_state)
+            online_devices = await conn.fetchval(
+                """
+                SELECT COUNT(*)
+                FROM device_state
+                WHERE tenant_id = $1 AND status = 'ONLINE'
+                """,
+                tenant_id,
+            )
+            online_devices = int(online_devices or 0)
+
+            # Distinct devices with at least one OPEN critical alert (severity >= 5)
+            critical_alert_devices = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT device_id)
+                FROM fleet_alert
+                WHERE tenant_id = $1
+                  AND status IN ('OPEN', 'ACKNOWLEDGED')
+                  AND severity >= 5
+                """,
+                tenant_id,
+            )
+            critical_alert_devices = int(critical_alert_devices or 0)
+
+    except Exception:
+        logger.exception("Failed to compute fleet health score")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if total_devices == 0:
+        score = 100.0
+    else:
+        raw_score = ((online_devices - critical_alert_devices) / total_devices) * 100
+        score = max(0.0, min(100.0, round(raw_score, 1)))
+
+    return {
+        "score": score,
+        "total_devices": total_devices,
+        "online": online_devices,
+        "critical_alerts": critical_alert_devices,
+        "calculated_at": datetime.now(timezone.utc).isoformat(),
+    }
+

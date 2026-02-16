@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
-import { AlertTrendWidget, DeviceStatusWidget } from "./widgets";
+import { AlertTrendWidget, DeviceStatusWidget, FleetHealthWidget } from "./widgets";
 import { UptimeSummaryWidget } from "@/features/devices/UptimeSummaryWidget";
 import FleetKpiStrip from "./FleetKpiStrip";
 import { useAlerts } from "@/hooks/use-alerts";
@@ -160,9 +160,16 @@ export default function DashboardPage() {
         <FleetKpiStrip />
       </WidgetErrorBoundary>
 
-      <WidgetErrorBoundary widgetName="Fleet Uptime">
-        <UptimeSummaryWidget />
-      </WidgetErrorBoundary>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <WidgetErrorBoundary widgetName="Fleet Uptime">
+            <UptimeSummaryWidget />
+          </WidgetErrorBoundary>
+        </div>
+        <WidgetErrorBoundary widgetName="Fleet Health">
+          <FleetHealthWidget />
+        </WidgetErrorBoundary>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <WidgetErrorBoundary widgetName="Active Alerts">

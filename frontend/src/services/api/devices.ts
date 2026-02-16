@@ -518,3 +518,15 @@ export async function getDeviceUptime(
 export async function getFleetUptimeSummary(): Promise<FleetUptimeSummary> {
   return apiGet("/customer/fleet/uptime-summary");
 }
+
+export interface FleetHealthResponse {
+  score: number;
+  total_devices: number;
+  online: number;
+  critical_alerts: number;
+  calculated_at: string;
+}
+
+export async function fetchFleetHealth(): Promise<FleetHealthResponse> {
+  return apiGet("/customer/fleet/health");
+}
