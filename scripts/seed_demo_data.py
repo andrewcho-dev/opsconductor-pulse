@@ -10,12 +10,15 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import asyncpg
+import httpx
 
 PG_HOST = os.getenv("PG_HOST", "localhost")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.environ["PG_PASS"]
+KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080")
+KEYCLOAK_ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin_dev")
 
 TENANTS = ["tenant-a", "tenant-b"]
 SITES = {
@@ -321,7 +324,67 @@ async def seed_timescaledb(pool, devices):
         print(f"  Total: {total_written} telemetry records written")
 
 
+async def bootstrap_keycloak_profile():
+    """Ensure Keycloak pulse realm has tenant_id in user profile attributes."""
+    print("Bootstrapping Keycloak user profile...")
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Get admin token
+        token_resp = await client.post(
+            f"{KEYCLOAK_INTERNAL_URL}/realms/master/protocol/openid-connect/token",
+            data={
+                "client_id": "admin-cli",
+                "username": "admin",
+                "password": KEYCLOAK_ADMIN_PASSWORD,
+                "grant_type": "password",
+            },
+        )
+        token_resp.raise_for_status()
+        token = token_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Get current user profile config
+        profile_resp = await client.get(
+            f"{KEYCLOAK_INTERNAL_URL}/admin/realms/pulse/users/profile",
+            headers=headers,
+        )
+        profile_resp.raise_for_status()
+        profile = profile_resp.json()
+
+        # Check if tenant_id attribute already exists
+        attr_names = [a["name"] for a in profile.get("attributes", [])]
+        if "tenant_id" in attr_names:
+            print("  tenant_id attribute already exists — skipping.")
+            return
+
+        # Add tenant_id attribute
+        profile.setdefault("attributes", []).append(
+            {
+                "name": "tenant_id",
+                "displayName": "Tenant ID",
+                "validations": {},
+                "annotations": {},
+                "permissions": {"view": ["admin", "user"], "edit": ["admin"]},
+                "multivalued": False,
+            }
+        )
+
+        put_resp = await client.put(
+            f"{KEYCLOAK_INTERNAL_URL}/admin/realms/pulse/users/profile",
+            headers=headers,
+            json=profile,
+        )
+        put_resp.raise_for_status()
+        print("  tenant_id attribute added to user profile.")
+
+
 async def main():
+    # Bootstrap Keycloak profile (idempotent)
+    try:
+        await bootstrap_keycloak_profile()
+    except Exception as e:
+        print(f"  Warning: Keycloak bootstrap skipped ({e})")
+
     devices = list(iter_devices())
     stale, low_battery, high_temp, weak_signal = pick_special_devices(devices)
 
