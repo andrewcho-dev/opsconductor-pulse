@@ -44,35 +44,35 @@ export interface CurrentOncall {
 }
 
 export async function listSchedules(): Promise<{ schedules: OncallSchedule[] }> {
-  return apiGet("/customer/oncall-schedules");
+  return apiGet("/api/v1/customer/oncall-schedules");
 }
 export async function createSchedule(body: Partial<OncallSchedule>): Promise<OncallSchedule> {
-  return apiPost("/customer/oncall-schedules", body);
+  return apiPost("/api/v1/customer/oncall-schedules", body);
 }
 export async function updateSchedule(id: number, body: Partial<OncallSchedule>): Promise<OncallSchedule> {
-  return apiPut(`/customer/oncall-schedules/${id}`, body);
+  return apiPut(`/api/v1/customer/oncall-schedules/${id}`, body);
 }
 export async function deleteSchedule(id: number): Promise<void> {
-  await apiDelete(`/customer/oncall-schedules/${id}`);
+  await apiDelete(`/api/v1/customer/oncall-schedules/${id}`);
 }
 export async function getCurrentOncall(scheduleId: number): Promise<CurrentOncall> {
-  return apiGet(`/customer/oncall-schedules/${scheduleId}/current`);
+  return apiGet(`/api/v1/customer/oncall-schedules/${scheduleId}/current`);
 }
 export async function getTimeline(
   scheduleId: number,
   days = 14
 ): Promise<{ slots: TimelineSlot[] }> {
-  return apiGet(`/customer/oncall-schedules/${scheduleId}/timeline?days=${days}`);
+  return apiGet(`/api/v1/customer/oncall-schedules/${scheduleId}/timeline?days=${days}`);
 }
 export async function listOverrides(scheduleId: number): Promise<{ overrides: OncallOverride[] }> {
-  return apiGet(`/customer/oncall-schedules/${scheduleId}/overrides`);
+  return apiGet(`/api/v1/customer/oncall-schedules/${scheduleId}/overrides`);
 }
 export async function createOverride(
   scheduleId: number,
   body: Omit<OncallOverride, "override_id">
 ): Promise<OncallOverride> {
-  return apiPost(`/customer/oncall-schedules/${scheduleId}/overrides`, body);
+  return apiPost(`/api/v1/customer/oncall-schedules/${scheduleId}/overrides`, body);
 }
 export async function deleteOverride(scheduleId: number, overrideId: number): Promise<void> {
-  await apiDelete(`/customer/oncall-schedules/${scheduleId}/overrides/${overrideId}`);
+  await apiDelete(`/api/v1/customer/oncall-schedules/${scheduleId}/overrides/${overrideId}`);
 }

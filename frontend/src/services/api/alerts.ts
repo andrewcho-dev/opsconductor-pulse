@@ -14,7 +14,7 @@ export async function fetchAlerts(
   offset = 0,
   alertType?: string
 ): Promise<AlertListResponse> {
-  let url = `/customer/alerts?status=${status}&limit=${limit}&offset=${offset}`;
+  let url = `/api/v1/customer/alerts?status=${status}&limit=${limit}&offset=${offset}`;
   if (alertType) url += `&alert_type=${encodeURIComponent(alertType)}`;
   return apiGet(url);
 }
@@ -22,25 +22,25 @@ export async function fetchAlerts(
 export async function fetchAlert(
   alertId: number
 ): Promise<AlertDetailResponse> {
-  return apiGet(`/api/v2/alerts/${alertId}`);
+  return apiGet(`/api/v1/customer/alerts/${alertId}`);
 }
 
 export async function fetchAlertTrend(
   hours = 24
 ): Promise<{ trend: AlertTrendPoint[] }> {
-  return apiGet(`/api/v2/alerts/trend?hours=${hours}`);
+  return apiGet(`/api/v1/customer/alerts/trend?hours=${hours}`);
 }
 
 export async function acknowledgeAlert(alertId: string): Promise<void> {
-  await apiPatch(`/customer/alerts/${alertId}/acknowledge`, {});
+  await apiPatch(`/api/v1/customer/alerts/${alertId}/acknowledge`, {});
 }
 
 export async function closeAlert(alertId: string): Promise<void> {
-  await apiPatch(`/customer/alerts/${alertId}/close`, {});
+  await apiPatch(`/api/v1/customer/alerts/${alertId}/close`, {});
 }
 
 export async function silenceAlert(alertId: string, minutes: number): Promise<void> {
-  await apiPatch(`/customer/alerts/${alertId}/silence`, { minutes });
+  await apiPatch(`/api/v1/customer/alerts/${alertId}/silence`, { minutes });
 }
 
 export interface MaintenanceWindow {
@@ -59,24 +59,24 @@ export async function fetchMaintenanceWindows(): Promise<{
   windows: MaintenanceWindow[];
   total: number;
 }> {
-  return apiGet("/customer/maintenance-windows");
+  return apiGet("/api/v1/customer/maintenance-windows");
 }
 
 export async function createMaintenanceWindow(
   data: Partial<MaintenanceWindow>
 ): Promise<MaintenanceWindow> {
-  return apiPost("/customer/maintenance-windows", data);
+  return apiPost("/api/v1/customer/maintenance-windows", data);
 }
 
 export async function updateMaintenanceWindow(
   windowId: string,
   data: Partial<MaintenanceWindow>
 ): Promise<MaintenanceWindow> {
-  return apiPatch(`/customer/maintenance-windows/${encodeURIComponent(windowId)}`, data);
+  return apiPatch(`/api/v1/customer/maintenance-windows/${encodeURIComponent(windowId)}`, data);
 }
 
 export async function deleteMaintenanceWindow(windowId: string): Promise<void> {
-  await apiDelete(`/customer/maintenance-windows/${encodeURIComponent(windowId)}`);
+  await apiDelete(`/api/v1/customer/maintenance-windows/${encodeURIComponent(windowId)}`);
 }
 
 export interface AlertDigestSettings {
@@ -86,11 +86,11 @@ export interface AlertDigestSettings {
 }
 
 export async function getAlertDigestSettings(): Promise<AlertDigestSettings> {
-  return apiGet("/customer/alert-digest-settings");
+  return apiGet("/api/v1/customer/alert-digest-settings");
 }
 
 export async function updateAlertDigestSettings(settings: AlertDigestSettings): Promise<void> {
-  await apiPut("/customer/alert-digest-settings", {
+  await apiPut("/api/v1/customer/alert-digest-settings", {
     frequency: settings.frequency,
     email: settings.email,
   });

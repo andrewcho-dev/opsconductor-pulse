@@ -3,7 +3,7 @@
 from routes.customer import *  # noqa: F401,F403
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["metrics"],
     dependencies=[
         Depends(JWTBearer()),
@@ -11,6 +11,75 @@ router = APIRouter(
         Depends(require_customer),
     ],
 )
+
+
+@router.get("/metrics/reference")
+async def get_metrics_reference(pool=Depends(get_db_pool)):
+    """Return discovered raw metrics, mappings, and normalized metrics."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        raw_rows = await conn.fetch(
+            """
+            SELECT DISTINCT key AS metric_name
+            FROM telemetry
+            CROSS JOIN LATERAL jsonb_object_keys(metrics) AS key
+            WHERE tenant_id = $1
+              AND time > NOW() - INTERVAL '7 days'
+              AND metrics IS NOT NULL
+              AND jsonb_typeof(metrics) = 'object'
+            ORDER BY metric_name
+            LIMIT 200
+            """,
+            tenant_id,
+        )
+        mapping_rows = await conn.fetch(
+            """
+            SELECT raw_metric, normalized_name
+            FROM metric_mappings
+            WHERE tenant_id = $1
+            """,
+            tenant_id,
+        )
+        normalized_rows = await conn.fetch(
+            """
+            SELECT normalized_name, display_unit, description, expected_min, expected_max
+            FROM normalized_metrics
+            WHERE tenant_id = $1
+            ORDER BY normalized_name
+            """,
+            tenant_id,
+        )
+
+    raw_metrics = [r["metric_name"] for r in raw_rows]
+    mapping_by_raw = {r["raw_metric"]: r["normalized_name"] for r in mapping_rows}
+    mapped_from: dict[str, list[str]] = {}
+    for row in mapping_rows:
+        mapped_from.setdefault(row["normalized_name"], []).append(row["raw_metric"])
+
+    normalized_metrics = [
+        {
+            "name": row["normalized_name"],
+            "display_unit": row["display_unit"],
+            "description": row["description"],
+            "expected_min": row["expected_min"],
+            "expected_max": row["expected_max"],
+            "mapped_from": sorted(mapped_from.get(row["normalized_name"], [])),
+        }
+        for row in normalized_rows
+    ]
+
+    raw_metrics_response = [
+        {"name": name, "mapped_to": mapping_by_raw.get(name)}
+        for name in raw_metrics
+    ]
+    unmapped = [name for name in raw_metrics if name not in mapping_by_raw]
+
+    return {
+        "raw_metrics": raw_metrics_response,
+        "normalized_metrics": normalized_metrics,
+        "unmapped": unmapped,
+    }
+
 
 @router.get("/metrics/catalog")
 async def list_metric_catalog(pool=Depends(get_db_pool)):

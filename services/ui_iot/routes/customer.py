@@ -590,7 +590,7 @@ def _normalize_json(value) -> dict:
 
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["customer"],
     dependencies=[
         Depends(JWTBearer()),

@@ -26,22 +26,22 @@ export type EscalationPolicyCreateBody = Omit<
 >;
 
 export async function listEscalationPolicies(): Promise<{ policies: EscalationPolicy[] }> {
-  return apiGet("/customer/escalation-policies");
+  return apiGet("/api/v1/customer/escalation-policies");
 }
 
 export async function createEscalationPolicy(
   body: EscalationPolicyCreateBody
 ): Promise<EscalationPolicy> {
-  return apiPost("/customer/escalation-policies", body);
+  return apiPost("/api/v1/customer/escalation-policies", body);
 }
 
 export async function updateEscalationPolicy(
   id: number,
   body: Partial<EscalationPolicy>
 ): Promise<EscalationPolicy> {
-  return apiPut(`/customer/escalation-policies/${id}`, body);
+  return apiPut(`/api/v1/customer/escalation-policies/${id}`, body);
 }
 
 export async function deleteEscalationPolicy(id: number): Promise<void> {
-  await apiDelete(`/customer/escalation-policies/${id}`);
+  await apiDelete(`/api/v1/customer/escalation-policies/${id}`);
 }

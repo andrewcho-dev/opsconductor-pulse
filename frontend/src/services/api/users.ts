@@ -66,65 +66,65 @@ export async function fetchOperatorUsers(
   params.set("offset", String(offset));
   if (search) params.set("search", search);
   if (tenantFilter) params.set("tenant_filter", tenantFilter);
-  return apiGet(`/operator/users?${params.toString()}`);
+  return apiGet(`/api/v1/operator/users?${params.toString()}`);
 }
 
 export async function fetchOperatorUser(userId: string): Promise<User> {
-  return apiGet(`/operator/users/${userId}`);
+  return apiGet(`/api/v1/operator/users/${userId}`);
 }
 
 export async function createOperatorUser(
   data: CreateUserRequest
 ): Promise<{ id: string; username: string; message: string }> {
-  return apiPost("/operator/users", data);
+  return apiPost("/api/v1/operator/users", data);
 }
 
 export async function updateOperatorUser(
   userId: string,
   data: UpdateUserRequest
 ): Promise<{ message: string }> {
-  return apiPut(`/operator/users/${userId}`, data);
+  return apiPut(`/api/v1/operator/users/${userId}`, data);
 }
 
 export async function deleteOperatorUser(userId: string): Promise<void> {
-  return apiDelete(`/operator/users/${userId}`);
+  return apiDelete(`/api/v1/operator/users/${userId}`);
 }
 
 export async function enableOperatorUser(userId: string): Promise<{ message: string }> {
-  return apiPost(`/operator/users/${userId}/enable`, {});
+  return apiPost(`/api/v1/operator/users/${userId}/enable`, {});
 }
 
 export async function disableOperatorUser(userId: string): Promise<{ message: string }> {
-  return apiPost(`/operator/users/${userId}/disable`, {});
+  return apiPost(`/api/v1/operator/users/${userId}/disable`, {});
 }
 
 export async function assignOperatorUserRole(
   userId: string,
   role: string
 ): Promise<{ message: string }> {
-  return apiPost(`/operator/users/${userId}/roles`, { role });
+  return apiPost(`/api/v1/operator/users/${userId}/roles`, { role });
 }
 
 export async function removeOperatorUserRole(
   userId: string,
   role: string
 ): Promise<void> {
-  return apiDelete(`/operator/users/${userId}/roles/${role}`);
+  return apiDelete(`/api/v1/operator/users/${userId}/roles/${role}`);
 }
 
 export async function assignOperatorUserTenant(
   userId: string,
   tenantId: string
 ): Promise<{ message: string }> {
-  return apiPost(`/operator/users/${userId}/tenant`, { tenant_id: tenantId });
+  return apiPost(`/api/v1/operator/users/${userId}/tenant`, { tenant_id: tenantId });
 }
 
 export async function sendOperatorPasswordReset(userId: string): Promise<{ message: string }> {
-  return apiPost(`/operator/users/${userId}/reset-password`, {});
+  return apiPost(`/api/v1/operator/users/${userId}/reset-password`, {});
 }
 
 export async function fetchOrganizations(): Promise<{ organizations: Organization[] }> {
-  return apiGet("/operator/organizations");
+  return apiGet("/api/v1/operator/organizations");
 }
 
 // ============== CUSTOMER/TENANT API ==============
@@ -138,37 +138,37 @@ export async function fetchTenantUsers(
   params.set("limit", String(limit));
   params.set("offset", String(offset));
   if (search) params.set("search", search);
-  return apiGet(`/customer/users?${params.toString()}`);
+  return apiGet(`/api/v1/customer/users?${params.toString()}`);
 }
 
 export async function fetchTenantUser(userId: string): Promise<User> {
-  return apiGet(`/customer/users/${userId}`);
+  return apiGet(`/api/v1/customer/users/${userId}`);
 }
 
 export async function inviteTenantUser(
   data: InviteUserRequest
 ): Promise<{ id: string; username: string; email: string; message: string }> {
-  return apiPost("/customer/users/invite", data);
+  return apiPost("/api/v1/customer/users/invite", data);
 }
 
 export async function updateTenantUser(
   userId: string,
   data: UpdateUserRequest
 ): Promise<{ message: string }> {
-  return apiPut(`/customer/users/${userId}`, data);
+  return apiPut(`/api/v1/customer/users/${userId}`, data);
 }
 
 export async function changeTenantUserRole(
   userId: string,
   role: string
 ): Promise<{ message: string }> {
-  return apiPost(`/customer/users/${userId}/role`, { role });
+  return apiPost(`/api/v1/customer/users/${userId}/role`, { role });
 }
 
 export async function removeTenantUser(userId: string): Promise<void> {
-  return apiDelete(`/customer/users/${userId}`);
+  return apiDelete(`/api/v1/customer/users/${userId}`);
 }
 
 export async function sendTenantPasswordReset(userId: string): Promise<{ message: string }> {
-  return apiPost(`/customer/users/${userId}/reset-password`, {});
+  return apiPost(`/api/v1/customer/users/${userId}/reset-password`, {});
 }

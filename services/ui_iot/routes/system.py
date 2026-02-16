@@ -32,7 +32,7 @@ DISPATCHER_URL = os.getenv("DISPATCHER_HEALTH_URL", "http://iot-dispatcher:8080"
 DELIVERY_URL = os.getenv("DELIVERY_HEALTH_URL", "http://iot-delivery-worker:8080")
 
 router = APIRouter(
-    prefix="/operator/system",
+    prefix="/api/v1/operator/system",
     tags=["system"],
     dependencies=[
         Depends(JWTBearer()),

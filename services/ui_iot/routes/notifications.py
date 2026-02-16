@@ -100,7 +100,7 @@ class RoutingRuleOut(RoutingRuleIn):
 
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["notifications"],
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context), Depends(require_customer)],
 )

@@ -12,7 +12,7 @@ export async function fetchOperatorDevices(
   limit = 100,
   offset = 0
 ): Promise<OperatorDevicesResponse> {
-  let url = `/operator/devices?limit=${limit}&offset=${offset}`;
+  let url = `/api/v1/operator/devices?limit=${limit}&offset=${offset}`;
   if (tenantFilter) url += `&tenant_filter=${encodeURIComponent(tenantFilter)}`;
   return apiGet(url);
 }
@@ -22,7 +22,7 @@ export async function fetchOperatorAlerts(
   tenantFilter?: string,
   limit = 100
 ): Promise<OperatorAlertsResponse> {
-  let url = `/operator/alerts?status=${status}&limit=${limit}`;
+  let url = `/api/v1/operator/alerts?status=${status}&limit=${limit}`;
   if (tenantFilter) url += `&tenant_filter=${encodeURIComponent(tenantFilter)}`;
   return apiGet(url);
 }
@@ -31,13 +31,13 @@ export async function fetchQuarantine(
   minutes = 60,
   limit = 100
 ): Promise<QuarantineResponse> {
-  return apiGet(`/operator/quarantine?minutes=${minutes}&limit=${limit}`);
+  return apiGet(`/api/v1/operator/quarantine?minutes=${minutes}&limit=${limit}`);
 }
 
 export async function fetchOperatorIntegrations(
   tenantFilter?: string
 ): Promise<OperatorIntegrationsResponse> {
-  let url = "/operator/integrations";
+  let url = "/api/v1/operator/integrations";
   if (tenantFilter) url += `?tenant_filter=${encodeURIComponent(tenantFilter)}`;
   return apiGet(url);
 }
@@ -56,7 +56,7 @@ export async function fetchAuditLog(
   if (userId) params.set("user_id", userId);
   if (action) params.set("action", action);
   if (since) params.set("since", since);
-  return apiGet(`/operator/audit-log?${params.toString()}`);
+  return apiGet(`/api/v1/operator/audit-log?${params.toString()}`);
 }
 
 export interface ActivityLogFilters {
@@ -107,7 +107,7 @@ export async function fetchActivityLog(filters: ActivityLogFilters): Promise<Act
   if (filters.search) params.set("search", filters.search);
   if (filters.start) params.set("start", filters.start);
   if (filters.end) params.set("end", filters.end);
-  return apiGet(`/operator/audit-log?${params.toString()}`);
+  return apiGet(`/api/v1/operator/audit-log?${params.toString()}`);
 }
 
 export async function updateOperatorSettings(data: {
@@ -116,7 +116,7 @@ export async function updateOperatorSettings(data: {
   mirror_rejects: string;
 }): Promise<void> {
   // Backend expects form data for settings POST
-  return apiPost("/operator/settings", data);
+  return apiPost("/api/v1/operator/settings", data);
 }
 
 export interface KeycloakUser {
@@ -140,7 +140,7 @@ export async function fetchUsers(params?: {
   if (params?.search) qs.set("search", params.search);
   if (params?.first != null) qs.set("first", String(params.first));
   if (params?.max != null) qs.set("max_results", String(params.max));
-  return apiGet(`/operator/users${qs.toString() ? `?${qs.toString()}` : ""}`);
+  return apiGet(`/api/v1/operator/users${qs.toString() ? `?${qs.toString()}` : ""}`);
 }
 
 export async function createUser(data: {
@@ -151,19 +151,19 @@ export async function createUser(data: {
   temporary_password: string;
   enabled?: boolean;
 }): Promise<KeycloakUser> {
-  return apiPost("/operator/users", data);
+  return apiPost("/api/v1/operator/users", data);
 }
 
 export async function deleteUser(userId: string): Promise<void> {
-  await apiDelete(`/operator/users/${encodeURIComponent(userId)}`);
+  await apiDelete(`/api/v1/operator/users/${encodeURIComponent(userId)}`);
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {
-  await apiPost(`/operator/users/${encodeURIComponent(userId)}/reset-password`, {});
+  await apiPost(`/api/v1/operator/users/${encodeURIComponent(userId)}/reset-password`, {});
 }
 
 export async function fetchUserDetail(userId: string): Promise<KeycloakUser> {
-  return apiGet(`/operator/users/${encodeURIComponent(userId)}`);
+  return apiGet(`/api/v1/operator/users/${encodeURIComponent(userId)}`);
 }
 
 export async function updateUser(
@@ -175,7 +175,7 @@ export async function updateUser(
     email_verified: boolean;
   }>
 ): Promise<void> {
-  await apiPatch(`/operator/users/${encodeURIComponent(userId)}`, updates);
+  await apiPatch(`/api/v1/operator/users/${encodeURIComponent(userId)}`, updates);
 }
 
 export async function resetUserPassword(
@@ -183,19 +183,19 @@ export async function resetUserPassword(
   password: string,
   temporary: boolean
 ): Promise<void> {
-  await apiPost(`/operator/users/${encodeURIComponent(userId)}/reset-password`, {
+  await apiPost(`/api/v1/operator/users/${encodeURIComponent(userId)}/reset-password`, {
     password,
     temporary,
   });
 }
 
 export async function assignRole(userId: string, roleName: string): Promise<void> {
-  await apiPost(`/operator/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`, {});
+  await apiPost(`/api/v1/operator/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`, {});
 }
 
 export async function removeRole(userId: string, roleName: string): Promise<void> {
   await apiDelete(
-    `/operator/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`,
+    `/api/v1/operator/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`,
   );
 }
 
@@ -220,7 +220,7 @@ export interface MetricsHistoryPoint {
 }
 
 export async function fetchSystemMetricsLatest(): Promise<SystemMetricsSnapshot> {
-  return apiGet("/operator/system/metrics/latest");
+  return apiGet("/api/v1/operator/system/metrics/latest");
 }
 
 export async function fetchSystemMetricsHistory(params?: {
@@ -234,7 +234,7 @@ export async function fetchSystemMetricsHistory(params?: {
   if (params?.minutes != null) searchParams.set("minutes", String(params.minutes));
   if (params?.service) searchParams.set("service", params.service);
   if (params?.rate != null) searchParams.set("rate", String(params.rate));
-  return apiGet(`/operator/system/metrics/history${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
+  return apiGet(`/api/v1/operator/system/metrics/history${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
 }
 
 export interface TenantStats {
@@ -277,7 +277,7 @@ export async function fetchExpiryNotifications(params?: {
   if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
   if (params?.limit != null) searchParams.set("limit", String(params.limit));
   return apiGet(
-    `/operator/subscriptions/expiring-notifications${
+    `/api/v1/operator/subscriptions/expiring-notifications${
       searchParams.toString() ? `?${searchParams.toString()}` : ""
     }`
   );
@@ -303,26 +303,26 @@ export async function fetchOperatorTenants(params?: {
   if (params?.status) sp.set("status", params.status);
   if (params?.limit != null) sp.set("limit", String(params.limit));
   if (params?.offset != null) sp.set("offset", String(params.offset));
-  return apiGet(`/operator/tenants${sp.toString() ? `?${sp.toString()}` : ""}`);
+  return apiGet(`/api/v1/operator/tenants${sp.toString() ? `?${sp.toString()}` : ""}`);
 }
 
 export async function fetchTenantDetail(tenantId: string): Promise<Tenant> {
-  return apiGet(`/operator/tenants/${encodeURIComponent(tenantId)}`);
+  return apiGet(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}`);
 }
 
 export async function fetchTenantStats(tenantId: string): Promise<TenantStats> {
-  return apiGet(`/operator/tenants/${encodeURIComponent(tenantId)}/stats`);
+  return apiGet(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}/stats`);
 }
 
 export async function createTenant(data: { name: string; [key: string]: unknown }): Promise<Tenant> {
-  return apiPost("/operator/tenants", data);
+  return apiPost("/api/v1/operator/tenants", data);
 }
 
 export async function updateTenant(
   tenantId: string,
   data: Partial<Tenant>
 ): Promise<Tenant> {
-  return apiPatch(`/operator/tenants/${encodeURIComponent(tenantId)}`, data);
+  return apiPatch(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}`, data);
 }
 
 export async function fetchSubscriptions(params?: {
@@ -334,7 +334,7 @@ export async function fetchSubscriptions(params?: {
   if (params?.tenant_id) sp.set("tenant_id", params.tenant_id);
   if (params?.status) sp.set("status", params.status);
   if (params?.limit != null) sp.set("limit", String(params.limit));
-  return apiGet(`/operator/subscriptions${sp.toString() ? `?${sp.toString()}` : ""}`);
+  return apiGet(`/api/v1/operator/subscriptions${sp.toString() ? `?${sp.toString()}` : ""}`);
 }
 
 export async function createSubscription(data: {
@@ -344,12 +344,12 @@ export async function createSubscription(data: {
   term_end?: string;
   description?: string;
 }): Promise<Subscription> {
-  return apiPost("/operator/subscriptions", data);
+  return apiPost("/api/v1/operator/subscriptions", data);
 }
 
 export async function updateSubscription(
   subscriptionId: string,
   data: Partial<Subscription>
 ): Promise<Subscription> {
-  return apiPatch(`/operator/subscriptions/${encodeURIComponent(subscriptionId)}`, data);
+  return apiPatch(`/api/v1/operator/subscriptions/${encodeURIComponent(subscriptionId)}`, data);
 }

@@ -14,7 +14,7 @@ from db.pool import tenant_connection
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["roles"])
+router = APIRouter(prefix="/api/v1/customer", tags=["roles"])
 
 
 def _audit(
@@ -68,7 +68,7 @@ class AssignRolesRequest(BaseModel):
 
 
 @router.get(
-    "/customer/permissions",
+    "/permissions",
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
 )
 async def list_permissions(request: Request):
@@ -91,7 +91,7 @@ async def list_permissions(request: Request):
 
 
 @router.get(
-    "/customer/roles",
+    "/roles",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def list_roles(request: Request):
@@ -157,7 +157,7 @@ async def _validate_permission_ids(conn, permission_ids: list[int]) -> None:
 
 
 @router.post(
-    "/customer/roles",
+    "/roles",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def create_role(payload: CreateRoleRequest, request: Request):
@@ -208,7 +208,7 @@ async def create_role(payload: CreateRoleRequest, request: Request):
 
 
 @router.put(
-    "/customer/roles/{role_id}",
+    "/roles/{role_id}",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def update_role(role_id: str, payload: UpdateRoleRequest, request: Request):
@@ -275,7 +275,7 @@ async def update_role(role_id: str, payload: UpdateRoleRequest, request: Request
 
 
 @router.delete(
-    "/customer/roles/{role_id}",
+    "/roles/{role_id}",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def delete_role(role_id: str, request: Request):
@@ -312,7 +312,7 @@ async def delete_role(role_id: str, request: Request):
 
 
 @router.get(
-    "/customer/users/{user_id}/assignments",
+    "/users/{user_id}/assignments",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def list_user_assignments(user_id: str, request: Request):
@@ -347,7 +347,7 @@ async def list_user_assignments(user_id: str, request: Request):
 
 
 @router.put(
-    "/customer/users/{user_id}/assignments",
+    "/users/{user_id}/assignments",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def replace_user_assignments(user_id: str, payload: AssignRolesRequest, request: Request):
@@ -421,7 +421,7 @@ async def replace_user_assignments(user_id: str, payload: AssignRolesRequest, re
 
 
 @router.get(
-    "/customer/me/permissions",
+    "/me/permissions",
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
 )
 async def get_me_permissions(request: Request):

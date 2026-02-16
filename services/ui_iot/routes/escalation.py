@@ -46,7 +46,7 @@ class EscalationPolicyOut(BaseModel):
 
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["escalation"],
     dependencies=[
         Depends(JWTBearer()),

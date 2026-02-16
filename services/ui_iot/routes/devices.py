@@ -11,7 +11,7 @@ from shared.logging import get_logger
 from shared.twin import compute_delta, compute_structured_delta, sync_status
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["devices"],
     dependencies=[
         Depends(JWTBearer()),
@@ -742,6 +742,83 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
         "device": device,
         "events": events,
         "telemetry": telemetry,
+    }
+
+
+@router.get("/devices/{device_id}/telemetry", dependencies=[Depends(require_customer)])
+async def get_device_telemetry_points(
+    device_id: str,
+    hours: int | None = Query(None, ge=1, le=168),
+    limit: int = Query(120, ge=1, le=2000),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    pool=Depends(get_db_pool),
+):
+    """Fetch raw telemetry points for a device."""
+    tenant_id = get_tenant_id()
+
+    start_dt: datetime | None = None
+    end_dt: datetime | None = None
+    if start:
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            end_dt = (
+                datetime.fromisoformat(end.replace("Z", "+00:00"))
+                if end
+                else datetime.now(timezone.utc)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid start/end timestamp") from exc
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        if start_dt > end_dt:
+            raise HTTPException(status_code=400, detail="Start must be before end")
+    else:
+        if hours is None:
+            hours = 6
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(hours=hours)
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        data = await fetch_device_telemetry(
+            conn,
+            tenant_id,
+            device_id,
+            hours=None,
+            limit=limit,
+            start=start_dt,
+            end=end_dt,
+        )
+
+    return {
+        "tenant_id": tenant_id,
+        "device_id": device_id,
+        "telemetry": data,
+        "count": len(data),
+    }
+
+
+@router.get("/devices/{device_id}/telemetry/latest", dependencies=[Depends(require_customer)])
+async def get_device_telemetry_latest_points(
+    device_id: str,
+    count: int = Query(1, ge=1, le=10),
+    pool=Depends(get_db_pool),
+):
+    """Fetch the most recent telemetry reading(s) for a device."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        if count == 1:
+            latest = await fetch_device_telemetry_latest(conn, tenant_id, device_id)
+            data = [latest] if latest else []
+        else:
+            data = await fetch_device_telemetry(conn, tenant_id, device_id, hours=168, limit=count)
+    return {
+        "tenant_id": tenant_id,
+        "device_id": device_id,
+        "telemetry": data,
+        "count": len(data),
     }
 
 

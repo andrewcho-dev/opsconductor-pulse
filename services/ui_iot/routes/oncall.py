@@ -39,7 +39,7 @@ class OncallOverrideIn(BaseModel):
 
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["oncall"],
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context), Depends(require_customer)],
 )

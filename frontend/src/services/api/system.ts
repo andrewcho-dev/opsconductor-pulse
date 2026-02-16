@@ -138,23 +138,23 @@ export interface MetricHistoryBatch {
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealth> {
-  return apiGet<SystemHealth>("/operator/system/health");
+  return apiGet<SystemHealth>("/api/v1/operator/system/health");
 }
 
 export async function fetchSystemMetrics(): Promise<SystemMetrics> {
-  return apiGet<SystemMetrics>("/operator/system/metrics");
+  return apiGet<SystemMetrics>("/api/v1/operator/system/metrics");
 }
 
 export async function fetchSystemCapacity(): Promise<SystemCapacity> {
-  return apiGet<SystemCapacity>("/operator/system/capacity");
+  return apiGet<SystemCapacity>("/api/v1/operator/system/capacity");
 }
 
 export async function fetchSystemAggregates(): Promise<SystemAggregates> {
-  return apiGet<SystemAggregates>("/operator/system/aggregates");
+  return apiGet<SystemAggregates>("/api/v1/operator/system/aggregates");
 }
 
 export async function fetchSystemErrors(hours = 1): Promise<SystemErrors> {
-  return apiGet<SystemErrors>(`/operator/system/errors?hours=${hours}`);
+  return apiGet<SystemErrors>(`/api/v1/operator/system/errors?hours=${hours}`);
 }
 
 export async function fetchMetricHistory(
@@ -169,7 +169,7 @@ export async function fetchMetricHistory(
   if (rate) {
     params.set("rate", "true");
   }
-  return apiGet<MetricHistory>(`/operator/system/metrics/history?${params}`);
+  return apiGet<MetricHistory>(`/api/v1/operator/system/metrics/history?${params}`);
 }
 
 export async function fetchMetricHistoryBatch(
@@ -177,12 +177,12 @@ export async function fetchMetricHistoryBatch(
   minutes = 15
 ): Promise<MetricHistoryBatch> {
   return apiGet<MetricHistoryBatch>(
-    `/operator/system/metrics/history/batch?metrics=${metrics.join(",")}&minutes=${minutes}`
+    `/api/v1/operator/system/metrics/history/batch?metrics=${metrics.join(",")}&minutes=${minutes}`
   );
 }
 
 export async function fetchLatestMetrics(): Promise<Record<string, Record<string, number>>> {
   return apiGet<Record<string, Record<string, number>>>(
-    "/operator/system/metrics/latest"
+    "/api/v1/operator/system/metrics/latest"
   );
 }

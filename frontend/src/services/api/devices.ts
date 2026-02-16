@@ -107,24 +107,24 @@ export async function fetchDevices(
   if (q) searchParams.set("q", q);
   if (site_id) searchParams.set("site_id", site_id);
 
-  return apiGet(`/api/v2/devices?${searchParams.toString()}`);
+  return apiGet(`/api/v1/customer/devices?${searchParams.toString()}`);
 }
 
 export async function fetchDevice(
   deviceId: string
 ): Promise<DeviceDetailResponse> {
-  return apiGet(`/api/v2/devices/${encodeURIComponent(deviceId)}`);
+  return apiGet(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}`);
 }
 
 export async function fetchFleetSummary(): Promise<FleetSummary> {
-  return apiGet("/customer/devices/summary");
+  return apiGet("/api/v1/customer/devices/summary");
 }
 
 export async function updateDevice(
   deviceId: string,
   update: DeviceUpdate
 ): Promise<DeviceDetailResponse> {
-  return apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}`, update);
+  return apiPatch(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}`, update);
 }
 
 export async function provisionDevice(
@@ -132,7 +132,7 @@ export async function provisionDevice(
 ): Promise<ProvisionDeviceResponse> {
   const deviceId = req.name.trim().replace(/\s+/g, "-").toUpperCase();
   const created = await apiPost<{ device_id: string; status: string }>(
-    "/customer/devices",
+    "/api/v1/customer/devices",
     {
       device_id: deviceId,
       site_id: req.site_id || "default-site",
@@ -153,7 +153,7 @@ export async function provisionDevice(
 }
 
 export async function decommissionDevice(deviceId: string): Promise<void> {
-  await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/decommission`, {});
+  await apiPatch(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/decommission`, {});
 }
 
 export async function getDeviceTwin(
@@ -164,7 +164,7 @@ export async function getDeviceTwin(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`/customer/devices/${encodeURIComponent(deviceId)}/twin`, {
+  const res = await fetch(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/twin`, {
     headers,
   });
   if (!res.ok) {
@@ -195,7 +195,7 @@ export async function updateDesiredState(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, {
+  const res = await fetch(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, {
     method: "PATCH",
     headers,
     body: JSON.stringify({ desired }),
@@ -233,7 +233,7 @@ export async function fetchDeviceConnections(
   offset = 0
 ): Promise<ConnectionEventsResponse> {
   return apiGet(
-    `/customer/devices/${encodeURIComponent(deviceId)}/connections?limit=${limit}&offset=${offset}`
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/connections?limit=${limit}&offset=${offset}`
   );
 }
 
@@ -241,7 +241,7 @@ export async function sendCommand(
   deviceId: string,
   payload: SendCommandPayload
 ): Promise<{ command_id: string; status: string; mqtt_published: boolean }> {
-  return apiPost(`/customer/devices/${encodeURIComponent(deviceId)}/commands`, payload);
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/commands`, payload);
 }
 
 export async function listDeviceCommands(
@@ -249,20 +249,20 @@ export async function listDeviceCommands(
   status?: string
 ): Promise<DeviceCommand[]> {
   const path = status
-    ? `/customer/devices/${encodeURIComponent(deviceId)}/commands?status=${encodeURIComponent(status)}`
-    : `/customer/devices/${encodeURIComponent(deviceId)}/commands`;
+    ? `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/commands?status=${encodeURIComponent(status)}`
+    : `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/commands`;
   return apiGet(path);
 }
 
 export async function getDeviceTags(deviceId: string): Promise<DeviceTagsResponse> {
-  return apiGet(`/customer/devices/${encodeURIComponent(deviceId)}/tags`);
+  return apiGet(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tags`);
 }
 
 export async function setDeviceTags(
   deviceId: string,
   tags: string[]
 ): Promise<DeviceTagsResponse> {
-  return apiPut(`/customer/devices/${encodeURIComponent(deviceId)}/tags`, { tags });
+  return apiPut(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tags`, { tags });
 }
 
 export async function addDeviceTag(
@@ -270,7 +270,7 @@ export async function addDeviceTag(
   tag: string
 ): Promise<{ tenant_id: string; device_id: string; tag: string }> {
   return apiPost(
-    `/customer/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag)}`,
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag)}`,
     {}
   );
 }
@@ -280,12 +280,12 @@ export async function removeDeviceTag(
   tag: string
 ): Promise<void> {
   return apiDelete(
-    `/customer/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag)}`
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag)}`
   );
 }
 
 export async function getAllTags(): Promise<AllTagsResponse> {
-  return apiGet("/customer/tags");
+  return apiGet("/api/v1/customer/tags");
 }
 
 export async function geocodeAddress(address: string): Promise<{
@@ -294,7 +294,7 @@ export async function geocodeAddress(address: string): Promise<{
   display_name?: string;
   error?: string;
 }> {
-  return apiGet(`/customer/geocode?address=${encodeURIComponent(address)}`);
+  return apiGet(`/api/v1/customer/geocode?address=${encodeURIComponent(address)}`);
 }
 
 export async function fetchTelemetryHistory(
@@ -303,7 +303,7 @@ export async function fetchTelemetryHistory(
   range: "1h" | "6h" | "24h" | "7d" | "30d"
 ): Promise<TelemetryHistoryResponse> {
   return apiGet(
-    `/customer/devices/${encodeURIComponent(deviceId)}/telemetry/history?metric=${encodeURIComponent(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/telemetry/history?metric=${encodeURIComponent(
       metric
     )}&range=${range}`
   );
@@ -321,7 +321,7 @@ export async function downloadTelemetryCSV(
     headers.Authorization = `Bearer ${keycloak.token}`;
   }
   const res = await fetch(
-    `/customer/devices/${encodeURIComponent(deviceId)}/telemetry/export?range=${encodeURIComponent(range)}`,
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/telemetry/export?range=${encodeURIComponent(range)}`,
     { headers }
   );
   if (!res.ok) {
@@ -397,43 +397,43 @@ export interface FleetUptimeSummary {
 }
 
 export async function fetchDeviceGroups(): Promise<{ groups: DeviceGroup[]; total: number }> {
-  return apiGet("/customer/device-groups");
+  return apiGet("/api/v1/customer/device-groups");
 }
 
 export async function createDeviceGroup(data: {
   name: string;
   description?: string;
 }): Promise<DeviceGroup> {
-  return apiPost("/customer/device-groups", data);
+  return apiPost("/api/v1/customer/device-groups", data);
 }
 
 export async function updateDeviceGroup(
   groupId: string,
   data: { name?: string; description?: string }
 ): Promise<DeviceGroup> {
-  return apiPatch(`/customer/device-groups/${encodeURIComponent(groupId)}`, data);
+  return apiPatch(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}`, data);
 }
 
 export async function deleteDeviceGroup(groupId: string): Promise<void> {
-  await apiDelete(`/customer/device-groups/${encodeURIComponent(groupId)}`);
+  await apiDelete(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}`);
 }
 
 export async function fetchGroupMembers(
   groupId: string
 ): Promise<{ group_id: string; members: DeviceGroupMember[]; total: number }> {
-  return apiGet(`/customer/device-groups/${encodeURIComponent(groupId)}/devices`);
+  return apiGet(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/devices`);
 }
 
 export async function addGroupMember(groupId: string, deviceId: string): Promise<void> {
   await apiPut(
-    `/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`,
+    `/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`,
     {}
   );
 }
 
 export async function removeGroupMember(groupId: string, deviceId: string): Promise<void> {
   await apiDelete(
-    `/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`
+    `/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`
   );
 }
 
@@ -457,35 +457,35 @@ export async function createDynamicGroup(data: {
   description?: string;
   query_filter: DynamicGroupFilter;
 }): Promise<DynamicDeviceGroup> {
-  return apiPost("/customer/device-groups/dynamic", data);
+  return apiPost("/api/v1/customer/device-groups/dynamic", data);
 }
 
 export async function updateDynamicGroup(
   groupId: string,
   data: { name?: string; description?: string; query_filter?: DynamicGroupFilter }
 ): Promise<DynamicDeviceGroup> {
-  return apiPatch(`/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`, data);
+  return apiPatch(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`, data);
 }
 
 export async function deleteDynamicGroup(groupId: string): Promise<void> {
-  await apiDelete(`/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`);
+  await apiDelete(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`);
 }
 
 export async function fetchGroupMembersV2(
   groupId: string
 ): Promise<{ group_id: string; group_type: string; members: DeviceGroupMember[]; total: number }> {
-  return apiGet(`/customer/device-groups/${encodeURIComponent(groupId)}/members`);
+  return apiGet(`/api/v1/customer/device-groups/${encodeURIComponent(groupId)}/members`);
 }
 
 export async function listDeviceTokens(
   deviceId: string
 ): Promise<{ device_id: string; tokens: DeviceToken[]; total: number }> {
-  return apiGet(`/customer/devices/${encodeURIComponent(deviceId)}/tokens`);
+  return apiGet(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tokens`);
 }
 
 export async function revokeDeviceToken(deviceId: string, tokenId: string): Promise<void> {
   await apiDelete(
-    `/customer/devices/${encodeURIComponent(deviceId)}/tokens/${encodeURIComponent(tokenId)}`
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tokens/${encodeURIComponent(tokenId)}`
   );
 }
 
@@ -493,7 +493,7 @@ export async function rotateDeviceToken(
   deviceId: string,
   label = "rotated"
 ): Promise<ProvisionDeviceResponse> {
-  return apiPost(`/customer/devices/${encodeURIComponent(deviceId)}/tokens/rotate`, { label });
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/tokens/rotate`, { label });
 }
 
 export async function importDevicesCSV(file: File): Promise<ImportResult> {
@@ -502,7 +502,7 @@ export async function importDevicesCSV(file: File): Promise<ImportResult> {
   }
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch("/customer/devices/import", {
+  const response = await fetch("/api/v1/customer/devices/import", {
     method: "POST",
     body: form,
     headers: keycloak.token ? { Authorization: `Bearer ${keycloak.token}` } : undefined,
@@ -519,12 +519,12 @@ export async function getDeviceUptime(
   range: "24h" | "7d" | "30d"
 ): Promise<DeviceUptimeStats> {
   return apiGet(
-    `/customer/devices/${encodeURIComponent(deviceId)}/uptime?range=${encodeURIComponent(range)}`
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/uptime?range=${encodeURIComponent(range)}`
   );
 }
 
 export async function getFleetUptimeSummary(): Promise<FleetUptimeSummary> {
-  return apiGet("/customer/fleet/uptime-summary");
+  return apiGet("/api/v1/customer/fleet/uptime-summary");
 }
 
 export interface FleetHealthResponse {
@@ -536,5 +536,5 @@ export interface FleetHealthResponse {
 }
 
 export async function fetchFleetHealth(): Promise<FleetHealthResponse> {
-  return apiGet("/customer/fleet/health");
+  return apiGet("/api/v1/customer/fleet/health");
 }

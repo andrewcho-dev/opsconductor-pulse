@@ -39,21 +39,21 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
 
 export async function exportDevicesCSV(): Promise<void> {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  await downloadCsv("/customer/export/devices?format=csv", `devices-${date}.csv`);
+  await downloadCsv("/api/v1/customer/export/devices?format=csv", `devices-${date}.csv`);
 }
 
 export async function exportAlertsCSV(days: number): Promise<void> {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   await downloadCsv(
-    `/customer/export/alerts?format=csv&days=${encodeURIComponent(String(days))}`,
+    `/api/v1/customer/export/alerts?format=csv&days=${encodeURIComponent(String(days))}`,
     `alerts-${date}.csv`
   );
 }
 
 export async function getSLASummary(days = 30): Promise<SLASummary> {
-  return apiGet(`/customer/reports/sla-summary?days=${encodeURIComponent(String(days))}`);
+  return apiGet(`/api/v1/customer/reports/sla-summary?days=${encodeURIComponent(String(days))}`);
 }
 
 export async function listReportRuns(): Promise<{ runs: ReportRun[] }> {
-  return apiGet("/customer/reports/runs");
+  return apiGet("/api/v1/customer/reports/runs");
 }

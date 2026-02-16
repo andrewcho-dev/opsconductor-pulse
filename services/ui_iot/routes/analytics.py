@@ -17,7 +17,7 @@ from shared.logging import get_logger
 logger = get_logger("pulse.analytics")
 
 router = APIRouter(
-    prefix="/customer/analytics",
+    prefix="/api/v1/customer/analytics",
     tags=["analytics"],
     dependencies=[
         Depends(JWTBearer()),

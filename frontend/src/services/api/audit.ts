@@ -47,5 +47,5 @@ export async function fetchAuditLog(filters: AuditLogFilters): Promise<AuditLogR
   if (filters.start) params.set("start", filters.start);
   if (filters.end) params.set("end", filters.end);
   if (filters.search) params.set("search", filters.search);
-  return apiGet(`/customer/audit-log?${params.toString()}`);
+  return apiGet(`/api/v1/customer/audit-log?${params.toString()}`);
 }

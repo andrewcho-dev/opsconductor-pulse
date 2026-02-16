@@ -4,7 +4,7 @@ from routes.customer import *  # noqa: F401,F403
 from typing import Any
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["ota"],
     dependencies=[
         Depends(JWTBearer()),

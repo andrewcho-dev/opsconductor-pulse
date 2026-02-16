@@ -27,44 +27,44 @@ export interface RoutingRule {
 }
 
 export async function listChannels(): Promise<{ channels: NotificationChannel[] }> {
-  return apiGet("/customer/notification-channels");
+  return apiGet("/api/v1/customer/notification-channels");
 }
 
 export async function createChannel(
   body: Omit<NotificationChannel, "channel_id" | "created_at">
 ): Promise<NotificationChannel> {
-  return apiPost("/customer/notification-channels", body);
+  return apiPost("/api/v1/customer/notification-channels", body);
 }
 
 export async function updateChannel(
   id: number,
   body: Partial<NotificationChannel>
 ): Promise<NotificationChannel> {
-  return apiPut(`/customer/notification-channels/${id}`, body);
+  return apiPut(`/api/v1/customer/notification-channels/${id}`, body);
 }
 
 export async function deleteChannel(id: number): Promise<void> {
-  await apiDelete(`/customer/notification-channels/${id}`);
+  await apiDelete(`/api/v1/customer/notification-channels/${id}`);
 }
 
 export async function testChannel(id: number): Promise<{ ok: boolean; error?: string }> {
-  return apiPost(`/customer/notification-channels/${id}/test`, {});
+  return apiPost(`/api/v1/customer/notification-channels/${id}/test`, {});
 }
 
 export async function listRoutingRules(): Promise<{ rules: RoutingRule[] }> {
-  return apiGet("/customer/notification-routing-rules");
+  return apiGet("/api/v1/customer/notification-routing-rules");
 }
 
 export async function createRoutingRule(body: Omit<RoutingRule, "rule_id">): Promise<RoutingRule> {
-  return apiPost("/customer/notification-routing-rules", body);
+  return apiPost("/api/v1/customer/notification-routing-rules", body);
 }
 
 export async function updateRoutingRule(id: number, body: Partial<RoutingRule>): Promise<RoutingRule> {
-  return apiPut(`/customer/notification-routing-rules/${id}`, body);
+  return apiPut(`/api/v1/customer/notification-routing-rules/${id}`, body);
 }
 
 export async function deleteRoutingRule(id: number): Promise<void> {
-  await apiDelete(`/customer/notification-routing-rules/${id}`);
+  await apiDelete(`/api/v1/customer/notification-routing-rules/${id}`);
 }
 
 export interface NotificationJob {
@@ -87,5 +87,5 @@ export async function listNotificationJobs(
   if (channelId) params.set("channel_id", String(channelId));
   if (status) params.set("status", status);
   params.set("limit", String(limit));
-  return apiGet(`/customer/notification-jobs?${params.toString()}`);
+  return apiGet(`/api/v1/customer/notification-jobs?${params.toString()}`);
 }

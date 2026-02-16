@@ -148,7 +148,7 @@ async def get_settings(conn):
 
 
 router = APIRouter(
-    prefix="/operator",
+    prefix="/api/v1/operator",
     tags=["operator"],
     dependencies=[
         Depends(JWTBearer()),

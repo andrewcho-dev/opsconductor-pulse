@@ -35,9 +35,9 @@ export interface SiteSummary {
 }
 
 export async function fetchSites(): Promise<{ sites: SiteWithRollup[]; total: number }> {
-  return apiGet("/customer/sites");
+  return apiGet("/api/v1/customer/sites");
 }
 
 export async function fetchSiteSummary(siteId: string): Promise<SiteSummary> {
-  return apiGet(`/customer/sites/${encodeURIComponent(siteId)}/summary`);
+  return apiGet(`/api/v1/customer/sites/${encodeURIComponent(siteId)}/summary`);
 }

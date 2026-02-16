@@ -56,35 +56,35 @@ export interface TenantUpdate {
 export async function fetchTenants(
   status = "ACTIVE"
 ): Promise<{ tenants: Tenant[]; total: number }> {
-  return apiGet(`/operator/tenants?status=${status}`);
+  return apiGet(`/api/v1/operator/tenants?status=${status}`);
 }
 
 export async function fetchTenantsSummary(): Promise<{ tenants: TenantSummary[] }> {
-  return apiGet("/operator/tenants/stats/summary");
+  return apiGet("/api/v1/operator/tenants/stats/summary");
 }
 
 export async function fetchTenant(tenantId: string): Promise<Tenant> {
-  return apiGet(`/operator/tenants/${tenantId}`);
+  return apiGet(`/api/v1/operator/tenants/${tenantId}`);
 }
 
 export async function fetchTenantStats(tenantId: string): Promise<TenantStats> {
-  return apiGet(`/operator/tenants/${tenantId}/stats`);
+  return apiGet(`/api/v1/operator/tenants/${tenantId}/stats`);
 }
 
 export async function createTenant(
   data: TenantCreate
 ): Promise<{ tenant_id: string }> {
-  return apiPost("/operator/tenants", data);
+  return apiPost("/api/v1/operator/tenants", data);
 }
 
 export async function updateTenant(
   tenantId: string,
   data: TenantUpdate
 ): Promise<void> {
-  await apiPatch(`/operator/tenants/${tenantId}`, data);
+  await apiPatch(`/api/v1/operator/tenants/${tenantId}`, data);
 }
 
 export async function deleteTenant(tenantId: string): Promise<void> {
-  await apiDelete(`/operator/tenants/${tenantId}`);
+  await apiDelete(`/api/v1/operator/tenants/${tenantId}`);
 }
 

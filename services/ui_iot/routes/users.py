@@ -168,7 +168,7 @@ class SetPasswordRequest(BaseModel):
 # ============== OPERATOR ROUTES ==============
 
 @router.get(
-    "/operator/users",
+    "/api/v1/operator/users",
     dependencies=[Depends(JWTBearer()), Depends(require_operator)],
 )
 async def list_all_users(
@@ -272,7 +272,7 @@ async def list_all_users(
 
 
 @router.get(
-    "/operator/users/{user_id}",
+    "/api/v1/operator/users/{user_id}",
     dependencies=[Depends(JWTBearer()), Depends(require_operator)],
 )
 async def get_user_detail(user_id: str):
@@ -290,7 +290,7 @@ async def get_user_detail(user_id: str):
 
 
 @router.post(
-    "/operator/users",
+    "/api/v1/operator/users",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def create_new_user(request: Request, payload: CreateUserRequest):
@@ -348,7 +348,7 @@ async def create_new_user(request: Request, payload: CreateUserRequest):
 
 
 @router.put(
-    "/operator/users/{user_id}",
+    "/api/v1/operator/users/{user_id}",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def update_existing_user(user_id: str, payload: UpdateUserRequest, request: Request):
@@ -378,7 +378,7 @@ async def update_existing_user(user_id: str, payload: UpdateUserRequest, request
 
 
 @router.delete(
-    "/operator/users/{user_id}",
+    "/api/v1/operator/users/{user_id}",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def delete_existing_user(user_id: str, request: Request):
@@ -410,7 +410,7 @@ async def delete_existing_user(user_id: str, request: Request):
 
 
 @router.post(
-    "/operator/users/{user_id}/enable",
+    "/api/v1/operator/users/{user_id}/enable",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def enable_user_account(user_id: str, request: Request):
@@ -437,7 +437,7 @@ async def enable_user_account(user_id: str, request: Request):
 
 
 @router.post(
-    "/operator/users/{user_id}/disable",
+    "/api/v1/operator/users/{user_id}/disable",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def disable_user_account(user_id: str, request: Request):
@@ -468,7 +468,7 @@ async def disable_user_account(user_id: str, request: Request):
 
 
 @router.post(
-    "/operator/users/{user_id}/roles",
+    "/api/v1/operator/users/{user_id}/roles",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def assign_user_role(user_id: str, payload: AssignRoleRequest, request: Request):
@@ -499,7 +499,7 @@ async def assign_user_role(user_id: str, payload: AssignRoleRequest, request: Re
 
 
 @router.delete(
-    "/operator/users/{user_id}/roles/{role_name}",
+    "/api/v1/operator/users/{user_id}/roles/{role_name}",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def remove_user_role(user_id: str, role_name: str, request: Request):
@@ -527,7 +527,7 @@ async def remove_user_role(user_id: str, role_name: str, request: Request):
 
 
 @router.post(
-    "/operator/users/{user_id}/tenant",
+    "/api/v1/operator/users/{user_id}/tenant",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def assign_user_to_tenant(user_id: str, payload: AssignTenantRequest, request: Request):
@@ -582,7 +582,7 @@ async def assign_user_to_tenant(user_id: str, payload: AssignTenantRequest, requ
 
 
 @router.post(
-    "/operator/users/{user_id}/reset-password",
+    "/api/v1/operator/users/{user_id}/reset-password",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def send_password_reset(user_id: str, request: Request):
@@ -609,7 +609,7 @@ async def send_password_reset(user_id: str, request: Request):
 
 
 @router.post(
-    "/operator/users/{user_id}/password",
+    "/api/v1/operator/users/{user_id}/password",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )
 async def set_user_password_endpoint(user_id: str, payload: SetPasswordRequest):
@@ -625,7 +625,7 @@ async def set_user_password_endpoint(user_id: str, payload: SetPasswordRequest):
 
 
 @router.get(
-    "/operator/organizations",
+    "/api/v1/operator/organizations",
     dependencies=[Depends(JWTBearer()), Depends(require_operator)],
 )
 async def list_organizations():
@@ -640,7 +640,7 @@ async def list_organizations():
 # ============== CUSTOMER/TENANT ROUTES ==============
 
 @router.get(
-    "/customer/users",
+    "/api/v1/customer/users",
     dependencies=[Depends(JWTBearer()), require_permission("users.read")],
 )
 async def list_tenant_users(
@@ -674,7 +674,7 @@ async def list_tenant_users(
 
 
 @router.get(
-    "/customer/users/{user_id}",
+    "/api/v1/customer/users/{user_id}",
     dependencies=[Depends(JWTBearer()), require_permission("users.read")],
 )
 async def get_tenant_user_detail(user_id: str):
@@ -702,7 +702,7 @@ class InviteUserRequest(BaseModel):
 
 
 @router.post(
-    "/customer/users/invite",
+    "/api/v1/customer/users/invite",
     dependencies=[Depends(JWTBearer()), require_permission("users.invite")],
 )
 async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
@@ -772,7 +772,7 @@ async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
 
 
 @router.put(
-    "/customer/users/{user_id}",
+    "/api/v1/customer/users/{user_id}",
     dependencies=[Depends(JWTBearer()), require_permission("users.edit")],
 )
 async def update_tenant_user(user_id: str, payload: UpdateUserRequest, request: Request):
@@ -805,7 +805,7 @@ async def update_tenant_user(user_id: str, payload: UpdateUserRequest, request: 
 
 
 @router.post(
-    "/customer/users/{user_id}/role",
+    "/api/v1/customer/users/{user_id}/role",
     dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def change_tenant_user_role(user_id: str, payload: AssignRoleRequest, request: Request):
@@ -846,7 +846,7 @@ async def change_tenant_user_role(user_id: str, payload: AssignRoleRequest, requ
 
 
 @router.delete(
-    "/customer/users/{user_id}",
+    "/api/v1/customer/users/{user_id}",
     dependencies=[Depends(JWTBearer()), require_permission("users.remove")],
 )
 async def remove_user_from_tenant(user_id: str, request: Request):
@@ -894,7 +894,7 @@ async def remove_user_from_tenant(user_id: str, request: Request):
 
 
 @router.post(
-    "/customer/users/{user_id}/reset-password",
+    "/api/v1/customer/users/{user_id}/reset-password",
     dependencies=[Depends(JWTBearer()), require_permission("users.edit")],
 )
 async def send_tenant_user_password_reset(user_id: str, request: Request):

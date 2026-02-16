@@ -28,7 +28,7 @@ function normalizeRule(rule: AlertRule): AlertRule {
 }
 
 export async function fetchAlertRules(limit = 100): Promise<AlertRuleListResponse> {
-  const res = await apiGet<AlertRuleListResponse>(`/api/v2/alert-rules?limit=${limit}`);
+  const res = await apiGet<AlertRuleListResponse>(`/api/v1/customer/alert-rules?limit=${limit}`);
   return {
     ...res,
     rules: (res.rules ?? []).map(normalizeRule),
@@ -36,12 +36,12 @@ export async function fetchAlertRules(limit = 100): Promise<AlertRuleListRespons
 }
 
 export async function fetchAlertRule(ruleId: string): Promise<AlertRule> {
-  const rule = await apiGet<AlertRule>(`/customer/alert-rules/${encodeURIComponent(ruleId)}`);
+  const rule = await apiGet<AlertRule>(`/api/v1/customer/alert-rules/${encodeURIComponent(ruleId)}`);
   return normalizeRule(rule);
 }
 
 export async function createAlertRule(data: AlertRuleCreate): Promise<AlertRule> {
-  const rule = await apiPost<AlertRule>("/customer/alert-rules", data);
+  const rule = await apiPost<AlertRule>("/api/v1/customer/alert-rules", data);
   return normalizeRule(rule);
 }
 
@@ -49,12 +49,12 @@ export async function updateAlertRule(
   ruleId: string,
   data: AlertRuleUpdate
 ): Promise<AlertRule> {
-  const rule = await apiPatch<AlertRule>(`/customer/alert-rules/${encodeURIComponent(ruleId)}`, data);
+  const rule = await apiPatch<AlertRule>(`/api/v1/customer/alert-rules/${encodeURIComponent(ruleId)}`, data);
   return normalizeRule(rule);
 }
 
 export async function deleteAlertRule(ruleId: string): Promise<void> {
-  return apiDelete(`/customer/alert-rules/${encodeURIComponent(ruleId)}`);
+  return apiDelete(`/api/v1/customer/alert-rules/${encodeURIComponent(ruleId)}`);
 }
 
 export async function fetchAlertRuleTemplates(
@@ -62,7 +62,7 @@ export async function fetchAlertRuleTemplates(
 ): Promise<AlertRuleTemplate[]> {
   const params = deviceType ? `?device_type=${encodeURIComponent(deviceType)}` : "";
   const res = await apiGet<{ templates: AlertRuleTemplate[] }>(
-    `/customer/alert-rule-templates${params}`
+    `/api/v1/customer/alert-rule-templates${params}`
   );
   return res.templates ?? [];
 }
@@ -71,7 +71,7 @@ export async function applyAlertRuleTemplates(
   templateIds: string[],
   siteIds?: string[]
 ): Promise<{ created: Array<{ id: number; name: string; template_id: string }>; skipped: string[] }> {
-  return apiPost("/customer/alert-rule-templates/apply", {
+  return apiPost("/api/v1/customer/alert-rule-templates/apply", {
     template_ids: templateIds,
     site_ids: siteIds,
   });
@@ -81,15 +81,15 @@ export async function fetchMetricCatalog(): Promise<{
   tenant_id: string;
   metrics: MetricCatalogEntry[];
 }> {
-  return apiGet("/customer/metrics/catalog");
+  return apiGet("/api/v1/customer/metrics/catalog");
 }
 
 export async function upsertMetricCatalog(
   payload: MetricCatalogUpsert
 ): Promise<{ tenant_id: string; metric: MetricCatalogEntry }> {
-  return apiPost("/customer/metrics/catalog", payload);
+  return apiPost("/api/v1/customer/metrics/catalog", payload);
 }
 
 export async function deleteMetricCatalog(metricName: string): Promise<void> {
-  return apiDelete(`/customer/metrics/catalog/${encodeURIComponent(metricName)}`);
+  return apiDelete(`/api/v1/customer/metrics/catalog/${encodeURIComponent(metricName)}`);
 }

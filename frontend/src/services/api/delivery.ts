@@ -34,11 +34,11 @@ export async function fetchDeliveryJobs(params: {
   if (params.integration_id) qs.set("integration_id", params.integration_id);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.offset) qs.set("offset", String(params.offset));
-  return apiGet(`/customer/delivery-jobs?${qs.toString()}`);
+  return apiGet(`/api/v1/customer/delivery-jobs?${qs.toString()}`);
 }
 
 export async function fetchDeliveryJobAttempts(
   jobId: number
 ): Promise<{ job_id: number; attempts: DeliveryAttempt[] }> {
-  return apiGet(`/customer/delivery-jobs/${jobId}/attempts`);
+  return apiGet(`/api/v1/customer/delivery-jobs/${jobId}/attempts`);
 }

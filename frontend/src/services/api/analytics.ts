@@ -42,13 +42,13 @@ export interface AvailableMetricsResponse {
 }
 
 export async function fetchAvailableMetrics(): Promise<AvailableMetricsResponse> {
-  return apiGet("/customer/analytics/metrics");
+  return apiGet("/api/v1/customer/analytics/metrics");
 }
 
 export async function runAnalyticsQuery(
   request: AnalyticsQueryRequest
 ): Promise<AnalyticsQueryResponse> {
-  return apiPost("/customer/analytics/query", request);
+  return apiPost("/api/v1/customer/analytics/query", request);
 }
 
 export async function downloadAnalyticsCSV(request: AnalyticsQueryRequest): Promise<void> {
@@ -71,7 +71,7 @@ export async function downloadAnalyticsCSV(request: AnalyticsQueryRequest): Prom
     headers.Authorization = `Bearer ${keycloak.token}`;
   }
 
-  const res = await fetch(`/customer/analytics/export?${params.toString()}`, { headers });
+  const res = await fetch(`/api/v1/customer/analytics/export?${params.toString()}`, { headers });
   if (!res.ok) {
     throw new Error(`Export failed: ${res.status}`);
   }

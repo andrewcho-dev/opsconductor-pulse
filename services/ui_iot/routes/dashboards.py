@@ -102,7 +102,7 @@ DEFAULT_OPERATOR_WIDGETS = [
 ]
 
 router = APIRouter(
-    prefix="/customer/dashboards",
+    prefix="/api/v1/customer/dashboards",
     tags=["dashboards"],
     dependencies=[
         Depends(JWTBearer()),

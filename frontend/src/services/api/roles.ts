@@ -33,16 +33,16 @@ export interface MyPermissionsResponse {
 
 // Self-service
 export async function fetchMyPermissions(): Promise<MyPermissionsResponse> {
-  return apiGet("/customer/me/permissions");
+  return apiGet("/api/v1/customer/me/permissions");
 }
 
 // Admin endpoints
 export async function fetchPermissions(): Promise<{ permissions: Permission[] }> {
-  return apiGet("/customer/permissions");
+  return apiGet("/api/v1/customer/permissions");
 }
 
 export async function fetchRoles(): Promise<{ roles: Role[] }> {
-  return apiGet("/customer/roles");
+  return apiGet("/api/v1/customer/roles");
 }
 
 export async function createRole(data: {
@@ -50,30 +50,30 @@ export async function createRole(data: {
   description: string;
   permission_ids: number[];
 }): Promise<{ id: string; message: string }> {
-  return apiPost("/customer/roles", data);
+  return apiPost("/api/v1/customer/roles", data);
 }
 
 export async function updateRole(
   roleId: string,
   data: { name?: string; description?: string; permission_ids?: number[] },
 ): Promise<{ message: string }> {
-  return apiPut(`/customer/roles/${roleId}`, data);
+  return apiPut(`/api/v1/customer/roles/${roleId}`, data);
 }
 
 export async function deleteRole(roleId: string): Promise<void> {
-  return apiDelete(`/customer/roles/${roleId}`);
+  return apiDelete(`/api/v1/customer/roles/${roleId}`);
 }
 
 export async function fetchUserAssignments(
   userId: string,
 ): Promise<{ assignments: RoleAssignment[] }> {
-  return apiGet(`/customer/users/${userId}/assignments`);
+  return apiGet(`/api/v1/customer/users/${userId}/assignments`);
 }
 
 export async function updateUserAssignments(
   userId: string,
   roleIds: string[],
 ): Promise<{ message: string }> {
-  return apiPut(`/customer/users/${userId}/assignments`, { role_ids: roleIds });
+  return apiPut(`/api/v1/customer/users/${userId}/assignments`, { role_ids: roleIds });
 }
 

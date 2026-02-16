@@ -33,7 +33,6 @@ from routes.system import (
     router as system_router,
 )
 from routes.api_v2 import (
-    router as api_v2_router,
     ws_router as api_v2_ws_router,
     setup_ws_listener,
     shutdown_ws_listener,
@@ -169,9 +168,9 @@ app.add_middleware(RequestIdMiddleware)
 @app.middleware("http")
 async def deprecate_legacy_integrations_middleware(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/customer/integrations") or request.url.path.startswith("/customer/integration-routes"):
+    if request.url.path.startswith("/api/v1/customer/integrations") or request.url.path.startswith("/api/v1/customer/integration-routes"):
         response.headers["X-Deprecated"] = (
-            "true; Use /customer/notification-channels instead. "
+            "true; Use /api/v1/customer/notification-channels instead. "
             "This endpoint will be removed in a future release."
         )
         response.headers["Sunset"] = "2026-06-01"
@@ -179,18 +178,28 @@ async def deprecate_legacy_integrations_middleware(request: Request, call_next):
 
 
 @app.middleware("http")
-async def deprecate_api_v2_middleware(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/api/v2/"):
-        response.headers["Deprecation"] = "true"
-        response.headers["Sunset"] = "2026-09-01"
-        response.headers["Link"] = '</customer/>; rel="successor-version"'
-        response.headers["X-Deprecated"] = (
-            "true; The /api/v2/ endpoints are deprecated. "
-            "Migrate to /customer/ endpoints. "
-            "See /docs/api-migration-v2-to-customer for mapping."
-        )
-    return response
+async def legacy_path_redirect(request: Request, call_next):
+    """Redirect legacy /customer/ and /operator/ paths to /api/v1/ equivalents."""
+    path = request.url.path
+
+    # Only redirect if NOT already versioned.
+    if not path.startswith("/api/"):
+        legacy_prefixes = [
+            ("/customer/", "/api/v1/customer/"),
+            ("/operator/", "/api/v1/operator/"),
+        ]
+        for old_prefix, new_prefix in legacy_prefixes:
+            if path.startswith(old_prefix):
+                new_path = new_prefix + path[len(old_prefix):]
+                query = str(request.url.query)
+                redirect_url = new_path + ("?" + query if query else "")
+                return RedirectResponse(
+                    url=redirect_url,
+                    status_code=308,  # Permanent Redirect; preserves method
+                    headers={"X-Deprecated-Path": path},
+                )
+
+    return await call_next(request)
 
 
 app.include_router(devices_router)
@@ -201,7 +210,6 @@ app.include_router(customer_router)
 app.include_router(dashboards_router)
 app.include_router(operator_router)
 app.include_router(system_router)
-app.include_router(api_v2_router)
 app.include_router(analytics_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
@@ -298,6 +306,9 @@ CSRF_EXEMPT_PATHS = (
     "/metrics",
     "/webhook/",
     "/.well-known/",
+    # Legacy paths are redirected to /api/v1/*; exempt them so CSRF doesn't block the redirect.
+    "/customer/",
+    "/operator/",
 )
 
 
@@ -454,17 +465,9 @@ async def shutdown():
         except asyncio.CancelledError:
             pass
 
-@app.get("/api/v2/health")
-async def api_v2_health():
-    return {
-        "status": "ok",
-        "service": "pulse-ui",
-        "api_version": "v2",
-        "deprecated": True,
-        "migrate_to": "/customer/",
-        "sunset_date": "2026-09-01",
-        "migration_guide": "/docs/api-migration-v2-to-customer",
-    }
+@app.get("/api/v1/health")
+async def api_v1_health():
+    return {"status": "ok", "service": "pulse-ui", "api_version": "v1"}
 
 
 @app.get("/healthz")

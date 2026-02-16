@@ -20,13 +20,13 @@ export interface UpdatePreferencesPayload {
 }
 
 export async function fetchPreferences(): Promise<UserPreferences> {
-  return apiGet("/customer/preferences");
+  return apiGet("/api/v1/customer/preferences");
 }
 
 export async function updatePreferences(
   payload: UpdatePreferencesPayload
 ): Promise<UserPreferences & { message: string }> {
-  return apiPut("/customer/preferences", payload);
+  return apiPut("/api/v1/customer/preferences", payload);
 }
 
 export const TIMEZONE_OPTIONS = [

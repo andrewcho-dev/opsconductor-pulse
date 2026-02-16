@@ -17,7 +17,7 @@ export async function getSubscription(): Promise<SubscriptionStatus> {
       total_active_devices: number;
       total_available: number;
     };
-  }>("/customer/subscriptions");
+  }>("/api/v1/customer/subscriptions");
 
   const statuses = response.subscriptions.map((sub) => sub.status);
   let status: SubscriptionStatus["status"] = "ACTIVE";
@@ -65,5 +65,5 @@ export async function getSubscriptionAudit(
   limit = 50,
   offset = 0
 ): Promise<{ events: SubscriptionAuditEvent[]; total: number }> {
-  return apiGet(`/customer/subscription/audit?limit=${limit}&offset=${offset}`);
+  return apiGet(`/api/v1/customer/subscription/audit?limit=${limit}&offset=${offset}`);
 }

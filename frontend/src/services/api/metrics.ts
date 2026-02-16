@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 export async function fetchMetricReference(): Promise<MetricReferenceResponse> {
-  return apiGet("/api/v2/metrics/reference");
+  return apiGet("/api/v1/customer/metrics/reference");
 }
 
 export async function fetchNormalizedMetrics(): Promise<{
@@ -22,22 +22,22 @@ export async function fetchNormalizedMetrics(): Promise<{
     updated_at: string;
   }>;
 }> {
-  return apiGet("/customer/normalized-metrics");
+  return apiGet("/api/v1/customer/normalized-metrics");
 }
 
 export async function createNormalizedMetric(payload: NormalizedMetricCreate) {
-  return apiPost("/customer/normalized-metrics", payload);
+  return apiPost("/api/v1/customer/normalized-metrics", payload);
 }
 
 export async function updateNormalizedMetric(
   name: string,
   payload: NormalizedMetricUpdate
 ) {
-  return apiPatch(`/customer/normalized-metrics/${encodeURIComponent(name)}`, payload);
+  return apiPatch(`/api/v1/customer/normalized-metrics/${encodeURIComponent(name)}`, payload);
 }
 
 export async function deleteNormalizedMetric(name: string) {
-  return apiDelete(`/customer/normalized-metrics/${encodeURIComponent(name)}`);
+  return apiDelete(`/api/v1/customer/normalized-metrics/${encodeURIComponent(name)}`);
 }
 
 export async function fetchMetricMappings(normalizedName?: string): Promise<{
@@ -53,20 +53,20 @@ export async function fetchMetricMappings(normalizedName?: string): Promise<{
   const query = normalizedName
     ? `?normalized_name=${encodeURIComponent(normalizedName)}`
     : "";
-  return apiGet(`/customer/metric-mappings${query}`);
+  return apiGet(`/api/v1/customer/metric-mappings${query}`);
 }
 
 export async function createMetricMapping(payload: MetricMappingCreate) {
-  return apiPost("/customer/metric-mappings", payload);
+  return apiPost("/api/v1/customer/metric-mappings", payload);
 }
 
 export async function updateMetricMapping(
   rawMetric: string,
   payload: { multiplier?: number | null; offset_value?: number | null }
 ) {
-  return apiPatch(`/customer/metric-mappings/${encodeURIComponent(rawMetric)}`, payload);
+  return apiPatch(`/api/v1/customer/metric-mappings/${encodeURIComponent(rawMetric)}`, payload);
 }
 
 export async function deleteMetricMapping(rawMetric: string) {
-  return apiDelete(`/customer/metric-mappings/${encodeURIComponent(rawMetric)}`);
+  return apiDelete(`/api/v1/customer/metric-mappings/${encodeURIComponent(rawMetric)}`);
 }

@@ -85,13 +85,13 @@ export async function listFirmware(deviceType?: string): Promise<{
   total: number;
 }> {
   const params = deviceType ? `?device_type=${encodeURIComponent(deviceType)}` : "";
-  return apiGet(`/customer/firmware${params}`);
+  return apiGet(`/api/v1/customer/firmware${params}`);
 }
 
 export async function createFirmware(
   payload: CreateFirmwarePayload
 ): Promise<FirmwareVersion> {
-  return apiPost("/customer/firmware", payload);
+  return apiPost("/api/v1/customer/firmware", payload);
 }
 
 // ── Campaign API ─────────────────────────────────────────────────
@@ -101,29 +101,29 @@ export async function listCampaigns(status?: string): Promise<{
   total: number;
 }> {
   const params = status ? `?status=${encodeURIComponent(status)}` : "";
-  return apiGet(`/customer/ota/campaigns${params}`);
+  return apiGet(`/api/v1/customer/ota/campaigns${params}`);
 }
 
 export async function getCampaign(id: number): Promise<OtaCampaign> {
-  return apiGet(`/customer/ota/campaigns/${id}`);
+  return apiGet(`/api/v1/customer/ota/campaigns/${id}`);
 }
 
 export async function createCampaign(
   payload: CreateCampaignPayload
 ): Promise<OtaCampaign> {
-  return apiPost("/customer/ota/campaigns", payload);
+  return apiPost("/api/v1/customer/ota/campaigns", payload);
 }
 
 export async function startCampaign(id: number): Promise<{ id: number; status: string }> {
-  return apiPost(`/customer/ota/campaigns/${id}/start`, {});
+  return apiPost(`/api/v1/customer/ota/campaigns/${id}/start`, {});
 }
 
 export async function pauseCampaign(id: number): Promise<{ id: number; status: string }> {
-  return apiPost(`/customer/ota/campaigns/${id}/pause`, {});
+  return apiPost(`/api/v1/customer/ota/campaigns/${id}/pause`, {});
 }
 
 export async function abortCampaign(id: number): Promise<{ id: number; status: string }> {
-  return apiPost(`/customer/ota/campaigns/${id}/abort`, {});
+  return apiPost(`/api/v1/customer/ota/campaigns/${id}/abort`, {});
 }
 
 export async function listCampaignDevices(
@@ -141,6 +141,6 @@ export async function listCampaignDevices(
   if (params?.limit) searchParams.set("limit", String(params.limit));
   if (params?.offset) searchParams.set("offset", String(params.offset));
   const qs = searchParams.toString();
-  return apiGet(`/customer/ota/campaigns/${id}/devices${qs ? `?${qs}` : ""}`);
+  return apiGet(`/api/v1/customer/ota/campaigns/${id}/devices${qs ? `?${qs}` : ""}`);
 }
 

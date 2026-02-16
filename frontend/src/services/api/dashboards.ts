@@ -65,11 +65,11 @@ export async function fetchDashboards(): Promise<{
   dashboards: DashboardSummary[];
   total: number;
 }> {
-  return apiGet("/customer/dashboards");
+  return apiGet("/api/v1/customer/dashboards");
 }
 
 export async function fetchDashboard(id: number): Promise<Dashboard> {
-  return apiGet(`/customer/dashboards/${id}`);
+  return apiGet(`/api/v1/customer/dashboards/${id}`);
 }
 
 export async function createDashboard(data: {
@@ -77,18 +77,18 @@ export async function createDashboard(data: {
   description?: string;
   is_default?: boolean;
 }): Promise<Dashboard> {
-  return apiPost("/customer/dashboards", data);
+  return apiPost("/api/v1/customer/dashboards", data);
 }
 
 export async function updateDashboard(
   id: number,
   data: { name?: string; description?: string; is_default?: boolean }
 ): Promise<Dashboard> {
-  return apiPut(`/customer/dashboards/${id}`, data);
+  return apiPut(`/api/v1/customer/dashboards/${id}`, data);
 }
 
 export async function deleteDashboard(id: number): Promise<void> {
-  return apiDelete(`/customer/dashboards/${id}`);
+  return apiDelete(`/api/v1/customer/dashboards/${id}`);
 }
 
 export async function addWidget(
@@ -100,7 +100,7 @@ export async function addWidget(
     position?: WidgetPosition;
   }
 ): Promise<DashboardWidget> {
-  return apiPost(`/customer/dashboards/${dashboardId}/widgets`, data);
+  return apiPost(`/api/v1/customer/dashboards/${dashboardId}/widgets`, data);
 }
 
 export async function updateWidget(
@@ -112,28 +112,28 @@ export async function updateWidget(
     position?: WidgetPosition;
   }
 ): Promise<DashboardWidget> {
-  return apiPut(`/customer/dashboards/${dashboardId}/widgets/${widgetId}`, data);
+  return apiPut(`/api/v1/customer/dashboards/${dashboardId}/widgets/${widgetId}`, data);
 }
 
 export async function removeWidget(dashboardId: number, widgetId: number): Promise<void> {
-  return apiDelete(`/customer/dashboards/${dashboardId}/widgets/${widgetId}`);
+  return apiDelete(`/api/v1/customer/dashboards/${dashboardId}/widgets/${widgetId}`);
 }
 
 export async function batchUpdateLayout(
   dashboardId: number,
   layout: LayoutItem[]
 ): Promise<{ ok: boolean }> {
-  return apiPut(`/customer/dashboards/${dashboardId}/layout`, { layout });
+  return apiPut(`/api/v1/customer/dashboards/${dashboardId}/layout`, { layout });
 }
 
 export async function toggleDashboardShare(
   id: number,
   shared: boolean
 ): Promise<{ id: number; is_shared: boolean }> {
-  return apiPut(`/customer/dashboards/${id}/share`, { shared });
+  return apiPut(`/api/v1/customer/dashboards/${id}/share`, { shared });
 }
 
 export async function bootstrapDashboard(): Promise<{ id: number; created: boolean }> {
-  return apiPost("/customer/dashboards/bootstrap", {});
+  return apiPost("/api/v1/customer/dashboards/bootstrap", {});
 }
 

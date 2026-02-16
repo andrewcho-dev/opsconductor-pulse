@@ -46,18 +46,20 @@ export interface CreateJobPayload {
 }
 
 export async function listJobs(status?: string): Promise<Job[]> {
-  const url = status ? `/customer/jobs?status=${encodeURIComponent(status)}` : "/customer/jobs";
+  const url = status
+    ? `/api/v1/customer/jobs?status=${encodeURIComponent(status)}`
+    : "/api/v1/customer/jobs";
   return apiGet(url);
 }
 
 export async function getJob(jobId: string): Promise<Job> {
-  return apiGet(`/customer/jobs/${encodeURIComponent(jobId)}`);
+  return apiGet(`/api/v1/customer/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function createJob(payload: CreateJobPayload): Promise<{ job_id: string }> {
-  return apiPost("/customer/jobs", payload);
+  return apiPost("/api/v1/customer/jobs", payload);
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  await apiDelete(`/customer/jobs/${encodeURIComponent(jobId)}`);
+  await apiDelete(`/api/v1/customer/jobs/${encodeURIComponent(jobId)}`);
 }

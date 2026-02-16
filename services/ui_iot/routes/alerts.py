@@ -6,7 +6,7 @@ from routes.customer import _with_rule_conditions
 from middleware.permissions import require_permission
 
 router = APIRouter(
-    prefix="/customer",
+    prefix="/api/v1/customer",
     tags=["alerts"],
     dependencies=[
         Depends(JWTBearer()),
@@ -121,6 +121,55 @@ async def list_alerts(
         "status_filter": status_filter,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/alerts/trend")
+async def get_alert_trend(
+    hours: int = Query(24, ge=1, le=168),
+    pool=Depends(get_db_pool),
+):
+    """Get hourly alert open/close counts for the last N hours."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            WITH hours AS (
+                SELECT generate_series(
+                    date_trunc('hour', now() - interval '1 hour' * $2),
+                    date_trunc('hour', now()),
+                    interval '1 hour'
+                ) AS hour
+            ),
+            opened AS (
+                SELECT date_trunc('hour', created_at) AS hour, COUNT(*) AS cnt
+                FROM fleet_alert
+                WHERE tenant_id = $1 AND created_at >= now() - interval '1 hour' * $2
+                GROUP BY 1
+            ),
+            closed AS (
+                SELECT date_trunc('hour', closed_at) AS hour, COUNT(*) AS cnt
+                FROM fleet_alert
+                WHERE tenant_id = $1 AND closed_at >= now() - interval '1 hour' * $2
+                GROUP BY 1
+            )
+            SELECT
+                h.hour,
+                COALESCE(o.cnt, 0) AS opened,
+                COALESCE(c.cnt, 0) AS closed
+            FROM hours h
+            LEFT JOIN opened o ON o.hour = h.hour
+            LEFT JOIN closed c ON c.hour = h.hour
+            ORDER BY h.hour
+            """,
+            tenant_id,
+            hours,
+        )
+    return {
+        "trend": [
+            {"hour": row["hour"].isoformat(), "opened": row["opened"], "closed": row["closed"]}
+            for row in rows
+        ]
     }
 
 

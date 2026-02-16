@@ -7,7 +7,7 @@ export async function fetchTelemetry(
   end?: string,
   limit = 120
 ): Promise<TelemetryResponse> {
-  let url = `/api/v2/devices/${encodeURIComponent(deviceId)}/telemetry?limit=${limit}`;
+  let url = `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/telemetry?limit=${limit}`;
   if (start) url += `&start=${encodeURIComponent(start)}`;
   if (end) url += `&end=${encodeURIComponent(end)}`;
   return apiGet(url);
@@ -18,6 +18,6 @@ export async function fetchLatestTelemetry(
   count = 1
 ): Promise<TelemetryResponse> {
   return apiGet(
-    `/api/v2/devices/${encodeURIComponent(deviceId)}/telemetry/latest?count=${count}`
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/telemetry/latest?count=${count}`
   );
 }

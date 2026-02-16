@@ -14,7 +14,7 @@ from db.pool import tenant_connection
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["preferences"])
+router = APIRouter(prefix="/api/v1/customer", tags=["preferences"])
 
 
 class UserPreferencesResponse(BaseModel):
@@ -72,7 +72,7 @@ VALID_TIMEZONES = [
 
 
 @router.get(
-    "/customer/preferences",
+    "/preferences",
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
 )
 async def get_preferences(request: Request):
@@ -121,7 +121,7 @@ async def get_preferences(request: Request):
 
 
 @router.put(
-    "/customer/preferences",
+    "/preferences",
     dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
 )
 async def update_preferences(payload: UpdatePreferencesRequest, request: Request):
