@@ -16,6 +16,14 @@ from dependencies import get_db_pool
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_jsonb(val):
+    """Parse JSONB value that may be returned as string by asyncpg/PgBouncer."""
+    if isinstance(val, str):
+        return json.loads(val)
+    return val or {}
+
+
 # Valid widget types
 WIDGET_TYPES = {
     "kpi_tile",
@@ -286,14 +294,14 @@ async def get_dashboard(dashboard_id: int, pool=Depends(get_db_pool)):
         "is_default": dashboard["is_default"],
         "is_shared": dashboard["user_id"] is None,
         "is_owner": dashboard["user_id"] == user_id,
-        "layout": dashboard["layout"],
+        "layout": _parse_jsonb(dashboard["layout"]),
         "widgets": [
             {
                 "id": w["id"],
                 "widget_type": w["widget_type"],
                 "title": w["title"],
-                "config": w["config"],
-                "position": w["position"],
+                "config": _parse_jsonb(w["config"]),
+                "position": _parse_jsonb(w["position"]),
                 "created_at": w["created_at"].isoformat() if w["created_at"] else None,
                 "updated_at": w["updated_at"].isoformat() if w["updated_at"] else None,
             }
@@ -490,8 +498,8 @@ async def add_widget(dashboard_id: int, data: WidgetCreate, pool=Depends(get_db_
         "id": row["id"],
         "widget_type": row["widget_type"],
         "title": row["title"],
-        "config": row["config"],
-        "position": row["position"],
+        "config": _parse_jsonb(row["config"]),
+        "position": _parse_jsonb(row["position"]),
         "created_at": row["created_at"].isoformat(),
     }
 
@@ -562,8 +570,8 @@ async def update_widget(
         "id": row["id"],
         "widget_type": row["widget_type"],
         "title": row["title"],
-        "config": row["config"],
-        "position": row["position"],
+        "config": _parse_jsonb(row["config"]),
+        "position": _parse_jsonb(row["position"]),
         "updated_at": row["updated_at"].isoformat(),
     }
 
