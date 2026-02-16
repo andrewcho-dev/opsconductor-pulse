@@ -5,3 +5,4 @@ export { PageHeader } from "./PageHeader";
 export { ConnectionStatus } from "./ConnectionStatus";
 export { WidgetErrorBoundary } from "./WidgetErrorBoundary";
 export { ErrorMessage } from "./ErrorMessage";
+export { OnboardingChecklist } from "./OnboardingChecklist";

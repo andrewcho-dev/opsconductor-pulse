@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
+import { OnboardingChecklist } from "@/components/shared/OnboardingChecklist";
 import { AlertTrendWidget, DeviceStatusWidget, FleetHealthWidget } from "./widgets";
 import { UptimeSummaryWidget } from "@/features/devices/UptimeSummaryWidget";
 import FleetKpiStrip from "./FleetKpiStrip";
@@ -155,6 +156,9 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      {/* NEW: Onboarding checklist for new tenants */}
+      <OnboardingChecklist />
 
       <WidgetErrorBoundary widgetName="Fleet KPI Strip">
         <FleetKpiStrip />
