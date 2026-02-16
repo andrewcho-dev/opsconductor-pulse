@@ -369,6 +369,48 @@ class AuditLogger:
             details={"error": error, "attempt": attempt},
         )
 
+    def notification_delivered(
+        self,
+        tenant_id: str,
+        channel_type: str,
+        channel_id: str | None = None,
+        status: str = "delivered",
+        details: dict | None = None,
+    ):
+        """Log a successful notification delivery."""
+        self.log(
+            "NOTIFICATION_DELIVERED",
+            "notification",
+            "deliver",
+            f"Notification delivered via {channel_type}",
+            tenant_id=tenant_id,
+            entity_type="notification_channel",
+            entity_id=channel_id,
+            severity="info",
+            details={"status": status, **(details or {})},
+        )
+
+    def notification_failed(
+        self,
+        tenant_id: str,
+        channel_type: str,
+        channel_id: str | None = None,
+        error: str = "",
+        details: dict | None = None,
+    ):
+        """Log a failed notification delivery."""
+        self.log(
+            "NOTIFICATION_FAILED",
+            "notification",
+            "deliver",
+            f"Notification delivery failed via {channel_type}: {error}",
+            tenant_id=tenant_id,
+            entity_type="notification_channel",
+            entity_id=channel_id,
+            severity="warning",
+            details={"error": error, **(details or {})},
+        )
+
     def config_changed(
         self,
         tenant_id: str,

@@ -270,13 +270,20 @@ async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_po
         elif ch["channel_type"] == "teams":
             await send_teams(cfg["webhook_url"], test_alert)
         elif ch["channel_type"] in ("webhook", "http"):
-            await send_webhook(
-                cfg["url"],
-                cfg.get("method", "POST"),
-                cfg.get("headers", {}),
-                cfg.get("secret"),
-                test_alert,
+            result = await send_webhook(
+                url=cfg["url"],
+                method=cfg.get("method", "POST"),
+                headers=cfg.get("headers", {}),
+                secret=cfg.get("secret"),
+                alert=test_alert,
+                channel_id=str(channel_id),
+                tenant_id=tenant_id,
             )
+            return {
+                "channel_id": channel_id,
+                "test": True,
+                "delivery": result,
+            }
         elif ch["channel_type"] == "email":
             await send_email(
                 smtp_config=cfg.get("smtp", {}),

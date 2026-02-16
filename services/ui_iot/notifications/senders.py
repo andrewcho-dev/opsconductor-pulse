@@ -1,8 +1,21 @@
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
+import time
 
 import httpx
+
+logger = logging.getLogger(__name__)
+
+# Status codes that are retryable
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+# Status codes that should NOT be retried (client errors)
+NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404}
+# Retry delays in seconds (exponential backoff)
+RETRY_DELAYS = [1, 5, 25]
+MAX_ATTEMPTS = 3
 
 
 def severity_label(severity: int) -> str:
@@ -35,7 +48,8 @@ def pd_severity(severity: int) -> str:
     return "info"
 
 
-async def send_slack(webhook_url: str, alert: dict) -> None:
+async def send_slack(webhook_url: str, alert: dict) -> dict:
+    """Send alert notification to Slack."""
     payload = {
         "text": f"*[{severity_label(int(alert.get('severity', 0)))}]* {alert.get('device_id', '-') } — {alert.get('alert_type', '-')}",
         "attachments": [
@@ -48,11 +62,17 @@ async def send_slack(webhook_url: str, alert: dict) -> None:
             }
         ],
     }
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        await client.post(webhook_url, json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(webhook_url, json=payload)
+        return {"success": 200 <= response.status_code < 300, "status_code": response.status_code}
+    except Exception as exc:
+        logger.warning("Slack delivery failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
-async def send_pagerduty(integration_key: str, alert: dict) -> None:
+async def send_pagerduty(integration_key: str, alert: dict) -> dict:
+    """Send alert notification to PagerDuty."""
     payload = {
         "routing_key": integration_key,
         "event_action": "trigger",
@@ -64,11 +84,17 @@ async def send_pagerduty(integration_key: str, alert: dict) -> None:
             "custom_details": alert,
         },
     }
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        await client.post("https://events.pagerduty.com/v2/enqueue", json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post("https://events.pagerduty.com/v2/enqueue", json=payload)
+        return {"success": 200 <= response.status_code < 300, "status_code": response.status_code}
+    except Exception as exc:
+        logger.warning("PagerDuty delivery failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
-async def send_teams(webhook_url: str, alert: dict) -> None:
+async def send_teams(webhook_url: str, alert: dict) -> dict:
+    """Send alert notification to Microsoft Teams."""
     payload = {
         "@type": "MessageCard",
         "@context": "http://schema.org/extensions",
@@ -81,8 +107,22 @@ async def send_teams(webhook_url: str, alert: dict) -> None:
             }
         ],
     }
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        await client.post(webhook_url, json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(webhook_url, json=payload)
+        return {"success": 200 <= response.status_code < 300, "status_code": response.status_code}
+    except Exception as exc:
+        logger.warning("Teams delivery failed: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+
+def compute_webhook_signature(body: bytes, secret: str) -> str:
+    """Compute HMAC-SHA256 signature for webhook payload.
+
+    Returns signature in format: sha256=<hex_digest>
+    """
+    sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return f"sha256={sig}"
 
 
 async def send_webhook(
@@ -91,14 +131,173 @@ async def send_webhook(
     headers: dict,
     secret: str | None,
     alert: dict,
-) -> None:
-    body = json.dumps(alert).encode()
+    *,
+    audit_logger=None,
+    channel_id: str | None = None,
+    tenant_id: str | None = None,
+) -> dict:
+    """Send a webhook with HMAC-SHA256 signing and exponential backoff retry."""
+    body = json.dumps(alert, default=str).encode()
     req_headers = {"Content-Type": "application/json", **(headers or {})}
+
     if secret:
-        sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        req_headers["X-Signature-SHA256"] = sig
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        await client.request(method.upper(), url, content=body, headers=req_headers)
+        req_headers["X-Signature-256"] = compute_webhook_signature(body, secret)
+
+    last_error: str | None = None
+    last_status: int | None = None
+    total_start = time.monotonic()
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        attempt_start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.request(
+                    method.upper(), url, content=body, headers=req_headers
+                )
+
+            attempt_duration_ms = int((time.monotonic() - attempt_start) * 1000)
+            last_status = response.status_code
+
+            logger.info(
+                "webhook_delivery_attempt",
+                extra={
+                    "url": url,
+                    "method": method.upper(),
+                    "status_code": response.status_code,
+                    "attempt": attempt,
+                    "duration_ms": attempt_duration_ms,
+                    "channel_id": channel_id,
+                    "tenant_id": tenant_id,
+                },
+            )
+
+            # Success: 2xx
+            if 200 <= response.status_code < 300:
+                total_duration_ms = int((time.monotonic() - total_start) * 1000)
+                if audit_logger and tenant_id:
+                    audit_logger.notification_delivered(
+                        tenant_id,
+                        channel_type="webhook",
+                        channel_id=channel_id,
+                        status="delivered",
+                        details={
+                            "url": url,
+                            "status_code": response.status_code,
+                            "attempts": attempt,
+                            "duration_ms": total_duration_ms,
+                        },
+                    )
+                return {
+                    "success": True,
+                    "status_code": response.status_code,
+                    "attempts": attempt,
+                    "duration_ms": total_duration_ms,
+                    "error": None,
+                }
+
+            # Non-retryable client error
+            if response.status_code in NON_RETRYABLE_STATUS_CODES:
+                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                logger.warning(
+                    "webhook_delivery_failed_non_retryable",
+                    extra={
+                        "url": url,
+                        "status_code": response.status_code,
+                        "attempt": attempt,
+                        "response_body": response.text[:200],
+                        "channel_id": channel_id,
+                        "tenant_id": tenant_id,
+                    },
+                )
+                break  # Do not retry
+
+            # Retryable server error
+            last_error = f"HTTP {response.status_code}"
+            if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_ATTEMPTS:
+                delay = RETRY_DELAYS[attempt - 1]
+                logger.warning(
+                    "webhook_delivery_retry",
+                    extra={
+                        "url": url,
+                        "status_code": response.status_code,
+                        "attempt": attempt,
+                        "retry_delay_s": delay,
+                        "channel_id": channel_id,
+                        "tenant_id": tenant_id,
+                    },
+                )
+                await asyncio.sleep(delay)
+
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            attempt_duration_ms = int((time.monotonic() - attempt_start) * 1000)
+            last_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+
+            logger.warning(
+                "webhook_delivery_connection_error",
+                extra={
+                    "url": url,
+                    "attempt": attempt,
+                    "duration_ms": attempt_duration_ms,
+                    "error": last_error,
+                    "channel_id": channel_id,
+                    "tenant_id": tenant_id,
+                },
+            )
+
+            if attempt < MAX_ATTEMPTS:
+                delay = RETRY_DELAYS[attempt - 1]
+                await asyncio.sleep(delay)
+
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+            logger.exception(
+                "webhook_delivery_unexpected_error",
+                extra={
+                    "url": url,
+                    "attempt": attempt,
+                    "channel_id": channel_id,
+                    "tenant_id": tenant_id,
+                },
+            )
+            break  # Do not retry unknown errors
+
+    # All attempts exhausted or non-retryable error
+    total_duration_ms = int((time.monotonic() - total_start) * 1000)
+
+    logger.error(
+        "webhook_delivery_failed",
+        extra={
+            "url": url,
+            "attempts": attempt,
+            "last_status": last_status,
+            "last_error": last_error,
+            "duration_ms": total_duration_ms,
+            "channel_id": channel_id,
+            "tenant_id": tenant_id,
+        },
+    )
+
+    if audit_logger and tenant_id:
+        audit_logger.notification_failed(
+            tenant_id,
+            channel_type="webhook",
+            channel_id=channel_id,
+            error=last_error or "Unknown error",
+            details={
+                "url": url,
+                "last_status": last_status,
+                "attempts": attempt,
+                "duration_ms": total_duration_ms,
+            },
+        )
+
+    return {
+        "success": False,
+        "status_code": last_status,
+        "attempts": attempt,
+        "duration_ms": total_duration_ms,
+        "error": last_error,
+    }
 
 
 # --- Email sender ---
