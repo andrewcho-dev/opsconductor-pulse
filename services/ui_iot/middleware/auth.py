@@ -8,6 +8,7 @@ from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from shared.jwks_cache import get_jwks_cache, init_jwks_cache
+from shared.audit import get_audit_logger
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +143,37 @@ class JWTBearer(HTTPBearer):
             token = request.cookies.get("pulse_session")
 
         if not token:
+            audit = get_audit_logger()
+            if audit:
+                audit.auth_failure(reason="missing_token", ip_address=client_ip)
             raise HTTPException(status_code=401, detail="Missing authorization")
 
-        payload = await validate_token(token)
+        try:
+            payload = await validate_token(token)
+        except HTTPException as exc:
+            audit = get_audit_logger()
+            if audit:
+                # Map the detail string to a failure reason
+                reason_map = {
+                    "Token expired": "expired",
+                    "Invalid token claims": "invalid_claims",
+                    "Invalid token": "invalid_token",
+                    "Unknown signing key": "unknown_key",
+                    "Auth service unavailable": "auth_unavailable",
+                }
+                reason = reason_map.get(exc.detail, "unknown")
+                audit.auth_failure(reason=reason, ip_address=client_ip)
+            raise
+
         request.state.user = payload
+
+        # Log successful auth
+        audit = get_audit_logger()
+        if audit:
+            audit.auth_success(
+                tenant_id=payload.get("tenant_id", ""),
+                user_id=payload.get("sub", ""),
+                email=payload.get("email", "unknown"),
+                ip_address=client_ip,
+            )
         return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)

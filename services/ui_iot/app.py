@@ -741,6 +741,24 @@ async def auth_refresh(request: Request):
         cleared.delete_cookie("pulse_refresh", path="/")
         return cleared
 
+    # Log token refresh to audit
+    audit = getattr(app.state, "audit", None)
+    if audit:
+        # Decode minimal info from the new token without full validation
+        try:
+            from jose import jwt as jwt_mod
+
+            unverified = jwt_mod.get_unverified_claims(access_token)
+            audit.auth_token_refresh(
+                tenant_id=unverified.get("tenant_id"),
+                user_id=unverified.get("sub"),
+                email=unverified.get("email"),
+                ip_address=request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                or (request.client.host if request.client else "unknown"),
+            )
+        except Exception:
+            pass  # Non-critical; don't break refresh flow
+
     refreshed = JSONResponse({"success": True, "expires_in": expires_in})
     refreshed.set_cookie(
         "pulse_session",

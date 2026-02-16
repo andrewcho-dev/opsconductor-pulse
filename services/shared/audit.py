@@ -408,6 +408,64 @@ class AuditLogger:
             details=details,
         )
 
+    def auth_success(
+        self,
+        tenant_id: str,
+        user_id: str,
+        email: str,
+        ip_address: str,
+        details: dict | None = None,
+    ):
+        self.log(
+            "auth.login_success",
+            "auth",
+            "login",
+            f"Successful authentication for {email}",
+            tenant_id=tenant_id,
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=email,
+            ip_address=ip_address,
+            details=details,
+        )
+
+    def auth_failure(
+        self,
+        reason: str,
+        ip_address: str,
+        details: dict | None = None,
+    ):
+        self.log(
+            "auth.login_failure",
+            "auth",
+            "login_failure",
+            f"Authentication failed: {reason}",
+            severity="warning",
+            ip_address=ip_address,
+            details={"reason": reason, **(details or {})},
+        )
+
+    def auth_token_refresh(
+        self,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        email: str | None = None,
+        ip_address: str | None = None,
+        details: dict | None = None,
+    ):
+        self.log(
+            "auth.token_refresh",
+            "auth",
+            "refresh",
+            f"Token refreshed for {email or 'unknown'}",
+            tenant_id=tenant_id,
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=email,
+            ip_address=ip_address,
+            details=details,
+        )
+
 
 _audit_logger: Optional[AuditLogger] = None
 
