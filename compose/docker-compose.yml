@@ -6,7 +6,7 @@ services:
       - "8883:8883"
       - "9001:9001"
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/mosquitto.tls.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto/acl.conf:/mosquitto/config/acl.conf
       - ./mosquitto/certs:/mosquitto/certs
       - mosquitto-passwd:/mosquitto/passwd
@@ -83,6 +83,8 @@ services:
       MQTT_PORT: "1883"
       MQTT_USERNAME: "service_pulse"
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
+      MQTT_TLS_INSECURE: "true"
       MQTT_TOPIC: "tenant/+/device/+/+"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
@@ -101,6 +103,8 @@ services:
       FLUSH_INTERVAL_MS: "${FLUSH_INTERVAL_MS:-500}"
       INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-8}"
       INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-100000}"
+    volumes:
+      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     expose:
       - "8080"
     healthcheck:
@@ -343,6 +347,7 @@ services:
     volumes:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
+      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     environment:
       SERVICE_NAME: ui_iot
       PG_HOST: iot-pgbouncer
@@ -368,6 +373,8 @@ services:
       MQTT_USERNAME: "service_pulse"
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
+      MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
+      MQTT_TLS_INSECURE: "true"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"

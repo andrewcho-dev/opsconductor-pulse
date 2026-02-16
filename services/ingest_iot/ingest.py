@@ -29,6 +29,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_CA_CERT = os.getenv("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
 SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
 COMMAND_ACK_TOPIC = "tenant/+/device/+/commands/ack"
 COMMAND_ACK_RE = re.compile(r"^tenant/(?P<tenant_id>[^/]+)/device/(?P<device_id>[^/]+)/commands/ack$")
@@ -1377,6 +1378,19 @@ class Ingestor:
         client = mqtt.Client()
         if MQTT_USERNAME and MQTT_PASSWORD:
             client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+        # Enable TLS for internal MQTT connection
+        if os.path.exists(MQTT_CA_CERT):
+            import ssl
+
+            client.tls_set(
+                ca_certs=MQTT_CA_CERT,
+                tls_version=ssl.PROTOCOL_TLSv1_2,
+            )
+            # For internal Docker network: server cert CN may not match hostname
+            mqtt_tls_insecure = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
+            if mqtt_tls_insecure:
+                client.tls_insecure_set(True)
         client.on_connect = self.on_connect
         client.on_message = self.on_message
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
