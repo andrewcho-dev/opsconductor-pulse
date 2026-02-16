@@ -19,6 +19,7 @@ import {
   CreditCard,
   Users,
   Layers,
+  Radio,
   LayoutGrid,
   CalendarOff,
   ChevronRight,
@@ -55,6 +56,8 @@ type NavItem = {
 const customerFleetNav: NavItem[] = [
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Device Groups", href: "/device-groups", icon: Layers },
+  { label: "OTA Updates", href: "/ota/campaigns", icon: Radio },
+  { label: "Firmware", href: "/ota/firmware", icon: Radio },
   { label: "Sites", href: "/sites", icon: Building2 },
 ];
 

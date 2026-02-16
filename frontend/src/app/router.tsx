@@ -38,6 +38,9 @@ import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import JobsPage from "@/features/jobs/JobsPage";
+import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
+import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
+import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { usePermissions } from "@/services/auth";
@@ -105,6 +108,9 @@ export const router = createBrowserRouter(
             { path: "metrics", element: <MetricsPage /> },
             { path: "delivery-log", element: <DeliveryLogPage /> },
             { path: "jobs", element: <JobsPage /> },
+            { path: "ota/campaigns", element: <OtaCampaignsPage /> },
+            { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
+            { path: "ota/firmware", element: <FirmwareListPage /> },
             { path: "reports", element: <ReportsPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
