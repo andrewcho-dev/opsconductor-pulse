@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared";
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
 import { useDeviceAlerts } from "@/hooks/use-device-alerts";
@@ -15,7 +16,6 @@ import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
 import { DeviceCommandPanel } from "./DeviceCommandPanel";
 import { CreateJobModal } from "@/features/jobs/CreateJobModal";
-import { ArrowLeft } from "lucide-react";
 import {
   getDeviceTags,
   setDeviceTags,
@@ -147,13 +147,14 @@ export default function DeviceDetailPage() {
 
   return (
     <div className="p-3 space-y-3">
-      <Link
-        to="/devices"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Devices
-      </Link>
+      <PageHeader
+        title={device?.device_id ?? "Device"}
+        description={device?.model || undefined}
+        breadcrumbs={[
+          { label: "Devices", href: "/devices" },
+          { label: device?.device_id ?? "..." },
+        ]}
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <DeviceInfoCard

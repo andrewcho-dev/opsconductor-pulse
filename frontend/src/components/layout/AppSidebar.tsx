@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import packageJson from "../../../package.json";
 import {
   LayoutDashboard,
   Cpu,
@@ -74,7 +75,7 @@ const customerDataNav: NavItem[] = [
   { label: "Telemetry / Metrics", href: "/metrics", icon: Gauge },
   { label: "Reports", href: "/reports", icon: ScrollText },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
-  { label: "Export", href: "/devices", icon: ScrollText },
+  { label: "Export", href: "/reports", icon: ScrollText },
 ];
 
 const operatorOverviewNav: NavItem[] = [
@@ -147,7 +148,7 @@ export function AppSidebar() {
     { label: "Subscription", href: "/subscription", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
     ...(canManageRoles ? [{ label: "Roles", href: "/roles", icon: Shield }] : []),
-    { label: "Notification Prefs", href: "/alerts", icon: Bell },
+    { label: "Notification Prefs", href: "/notifications", icon: Bell },
   ];
 
   function onToggle(setter: (next: boolean) => void, key: string, next: boolean) {
@@ -437,7 +438,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4">
         <div className="text-xs text-muted-foreground">
-          OpsConductor Pulse v18
+          OpsConductor Pulse v{packageJson.version}
         </div>
       </SidebarFooter>
     </Sidebar>

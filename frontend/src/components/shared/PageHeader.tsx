@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 interface BreadcrumbItem {
   label: string;
@@ -20,7 +21,13 @@ export function PageHeader({ title, description, action, breadcrumbs }: PageHead
           <nav className="mb-1 flex items-center gap-2 text-xs text-muted-foreground" aria-label="Breadcrumb">
             {breadcrumbs.map((crumb, index) => (
               <span key={`${crumb.label}-${index}`} className="flex items-center gap-2">
-                {crumb.href ? <a href={crumb.href}>{crumb.label}</a> : <span>{crumb.label}</span>}
+                {crumb.href ? (
+                  <Link to={crumb.href} className="hover:text-foreground">
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span>{crumb.label}</span>
+                )}
                 {index < breadcrumbs.length - 1 ? <span>/</span> : null}
               </span>
             ))}

@@ -1,5 +1,4 @@
-import { Link, useParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { useParams } from "react-router-dom";
 import { PageHeader, SeverityBadge } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSiteSummary } from "@/hooks/use-sites";
@@ -10,15 +9,13 @@ export default function SiteDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/sites">Back to Sites</Link>
-        </Button>
-      </div>
-
       <PageHeader
         title={data?.site?.name || "Site"}
         description={data?.site?.location || siteId}
+        breadcrumbs={[
+          { label: "Sites", href: "/sites" },
+          { label: data?.site?.name || siteId },
+        ]}
       />
 
       {error ? (

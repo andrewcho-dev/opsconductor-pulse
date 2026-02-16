@@ -38,6 +38,7 @@ import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import JobsPage from "@/features/jobs/JobsPage";
+import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { usePermissions } from "@/services/auth";
 
@@ -138,6 +139,8 @@ export const router = createBrowserRouter(
             { path: "settings", element: <SettingsPage /> },
           ],
         },
+        // 404 catch-all — must be last
+        { path: "*", element: <NotFoundPage /> },
       ],
     },
   ],
