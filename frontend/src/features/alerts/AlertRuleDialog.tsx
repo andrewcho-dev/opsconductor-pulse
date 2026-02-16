@@ -53,7 +53,7 @@ import {
 } from "@/services/api/alert-rules";
 import { ConditionRow } from "./ConditionRow";
 
-type RuleMode = "simple" | "multi" | "anomaly" | "gap";
+type RuleMode = "simple" | "multi" | "anomaly" | "gap" | "window";
 
 interface AlertRuleDialogProps {
   open: boolean;
@@ -116,6 +116,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [anomalyMinSamples, setAnomalyMinSamples] = useState("10");
   const [gapMetricName, setGapMetricName] = useState("");
   const [gapMinutes, setGapMinutes] = useState("10");
+  const [windowAggregation, setWindowAggregation] = useState<string>("avg");
+  const [windowSeconds, setWindowSeconds] = useState<string>("300"); // 5 min default
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -150,6 +152,13 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         setGapMinutes(String(rule.gap_conditions.gap_minutes));
         setMatchMode("all");
         setMultiConditions([{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }]);
+      } else if (rule.rule_type === "window") {
+        setRuleMode("window");
+        setWindowAggregation(rule.aggregation ?? "avg");
+        setWindowSeconds(String(rule.window_seconds ?? 300));
+        setMetricName(rule.metric_name);
+        setOperator(rule.operator as RuleOperator);
+        setThreshold(String(rule.threshold));
       } else if (Array.isArray(rule.conditions) && rule.conditions.length) {
         setRuleMode("multi");
         setMatchMode(rule.match_mode ?? "all");
@@ -169,6 +178,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         setAnomalyMinSamples("10");
         setGapMetricName("");
         setGapMinutes("10");
+        setWindowAggregation("avg");
+        setWindowSeconds("300");
       }
     } else {
       setName("");
@@ -189,6 +200,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setAnomalyMinSamples("10");
       setGapMetricName("");
       setGapMinutes("10");
+      setWindowAggregation("avg");
+      setWindowSeconds("300");
       setSelectedGroupIds([]);
     }
   }, [open, rule]);
@@ -269,8 +282,10 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     if (ruleMode === "simple" && !metricName.trim()) return;
     if (ruleMode === "anomaly" && !anomalyMetricName.trim()) return;
     if (ruleMode === "gap" && !gapMetricName.trim()) return;
+    if (ruleMode === "window" && !metricName.trim()) return;
     const thresholdValue = Number(threshold);
     if (ruleMode === "simple" && Number.isNaN(thresholdValue)) return;
+    if (ruleMode === "window" && Number.isNaN(thresholdValue)) return;
     const anomalyConditions: AnomalyConditions = {
       metric_name: anomalyMetricName.trim(),
       window_minutes: Number(anomalyWindowMinutes),
@@ -318,6 +333,13 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       } else if (ruleMode === "gap") {
         payload.rule_type = "telemetry_gap";
         payload.gap_conditions = gapConditions;
+      } else if (ruleMode === "window") {
+        payload.rule_type = "window";
+        payload.metric_name = metricName;
+        payload.operator = operator;
+        payload.threshold = thresholdValue;
+        payload.aggregation = windowAggregation as AlertRuleCreate["aggregation"];
+        payload.window_seconds = Number(windowSeconds);
       } else if (ruleMode === "multi") {
         payload.rule_type = "threshold";
         payload.match_mode = matchMode;
@@ -360,6 +382,16 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       updates.metric_name = gapConditions.metric_name;
       updates.operator = "GT";
       updates.threshold = gapConditions.gap_minutes;
+    } else if (ruleMode === "window") {
+      updates.rule_type = "window";
+      updates.metric_name = metricName;
+      updates.operator = operator;
+      updates.threshold = thresholdValue;
+      updates.aggregation = windowAggregation as AlertRuleUpdate["aggregation"];
+      updates.window_seconds = Number(windowSeconds);
+      updates.conditions = null;
+      updates.anomaly_conditions = null;
+      updates.gap_conditions = null;
     } else if (ruleMode === "multi") {
       updates.rule_type = "threshold";
       updates.match_mode = matchMode;
@@ -494,6 +526,13 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                 onClick={() => setRuleMode("gap")}
               >
                 Data Gap
+              </Button>
+              <Button
+                type="button"
+                variant={ruleMode === "window" ? "default" : "outline"}
+                onClick={() => setRuleMode("window")}
+              >
+                Window Aggregation
               </Button>
             </div>
           </div>
@@ -723,7 +762,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                 />
               </div>
             </div>
-          ) : (
+          ) : ruleMode === "gap" ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <div className="grid gap-2">
                 <Label htmlFor="gap-metric-name">Metric Name *</Label>
@@ -750,7 +789,105 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                 </p>
               </div>
             </div>
-          )}
+          ) : ruleMode === "window" ? (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="grid gap-2">
+                <Label htmlFor="window-metric-name">Metric Name</Label>
+                <Select value={metricName || undefined} onValueChange={setMetricName}>
+                  <SelectTrigger
+                    id="window-metric-name"
+                    className="w-full"
+                    disabled={metricsLoading}
+                  >
+                    <SelectValue
+                      placeholder={metricsLoading ? "Loading metrics..." : "Select metric"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Normalized</SelectLabel>
+                      {normalizedMetrics.map((metric) => (
+                        <SelectItem key={metric.name} value={metric.name}>
+                          {metric.name}
+                          {metric.display_unit ? ` (${metric.display_unit})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel>Raw</SelectLabel>
+                      {rawMetrics.map((metric) => (
+                        <SelectItem key={metric.name} value={metric.name}>
+                          {metric.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Aggregation</Label>
+                <Select value={windowAggregation} onValueChange={setWindowAggregation}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="avg">Average (avg)</SelectItem>
+                    <SelectItem value="min">Minimum (min)</SelectItem>
+                    <SelectItem value="max">Maximum (max)</SelectItem>
+                    <SelectItem value="count">Count</SelectItem>
+                    <SelectItem value="sum">Sum</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Operator</Label>
+                <Select value={operator} onValueChange={(v) => setOperator(v as RuleOperator)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GT">&gt; (GT)</SelectItem>
+                    <SelectItem value="LT">&lt; (LT)</SelectItem>
+                    <SelectItem value="GTE">&ge; (GTE)</SelectItem>
+                    <SelectItem value="LTE">&le; (LTE)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="window-threshold">Threshold</Label>
+                <Input
+                  id="window-threshold"
+                  type="number"
+                  value={threshold}
+                  onChange={(e) => setThreshold(e.target.value)}
+                  required
+                  step="any"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Window Duration</Label>
+                <Select value={windowSeconds} onValueChange={setWindowSeconds}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="60">1 minute</SelectItem>
+                    <SelectItem value="120">2 minutes</SelectItem>
+                    <SelectItem value="300">5 minutes</SelectItem>
+                    <SelectItem value="600">10 minutes</SelectItem>
+                    <SelectItem value="900">15 minutes</SelectItem>
+                    <SelectItem value="1800">30 minutes</SelectItem>
+                    <SelectItem value="3600">1 hour</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Alert fires when {windowAggregation}({metricName || "metric"}) breaches the
+                threshold over a {Number(windowSeconds) / 60}-minute sliding window.
+              </p>
+            </div>
+          ) : null
+          }
 
           <div className="grid gap-2">
             <Label>Device Groups</Label>

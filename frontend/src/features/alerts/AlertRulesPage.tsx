@@ -155,6 +155,14 @@ export default function AlertRulesPage() {
   }
 
   function formatCondition(rule: AlertRule) {
+    if (rule.rule_type === "window" && rule.aggregation && rule.window_seconds) {
+      const op = OPERATOR_LABELS[rule.operator] || rule.operator;
+      const windowDisplay =
+        rule.window_seconds >= 60
+          ? `${rule.window_seconds / 60}m`
+          : `${rule.window_seconds}s`;
+      return `${rule.aggregation}(${rule.metric_name}) ${op} ${rule.threshold} over ${windowDisplay}`;
+    }
     if (Array.isArray(rule.conditions) && rule.conditions.length > 0) {
       if (rule.conditions.length === 1) {
         const condition = rule.conditions[0];

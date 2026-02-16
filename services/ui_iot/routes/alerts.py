@@ -418,6 +418,26 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
         operator = "GT"
         threshold = float(gap_conditions_json["gap_minutes"])
         conditions_payload = gap_conditions_json
+    elif rule_type == "window":
+        if body.aggregation is None:
+            raise HTTPException(status_code=422, detail="aggregation is required for WINDOW rules")
+        if body.aggregation not in ("avg", "min", "max", "count", "sum"):
+            raise HTTPException(
+                status_code=400,
+                detail="aggregation must be one of: avg, min, max, count, sum",
+            )
+        if body.window_seconds is None:
+            raise HTTPException(status_code=422, detail="window_seconds is required for WINDOW rules")
+        if body.metric_name is None or not METRIC_NAME_PATTERN.match(body.metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        if body.operator is None or body.operator not in VALID_OPERATORS:
+            raise HTTPException(status_code=400, detail="Invalid operator value")
+        if body.threshold is None:
+            raise HTTPException(status_code=422, detail="threshold is required for WINDOW rules")
+        metric_name = body.metric_name
+        operator = body.operator
+        threshold = body.threshold
+        conditions_payload = None
     elif conditions_list:
         first_condition = conditions_list[0]
         metric_name = first_condition["metric_name"]
@@ -470,6 +490,8 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 conditions=conditions_payload,
                 match_mode=match_mode,
                 enabled=body.enabled,
+                aggregation=body.aggregation,
+                window_seconds=body.window_seconds,
             )
     except Exception:
         logger.exception("Failed to create alert rule")
@@ -520,6 +542,8 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         and body.match_mode is None
         and body.anomaly_conditions is None
         and body.gap_conditions is None
+        and body.aggregation is None
+        and body.window_seconds is None
         and body.enabled is None
     ):
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -558,6 +582,26 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         operator = "GT"
         threshold = float(gap_conditions_json["gap_minutes"])
         conditions_payload = gap_conditions_json
+    elif body.rule_type == "window":
+        if body.aggregation is None:
+            raise HTTPException(status_code=422, detail="aggregation is required for WINDOW rules")
+        if body.aggregation not in ("avg", "min", "max", "count", "sum"):
+            raise HTTPException(
+                status_code=400,
+                detail="aggregation must be one of: avg, min, max, count, sum",
+            )
+        if body.window_seconds is None:
+            raise HTTPException(status_code=422, detail="window_seconds is required for WINDOW rules")
+        if body.metric_name is None or not METRIC_NAME_PATTERN.match(body.metric_name):
+            raise HTTPException(status_code=400, detail="Invalid metric_name format")
+        if body.operator is None or body.operator not in VALID_OPERATORS:
+            raise HTTPException(status_code=400, detail="Invalid operator value")
+        if body.threshold is None:
+            raise HTTPException(status_code=422, detail="threshold is required for WINDOW rules")
+        metric_name = body.metric_name
+        operator = body.operator
+        threshold = body.threshold
+        conditions_payload = None
     elif conditions_list:
         for cond in conditions_list:
             if cond["operator"] not in VALID_OPERATORS:
@@ -610,6 +654,8 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 conditions=conditions_payload,
                 match_mode=match_mode,
                 enabled=body.enabled,
+                aggregation=body.aggregation,
+                window_seconds=body.window_seconds,
             )
     except Exception:
         logger.exception("Failed to update alert rule")

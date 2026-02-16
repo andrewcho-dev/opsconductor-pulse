@@ -322,7 +322,7 @@ class ApplyTemplatesRequest(BaseModel):
 
 class AlertRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    rule_type: Literal["threshold", "anomaly", "telemetry_gap"] = "threshold"
+    rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] = "threshold"
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
     operator: str | None = None
     threshold: float | None = None
@@ -345,11 +345,21 @@ class AlertRuleCreate(BaseModel):
     anomaly_conditions: "AnomalyConditions | None" = None
     gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool = True
+    aggregation: str | None = Field(
+        default=None,
+        description="Aggregation function for WINDOW rules: avg, min, max, count, sum",
+    )
+    window_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=3600,
+        description="Sliding window in seconds for WINDOW rules",
+    )
 
 
 class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    rule_type: Literal["threshold", "anomaly", "telemetry_gap"] | None = None
+    rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] | None = None
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
     operator: str | None = None
     threshold: float | None = None
@@ -364,6 +374,8 @@ class AlertRuleUpdate(BaseModel):
     anomaly_conditions: "AnomalyConditions | None" = None
     gap_conditions: "TelemetryGapConditions | None" = None
     enabled: bool | None = None
+    aggregation: str | None = None
+    window_seconds: int | None = Field(default=None, ge=60, le=3600)
 
 
 class RuleCondition(BaseModel):

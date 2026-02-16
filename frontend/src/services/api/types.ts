@@ -173,7 +173,7 @@ export interface AlertRule {
   rule_id: number;
   tenant_id: string;
   name: string;
-  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name: string;
   operator: string;
   threshold: number;
@@ -188,6 +188,8 @@ export interface AlertRule {
   match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
+  aggregation?: "avg" | "min" | "max" | "count" | "sum" | null;
+  window_seconds?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -214,7 +216,7 @@ export interface TelemetryResponse {
 // Alert rule mutation types
 export interface AlertRuleCreate {
   name: string;
-  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name?: string;
   operator?: "GT" | "LT" | "GTE" | "LTE";
   threshold?: number;
@@ -228,12 +230,14 @@ export interface AlertRuleCreate {
   match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
+  aggregation?: "avg" | "min" | "max" | "count" | "sum";
+  window_seconds?: number;
   enabled?: boolean;
 }
 
 export interface AlertRuleUpdate {
   name?: string;
-  rule_type?: "threshold" | "anomaly" | "telemetry_gap";
+  rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name?: string;
   operator?: "GT" | "LT" | "GTE" | "LTE";
   threshold?: number;
@@ -247,6 +251,8 @@ export interface AlertRuleUpdate {
   match_mode?: MatchMode;
   anomaly_conditions?: AnomalyConditions | null;
   gap_conditions?: TelemetryGapConditions | null;
+  aggregation?: "avg" | "min" | "max" | "count" | "sum" | null;
+  window_seconds?: number | null;
   enabled?: boolean;
 }
 

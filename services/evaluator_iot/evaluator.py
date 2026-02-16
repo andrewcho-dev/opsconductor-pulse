@@ -5,6 +5,7 @@ import logging
 import time
 import contextlib
 import uuid
+from collections import deque
 from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
@@ -59,6 +60,10 @@ COUNTERS = {
     "evaluation_errors": 0,
     "last_evaluation_at": None,
 }
+
+# In-memory sliding window buffer for WINDOW rules.
+# Key: (device_id, rule_id) -> deque of (timestamp: float, value: float)
+_window_buffers: dict[tuple[str, str], deque] = {}
 
 # Shared state for LISTEN/NOTIFY wakeups.
 _pending_tenants: set[str] = set()
@@ -411,6 +416,61 @@ def evaluate_threshold(value, operator, threshold):
     return False
 
 
+AGGREGATION_FUNCTIONS = {
+    "avg": lambda values: sum(values) / len(values) if values else None,
+    "min": lambda values: min(values) if values else None,
+    "max": lambda values: max(values) if values else None,
+    "count": lambda values: len(values),
+    "sum": lambda values: sum(values) if values else None,
+}
+
+
+def update_window_buffer(
+    device_id: str,
+    rule_id: str,
+    timestamp: float,
+    value: float,
+    window_seconds: int,
+) -> None:
+    """Append a data point and evict stale entries."""
+    key = (device_id, rule_id)
+    buf = _window_buffers.setdefault(key, deque())
+    buf.append((timestamp, value))
+    cutoff = timestamp - window_seconds
+    while buf and buf[0][0] < cutoff:
+        buf.popleft()
+
+
+def evaluate_window_aggregation(
+    device_id: str,
+    rule_id: str,
+    aggregation: str,
+    operator: str,
+    threshold: float,
+    window_seconds: int,
+) -> bool:
+    """
+    Apply aggregation to the buffered values and compare to threshold.
+    Returns True if condition is met (alert should fire).
+    Returns False if insufficient data or condition not met.
+    """
+    key = (device_id, rule_id)
+    buf = _window_buffers.get(key)
+    if not buf or len(buf) < 2:
+        return False  # need at least 2 data points for meaningful aggregation
+
+    values = [v for _, v in buf]
+    agg_fn = AGGREGATION_FUNCTIONS.get(aggregation)
+    if agg_fn is None:
+        return False
+
+    aggregated_value = agg_fn(values)
+    if aggregated_value is None:
+        return False
+
+    return evaluate_threshold(aggregated_value, operator, threshold)
+
+
 def compute_z_score(value: float, mean: float, stddev: float) -> float | None:
     """Returns Z-score or None if stddev is 0 (no variation)."""
     if stddev == 0:
@@ -493,7 +553,8 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
     rows = await pg_conn.fetch(
         """
         SELECT rule_id, name, rule_type, metric_name, operator, threshold, severity,
-               site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes
+               site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes,
+               aggregation, window_seconds
         FROM alert_rules
         WHERE tenant_id = $1 AND enabled = true
         """,
@@ -1219,6 +1280,92 @@ async def main():
                                 rule_severity=rule_severity,
                                 fingerprint=fp_rule,
                             )
+                            continue
+
+                        if rule_type == "window":
+                            aggregation = rule.get("aggregation")
+                            window_seconds = rule.get("window_seconds")
+                            if not aggregation or not window_seconds:
+                                continue
+
+                            # Get the raw metric value from the latest snapshot
+                            raw_value = latest_metrics_snapshot.get(metric_name)
+                            if raw_value is not None:
+                                try:
+                                    numeric_value = float(raw_value)
+                                except (TypeError, ValueError):
+                                    continue
+                                now_ts_float = time.time()
+                                update_window_buffer(
+                                    device_id,
+                                    str(rule_id),
+                                    now_ts_float,
+                                    numeric_value,
+                                    window_seconds,
+                                )
+
+                            fired = evaluate_window_aggregation(
+                                device_id,
+                                str(rule_id),
+                                aggregation,
+                                operator,
+                                float(threshold),
+                                window_seconds,
+                            )
+                            if not fired:
+                                await close_alert(conn, tenant_id, fp_rule)
+                                continue
+
+                            if await is_silenced(conn, tenant_id, fp_rule):
+                                continue
+                            if await is_in_maintenance(
+                                conn,
+                                tenant_id,
+                                site_id=site_id,
+                                device_type=rule.get("device_type"),
+                            ):
+                                continue
+
+                            # Format human-readable summary
+                            window_display = (
+                                f"{window_seconds // 60}m"
+                                if window_seconds >= 60
+                                else f"{window_seconds}s"
+                            )
+                            op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
+                            summary = (
+                                f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
+                                f"{aggregation}({metric_name}) {op_symbol} {threshold} over {window_display}"
+                            )
+                            alert_id, inserted = await open_or_update_alert(
+                                conn,
+                                tenant_id,
+                                site_id,
+                                device_id,
+                                "WINDOW",
+                                fp_rule,
+                                rule_severity,
+                                1.0,
+                                summary,
+                                {
+                                    "rule_id": rule_id,
+                                    "rule_name": rule["name"],
+                                    "metric_name": metric_name,
+                                    "aggregation": aggregation,
+                                    "window_seconds": window_seconds,
+                                    "operator": operator,
+                                    "threshold": threshold,
+                                },
+                            )
+                            if inserted:
+                                log_event(
+                                    logger,
+                                    "alert created",
+                                    tenant_id=tenant_id,
+                                    device_id=device_id,
+                                    alert_type="WINDOW",
+                                    alert_id=str(alert_id),
+                                )
                             continue
 
                         if rule_type == "anomaly":
