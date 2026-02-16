@@ -2,7 +2,7 @@ import { useAuth } from "@/services/auth/AuthProvider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { LogOut, Sun, Moon, Monitor } from "lucide-react";
+import { LogOut, Sun, Moon, Monitor, Search } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 import { useUIStore } from "@/stores/ui-store";
@@ -57,6 +57,22 @@ export function AppHeader() {
       <div className="flex-1" />
 
       <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="hidden sm:flex items-center gap-2 text-muted-foreground text-xs h-8 px-2"
+          onClick={() =>
+            document.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "k", metaKey: true })
+            )
+          }
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Search...</span>
+          <kbd className="pointer-events-none ml-1 inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <span className="text-xs">⌘</span>K
+          </kbd>
+        </Button>
         <ConnectionStatus />
         <ThemeToggle />
       </div>

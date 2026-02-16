@@ -5,6 +5,7 @@ import { AppHeader } from "./AppHeader";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { SubscriptionBanner } from "./SubscriptionBanner";
 import { Toaster } from "sonner";
+import { CommandPalette } from "@/components/shared/CommandPalette";
 
 export default function AppShell() {
   useWebSocket(); // Connect WebSocket on mount
@@ -22,6 +23,7 @@ export default function AppShell() {
           <Toaster richColors position="bottom-right" />
         </div>
       </div>
+      <CommandPalette />
     </SidebarProvider>
   );
 }
