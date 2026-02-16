@@ -2,12 +2,19 @@ import asyncio
 import json
 import os
 import logging
+import time
 from aiohttp import web
 from datetime import datetime, timezone
 
 import asyncpg
 from shared.audit import init_audit_logger, get_audit_logger
 from shared.logging import configure_logging, log_event
+from shared.metrics import (
+    pulse_queue_depth,
+    pulse_processing_duration_seconds,
+    pulse_db_pool_size,
+    pulse_db_pool_free,
+)
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -61,8 +68,17 @@ async def health_handler(request):
 
 
 async def start_health_server():
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+    async def metrics_handler(request):
+        return web.Response(
+            body=generate_latest(),
+            content_type=CONTENT_TYPE_LATEST.split(";")[0],
+        )
+
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -89,8 +105,17 @@ async def health_handler(request):
 
 
 async def start_health_server():
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+    async def metrics_handler(request):
+        return web.Response(
+            body=generate_latest(),
+            content_type=CONTENT_TYPE_LATEST.split(";")[0],
+        )
+
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -212,6 +237,10 @@ def build_payload(alert: dict) -> dict:
 
 async def dispatch_once(conn: asyncpg.Connection) -> int:
     alerts = await fetch_open_alerts(conn)
+    pulse_queue_depth.labels(
+        service="dispatcher",
+        queue_name="pending_alerts",
+    ).set(len(alerts))
     if not alerts:
         return 0
 
@@ -423,6 +452,7 @@ async def main() -> None:
                 await asyncio.sleep(debounce_seconds)
                 _notify_event.clear()
 
+                dispatch_start = time.monotonic()
                 async with pool.acquire() as conn:
                     await dispatch_once(conn)
                     tenant_rows = await conn.fetch(
@@ -434,6 +464,15 @@ async def main() -> None:
                             tenant_row["tenant_id"],
                             lookback_minutes=5,
                         )
+
+                dispatch_duration = time.monotonic() - dispatch_start
+                pulse_processing_duration_seconds.labels(
+                    service="dispatcher",
+                    operation="dispatch_cycle",
+                ).observe(dispatch_duration)
+
+                pulse_db_pool_size.labels(service="dispatcher").set(pool.get_size())
+                pulse_db_pool_free.labels(service="dispatcher").set(pool.get_idle_size())
             except Exception as exc:
                 logger.error(
                     "dispatch loop failed",

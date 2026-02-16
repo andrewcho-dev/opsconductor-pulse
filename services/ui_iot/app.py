@@ -49,7 +49,12 @@ from shared.audit import init_audit_logger
 from shared.http_client import traced_client
 from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
-from shared.metrics import fleet_active_alerts, fleet_devices_by_status
+from shared.metrics import (
+    fleet_active_alerts,
+    fleet_devices_by_status,
+    pulse_db_pool_size,
+    pulse_db_pool_free,
+)
 
 # PHASE 43 AUDIT — Background Tasks
 #
@@ -488,6 +493,13 @@ async def metrics_endpoint():
             tenant_id=row["tenant_id"],
             status=row["status"],
         ).set(row["cnt"])
+
+    # Report pool stats
+    try:
+        pulse_db_pool_size.labels(service="ui_api").set(p.get_size())
+        pulse_db_pool_free.labels(service="ui_api").set(p.get_idle_size())
+    except Exception:
+        pass
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

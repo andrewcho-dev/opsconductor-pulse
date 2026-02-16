@@ -26,6 +26,12 @@ from shared.audit import init_audit_logger, get_audit_logger
 from shared.http_client import traced_client
 from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
+from shared.metrics import (
+    pulse_queue_depth,
+    pulse_processing_duration_seconds,
+    pulse_db_pool_size,
+    pulse_db_pool_free,
+)
 
 PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
@@ -83,8 +89,17 @@ async def health_handler(request: web.Request) -> web.Response:
 
 
 async def start_health_server() -> None:
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+    async def metrics_handler(request):
+        return web.Response(
+            body=generate_latest(),
+            content_type=CONTENT_TYPE_LATEST.split(";")[0],
+        )
+
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -619,6 +634,11 @@ async def process_job(conn: asyncpg.Connection, job: asyncpg.Record) -> None:
     latency_ms = int((finished_at - started_at).total_seconds() * 1000)
     COUNTERS["last_delivery_at"] = finished_at.isoformat()
 
+    pulse_processing_duration_seconds.labels(
+        service="delivery_worker",
+        operation="delivery_attempt",
+    ).observe(latency_ms / 1000.0)
+
     await record_attempt(
         conn,
         tenant_id,
@@ -951,12 +971,23 @@ async def run_worker() -> None:
                             log_event(logger, "stuck jobs requeued", count=stuck)
 
                         jobs = await fetch_jobs(conn)
+                        pulse_queue_depth.labels(
+                            service="delivery_worker",
+                            queue_name="pending_jobs",
+                        ).set(len(jobs))
                         COUNTERS["jobs_pending"] = len(jobs)
                         for job in jobs:
                             await process_job(conn, job)
                     notification_jobs = await fetch_notification_jobs(conn, WORKER_BATCH_SIZE)
+                    pulse_queue_depth.labels(
+                        service="delivery_worker",
+                        queue_name="pending_notification_jobs",
+                    ).set(len(notification_jobs))
                     for notification_job in notification_jobs:
                         await process_notification_job(conn, notification_job)
+
+                pulse_db_pool_size.labels(service="delivery_worker").set(pool.get_size())
+                pulse_db_pool_free.labels(service="delivery_worker").set(pool.get_idle_size())
                 log_event(logger, "tick_done", tick="delivery_worker")
             except Exception as exc:
                 logger.error(

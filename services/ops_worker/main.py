@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 import uuid
 
 import asyncpg
@@ -12,6 +13,11 @@ from workers.escalation_worker import run_escalation_tick
 from workers.jobs_worker import run_jobs_expiry_tick
 from workers.report_worker import run_report_tick
 from shared.logging import trace_id_var
+from shared.metrics import (
+    pulse_processing_duration_seconds,
+    pulse_db_pool_size,
+    pulse_db_pool_free,
+)
 
 configure_logging("ops_worker")
 logger = logging.getLogger(__name__)
@@ -61,19 +67,38 @@ async def worker_loop(fn, pool_obj, interval: int) -> None:
     while True:
         trace_token = trace_id_var.set(str(uuid.uuid4()))
         try:
-            logger.info("tick_start", extra={"tick": getattr(fn, "__name__", "unknown")})
+            worker_name = getattr(fn, "__name__", "unknown")
+            logger.info("tick_start", extra={"tick": worker_name})
+            tick_start = time.monotonic()
+
             await fn(pool_obj)
-            logger.info("tick_done", extra={"tick": getattr(fn, "__name__", "unknown")})
+
+            tick_duration = time.monotonic() - tick_start
+            pulse_processing_duration_seconds.labels(
+                service="ops_worker",
+                operation=worker_name,
+            ).observe(tick_duration)
+
+            logger.info("tick_done", extra={"tick": worker_name})
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Worker loop failed", extra={"worker": getattr(fn, "__name__", "unknown")})
         finally:
             trace_id_var.reset(trace_token)
+
+        # Report pool stats after each tick
+        pulse_db_pool_size.labels(service="ops_worker").set(pool_obj.get_size())
+        pulse_db_pool_free.labels(service="ops_worker").set(pool_obj.get_idle_size())
         await asyncio.sleep(interval)
 
 
 async def main() -> None:
+    # Expose /metrics on port 8080 for Prometheus scraping.
+    # prometheus_client runs its own small HTTP server in a background thread.
+    from prometheus_client import start_http_server
+
+    start_http_server(8080)
     pool = await get_pool()
     await asyncio.gather(
         run_health_monitor(),

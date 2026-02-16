@@ -76,3 +76,29 @@ pulse_auth_failures_total = Counter(
     "Total authentication failures by reason",
     ["reason"],
 )
+
+# Per-service operational metrics
+pulse_queue_depth = Gauge(
+    "pulse_queue_depth",
+    "Current queue depth for a service processing queue",
+    ["service", "queue_name"],
+)
+
+pulse_processing_duration_seconds = Histogram(
+    "pulse_processing_duration_seconds",
+    "Duration of a processing cycle in seconds",
+    ["service", "operation"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
+)
+
+pulse_db_pool_size = Gauge(
+    "pulse_db_pool_size",
+    "Current total size of the database connection pool",
+    ["service"],
+)
+
+pulse_db_pool_free = Gauge(
+    "pulse_db_pool_free",
+    "Current number of free (idle) connections in the pool",
+    ["service"],
+)

@@ -1,3 +1,4 @@
 asyncpg
 httpx
 python-dotenv
+prometheus-client

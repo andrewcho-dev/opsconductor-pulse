@@ -16,6 +16,10 @@ from shared.metrics import (
     evaluator_rules_evaluated_total,
     evaluator_alerts_created_total,
     evaluator_evaluation_errors_total,
+    pulse_queue_depth,
+    pulse_processing_duration_seconds,
+    pulse_db_pool_size,
+    pulse_db_pool_free,
 )
 
 # PHASE 44 AUDIT — Time-Window Rules
@@ -158,6 +162,7 @@ async def health_handler(request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -1019,6 +1024,7 @@ async def main():
             conn = None
             try:
                 log_event(logger, "tick_start", tick="evaluator")
+                eval_start = time.monotonic()
                 try:
                     await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
                 except asyncio.TimeoutError:
@@ -1036,6 +1042,10 @@ async def main():
 
                 conn = await pool.acquire()
                 rows = await fetch_rollup_timescaledb(conn)
+                pulse_queue_depth.labels(
+                    service="evaluator",
+                    queue_name="devices_to_evaluate",
+                ).set(len(rows))
                 # Group devices by tenant for rule loading
                 tenant_rules_cache = {}
                 tenant_mapping_cache = {}
@@ -1391,6 +1401,15 @@ async def main():
                     last_escalation_check = current_monotonic
                 if conn is not None:
                     await pool.release(conn)
+
+                eval_duration = time.monotonic() - eval_start
+                pulse_processing_duration_seconds.labels(
+                    service="evaluator",
+                    operation="evaluation_cycle",
+                ).observe(eval_duration)
+
+                pulse_db_pool_size.labels(service="evaluator").set(pool.get_size())
+                pulse_db_pool_free.labels(service="evaluator").set(pool.get_idle_size())
                 log_event(logger, "tick_done", tick="evaluator")
             except Exception as exc:
                 if conn is not None:
