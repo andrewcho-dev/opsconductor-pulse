@@ -8,6 +8,7 @@ import {
   Bell,
   BarChart3,
   Shield,
+  ShieldCheck,
   ShieldAlert,
   AlertTriangle,
   Webhook,
@@ -106,6 +107,7 @@ const operatorUsersAuditNav: NavItem[] = [
 const operatorSystemNav: NavItem[] = [
   { label: "All Devices", href: "/operator/devices", icon: Server },
   { label: "System", href: "/operator/system", icon: Activity },
+  { label: "Certificates", href: "/operator/certificates", icon: ShieldCheck },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
 

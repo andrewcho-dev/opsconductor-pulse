@@ -32,6 +32,7 @@ import SystemMetricsPage from "@/features/operator/SystemMetricsPage";
 import NOCPage from "@/features/operator/noc/NOCPage";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
+import CertificateOverviewPage from "@/features/operator/CertificateOverviewPage";
 import UsersPage from "@/features/users/UsersPage";
 import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
@@ -146,6 +147,7 @@ export const router = createBrowserRouter(
             { path: "users/:userId", element: <UserDetailPage /> },
             { path: "subscriptions", element: <SubscriptionsPage /> },
             { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
+            { path: "certificates", element: <CertificateOverviewPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "system-metrics", element: <SystemMetricsPage /> },
             { path: "noc", element: <NOCPage /> },
