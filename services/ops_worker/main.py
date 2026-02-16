@@ -9,6 +9,7 @@ from health_monitor import run_health_monitor
 from metrics_collector import run_metrics_collector
 from shared.logging import configure_logging
 from workers.commands_worker import run_commands_expiry_tick
+from workers.certificate_worker import run_certificate_tick
 from workers.escalation_worker import run_escalation_tick
 from workers.export_worker import run_export_cleanup, run_export_tick
 from workers.jobs_worker import run_jobs_expiry_tick
@@ -112,6 +113,7 @@ async def main() -> None:
         worker_loop(run_report_tick, pool, interval=86400),
         worker_loop(run_export_tick, pool, interval=5),
         worker_loop(run_export_cleanup, pool, interval=3600),
+        worker_loop(run_certificate_tick, pool, interval=3600),  # hourly: CRL + expiry
         worker_loop(run_ota_campaign_tick, pool, interval=10),   # NEW: OTA rollout
         run_ota_status_listener(pool),                           # NEW: OTA status ingestion
     )

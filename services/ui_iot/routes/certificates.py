@@ -16,6 +16,7 @@ from routes.customer import *  # noqa: F401,F403
 # Path to Device CA cert and key for signing operations
 DEVICE_CA_CERT_PATH = os.getenv("DEVICE_CA_CERT_PATH", "/mosquitto/certs/device-ca.crt")
 DEVICE_CA_KEY_PATH = os.getenv("DEVICE_CA_KEY_PATH", "/mosquitto/certs/device-ca.key")
+ROTATION_GRACE_HOURS = int(os.getenv("ROTATION_GRACE_HOURS", "24"))
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -71,6 +72,97 @@ class RevokeRequest(BaseModel):
 class CertGenerateRequest(BaseModel):
     validity_days: int = Field(default=365, ge=1, le=3650)
 
+
+class RotateRequest(BaseModel):
+    validity_days: int = Field(default=365, ge=1, le=3650)
+    revoke_old_after_hours: int | None = Field(default=None, ge=1, le=720)
+
+
+def _load_device_ca() -> tuple[object, x509.Certificate, bytes]:
+    try:
+        ca_key_pem = open(DEVICE_CA_KEY_PATH, "rb").read()
+        ca_cert_pem = open(DEVICE_CA_CERT_PATH, "rb").read()
+        ca_key = serialization.load_pem_private_key(
+            ca_key_pem,
+            password=None,
+            backend=default_backend(),
+        )
+        ca_cert = x509.load_pem_x509_certificate(ca_cert_pem, default_backend())
+        return ca_key, ca_cert, ca_cert_pem
+    except FileNotFoundError:
+        raise HTTPException(503, "Device CA not configured")
+
+
+def _generate_signed_device_certificate(
+    tenant_id: str,
+    device_id: str,
+    validity_days: int,
+    ca_key,
+    ca_cert: x509.Certificate,
+) -> tuple[str, str, str, str, str]:
+    """Return (cn, cert_pem, key_pem, fingerprint_hex, serial_hex)."""
+    device_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend(),
+    )
+
+    cn = f"{tenant_id}/{device_id}"
+    now = datetime.now(timezone.utc)
+    not_after = now + timedelta(days=validity_days)
+
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "OpsConductor Pulse"),
+        ]
+    )
+
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(ca_cert.subject)
+        .public_key(device_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(not_after)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                key_encipherment=True,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]),
+            critical=False,
+        )
+    )
+
+    device_cert = builder.sign(
+        private_key=ca_key,
+        algorithm=hashes.SHA256(),
+        backend=default_backend(),
+    )
+
+    cert_pem = device_cert.public_bytes(serialization.Encoding.PEM).decode()
+    key_pem = device_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+
+    fingerprint = device_cert.fingerprint(hashes.SHA256()).hex()
+    serial_hex = format(device_cert.serial_number, "x")
+    return cn, cert_pem, key_pem, fingerprint, serial_hex
 
 @router.get("/certificates")
 async def list_certificates(
@@ -283,81 +375,18 @@ async def generate_device_certificate(
         if not exists:
             raise HTTPException(404, "Device not found")
 
-    try:
-        ca_key_pem = open(DEVICE_CA_KEY_PATH, "rb").read()
-        ca_cert_pem = open(DEVICE_CA_CERT_PATH, "rb").read()
-        ca_key = serialization.load_pem_private_key(
-            ca_key_pem,
-            password=None,
-            backend=default_backend(),
-        )
-        ca_cert = x509.load_pem_x509_certificate(ca_cert_pem, default_backend())
-    except FileNotFoundError:
-        raise HTTPException(503, "Device CA not configured -- cannot generate certificates")
-
-    device_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend(),
+    ca_key, ca_cert, ca_cert_pem = _load_device_ca()
+    cn, cert_pem, key_pem, fingerprint, serial_hex = _generate_signed_device_certificate(
+        tenant_id=tenant_id,
+        device_id=device_id,
+        validity_days=body.validity_days,
+        ca_key=ca_key,
+        ca_cert=ca_cert,
     )
-
-    cn = f"{tenant_id}/{device_id}"
-    now = datetime.now(timezone.utc)
-    not_after = now + timedelta(days=body.validity_days)
-
-    subject = x509.Name(
-        [
-            x509.NameAttribute(NameOID.COMMON_NAME, cn),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "OpsConductor Pulse"),
-        ]
-    )
-
-    builder = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(ca_cert.subject)
-        .public_key(device_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now)
-        .not_valid_after(not_after)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                key_encipherment=True,
-                content_commitment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=False,
-                crl_sign=False,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-        .add_extension(
-            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]),
-            critical=False,
-        )
-    )
-
-    device_cert = builder.sign(
-        private_key=ca_key,
-        algorithm=hashes.SHA256(),
-        backend=default_backend(),
-    )
-
-    cert_pem = device_cert.public_bytes(serialization.Encoding.PEM).decode()
-    key_pem = device_key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.TraditionalOpenSSL,
-        serialization.NoEncryption(),
-    ).decode()
-
-    fingerprint = device_cert.fingerprint(hashes.SHA256()).hex()
-    serial_hex = format(device_cert.serial_number, "x")
     issuer_cn = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
     issuer_str = issuer_cn[0].value if issuer_cn else str(ca_cert.subject)
+    now = datetime.now(timezone.utc)
+    not_after = now + timedelta(days=body.validity_days)
 
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -386,4 +415,143 @@ async def generate_device_certificate(
         "ca_cert_pem": ca_cert_pem.decode(),
         "warning": "Save the private key now -- it will NOT be shown again.",
     }
+
+
+@router.post("/devices/{device_id}/certificates/rotate", status_code=201)
+async def rotate_device_certificate(
+    device_id: str,
+    body: RotateRequest = RotateRequest(),
+    pool=Depends(get_db_pool),
+):
+    """
+    Rotate a device's certificate:
+    1. Generate a new certificate
+    2. Old certificates remain ACTIVE for a grace period
+    3. The caller should update the device with the new cert
+    4. Old certs can be revoked manually (or after grace period by operator policy)
+    """
+    tenant_id = get_tenant_id()
+    grace_hours = body.revoke_old_after_hours or ROTATION_GRACE_HOURS
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+            tenant_id,
+            device_id,
+        )
+        if not exists:
+            raise HTTPException(404, "Device not found")
+
+        old_certs = await conn.fetch(
+            """
+            SELECT id, fingerprint_sha256, not_after
+            FROM device_certificates
+            WHERE tenant_id = $1 AND device_id = $2 AND status = 'ACTIVE'
+            ORDER BY created_at DESC
+            """,
+            tenant_id,
+            device_id,
+        )
+
+    ca_key, ca_cert, ca_cert_pem = _load_device_ca()
+    cn, cert_pem, key_pem, fingerprint, serial_hex = _generate_signed_device_certificate(
+        tenant_id=tenant_id,
+        device_id=device_id,
+        validity_days=body.validity_days,
+        ca_key=ca_key,
+        ca_cert=ca_cert,
+    )
+    issuer_cn = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    issuer_str = issuer_cn[0].value if issuer_cn else str(ca_cert.subject)
+    now = datetime.now(timezone.utc)
+    not_after = now + timedelta(days=body.validity_days)
+
+    scheduled_revoke_at = now + timedelta(hours=grace_hours)
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        new_cert_row = await conn.fetchrow(
+            """
+            INSERT INTO device_certificates
+                (tenant_id, device_id, cert_pem, fingerprint_sha256, common_name,
+                 issuer, serial_number, status, not_before, not_after)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', $8, $9)
+            RETURNING id, fingerprint_sha256, common_name, status, not_before, not_after, created_at
+            """,
+            tenant_id,
+            device_id,
+            cert_pem,
+            fingerprint,
+            cn,
+            issuer_str,
+            serial_hex,
+            now,
+            not_after,
+        )
+
+    return {
+        "new_certificate": dict(new_cert_row),
+        "cert_pem": cert_pem,
+        "private_key_pem": key_pem,
+        "ca_cert_pem": ca_cert_pem.decode(),
+        "old_certificates": [
+            {
+                "id": c["id"],
+                "fingerprint": c["fingerprint_sha256"],
+                "status": "ACTIVE (will remain active for grace period)",
+                "scheduled_revoke_at": scheduled_revoke_at.isoformat(),
+            }
+            for c in old_certs
+        ],
+        "grace_period_hours": grace_hours,
+        "warning": "Save the private key now -- it will NOT be shown again. "
+        f"Old certificates will remain active for {grace_hours} hours.",
+    }
+
+
+@router.get("/crl")
+async def get_certificate_revocation_list(pool=Depends(get_db_pool)):
+    """
+    Generate and return a CRL (Certificate Revocation List) in PEM format.
+    Includes all REVOKED certificates, signed by the Device CA.
+    """
+    ca_key, ca_cert, _ = _load_device_ca()
+
+    # CRL must include revoked certs across all tenants -> use pulse_operator to bypass RLS.
+    p = pool
+    async with p.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ROLE pulse_operator")
+            rows = await conn.fetch(
+                """
+                SELECT serial_number, revoked_at
+                FROM device_certificates
+                WHERE status = 'REVOKED' AND revoked_at IS NOT NULL
+                ORDER BY revoked_at
+                """
+            )
+
+    now = datetime.now(timezone.utc)
+    builder = x509.CertificateRevocationListBuilder()
+    builder = builder.issuer_name(ca_cert.subject)
+    builder = builder.last_update(now)
+    builder = builder.next_update(now + timedelta(hours=1))
+
+    for row in rows:
+        serial = int(row["serial_number"], 16)
+        revoked_cert = (
+            x509.RevokedCertificateBuilder()
+            .serial_number(serial)
+            .revocation_date(row["revoked_at"])
+            .build()
+        )
+        builder = builder.add_revoked_certificate(revoked_cert)
+
+    crl = builder.sign(ca_key, hashes.SHA256(), default_backend())
+    crl_pem = crl.public_bytes(serialization.Encoding.PEM).decode()
+
+    return Response(
+        content=crl_pem,
+        media_type="application/x-pem-file",
+        headers={"Content-Disposition": "attachment; filename=device-crl.pem"},
+    )
 

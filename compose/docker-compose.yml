@@ -265,6 +265,10 @@ services:
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
       DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
+      DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
+      DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
+      CRL_OUTPUT_PATH: "/mosquitto/certs/device-crl.pem"
+      CERT_EXPIRY_WARNING_DAYS: "30"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
       - export-data:/tmp/pulse-exports
