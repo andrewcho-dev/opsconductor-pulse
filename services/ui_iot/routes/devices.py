@@ -5,6 +5,7 @@ from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
 from middleware.permissions import require_permission
 from typing import Any, Optional
+from fastapi import Response as FastAPIResponse
 
 from shared.logging import get_logger
 from shared.twin import compute_delta, sync_status
@@ -998,7 +999,11 @@ async def decommission_device(request: Request, device_id: str, pool=Depends(get
 
 
 @router.get("/devices/{device_id}/twin", response_model=TwinResponse)
-async def get_device_twin(device_id: str, pool=Depends(get_db_pool)):
+async def get_device_twin(
+    device_id: str,
+    response: FastAPIResponse,
+    pool=Depends(get_db_pool),
+):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -1022,6 +1027,9 @@ async def get_device_twin(device_id: str, pool=Depends(get_db_pool)):
     desired = _jsonb_to_dict(row["desired_state"])
     reported = _jsonb_to_dict(row["reported_state"])
     shadow_updated_at = row["shadow_updated_at"]
+
+    # Set ETag header with current desired_version
+    response.headers["ETag"] = f'"{row["desired_version"]}"'
     return {
         "device_id": device_id,
         "desired": desired,
@@ -1043,31 +1051,78 @@ async def get_device_twin(device_id: str, pool=Depends(get_db_pool)):
     dependencies=[require_permission("devices.twin.write")],
 )
 async def update_desired_state(
-    device_id: str, body: TwinDesiredUpdate, pool=Depends(get_db_pool)
+    device_id: str,
+    body: TwinDesiredUpdate,
+    request: Request,
+    response: FastAPIResponse,
+    pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
+
+    # Parse If-Match header
+    if_match = request.headers.get("If-Match")
+    if if_match is None:
+        raise HTTPException(
+            status_code=428,
+            detail="If-Match header required. GET the twin first to obtain the current ETag.",
+        )
+
+    # Strip quotes: ETag format is "123" -> 123
+    try:
+        expected_version = int(if_match.strip('"'))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail='If-Match header must contain a valid version number (e.g., "42")',
+        )
+
     async with tenant_connection(pool, tenant_id) as conn:
+        # Conditional update: only succeeds if desired_version matches
         row = await conn.fetchrow(
             """
             UPDATE device_state
             SET desired_state = $1::jsonb,
                 desired_version = desired_version + 1,
                 shadow_updated_at = NOW()
-            WHERE tenant_id = $2 AND device_id = $3
+            WHERE tenant_id = $2
+              AND device_id = $3
+              AND desired_version = $4
             RETURNING device_id, desired_state, desired_version
             """,
             json.dumps(body.desired),
             tenant_id,
             device_id,
+            expected_version,
         )
+
     if row is None:
-        raise HTTPException(status_code=404, detail="Device not found")
+        # Check if device exists at all
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT desired_version FROM device_state WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Device not found")
+
+        # Device exists but version mismatch -> 409 Conflict
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Version conflict. Expected version {expected_version} "
+                f"but current version is {exists}. Refresh and retry."
+            ),
+        )
     await _publish_shadow_desired(
         tenant_id,
         device_id,
         _jsonb_to_dict(row["desired_state"]),
         row["desired_version"],
     )
+
+    # Return new ETag
+    response.headers["ETag"] = f'"{row["desired_version"]}"'
     return {
         "device_id": device_id,
         "desired": _jsonb_to_dict(row["desired_state"]),
@@ -1076,7 +1131,11 @@ async def update_desired_state(
 
 
 @router.get("/devices/{device_id}/twin/delta")
-async def get_twin_delta(device_id: str, pool=Depends(get_db_pool)):
+async def get_twin_delta(
+    device_id: str,
+    response: FastAPIResponse,
+    pool=Depends(get_db_pool),
+):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -1091,6 +1150,7 @@ async def get_twin_delta(device_id: str, pool=Depends(get_db_pool)):
     if row is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
+    response.headers["ETag"] = f'"{row["desired_version"]}"'
     delta = compute_delta(_jsonb_to_dict(row["desired_state"]), _jsonb_to_dict(row["reported_state"]))
     return {
         "device_id": device_id,

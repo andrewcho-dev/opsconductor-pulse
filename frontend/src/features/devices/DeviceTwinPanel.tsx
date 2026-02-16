@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getDeviceTwin, type TwinDocument, updateDesiredState } from "@/services/api/devices";
+import {
+  getDeviceTwin,
+  type TwinDocument,
+  updateDesiredState,
+  ConflictError,
+} from "@/services/api/devices";
 
 interface DeviceTwinPanelProps {
   deviceId: string;
@@ -15,6 +20,7 @@ const STATUS_BADGE: Record<TwinDocument["sync_status"], string> = {
 
 export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
   const [twin, setTwin] = useState<TwinDocument | null>(null);
+  const [etag, setEtag] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -27,6 +33,7 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
     try {
       const data = await getDeviceTwin(deviceId);
       setTwin(data);
+      setEtag(data.etag);
       setDesiredDraft(JSON.stringify(data.desired, null, 2));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load twin";
@@ -45,10 +52,15 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
     setError(null);
     try {
       const parsed = JSON.parse(desiredDraft) as Record<string, unknown>;
-      await updateDesiredState(deviceId, parsed);
+      await updateDesiredState(deviceId, parsed, etag);
       setEditing(false);
       await loadTwin();
     } catch (err) {
+      if (err instanceof ConflictError) {
+        setError("Another user modified this twin. Refresh to see latest.");
+        await loadTwin();
+        return;
+      }
       const message = err instanceof Error ? err.message : "Failed to save desired state";
       setError(message);
     } finally {

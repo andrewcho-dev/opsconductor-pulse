@@ -148,12 +148,60 @@ export async function decommissionDevice(deviceId: string): Promise<void> {
   await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/decommission`, {});
 }
 
-export async function getDeviceTwin(deviceId: string): Promise<TwinDocument> {
-  return apiGet(`/customer/devices/${encodeURIComponent(deviceId)}/twin`);
+export async function getDeviceTwin(
+  deviceId: string
+): Promise<TwinDocument & { etag: string }> {
+  const token = keycloak.token;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(`/customer/devices/${encodeURIComponent(deviceId)}/twin`, {
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load twin: ${res.status}`);
+  }
+  const data = (await res.json()) as TwinDocument;
+  const etag = res.headers.get("ETag") ?? `"${data.desired_version}"`;
+  return { ...data, etag };
 }
 
-export async function updateDesiredState(deviceId: string, desired: TwinDesired): Promise<void> {
-  await apiPatch(`/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, { desired });
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+export async function updateDesiredState(
+  deviceId: string,
+  desired: TwinDesired,
+  etag: string
+): Promise<{ device_id: string; desired: TwinDesired; desired_version: number }> {
+  const token = keycloak.token;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "If-Match": etag,
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(`/customer/devices/${encodeURIComponent(deviceId)}/twin/desired`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ desired }),
+  });
+  if (res.status === 409) {
+    throw new ConflictError("Another user modified this twin. Refresh to see latest.");
+  }
+  if (res.status === 428) {
+    throw new Error("Version header required. Please refresh the twin first.");
+  }
+  if (!res.ok) {
+    throw new Error(`Failed to update twin: ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function sendCommand(
