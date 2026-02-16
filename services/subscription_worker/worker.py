@@ -31,9 +31,9 @@ except ImportError:
         GRACE_HTML_TEMPLATE,
     )
 
-from shared.log import configure_root_logger, get_logger
+from shared.logging import configure_logging, get_logger
 
-configure_root_logger()
+configure_logging("subscription_worker")
 logger = get_logger(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]

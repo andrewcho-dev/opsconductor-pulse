@@ -10,7 +10,7 @@ SITES_COUNT = int(os.getenv("SITES_COUNT", "5"))
 DEVICE_COUNT = int(os.getenv("DEVICE_COUNT", "100"))
 
 PROVISION_API_URL = os.getenv("PROVISION_API_URL", "http://localhost:8081")
-PROVISION_ADMIN_KEY = os.getenv("PROVISION_ADMIN_KEY", "change-me-now")
+PROVISION_ADMIN_KEY = os.environ["PROVISION_ADMIN_KEY"]
 
 
 def generate_devices():

@@ -21,7 +21,7 @@ services:
       POSTGRES_USER: iot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ../data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -48,7 +48,7 @@ services:
       LOG_DISCONNECTIONS: 0
       AUTH_TYPE: scram-sha-256
     ports:
-      - "6432:5432"
+      - "127.0.0.1:6432:5432"
     depends_on:
       postgres:
         condition: service_healthy
@@ -271,8 +271,8 @@ services:
 
   subscription-worker:
     build:
-      context: ../services/subscription_worker
-      dockerfile: Dockerfile
+      context: ../services
+      dockerfile: subscription_worker/Dockerfile
     environment:
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       WORKER_INTERVAL_SECONDS: "3600"
@@ -416,7 +416,7 @@ services:
       ACTIVATION_TTL_MINUTES: "60"
       MQTT_PASSWD_FILE: "/mosquitto/passwd/passwd"
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
@@ -482,7 +482,7 @@ services:
     environment:
       PORT: "9999"
     ports:
-      - "9999:9999"
+      - "127.0.0.1:9999:9999"
     restart: unless-stopped
 
   keycloak:
@@ -508,6 +508,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_SSL: ${SMTP_SSL}
       SMTP_STARTTLS: ${SMTP_STARTTLS}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
     command: start --import-realm --features=organization
     volumes:
       - ./keycloak/realm-pulse.json:/opt/keycloak/data/import/realm-pulse.json

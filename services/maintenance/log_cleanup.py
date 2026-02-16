@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 from typing import Dict
 
 import asyncpg
-from shared.log import configure_root_logger, get_logger
+from shared.logging import configure_logging, get_logger
 
-configure_root_logger()
+configure_logging("maintenance")
 logger = get_logger(__name__)
 
 RETENTION_DAYS: Dict[str, int] = {

@@ -2,17 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir asyncpg httpx
+COPY subscription_worker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY worker.py .
+COPY subscription_worker/*.py ./
+COPY shared/ ./shared/
 
-CMD ["python", "worker.py"]
-FROM python:3.11-slim
-
-WORKDIR /app
-
-RUN pip install asyncpg
-
-COPY worker.py .
-
-CMD ["python", "worker.py"]
+CMD ["python", "/app/worker.py"]
