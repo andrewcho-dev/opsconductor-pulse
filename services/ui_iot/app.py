@@ -27,6 +27,7 @@ from routes.alerts import router as alerts_router
 from routes.metrics import router as metrics_router
 from routes.exports import router as exports_router
 from routes.operator import router as operator_router
+from routes.dashboards import router as dashboards_router
 from routes.system import (
     router as system_router,
 )
@@ -181,6 +182,7 @@ app.include_router(alerts_router)
 app.include_router(metrics_router)
 app.include_router(exports_router)
 app.include_router(customer_router)
+app.include_router(dashboards_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(api_v2_router)
