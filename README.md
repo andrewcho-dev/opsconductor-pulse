@@ -167,7 +167,6 @@ scripts/              # Utility scripts
 | `oncall/` | On-call schedules, rotation layers, override management, timeline |
 | `reports/` | CSV exports, SLA summary, report history |
 | `sites/` | Multi-site management |
-| `integrations/` | Legacy webhook/SNMP/email/MQTT integrations |
 | `subscription/` | Subscription status and renewal |
 | `users/` | Tenant user management (tenant-admin only) |
 | `audit/` | Subscription audit log |
