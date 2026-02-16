@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createJob, type CreateJobPayload } from "@/services/api/jobs";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +14,7 @@ export function CreateJobModal({
   onCreated,
   prefilledDeviceId,
 }: CreateJobModalProps) {
+  const queryClient = useQueryClient();
   const [docType, setDocType] = useState("");
   const [paramsJson, setParamsJson] = useState("{}");
   const [targetType, setTargetType] = useState<"device" | "group" | "all">("device");
@@ -42,6 +44,7 @@ export function CreateJobModal({
       else payload.target_all = true;
 
       await createJob(payload);
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create job");
