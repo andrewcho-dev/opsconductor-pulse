@@ -108,6 +108,7 @@ router = APIRouter(
 
 @router.get("/notification-channels")
 async def list_channels(pool=Depends(get_db_pool)):
+    """List configured notification channels for the tenant."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         rows = await conn.fetch(
@@ -135,6 +136,7 @@ async def list_channels(pool=Depends(get_db_pool)):
 )
 @limiter.limit("20/minute")
 async def create_channel(request: Request, body: ChannelIn, pool=Depends(get_db_pool)):
+    """Create a notification channel for the tenant."""
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -231,6 +233,7 @@ async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_
 )
 @limiter.limit("5/minute")
 async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
+    """Send a test notification for a specific channel."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         channel = await conn.fetchrow(

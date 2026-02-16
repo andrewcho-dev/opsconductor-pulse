@@ -12,6 +12,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from pathlib import Path
 from urllib.parse import urlparse, urlencode
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
@@ -128,7 +129,73 @@ if not ALLOWED_ORIGINS:
             "https://localhost:5173",
         ]
 
-app = FastAPI()
+tags_metadata = [
+    {
+        "name": "devices",
+        "description": "Device management: CRUD, tokens, tags, groups, maintenance windows, device twin, commands",
+    },
+    {
+        "name": "alerts",
+        "description": "Alert management: list, acknowledge, close, silence, alert rules, digest settings",
+    },
+    {
+        "name": "notifications",
+        "description": "Notification channels and routing rules for alert delivery",
+    },
+    {
+        "name": "escalation",
+        "description": "Escalation policies with multi-level notification chains",
+    },
+    {
+        "name": "oncall",
+        "description": "On-call schedules, layers, and override management",
+    },
+    {
+        "name": "exports",
+        "description": "Data exports: device lists, alert history, SLA reports, telemetry CSV",
+    },
+    {
+        "name": "metrics",
+        "description": "Metric catalog, normalized metrics, and metric mappings",
+    },
+    {
+        "name": "jobs",
+        "description": "Scheduled and one-time job management",
+    },
+    {
+        "name": "customer",
+        "description": "Customer tenant operations: sites, subscriptions, fleet summary",
+    },
+    {
+        "name": "operator",
+        "description": "Operator-only: cross-tenant management, tenant CRUD, system settings",
+    },
+    {
+        "name": "system",
+        "description": "System health, metrics, capacity, and error monitoring (operator)",
+    },
+    {
+        "name": "roles",
+        "description": "Role-based access control and permission management",
+    },
+    {
+        "name": "users",
+        "description": "User management for operators and tenant admins",
+    },
+]
+
+app = FastAPI(
+    title="OpsConductor Pulse API",
+    description=(
+        "IoT fleet management platform API. Provides device monitoring, "
+        "alerting, notification delivery, and operational tooling for "
+        "multi-tenant IoT deployments."
+    ),
+    version="1.0.0",
+    openapi_tags=tags_metadata,
+    docs_url=None,  # served conditionally via /docs
+    redoc_url=None,  # served conditionally via /redoc
+)
 app.state.limiter = limiter
 app.add_middleware(
     CORSMiddleware,
@@ -200,6 +267,72 @@ async def legacy_path_redirect(request: Request, call_next):
                 )
 
     return await call_next(request)
+
+
+def _is_dev_mode() -> bool:
+    return os.getenv("MODE", "DEV").upper() == "DEV"
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui(request: Request):
+    """Serve Swagger UI. In PROD, requires operator role."""
+    if not _is_dev_mode():
+        session_token = request.cookies.get("pulse_session")
+        auth_header = request.headers.get("authorization", "")
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        elif session_token:
+            token = session_token
+
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        try:
+            payload = await validate_token(token)
+            realm_access = payload.get("realm_access", {}) or {}
+            roles = set(realm_access.get("roles", []) or [])
+            if not roles.intersection({"operator", "operator-admin"}):
+                raise HTTPException(status_code=403, detail="Operator role required")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="OpsConductor Pulse API - Swagger UI",
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+async def custom_redoc(request: Request):
+    """Serve ReDoc. Available in DEV mode, restricted in PROD."""
+    if not _is_dev_mode():
+        session_token = request.cookies.get("pulse_session")
+        auth_header = request.headers.get("authorization", "")
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        elif session_token:
+            token = session_token
+
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        try:
+            payload = await validate_token(token)
+            realm_access = payload.get("realm_access", {}) or {}
+            roles = set(realm_access.get("roles", []) or [])
+            if not roles.intersection({"operator", "operator-admin"}):
+                raise HTTPException(status_code=403, detail="Operator role required")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title="OpsConductor Pulse API - ReDoc",
+    )
 
 
 app.include_router(devices_router)
@@ -467,7 +600,13 @@ async def shutdown():
 
 @app.get("/api/v1/health")
 async def api_v1_health():
-    return {"status": "ok", "service": "pulse-ui", "api_version": "v1"}
+    return {
+        "status": "ok",
+        "service": "pulse-ui",
+        "api_version": "v1",
+        "docs_url": "/docs",
+        "openapi_url": "/openapi.json",
+    }
 
 
 @app.get("/healthz")
@@ -497,7 +636,12 @@ async def healthz():
         checks["keycloak"] = f"unreachable: {type(exc).__name__}"
 
     overall = "ok" if checks.get("db") == "ok" else "degraded"
-    return {"status": overall, "checks": checks}
+    return {
+        "status": overall,
+        "checks": checks,
+        "api_version": "v1",
+        "openapi_url": "/openapi.json",
+    }
 
 
 @app.get("/metrics", include_in_schema=False)

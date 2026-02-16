@@ -17,6 +17,7 @@ async def delivery_status(
     limit: int = Query(20, ge=1, le=100),
     pool=Depends(get_db_pool),
 ):
+    """List recent notification delivery attempts for the tenant."""
     tenant_id = get_tenant_id()
     try:
         p = pool
@@ -122,6 +123,7 @@ async def export_devices(
     site_id: Optional[str] = Query(None),
     pool=Depends(get_db_pool),
 ):
+    """Export device list as CSV for the tenant."""
     tenant_id = get_tenant_id()
     user = get_user() or {}
     async with tenant_connection(pool, tenant_id) as conn:
@@ -196,6 +198,7 @@ async def export_alerts(
     days: int = Query(7, ge=1, le=365),
     pool=Depends(get_db_pool),
 ):
+    """Export alert history as CSV for the tenant."""
     tenant_id = get_tenant_id()
     user = get_user() or {}
     status_filter = status.upper()

@@ -4,6 +4,7 @@ from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _with_rule_conditions
 from middleware.permissions import require_permission
+from schemas.responses import AlertDetailResponse, AlertListResponse
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -72,7 +73,7 @@ async def put_alert_digest_settings(
     return {"ok": True}
 
 
-@router.get("/alerts")
+@router.get("/alerts", response_model=AlertListResponse)
 @limiter.limit(CUSTOMER_RATE_LIMIT)
 async def list_alerts(
     request: Request,
@@ -82,6 +83,11 @@ async def list_alerts(
     offset: int = Query(0, ge=0),
     pool=Depends(get_db_pool),
 ):
+    """List alerts for the authenticated tenant.
+
+    Filter by status: OPEN, ACKNOWLEDGED, CLOSED, or ALL.
+    Returns paginated results sorted by creation time (newest first).
+    """
     valid = {"OPEN", "ACKNOWLEDGED", "CLOSED", "ALL"}
     status_filter = status.upper()
     if status_filter not in valid:
@@ -173,8 +179,12 @@ async def get_alert_trend(
     }
 
 
-@router.get("/alerts/{alert_id}")
+@router.get("/alerts/{alert_id}", response_model=AlertDetailResponse)
 async def get_alert(alert_id: str, pool=Depends(get_db_pool)):
+    """Get a single alert by ID.
+
+    Returns full alert details including severity, summary, and status history.
+    """
     tenant_id = get_tenant_id()
     try:
         p = pool

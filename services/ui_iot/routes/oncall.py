@@ -74,6 +74,7 @@ async def _fetch_schedule(conn, tenant_id: str, schedule_id: int):
 
 @router.get("/oncall-schedules")
 async def list_schedules(pool=Depends(get_db_pool)):
+    """List on-call schedules for the tenant."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         rows = await conn.fetch(
@@ -100,6 +101,7 @@ async def list_schedules(pool=Depends(get_db_pool)):
 )
 @limiter.limit("20/minute")
 async def create_schedule(request: Request, body: OncallScheduleIn, pool=Depends(get_db_pool)):
+    """Create an on-call schedule with rotation layers."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         async with conn.transaction():
@@ -137,6 +139,7 @@ async def create_schedule(request: Request, body: OncallScheduleIn, pool=Depends
 
 @router.get("/oncall-schedules/{schedule_id}")
 async def get_schedule(schedule_id: int, pool=Depends(get_db_pool)):
+    """Get an on-call schedule by ID."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         schedule = await _fetch_schedule(conn, tenant_id, schedule_id)
@@ -153,6 +156,7 @@ async def get_schedule(schedule_id: int, pool=Depends(get_db_pool)):
 async def update_schedule(
     request: Request, schedule_id: int, body: OncallScheduleIn, pool=Depends(get_db_pool)
 ):
+    """Update an on-call schedule and its layers."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         exists = await conn.fetchval(
@@ -203,6 +207,7 @@ async def update_schedule(
 )
 @limiter.limit("20/minute")
 async def delete_schedule(request: Request, schedule_id: int, pool=Depends(get_db_pool)):
+    """Delete an on-call schedule by ID."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -221,6 +226,7 @@ async def delete_schedule(request: Request, schedule_id: int, pool=Depends(get_d
     dependencies=[require_permission("oncall.layers.write")],
 )
 async def create_layer(schedule_id: int, body: OncallLayerIn, pool=Depends(get_db_pool)):
+    """Create a new rotation layer on an on-call schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         ok = await conn.fetchval(
@@ -255,6 +261,7 @@ async def create_layer(schedule_id: int, body: OncallLayerIn, pool=Depends(get_d
     dependencies=[require_permission("oncall.layers.write")],
 )
 async def update_layer(schedule_id: int, layer_id: int, body: OncallLayerIn, pool=Depends(get_db_pool)):
+    """Update an existing rotation layer on a schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -292,6 +299,7 @@ async def update_layer(schedule_id: int, layer_id: int, body: OncallLayerIn, poo
     dependencies=[require_permission("oncall.layers.write")],
 )
 async def delete_layer(schedule_id: int, layer_id: int, pool=Depends(get_db_pool)):
+    """Delete a rotation layer from a schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -314,6 +322,7 @@ async def delete_layer(schedule_id: int, layer_id: int, pool=Depends(get_db_pool
 
 @router.get("/oncall-schedules/{schedule_id}/overrides")
 async def list_overrides(schedule_id: int, pool=Depends(get_db_pool)):
+    """List on-call overrides for a schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         rows = await conn.fetch(
@@ -336,6 +345,7 @@ async def list_overrides(schedule_id: int, pool=Depends(get_db_pool)):
     dependencies=[require_permission("oncall.overrides.write")],
 )
 async def create_override(schedule_id: int, body: OncallOverrideIn, pool=Depends(get_db_pool)):
+    """Create an override for a schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         ok = await conn.fetchval(
@@ -367,6 +377,7 @@ async def create_override(schedule_id: int, body: OncallOverrideIn, pool=Depends
     dependencies=[require_permission("oncall.overrides.write")],
 )
 async def delete_override(schedule_id: int, override_id: int, pool=Depends(get_db_pool)):
+    """Delete an override from a schedule."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -389,6 +400,7 @@ async def delete_override(schedule_id: int, override_id: int, pool=Depends(get_d
 
 @router.get("/oncall-schedules/{schedule_id}/current")
 async def current_oncall(schedule_id: int, pool=Depends(get_db_pool)):
+    """Get the current on-call responder for a schedule."""
     tenant_id = get_tenant_id()
     now = datetime.now(timezone.utc)
     async with tenant_connection(pool, tenant_id) as conn:
@@ -424,6 +436,7 @@ async def current_oncall(schedule_id: int, pool=Depends(get_db_pool)):
 
 @router.get("/oncall-schedules/{schedule_id}/timeline")
 async def timeline(schedule_id: int, days: int = Query(14, ge=1, le=60), pool=Depends(get_db_pool)):
+    """Get the on-call timeline for the next N days."""
     tenant_id = get_tenant_id()
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days)

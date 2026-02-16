@@ -9,6 +9,7 @@ from fastapi import Query, Response as FastAPIResponse
 
 from shared.logging import get_logger
 from shared.twin import compute_delta, compute_structured_delta, sync_status
+from schemas.responses import DeviceDetailResponse, DeviceListResponse, FleetHealthResponse
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -503,8 +504,12 @@ async def get_device_uptime(
     }
 
 
-@router.get("/fleet/uptime-summary")
+@router.get("/fleet/uptime-summary", response_model=FleetHealthResponse)
 async def get_fleet_uptime_summary(pool=Depends(get_db_pool)):
+    """Fleet-wide uptime summary over the last 24 hours.
+
+    Calculates average uptime percentage across all devices.
+    """
     tenant_id = get_tenant_id()
     range_seconds = UPTIME_RANGES_SECONDS["24h"]
     range_start = datetime.now(timezone.utc) - timedelta(seconds=range_seconds)
@@ -572,7 +577,7 @@ async def get_fleet_uptime_summary(pool=Depends(get_db_pool)):
     }
 
 
-@router.get("/devices")
+@router.get("/devices", response_model=DeviceListResponse)
 @limiter.limit(CUSTOMER_RATE_LIMIT)
 async def list_devices(
     request: Request,
@@ -588,6 +593,11 @@ async def list_devices(
     include_decommissioned: bool = Query(False),
     pool=Depends(get_db_pool),
 ):
+    """List all devices for the authenticated tenant.
+
+    Supports filtering by status, tags, site, and free-text search.
+    Returns paginated results with subscription info.
+    """
     if status is not None and status.upper() not in VALID_DEVICE_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status value")
     status = status.upper() if status else None
@@ -668,6 +678,7 @@ async def get_fleet_summary(pool=Depends(get_db_pool)):
 )
 @limiter.limit("10/minute")
 async def delete_device(request: Request, device_id: str, pool=Depends(get_db_pool)):
+    """Delete a device from the tenant registry (and revoke subscription if present)."""
     tenant_id = get_tenant_id()
     user = get_user()
 
@@ -719,8 +730,12 @@ async def delete_device(request: Request, device_id: str, pool=Depends(get_db_po
     return {"device_id": device_id, "status": "deleted"}
 
 
-@router.get("/devices/{device_id}")
+@router.get("/devices/{device_id}", response_model=DeviceDetailResponse)
 async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
+    """Get detailed device information including recent events and telemetry.
+
+    Returns the device record, last 50 events (24h), and last 120 telemetry points (6h).
+    """
     tenant_id = get_tenant_id()
     try:
         p = pool
@@ -953,6 +968,7 @@ async def export_telemetry_csv(
     dependencies=[require_permission("devices.update")],
 )
 async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_pool)):
+    """Update mutable device fields (name, site, tags, and location metadata)."""
     tenant_id = get_tenant_id()
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:

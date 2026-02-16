@@ -622,6 +622,7 @@ router = APIRouter(
 
 @router.get("/sites", dependencies=[Depends(require_customer)])
 async def list_sites(pool=Depends(get_db_pool)):
+    """List sites for the authenticated tenant with device/alert rollups."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         rows = await conn.fetch(
@@ -655,6 +656,7 @@ async def list_sites(pool=Depends(get_db_pool)):
 
 @router.get("/sites/{site_id}/summary", dependencies=[Depends(require_customer)])
 async def get_site_summary(site_id: str, pool=Depends(get_db_pool)):
+    """Get a site summary including devices and active alerts."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         site = await conn.fetchrow(

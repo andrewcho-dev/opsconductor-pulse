@@ -84,6 +84,7 @@ async def _fetch_policy(conn, tenant_id: str, policy_id: int):
 
 @router.get("/escalation-policies")
 async def list_escalation_policies(pool=Depends(get_db_pool)):
+    """List escalation policies for the tenant."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         policies = await conn.fetch(
@@ -111,6 +112,7 @@ async def list_escalation_policies(pool=Depends(get_db_pool)):
 )
 @limiter.limit("20/minute")
 async def create_escalation_policy(request: Request, body: EscalationPolicyIn, pool=Depends(get_db_pool)):
+    """Create an escalation policy with one or more notification levels."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         async with conn.transaction():
@@ -152,6 +154,7 @@ async def create_escalation_policy(request: Request, body: EscalationPolicyIn, p
 
 @router.get("/escalation-policies/{policy_id}", response_model=EscalationPolicyOut)
 async def get_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
+    """Get a single escalation policy by ID."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         policy = await _fetch_policy(conn, tenant_id, policy_id)
@@ -169,6 +172,7 @@ async def get_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
 async def update_escalation_policy(
     request: Request, policy_id: int, body: EscalationPolicyIn, pool=Depends(get_db_pool)
 ):
+    """Update an escalation policy and its levels."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         exists = await conn.fetchval(
@@ -228,6 +232,7 @@ async def update_escalation_policy(
 )
 @limiter.limit("20/minute")
 async def delete_escalation_policy(request: Request, policy_id: int, pool=Depends(get_db_pool)):
+    """Delete an escalation policy by ID."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         deleted = await conn.execute(
