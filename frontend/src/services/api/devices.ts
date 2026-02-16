@@ -54,11 +54,19 @@ export interface TwinDesired {
   [key: string]: unknown;
 }
 
+export interface StructuredDelta {
+  added: Record<string, unknown>;
+  removed: Record<string, unknown>;
+  changed: Record<string, { old_value: unknown; new_value: unknown }>;
+  unchanged_count: number;
+}
+
 export interface TwinDocument {
   device_id: string;
   desired: TwinDesired;
   reported: Record<string, unknown>;
   delta: Record<string, unknown>;
+  structured_delta?: StructuredDelta;
   desired_version: number;
   reported_version: number;
   sync_status: "synced" | "pending" | "stale";

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   getDeviceTwin,
   type TwinDocument,
+  type StructuredDelta,
   updateDesiredState,
   ConflictError,
 } from "@/services/api/devices";
@@ -17,6 +18,81 @@ const STATUS_BADGE: Record<TwinDocument["sync_status"], string> = {
   pending: "secondary",
   stale: "outline",
 };
+
+function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
+  const hasChanges =
+    Object.keys(delta.added).length > 0 ||
+    Object.keys(delta.removed).length > 0 ||
+    Object.keys(delta.changed).length > 0;
+
+  if (!hasChanges) {
+    return (
+      <div className="rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-800">
+        Twin is in sync ({delta.unchanged_count} key
+        {delta.unchanged_count !== 1 ? "s" : ""} matching)
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {Object.keys(delta.added).length > 0 && (
+        <div className="rounded border border-green-300 bg-green-50 p-2">
+          <div className="mb-1 text-xs font-semibold text-green-800">
+            Added ({Object.keys(delta.added).length})
+          </div>
+          {Object.entries(delta.added).map(([key, value]) => (
+            <div key={key} className="flex items-center gap-2 text-xs text-green-900">
+              <span className="font-mono font-medium">{key}</span>
+              <span className="text-green-600">{JSON.stringify(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {Object.keys(delta.removed).length > 0 && (
+        <div className="rounded border border-red-300 bg-red-50 p-2">
+          <div className="mb-1 text-xs font-semibold text-red-800">
+            Removed ({Object.keys(delta.removed).length})
+          </div>
+          {Object.entries(delta.removed).map(([key, value]) => (
+            <div key={key} className="flex items-center gap-2 text-xs text-red-900">
+              <span className="font-mono font-medium">{key}</span>
+              <span className="text-red-600 line-through">{JSON.stringify(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {Object.keys(delta.changed).length > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-2">
+          <div className="mb-1 text-xs font-semibold text-amber-800">
+            Changed ({Object.keys(delta.changed).length})
+          </div>
+          {Object.entries(delta.changed).map(([key, change]) => {
+            const typed = change as { old_value: unknown; new_value: unknown };
+            return (
+              <div key={key} className="flex items-center gap-2 text-xs text-amber-900">
+                <span className="font-mono font-medium">{key}</span>
+                <span className="text-red-600 line-through">
+                  {JSON.stringify(typed.old_value)}
+                </span>
+                <span className="text-muted-foreground">&rarr;</span>
+                <span className="text-green-700">{JSON.stringify(typed.new_value)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {delta.unchanged_count > 0 && (
+        <div className="text-xs text-muted-foreground">
+          {delta.unchanged_count} key{delta.unchanged_count !== 1 ? "s" : ""} unchanged
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
   const [twin, setTwin] = useState<TwinDocument | null>(null);
@@ -92,10 +168,14 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
         </Button>
       </div>
 
-      {deltaKeys.length > 0 && (
-        <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-          Out of sync: {deltaKeys.join(", ")}
-        </div>
+      {twin.structured_delta ? (
+        <DeltaDiffView delta={twin.structured_delta} />
+      ) : (
+        deltaKeys.length > 0 && (
+          <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+            Out of sync: {deltaKeys.join(", ")}
+          </div>
+        )
       )}
 
       <div className="grid gap-3 md:grid-cols-2">

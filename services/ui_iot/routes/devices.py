@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fastapi import Query, Response as FastAPIResponse
 
 from shared.logging import get_logger
-from shared.twin import compute_delta, sync_status
+from shared.twin import compute_delta, compute_structured_delta, sync_status
 
 router = APIRouter(
     prefix="/customer",
@@ -28,11 +28,19 @@ class TwinDesiredUpdate(BaseModel):
     desired: dict[str, Any]
 
 
+class StructuredDelta(BaseModel):
+    added: dict[str, Any] = {}
+    removed: dict[str, Any] = {}
+    changed: dict[str, Any] = {}
+    unchanged_count: int = 0
+
+
 class TwinResponse(BaseModel):
     device_id: str
     desired: dict[str, Any]
     reported: dict[str, Any]
     delta: dict[str, Any]
+    structured_delta: StructuredDelta | None = None
     desired_version: int
     reported_version: int
     sync_status: str
@@ -1027,6 +1035,7 @@ async def get_device_twin(
     desired = _jsonb_to_dict(row["desired_state"])
     reported = _jsonb_to_dict(row["reported_state"])
     shadow_updated_at = row["shadow_updated_at"]
+    structured_delta = compute_structured_delta(desired, reported)
 
     # Set ETag header with current desired_version
     response.headers["ETag"] = f'"{row["desired_version"]}"'
@@ -1034,7 +1043,8 @@ async def get_device_twin(
         "device_id": device_id,
         "desired": desired,
         "reported": reported,
-        "delta": compute_delta(desired, reported),
+        "delta": compute_delta(desired, reported),  # backward-compatible flat delta
+        "structured_delta": structured_delta,
         "desired_version": row["desired_version"],
         "reported_version": row["reported_version"],
         "sync_status": sync_status(
@@ -1151,13 +1161,25 @@ async def get_twin_delta(
         raise HTTPException(status_code=404, detail="Device not found")
 
     response.headers["ETag"] = f'"{row["desired_version"]}"'
-    delta = compute_delta(_jsonb_to_dict(row["desired_state"]), _jsonb_to_dict(row["reported_state"]))
+    desired = _jsonb_to_dict(row["desired_state"])
+    reported = _jsonb_to_dict(row["reported_state"])
+    structured = compute_structured_delta(desired, reported)
+    delta = compute_delta(desired, reported)
     return {
         "device_id": device_id,
-        "delta": delta,
-        "in_sync": len(delta) == 0,
+        "added": structured["added"],
+        "removed": structured["removed"],
+        "changed": structured["changed"],
+        "unchanged_count": structured["unchanged_count"],
+        "in_sync": (
+            len(structured["added"]) == 0
+            and len(structured["removed"]) == 0
+            and len(structured["changed"]) == 0
+        ),
         "desired_version": row["desired_version"],
         "reported_version": row["reported_version"],
+        # Keep legacy flat delta for backward compatibility
+        "delta": delta,
     }
 
 
