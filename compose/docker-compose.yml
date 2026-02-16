@@ -6,7 +6,7 @@ services:
       - "8883:8883"
       - "9001:9001"
     volumes:
-      - ./mosquitto/mosquitto.tls.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto/acl.conf:/mosquitto/config/acl.conf
       - ./mosquitto/certs:/mosquitto/certs
       - mosquitto-passwd:/mosquitto/passwd
@@ -103,6 +103,7 @@ services:
       FLUSH_INTERVAL_MS: "${FLUSH_INTERVAL_MS:-500}"
       INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-8}"
       INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-100000}"
+      CERT_AUTH_ENABLED: "1"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     expose:
@@ -267,6 +268,7 @@ services:
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
       - export-data:/tmp/pulse-exports
+      - ./mosquitto/certs:/mosquitto/certs
     depends_on:
       postgres:
         condition: service_healthy
@@ -363,7 +365,7 @@ services:
     volumes:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
-      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
       - export-data:/tmp/pulse-exports
     environment:
       SERVICE_NAME: ui_iot
@@ -403,6 +405,8 @@ services:
       API_RATE_LIMIT: "${API_RATE_LIMIT:-100}"
       API_RATE_WINDOW_SECONDS: "${API_RATE_WINDOW_SECONDS:-60}"
       WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"
+      DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
+      DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
     expose:
       - "8080"
     depends_on:

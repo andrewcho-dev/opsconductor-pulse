@@ -45,6 +45,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 AUTO_PROVISION = os.getenv("AUTO_PROVISION", "0") == "1"
 REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
+CERT_AUTH_ENABLED = os.getenv("CERT_AUTH_ENABLED", "0") == "1"
 
 COUNTERS_ENABLED = os.getenv("COUNTERS_ENABLED", "1") == "1"
 SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
@@ -624,6 +625,35 @@ class DeviceSubscriptionCache:
             self._cache.pop(key, None)
 
 
+class CertificateAuthCache:
+    """Cache certificate authentication status to avoid DB lookups on every message."""
+
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 50000):
+        self.ttl = ttl_seconds
+        self.max_size = max_size
+        self._cache: dict[str, dict] = {}  # key = "tenant_id/device_id"
+        self._lock = asyncio.Lock()
+
+    async def get(self, cn: str) -> dict | None:
+        entry = self._cache.get(cn)
+        if entry and time.time() < entry["expires_at"]:
+            return entry
+        return None
+
+    async def put(self, cn: str, has_active_cert: bool) -> None:
+        async with self._lock:
+            if len(self._cache) >= self.max_size:
+                now = time.time()
+                self._cache = {k: v for k, v in self._cache.items() if v["expires_at"] > now}
+            self._cache[cn] = {
+                "has_active_cert": has_active_cert,
+                "expires_at": time.time() + self.ttl,
+            }
+
+    def invalidate(self, cn: str) -> None:
+        self._cache.pop(cn, None)
+
+
 async def auto_provision_device(
     conn: asyncpg.Connection,
     tenant_id: str,
@@ -716,6 +746,7 @@ class Ingestor:
         self._last_bucket_cleanup = 0.0
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
         self.device_subscription_cache = DeviceSubscriptionCache(ttl_seconds=60, max_size=50000)
+        self.cert_auth_cache = CertificateAuthCache(ttl_seconds=300, max_size=50000)
         self.batch_writer: TimescaleBatchWriter | None = None
         self._message_routes_cache: dict[str, list] = {}  # tenant_id -> [route_rows]
         self._routes_cache_ts: dict[str, float] = {}  # tenant_id -> last_refresh_time
@@ -1033,6 +1064,47 @@ class Ingestor:
         elif dest_type == "postgresql":
             return  # Already written by the batch writer
 
+    async def _validate_cert_auth(self, mqtt_username: str, topic_tenant: str, topic_device: str) -> bool:
+        """
+        Validate a certificate-authenticated device.
+        mqtt_username = cert CN = "{tenant_id}/{device_id}"
+        Returns True if auth passes.
+        """
+        if not mqtt_username or "/" not in mqtt_username:
+            return False
+
+        parts = mqtt_username.split("/", 1)
+        if len(parts) != 2:
+            return False
+
+        cert_tenant, cert_device = parts
+
+        if cert_tenant != topic_tenant or cert_device != topic_device:
+            return False
+
+        cached = await self.cert_auth_cache.get(mqtt_username)
+        if cached is not None:
+            return bool(cached.get("has_active_cert"))
+
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            has_cert = await conn.fetchval(
+                """
+                SELECT 1 FROM device_certificates
+                WHERE tenant_id = $1
+                  AND device_id = $2
+                  AND status = 'ACTIVE'
+                  AND not_after > now()
+                LIMIT 1
+                """,
+                cert_tenant,
+                cert_device,
+            )
+
+        result = has_cert is not None
+        await self.cert_auth_cache.put(mqtt_username, result)
+        return result
+
     async def db_worker(self):
         while True:
             topic, payload = await self.queue.get()
@@ -1171,7 +1243,17 @@ class Ingestor:
                     await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "SITE_MISMATCH_REGISTRY_VS_PAYLOAD", payload, event_ts)
                     continue
 
-                if REQUIRE_TOKEN:
+                device_authenticated = False
+
+                # Certificate-based authentication (if enabled)
+                if CERT_AUTH_ENABLED and not device_authenticated:
+                    cn = f"{tenant_id}/{device_id}"
+                    has_active_cert = await self._validate_cert_auth(cn, tenant_id, device_id)
+                    if has_active_cert:
+                        device_authenticated = True
+
+                # Token-based authentication (fallback / legacy)
+                if REQUIRE_TOKEN and not device_authenticated:
                     expected = reg["provision_token_hash"]
                     if expected is None:
                         await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_NOT_SET_IN_REGISTRY", payload, event_ts)
@@ -1182,6 +1264,12 @@ class Ingestor:
                     if token_hash != expected:
                         await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
                         continue
+                    device_authenticated = True
+
+                # If neither cert nor token auth passed (only enforced when tokens are required)
+                if REQUIRE_TOKEN and not device_authenticated:
+                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "AUTH_FAILED", payload, event_ts)
+                    continue
 
                 # Primary write: TimescaleDB (batched)
                 ts = event_ts or utcnow()
