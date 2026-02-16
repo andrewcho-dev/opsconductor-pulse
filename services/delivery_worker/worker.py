@@ -910,6 +910,10 @@ async def deliver_mqtt(integration: dict, job: asyncpg.Record) -> tuple[bool, st
 
 
 async def run_worker() -> None:
+    logger.warning(
+        "DEPRECATED: The delivery_worker service is deprecated and will be removed in Phase 129. "
+        "Notification delivery is being consolidated into the notification_channels pipeline."
+    )
     pool = await get_pool()
     ssrf_strict = MODE == "PROD"
     await start_health_server()

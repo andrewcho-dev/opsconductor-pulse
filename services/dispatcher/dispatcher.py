@@ -414,6 +414,10 @@ async def dispatch_escalated_alerts(
 
 
 async def main() -> None:
+    logger.warning(
+        "DEPRECATED: The dispatcher service is deprecated and will be removed in Phase 129. "
+        "Use notification_channels + notification_routing_rules pipeline instead."
+    )
     pool = await get_pool()
     await start_health_server()
     audit = init_audit_logger(pool, "dispatcher")

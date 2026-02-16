@@ -12,7 +12,15 @@ from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
 from middleware.permissions import require_permission
 from routes.customer import limiter
-from notifications.senders import send_pagerduty, send_slack, send_teams, send_webhook
+from notifications.senders import (
+    send_email,
+    send_mqtt_alert,
+    send_pagerduty,
+    send_slack,
+    send_snmp,
+    send_teams,
+    send_webhook,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +251,9 @@ async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_po
         "severity": 3,
         "device_id": "test-device",
         "site_id": None,
+        "tenant_id": tenant_id,
         "message": "This is a test notification from OpsConductor-Pulse",
+        "summary": "This is a test notification from OpsConductor-Pulse",
         "details": {},
         "triggered_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -265,9 +275,16 @@ async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_po
                 test_alert,
             )
         elif ch["channel_type"] == "email":
-            return {"status": "queued", "message": "Email test queued for immediate delivery"}
-        elif ch["channel_type"] in ("snmp", "mqtt"):
-            return {"status": "queued", "message": f"{ch['channel_type'].upper()} test queued for immediate delivery"}
+            await send_email(
+                smtp_config=cfg.get("smtp", {}),
+                recipients=cfg.get("recipients", {}),
+                alert=test_alert,
+                template=cfg.get("template"),
+            )
+        elif ch["channel_type"] == "snmp":
+            await send_snmp(snmp_config=cfg, alert=test_alert)
+        elif ch["channel_type"] == "mqtt":
+            await send_mqtt_alert(mqtt_config=cfg, alert=test_alert)
         return {"status": "ok", "message": "Test notification sent successfully"}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Test send failed: {str(exc)}")

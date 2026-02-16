@@ -162,6 +162,10 @@ services:
       context: ../services
       dockerfile: dispatcher/Dockerfile
     container_name: iot-dispatcher
+    labels:
+      com.opsconductor.status: "DEPRECATED"
+      com.opsconductor.deprecated-since: "2026-02-16"
+      com.opsconductor.removal-phase: "phase129"
     environment:
       SERVICE_NAME: dispatcher
       PG_HOST: iot-pgbouncer
@@ -197,6 +201,10 @@ services:
       context: ../services
       dockerfile: delivery_worker/Dockerfile
     container_name: iot-delivery-worker
+    labels:
+      com.opsconductor.status: "DEPRECATED"
+      com.opsconductor.deprecated-since: "2026-02-16"
+      com.opsconductor.removal-phase: "phase129"
     environment:
       SERVICE_NAME: delivery_worker
       PG_HOST: iot-pgbouncer
