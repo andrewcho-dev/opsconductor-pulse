@@ -53,6 +53,7 @@ from routes.telemetry_stream import (
     sse_router as telemetry_sse_router,
     status_router as telemetry_status_router,
 )
+from routes.certificates import router as certificates_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
@@ -365,6 +366,7 @@ app.include_router(message_routing_router)
 app.include_router(telemetry_ws_router)
 app.include_router(telemetry_sse_router)
 app.include_router(telemetry_status_router)
+app.include_router(certificates_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")
