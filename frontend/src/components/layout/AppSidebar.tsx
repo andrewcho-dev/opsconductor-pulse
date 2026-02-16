@@ -18,6 +18,7 @@ import {
   Building2,
   CreditCard,
   Users,
+  UserCircle,
   Layers,
   Radio,
   LayoutGrid,
@@ -149,6 +150,7 @@ export function AppSidebar() {
   });
   const openAlertCount = alertData?.total ?? 0;
   const settingsNav: NavItem[] = [
+    { label: "Profile", href: "/settings/profile", icon: UserCircle },
     { label: "Subscription", href: "/subscription", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
     ...(canManageRoles ? [{ label: "Roles", href: "/roles", icon: Shield }] : []),

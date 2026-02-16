@@ -41,6 +41,7 @@ import JobsPage from "@/features/jobs/JobsPage";
 import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
 import FirmwareListPage from "@/features/ota/FirmwareListPage";
+import ProfilePage from "@/features/settings/ProfilePage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { usePermissions } from "@/services/auth";
@@ -114,6 +115,7 @@ export const router = createBrowserRouter(
             { path: "reports", element: <ReportsPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
+            { path: "settings/profile", element: <ProfilePage /> },
           ],
         },
         {
