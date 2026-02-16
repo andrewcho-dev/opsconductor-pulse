@@ -10,6 +10,7 @@ from metrics_collector import run_metrics_collector
 from shared.logging import configure_logging
 from workers.commands_worker import run_commands_expiry_tick
 from workers.escalation_worker import run_escalation_tick
+from workers.export_worker import run_export_cleanup, run_export_tick
 from workers.jobs_worker import run_jobs_expiry_tick
 from workers.ota_worker import run_ota_campaign_tick
 from workers.ota_status_worker import run_ota_status_listener
@@ -109,6 +110,8 @@ async def main() -> None:
         worker_loop(run_jobs_expiry_tick, pool, interval=60),
         worker_loop(run_commands_expiry_tick, pool, interval=60),
         worker_loop(run_report_tick, pool, interval=86400),
+        worker_loop(run_export_tick, pool, interval=5),
+        worker_loop(run_export_cleanup, pool, interval=3600),
         worker_loop(run_ota_campaign_tick, pool, interval=10),   # NEW: OTA rollout
         run_ota_status_listener(pool),                           # NEW: OTA status ingestion
     )

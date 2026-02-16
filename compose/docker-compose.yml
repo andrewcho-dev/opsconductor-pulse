@@ -266,6 +266,7 @@ services:
       DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
+      - export-data:/tmp/pulse-exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -363,6 +364,7 @@ services:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
+      - export-data:/tmp/pulse-exports
     environment:
       SERVICE_NAME: ui_iot
       PG_HOST: iot-pgbouncer
@@ -579,5 +581,6 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  export-data:
   mosquitto-data:
   mosquitto-passwd:

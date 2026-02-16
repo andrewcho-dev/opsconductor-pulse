@@ -1,6 +1,18 @@
 """Data export, reports, audit log, and delivery status routes."""
 
+import json
+import os
+import uuid
+
+from fastapi.responses import FileResponse
+
 from routes.customer import *  # noqa: F401,F403
+from schemas.exports import (
+    ExportCreateRequest,
+    ExportCreateResponse,
+    ExportJobResponse,
+    ExportListResponse,
+)
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -114,6 +126,265 @@ async def get_audit_log(
         "limit": limit,
         "offset": offset
     }
+
+
+# ------ NEW ASYNC EXPORT ENDPOINTS ------
+
+VALID_TIME_RANGES = {"1h", "6h", "24h", "7d", "30d", "90d"}
+
+
+@router.post("/exports", status_code=202, response_model=ExportCreateResponse)
+async def create_export(
+    body: ExportCreateRequest,
+    pool=Depends(get_db_pool),
+):
+    """Create an asynchronous data export job.
+
+    The export is processed in the background. Use the returned export_id
+    to poll for status and download the result when complete.
+
+    Supported export types:
+    - devices: All devices matching filters
+    - alerts: Alert history matching filters
+    - telemetry: Raw telemetry data matching filters
+
+    Supported formats: csv, json
+    """
+    tenant_id = get_tenant_id()
+    user = get_user()
+
+    # Validate time_range if provided
+    if body.filters.time_range and body.filters.time_range not in VALID_TIME_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid time_range. Must be one of: {sorted(VALID_TIME_RANGES)}",
+        )
+
+    # Estimate row count for user feedback
+    estimated_rows = None
+    async with tenant_connection(pool, tenant_id) as conn:
+        if body.export_type == "devices":
+            estimated_rows = await conn.fetchval(
+                "SELECT COUNT(*) FROM device_registry WHERE tenant_id = $1",
+                tenant_id,
+            )
+        elif body.export_type == "alerts":
+            estimated_rows = await conn.fetchval(
+                "SELECT COUNT(*) FROM fleet_alert WHERE tenant_id = $1",
+                tenant_id,
+            )
+        elif body.export_type == "telemetry":
+            # Rough estimate based on time range
+            range_interval = body.filters.time_range or "24h"
+            interval_map = {
+                "1h": "1 hour",
+                "6h": "6 hours",
+                "24h": "24 hours",
+                "7d": "7 days",
+                "30d": "30 days",
+                "90d": "90 days",
+            }
+            pg_interval = interval_map.get(range_interval, "24 hours")
+            estimated_rows = await conn.fetchval(
+                f"""
+                SELECT COUNT(*)
+                FROM telemetry
+                WHERE tenant_id = $1
+                  AND time > NOW() - '{pg_interval}'::interval
+                """,
+                tenant_id,
+            )
+
+        # Insert export job
+        export_id = str(uuid.uuid4())
+        await conn.execute(
+            """
+            INSERT INTO export_jobs
+                (id, tenant_id, export_type, format, filters, status, created_by)
+            VALUES ($1, $2, $3, $4, $5::jsonb, 'PENDING', $6)
+            """,
+            export_id,
+            tenant_id,
+            body.export_type,
+            body.format,
+            json.dumps(body.filters.model_dump(exclude_none=True)),
+            user.get("sub") if user else None,
+        )
+
+        # Store callback_url if provided
+        if body.callback_url:
+            await conn.execute(
+                "UPDATE export_jobs SET callback_url = $1 WHERE id = $2",
+                body.callback_url,
+                export_id,
+            )
+
+    return ExportCreateResponse(
+        export_id=export_id,
+        status="PENDING",
+        estimated_rows=estimated_rows,
+    )
+
+
+@router.get("/exports", response_model=ExportListResponse)
+async def list_exports(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    """List export jobs for the authenticated tenant.
+
+    Returns most recent exports first. Includes status, row count,
+    and download URL for completed exports.
+    """
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, tenant_id, export_type, format, filters, status,
+                   file_size_bytes, row_count, error, callback_url,
+                   created_at, started_at, completed_at, expires_at
+            FROM export_jobs
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            """,
+            tenant_id,
+            limit,
+            offset,
+        )
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM export_jobs WHERE tenant_id = $1",
+            tenant_id,
+        )
+
+    exports = []
+    for row in rows:
+        export = ExportJobResponse(
+            export_id=str(row["id"]),
+            tenant_id=row["tenant_id"],
+            export_type=row["export_type"],
+            format=row["format"],
+            filters=row["filters"] or {},
+            status=row["status"],
+            file_size_bytes=row["file_size_bytes"],
+            row_count=row["row_count"],
+            error=row["error"],
+            download_url=(
+                f"/api/v1/customer/exports/{row['id']}/download"
+                if row["status"] == "COMPLETED"
+                else None
+            ),
+            created_at=row["created_at"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            expires_at=row["expires_at"],
+        )
+        exports.append(export)
+
+    return ExportListResponse(exports=exports, total=total or 0)
+
+
+@router.get("/exports/{export_id}", response_model=ExportJobResponse)
+async def get_export_status(
+    export_id: str,
+    pool=Depends(get_db_pool),
+):
+    """Get the status of an export job.
+
+    Poll this endpoint to check if the export has completed.
+    When status is COMPLETED, the download_url field will be populated.
+    """
+    tenant_id = get_tenant_id()
+    if not validate_uuid(export_id):
+        raise HTTPException(status_code=400, detail="Invalid export_id")
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, tenant_id, export_type, format, filters, status,
+                   file_size_bytes, row_count, error, callback_url,
+                   created_at, started_at, completed_at, expires_at
+            FROM export_jobs
+            WHERE id = $1 AND tenant_id = $2
+            """,
+            export_id,
+            tenant_id,
+        )
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Export job not found")
+
+    return ExportJobResponse(
+        export_id=str(row["id"]),
+        tenant_id=row["tenant_id"],
+        export_type=row["export_type"],
+        format=row["format"],
+        filters=row["filters"] or {},
+        status=row["status"],
+        file_size_bytes=row["file_size_bytes"],
+        row_count=row["row_count"],
+        error=row["error"],
+        download_url=(
+            f"/api/v1/customer/exports/{row['id']}/download"
+            if row["status"] == "COMPLETED"
+            else None
+        ),
+        created_at=row["created_at"],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        expires_at=row["expires_at"],
+    )
+
+
+@router.get("/exports/{export_id}/download")
+async def download_export(
+    export_id: str,
+    pool=Depends(get_db_pool),
+):
+    """Download a completed export file.
+
+    Returns the export data as a streaming response with chunked transfer encoding.
+    The Content-Type header matches the export format (text/csv or application/json).
+    """
+    tenant_id = get_tenant_id()
+    if not validate_uuid(export_id):
+        raise HTTPException(status_code=400, detail="Invalid export_id")
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, export_type, format, status, file_path, row_count
+            FROM export_jobs
+            WHERE id = $1 AND tenant_id = $2
+            """,
+            export_id,
+            tenant_id,
+        )
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Export job not found")
+
+    if row["status"] != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Export is not ready. Current status: {row['status']}",
+        )
+
+    file_path = row["file_path"]
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=410, detail="Export file no longer available")
+
+    export_format = row["format"]
+    media_type = "text/csv" if export_format == "csv" else "application/json"
+    filename = f"{row['export_type']}-export-{export_id[:8]}.{export_format}"
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=filename,
+        headers={"X-Export-Row-Count": str(row["row_count"] or 0)},
+    )
 
 
 @router.get("/export/devices")
