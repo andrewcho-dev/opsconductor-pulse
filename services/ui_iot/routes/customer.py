@@ -340,6 +340,10 @@ class AlertRuleCreate(BaseModel):
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
+    device_group_id: str | None = Field(
+        default=None,
+        description="Scope rule to a single device group",
+    )
     conditions: List["RuleCondition"] | "RuleConditions" | None = None
     match_mode: Literal["all", "any"] = "all"
     anomaly_conditions: "AnomalyConditions | None" = None
@@ -369,6 +373,7 @@ class AlertRuleUpdate(BaseModel):
     description: str | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
+    device_group_id: str | None = None
     conditions: List["RuleCondition"] | "RuleConditions" | None = None
     match_mode: Literal["all", "any"] | None = None
     anomaly_conditions: "AnomalyConditions | None" = None
@@ -532,6 +537,7 @@ def _with_rule_conditions(rule: dict) -> dict:
     result = dict(rule)
     if not result.get("match_mode"):
         result["match_mode"] = "all"
+    result["device_group_id"] = result.get("device_group_id")
     raw_conditions = result.get("conditions")
     if isinstance(raw_conditions, str):
         try:

@@ -638,7 +638,7 @@ async def fetch_tenant_rules(pg_conn, tenant_id):
         """
         SELECT rule_id, name, rule_type, metric_name, operator, threshold, severity,
                site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes,
-               aggregation, window_seconds
+               aggregation, window_seconds, device_group_id
         FROM alert_rules
         WHERE tenant_id = $1 AND enabled = true
         """,
@@ -976,6 +976,33 @@ async def fetch_metric_mappings(pg_conn, tenant_id):
         )
     return mapping_by_normalized
 
+
+# Per-evaluation-cycle cache for device group membership
+_group_member_cache: dict[tuple[str, str], set[str]] = {}
+
+
+async def resolve_group_members(conn, tenant_id: str, group_id: str) -> set[str]:
+    """
+    Return the set of device_ids belonging to a device group.
+    Results are cached per evaluation cycle (cache is cleared at cycle start).
+    """
+    cache_key = (tenant_id, group_id)
+    if cache_key in _group_member_cache:
+        return _group_member_cache[cache_key]
+
+    rows = await conn.fetch(
+        """
+        SELECT device_id
+        FROM device_group_members
+        WHERE tenant_id = $1 AND group_id = $2
+        """,
+        tenant_id,
+        group_id,
+    )
+    members = {row["device_id"] for row in rows}
+    _group_member_cache[cache_key] = members
+    return members
+
 async def fetch_rollup_timescaledb(pg_conn) -> list[dict]:
     """Fetch device rollup data from TimescaleDB telemetry table + device_registry.
 
@@ -1186,6 +1213,7 @@ async def main():
                 _pending_tenants.clear()
 
                 conn = await pool.acquire()
+                _group_member_cache.clear()
                 rows = await fetch_rollup_timescaledb(conn)
                 pulse_queue_depth.labels(
                     service="evaluator",
@@ -1343,6 +1371,16 @@ async def main():
                                 rule["group_ids"],
                             )
                             if not is_member:
+                                continue
+
+                        # Single device group scope: if rule has device_group_id,
+                        # only evaluate devices in that group
+                        device_group_id = rule.get("device_group_id")
+                        if device_group_id:
+                            group_members = await resolve_group_members(
+                                conn, tenant_id, device_group_id
+                            )
+                            if device_id not in group_members:
                                 continue
 
                         fp_rule = f"RULE:{rule_id}:{device_id}"

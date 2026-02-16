@@ -666,7 +666,7 @@ async def fetch_alert_rules(
         """
         SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
                severity, description, site_ids, group_ids, conditions, match_mode,
-               duration_seconds, duration_minutes, aggregation, window_seconds, created_at, updated_at
+               duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
         FROM alert_rules
         WHERE tenant_id = $1
         ORDER BY created_at DESC
@@ -688,7 +688,7 @@ async def fetch_alert_rule(
         """
         SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
                severity, description, site_ids, group_ids, conditions, match_mode,
-               duration_seconds, duration_minutes, aggregation, window_seconds, created_at, updated_at
+               duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
         FROM alert_rules
         WHERE tenant_id = $1 AND rule_id = $2
         """,
@@ -717,6 +717,7 @@ async def create_alert_rule(
     rule_type: str = "threshold",
     aggregation: str | None = None,
     window_seconds: int | None = None,
+    device_group_id: str | None = None,
 ) -> Dict[str, Any]:
     _require_tenant(tenant_id)
     rule_id = str(uuid.uuid4())
@@ -725,11 +726,11 @@ async def create_alert_rule(
         INSERT INTO alert_rules
             (tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
              severity, description, site_ids, group_ids, conditions, match_mode,
-             duration_seconds, duration_minutes, aggregation, window_seconds, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, now(), now())
+             duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, now(), now())
         RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
                   severity, description, site_ids, group_ids, conditions, match_mode,
-                  duration_seconds, duration_minutes, aggregation, window_seconds, created_at, updated_at
+                  duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
         """,
         tenant_id,
         rule_id,
@@ -749,6 +750,7 @@ async def create_alert_rule(
         duration_minutes,
         aggregation,
         window_seconds,
+        device_group_id,
     )
     return dict(row)
 
@@ -773,6 +775,7 @@ async def update_alert_rule(
     rule_type: str | None = None,
     aggregation: str | None = None,
     window_seconds: int | None = None,
+    device_group_id: str | None = None,
 ) -> Dict[str, Any] | None:
     _require_tenant(tenant_id)
 
@@ -844,6 +847,10 @@ async def update_alert_rule(
         sets.append(f"window_seconds = ${idx}")
         params.append(window_seconds)
         idx += 1
+    if device_group_id is not None:
+        sets.append(f"device_group_id = ${idx}")
+        params.append(device_group_id if device_group_id else None)
+        idx += 1
 
     sets.append("updated_at = now()")
 
@@ -852,7 +859,7 @@ async def update_alert_rule(
         + ", ".join(sets)
         + " WHERE tenant_id = $1 AND rule_id = $2 "
         + "RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold, "
-        + "severity, description, site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes, aggregation, window_seconds, created_at, updated_at"
+        + "severity, description, site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at"
     )
     row = await conn.fetchrow(query, *params)
     return dict(row) if row else None

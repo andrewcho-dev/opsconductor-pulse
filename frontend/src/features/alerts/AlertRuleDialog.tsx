@@ -119,6 +119,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   const [windowAggregation, setWindowAggregation] = useState<string>("avg");
   const [windowSeconds, setWindowSeconds] = useState<string>("300"); // 5 min default
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedDeviceGroupId, setSelectedDeviceGroupId] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
@@ -138,6 +139,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setDescription(rule.description ?? "");
       setEnabled(rule.enabled);
       setSelectedGroupIds(rule.group_ids ?? []);
+      setSelectedDeviceGroupId(rule.device_group_id ?? "");
       if (rule.rule_type === "anomaly" && rule.anomaly_conditions) {
         setRuleMode("anomaly");
         setAnomalyMetricName(rule.anomaly_conditions.metric_name);
@@ -202,6 +204,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       setGapMinutes("10");
       setWindowAggregation("avg");
       setWindowSeconds("300");
+      setSelectedDeviceGroupId("");
       setSelectedGroupIds([]);
     }
   }, [open, rule]);
@@ -326,6 +329,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         description: normalizedDescription,
         enabled,
         group_ids: selectedGroupIds.length ? selectedGroupIds : null,
+        device_group_id: selectedDeviceGroupId || null,
       };
       if (ruleMode === "anomaly") {
         payload.rule_type = "anomaly";
@@ -429,6 +433,9 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     if (enabled !== rule.enabled) updates.enabled = enabled;
     if (JSON.stringify(selectedGroupIds) !== JSON.stringify(rule.group_ids ?? [])) {
       updates.group_ids = selectedGroupIds;
+    }
+    if (selectedDeviceGroupId !== (rule.device_group_id ?? "")) {
+      updates.device_group_id = selectedDeviceGroupId || null;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -888,6 +895,29 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
             </div>
           ) : null
           }
+
+          <div className="grid gap-2">
+            <Label>Scope to Device Group</Label>
+            <Select
+              value={selectedDeviceGroupId || "none"}
+              onValueChange={(v) => setSelectedDeviceGroupId(v === "none" ? "" : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All devices (no group filter)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">All devices (no group filter)</SelectItem>
+                {(deviceGroupsResponse?.groups ?? []).map((group: DeviceGroup) => (
+                  <SelectItem key={group.group_id} value={group.group_id}>
+                    {group.name} ({group.member_count ?? 0} devices)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              If set, this rule only evaluates devices in the selected group.
+            </p>
+          </div>
 
           <div className="grid gap-2">
             <Label>Device Groups</Label>

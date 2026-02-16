@@ -494,6 +494,7 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 enabled=body.enabled,
                 aggregation=body.aggregation,
                 window_seconds=body.window_seconds,
+                device_group_id=body.device_group_id,
             )
     except Exception:
         logger.exception("Failed to create alert rule")
@@ -658,6 +659,7 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 enabled=body.enabled,
                 aggregation=body.aggregation,
                 window_seconds=body.window_seconds,
+                device_group_id=body.device_group_id,
             )
     except Exception:
         logger.exception("Failed to update alert rule")

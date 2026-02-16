@@ -193,6 +193,7 @@ export interface AlertRule {
   gap_conditions?: TelemetryGapConditions | null;
   aggregation?: "avg" | "min" | "max" | "count" | "sum" | null;
   window_seconds?: number | null;
+  device_group_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -235,6 +236,7 @@ export interface AlertRuleCreate {
   gap_conditions?: TelemetryGapConditions | null;
   aggregation?: "avg" | "min" | "max" | "count" | "sum";
   window_seconds?: number;
+  device_group_id?: string | null;
   enabled?: boolean;
 }
 
@@ -256,6 +258,7 @@ export interface AlertRuleUpdate {
   gap_conditions?: TelemetryGapConditions | null;
   aggregation?: "avg" | "min" | "max" | "count" | "sum" | null;
   window_seconds?: number | null;
+  device_group_id?: string | null;
   enabled?: boolean;
 }
 
