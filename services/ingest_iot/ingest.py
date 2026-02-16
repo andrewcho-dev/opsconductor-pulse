@@ -754,17 +754,25 @@ class Ingestor:
     async def init_pool(self):
         for attempt in range(60):
             try:
+                async def _init_db_connection(conn: asyncpg.Connection) -> None:
+                    # Avoid passing statement_timeout as a startup parameter (PgBouncer rejects it).
+                    await conn.execute("SET statement_timeout TO 30000")
+
                 if DATABASE_URL:
                     self.pool = await asyncpg.create_pool(
                         dsn=DATABASE_URL,
                         min_size=2,
                         max_size=10,
                         command_timeout=30,
+                        init=_init_db_connection,
                     )
                 else:
                     self.pool = await asyncpg.create_pool(
                         host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-                        min_size=2, max_size=10, command_timeout=30
+                        min_size=2,
+                        max_size=10,
+                        command_timeout=30,
+                        init=_init_db_connection,
                     )
                 return
             except Exception:

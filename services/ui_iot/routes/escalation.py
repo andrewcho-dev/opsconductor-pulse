@@ -111,38 +111,39 @@ async def list_escalation_policies(pool=Depends(get_db_pool)):
 async def create_escalation_policy(body: EscalationPolicyIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
-        if body.is_default:
-            await conn.execute(
-                "UPDATE escalation_policies SET is_default = FALSE, updated_at = NOW() WHERE tenant_id = $1",
-                tenant_id,
-            )
-        row = await conn.fetchrow(
-            """
-            INSERT INTO escalation_policies (tenant_id, name, description, is_default)
-            VALUES ($1, $2, $3, $4)
-            RETURNING policy_id
-            """,
-            tenant_id,
-            body.name.strip(),
-            body.description,
-            body.is_default,
-        )
-        policy_id = row["policy_id"]
-        for level in body.levels:
-            await conn.execute(
-                """
-                INSERT INTO escalation_levels (
-                    policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+        async with conn.transaction():
+            if body.is_default:
+                await conn.execute(
+                    "UPDATE escalation_policies SET is_default = FALSE, updated_at = NOW() WHERE tenant_id = $1",
+                    tenant_id,
                 )
-                VALUES ($1, $2, $3, $4, $5, $6)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO escalation_policies (tenant_id, name, description, is_default)
+                VALUES ($1, $2, $3, $4)
+                RETURNING policy_id
                 """,
-                policy_id,
-                level.level_number,
-                level.delay_minutes,
-                level.notify_email,
-                level.notify_webhook,
-                level.oncall_schedule_id,
+                tenant_id,
+                body.name.strip(),
+                body.description,
+                body.is_default,
             )
+            policy_id = row["policy_id"]
+            for level in body.levels:
+                await conn.execute(
+                    """
+                    INSERT INTO escalation_levels (
+                        policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    policy_id,
+                    level.level_number,
+                    level.delay_minutes,
+                    level.notify_email,
+                    level.notify_webhook,
+                    level.oncall_schedule_id,
+                )
         policy = await _fetch_policy(conn, tenant_id, policy_id)
     return policy
 
@@ -172,44 +173,45 @@ async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, poo
         )
         if not exists:
             raise HTTPException(status_code=404, detail="Escalation policy not found")
-        if body.is_default:
+        async with conn.transaction():
+            if body.is_default:
+                await conn.execute(
+                    """
+                    UPDATE escalation_policies
+                    SET is_default = FALSE, updated_at = NOW()
+                    WHERE tenant_id = $1 AND policy_id <> $2
+                    """,
+                    tenant_id,
+                    policy_id,
+                )
             await conn.execute(
                 """
                 UPDATE escalation_policies
-                SET is_default = FALSE, updated_at = NOW()
-                WHERE tenant_id = $1 AND policy_id <> $2
+                SET name = $3, description = $4, is_default = $5, updated_at = NOW()
+                WHERE tenant_id = $1 AND policy_id = $2
                 """,
                 tenant_id,
                 policy_id,
+                body.name.strip(),
+                body.description,
+                body.is_default,
             )
-        await conn.execute(
-            """
-            UPDATE escalation_policies
-            SET name = $3, description = $4, is_default = $5, updated_at = NOW()
-            WHERE tenant_id = $1 AND policy_id = $2
-            """,
-            tenant_id,
-            policy_id,
-            body.name.strip(),
-            body.description,
-            body.is_default,
-        )
-        await conn.execute("DELETE FROM escalation_levels WHERE policy_id = $1", policy_id)
-        for level in body.levels:
-            await conn.execute(
-                """
-                INSERT INTO escalation_levels (
-                    policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+            await conn.execute("DELETE FROM escalation_levels WHERE policy_id = $1", policy_id)
+            for level in body.levels:
+                await conn.execute(
+                    """
+                    INSERT INTO escalation_levels (
+                        policy_id, level_number, delay_minutes, notify_email, notify_webhook, oncall_schedule_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    policy_id,
+                    level.level_number,
+                    level.delay_minutes,
+                    level.notify_email,
+                    level.notify_webhook,
+                    level.oncall_schedule_id,
                 )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """,
-                policy_id,
-                level.level_number,
-                level.delay_minutes,
-                level.notify_email,
-                level.notify_webhook,
-                level.oncall_schedule_id,
-            )
         policy = await _fetch_policy(conn, tenant_id, policy_id)
     return policy
 

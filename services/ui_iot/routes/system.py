@@ -44,6 +44,11 @@ router = APIRouter(
 _pool: asyncpg.Pool | None = None
 
 
+async def _init_db_connection(conn: asyncpg.Connection) -> None:
+    # Avoid passing statement_timeout as a startup parameter (PgBouncer rejects it).
+    await conn.execute("SET statement_timeout TO 30000")
+
+
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
@@ -55,6 +60,8 @@ async def get_pool() -> asyncpg.Pool:
             password=POSTGRES_PASS,
             min_size=1,
             max_size=5,
+            command_timeout=30,
+            init=_init_db_connection,
         )
     return _pool
 
@@ -62,20 +69,13 @@ async def get_pool() -> asyncpg.Pool:
 async def check_postgres() -> dict:
     start = time.time()
     try:
-        conn = await asyncpg.connect(
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT,
-            database=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASS,
-            timeout=5,
-        )
-        connections = await conn.fetchval(
-            "SELECT count(*) FROM pg_stat_activity WHERE datname = $1",
-            POSTGRES_DB,
-        )
-        max_conn = await conn.fetchval("SHOW max_connections")
-        await conn.close()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            connections = await conn.fetchval(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = $1",
+                POSTGRES_DB,
+            )
+            max_conn = await conn.fetchval("SHOW max_connections")
         latency = int((time.time() - start) * 1000)
         return {
             "status": "healthy",
@@ -770,35 +770,26 @@ async def get_system_errors(
 async def get_postgres_capacity() -> dict:
     """Get PostgreSQL capacity metrics."""
     try:
-        conn = await asyncpg.connect(
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT,
-            database=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASS,
-            timeout=5,
-        )
-
-        db_size = await conn.fetchval("SELECT pg_database_size($1)", POSTGRES_DB)
-        connections = await conn.fetchval(
-            "SELECT count(*) FROM pg_stat_activity WHERE datname = $1",
-            POSTGRES_DB,
-        )
-        max_conn = await conn.fetchval("SHOW max_connections")
-        table_sizes = await conn.fetch(
-            """
-            SELECT
-                schemaname || '.' || relname as table_name,
-                pg_total_relation_size(relid) as total_size,
-                pg_relation_size(relid) as data_size,
-                pg_indexes_size(relid) as index_size
-            FROM pg_catalog.pg_statio_user_tables
-            ORDER BY pg_total_relation_size(relid) DESC
-            LIMIT 10
-            """
-        )
-
-        await conn.close()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            db_size = await conn.fetchval("SELECT pg_database_size($1)", POSTGRES_DB)
+            connections = await conn.fetchval(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = $1",
+                POSTGRES_DB,
+            )
+            max_conn = await conn.fetchval("SHOW max_connections")
+            table_sizes = await conn.fetch(
+                """
+                SELECT
+                    schemaname || '.' || relname as table_name,
+                    pg_total_relation_size(relid) as total_size,
+                    pg_relation_size(relid) as data_size,
+                    pg_indexes_size(relid) as index_size
+                FROM pg_catalog.pg_statio_user_tables
+                ORDER BY pg_total_relation_size(relid) DESC
+                LIMIT 10
+                """
+            )
 
         return {
             "db_size_bytes": db_size,

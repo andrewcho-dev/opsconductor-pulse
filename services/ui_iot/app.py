@@ -227,6 +227,10 @@ background_tasks: list[asyncio.Task] = []
 
 logger = logging.getLogger(__name__)
 
+async def _init_db_connection(conn: asyncpg.Connection) -> None:
+    # Avoid passing statement_timeout as a startup parameter (PgBouncer rejects it).
+    await conn.execute("SET statement_timeout TO 30000")
+
 
 def _secure_cookies_enabled() -> bool:
     return os.getenv("SECURE_COOKIES", "false").lower() == "true"
@@ -290,12 +294,21 @@ async def get_pool():
     global pool
     if pool is None:
         if DATABASE_URL:
-            pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+            pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                min_size=2,
+                max_size=10,
+                command_timeout=30,
+                init=_init_db_connection,
+            )
         else:
             pool = await asyncpg.create_pool(
                 host=PG_HOST, port=PG_PORT, database=PG_DB,
                 user=PG_USER, password=PG_PASS,
-                min_size=2, max_size=10, command_timeout=30
+                min_size=2,
+                max_size=10,
+                command_timeout=30,
+                init=_init_db_connection,
             )
     return pool
 

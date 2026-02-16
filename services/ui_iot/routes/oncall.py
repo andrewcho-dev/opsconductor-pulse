@@ -100,34 +100,35 @@ async def list_schedules(pool=Depends(get_db_pool)):
 async def create_schedule(body: OncallScheduleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO oncall_schedules (tenant_id, name, description, timezone)
-            VALUES ($1, $2, $3, $4)
-            RETURNING schedule_id
-            """,
-            tenant_id,
-            body.name.strip(),
-            body.description,
-            body.timezone,
-        )
-        schedule_id = row["schedule_id"]
-        for layer in body.layers:
-            await conn.execute(
+        async with conn.transaction():
+            row = await conn.fetchrow(
                 """
-                INSERT INTO oncall_layers
-                  (schedule_id, name, rotation_type, shift_duration_hours, handoff_day, handoff_hour, responders, layer_order)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+                INSERT INTO oncall_schedules (tenant_id, name, description, timezone)
+                VALUES ($1, $2, $3, $4)
+                RETURNING schedule_id
                 """,
-                schedule_id,
-                layer.name,
-                layer.rotation_type,
-                layer.shift_duration_hours,
-                layer.handoff_day,
-                layer.handoff_hour,
-                __import__("json").dumps(layer.responders),
-                layer.layer_order,
+                tenant_id,
+                body.name.strip(),
+                body.description,
+                body.timezone,
             )
+            schedule_id = row["schedule_id"]
+            for layer in body.layers:
+                await conn.execute(
+                    """
+                    INSERT INTO oncall_layers
+                      (schedule_id, name, rotation_type, shift_duration_hours, handoff_day, handoff_hour, responders, layer_order)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+                    """,
+                    schedule_id,
+                    layer.name,
+                    layer.rotation_type,
+                    layer.shift_duration_hours,
+                    layer.handoff_day,
+                    layer.handoff_hour,
+                    __import__("json").dumps(layer.responders),
+                    layer.layer_order,
+                )
         schedule = await _fetch_schedule(conn, tenant_id, schedule_id)
     return schedule
 
@@ -156,35 +157,36 @@ async def update_schedule(schedule_id: int, body: OncallScheduleIn, pool=Depends
         )
         if not exists:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        await conn.execute(
-            """
-            UPDATE oncall_schedules
-            SET name = $3, description = $4, timezone = $5, updated_at = NOW()
-            WHERE tenant_id = $1 AND schedule_id = $2
-            """,
-            tenant_id,
-            schedule_id,
-            body.name.strip(),
-            body.description,
-            body.timezone,
-        )
-        await conn.execute("DELETE FROM oncall_layers WHERE schedule_id = $1", schedule_id)
-        for layer in body.layers:
+        async with conn.transaction():
             await conn.execute(
                 """
-                INSERT INTO oncall_layers
-                  (schedule_id, name, rotation_type, shift_duration_hours, handoff_day, handoff_hour, responders, layer_order)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+                UPDATE oncall_schedules
+                SET name = $3, description = $4, timezone = $5, updated_at = NOW()
+                WHERE tenant_id = $1 AND schedule_id = $2
                 """,
+                tenant_id,
                 schedule_id,
-                layer.name,
-                layer.rotation_type,
-                layer.shift_duration_hours,
-                layer.handoff_day,
-                layer.handoff_hour,
-                __import__("json").dumps(layer.responders),
-                layer.layer_order,
+                body.name.strip(),
+                body.description,
+                body.timezone,
             )
+            await conn.execute("DELETE FROM oncall_layers WHERE schedule_id = $1", schedule_id)
+            for layer in body.layers:
+                await conn.execute(
+                    """
+                    INSERT INTO oncall_layers
+                      (schedule_id, name, rotation_type, shift_duration_hours, handoff_day, handoff_hour, responders, layer_order)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+                    """,
+                    schedule_id,
+                    layer.name,
+                    layer.rotation_type,
+                    layer.shift_duration_hours,
+                    layer.handoff_day,
+                    layer.handoff_hour,
+                    __import__("json").dumps(layer.responders),
+                    layer.layer_order,
+                )
         schedule = await _fetch_schedule(conn, tenant_id, schedule_id)
     return schedule
 

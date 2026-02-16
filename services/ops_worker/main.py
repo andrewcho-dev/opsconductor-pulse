@@ -26,11 +26,22 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 _pool: asyncpg.Pool | None = None
 
 
+async def _init_db_connection(conn: asyncpg.Connection) -> None:
+    # Avoid passing statement_timeout as a startup parameter (PgBouncer rejects it).
+    await conn.execute("SET statement_timeout TO 30000")
+
+
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         if DATABASE_URL:
-            _pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+            _pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                min_size=2,
+                max_size=10,
+                command_timeout=30,
+                init=_init_db_connection,
+            )
         else:
             _pool = await asyncpg.create_pool(
                 host=PG_HOST,
@@ -41,6 +52,7 @@ async def get_pool() -> asyncpg.Pool:
                 min_size=2,
                 max_size=10,
                 command_timeout=30,
+                init=_init_db_connection,
             )
     return _pool
 

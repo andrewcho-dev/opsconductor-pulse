@@ -240,30 +240,31 @@ async def rotate_device_token(
             if not exists:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            await conn.execute(
-                """
-                UPDATE device_api_tokens
-                SET revoked_at = now()
-                WHERE tenant_id = $1 AND device_id = $2 AND revoked_at IS NULL
-                """,
-                tenant_id,
-                device_id,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    UPDATE device_api_tokens
+                    SET revoked_at = now()
+                    WHERE tenant_id = $1 AND device_id = $2 AND revoked_at IS NULL
+                    """,
+                    tenant_id,
+                    device_id,
+                )
 
-            client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
-            password = secrets.token_urlsafe(32)
-            token_hash = bcrypt.hash(password)
-            await conn.execute(
-                """
-                INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
-                VALUES ($1, $2, $3, $4, $5)
-                """,
-                tenant_id,
-                device_id,
-                client_id,
-                token_hash,
-                body.label.strip() or "rotated",
-            )
+                client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
+                password = secrets.token_urlsafe(32)
+                token_hash = bcrypt.hash(password)
+                await conn.execute(
+                    """
+                    INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    tenant_id,
+                    device_id,
+                    client_id,
+                    token_hash,
+                    body.label.strip() or "rotated",
+                )
     except HTTPException:
         raise
     except Exception:
@@ -358,37 +359,38 @@ async def import_devices_csv(file: UploadFile = File(...), pool=Depends(get_db_p
             base_id = re.sub(r"[^A-Za-z0-9-]+", "-", name).strip("-").upper() or "DEVICE"
             device_id = f"{base_id}-{uuid.uuid4().hex[:6]}"
             try:
-                await create_device_on_subscription(
-                    conn,
-                    tenant_id,
-                    device_id,
-                    site_id,
-                    subscription_id,
-                    actor_id=user.get("sub") if user else None,
-                )
-
-                if tags:
-                    await conn.executemany(
-                        """
-                        INSERT INTO device_tags (tenant_id, device_id, tag)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (tenant_id, device_id, tag) DO NOTHING
-                        """,
-                        [(tenant_id, device_id, tag) for tag in tags],
+                async with conn.transaction():
+                    await create_device_on_subscription(
+                        conn,
+                        tenant_id,
+                        device_id,
+                        site_id,
+                        subscription_id,
+                        actor_id=user.get("sub") if user else None,
                     )
 
-                client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
-                password = secrets.token_urlsafe(32)
-                await conn.execute(
-                    """
-                    INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
-                    VALUES ($1, $2, $3, $4, 'default')
-                    """,
-                    tenant_id,
-                    device_id,
-                    client_id,
-                    bcrypt.hash(password),
-                )
+                    if tags:
+                        await conn.executemany(
+                            """
+                            INSERT INTO device_tags (tenant_id, device_id, tag)
+                            VALUES ($1, $2, $3)
+                            ON CONFLICT (tenant_id, device_id, tag) DO NOTHING
+                            """,
+                            [(tenant_id, device_id, tag) for tag in tags],
+                        )
+
+                    client_id = f"{tenant_id[:8]}-{device_id[:8]}-{uuid.uuid4().hex[:8]}"
+                    password = secrets.token_urlsafe(32)
+                    await conn.execute(
+                        """
+                        INSERT INTO device_api_tokens (tenant_id, device_id, client_id, token_hash, label)
+                        VALUES ($1, $2, $3, $4, 'default')
+                        """,
+                        tenant_id,
+                        device_id,
+                        client_id,
+                        bcrypt.hash(password),
+                    )
             except Exception as exc:
                 failed += 1
                 results.append(
@@ -655,35 +657,36 @@ async def delete_device(device_id: str, pool=Depends(get_db_pool)):
         if not device:
             raise HTTPException(404, "Device not found")
 
-        await conn.execute(
-            """
-            UPDATE device_registry
-            SET status = 'DELETED'
-            WHERE tenant_id = $1 AND device_id = $2
-            """,
-            tenant_id,
-            device_id,
-        )
-
-        subscription_id = device["subscription_id"]
-        if subscription_id:
+        async with conn.transaction():
             await conn.execute(
                 """
-                UPDATE subscriptions
-                SET active_device_count = GREATEST(0, active_device_count - 1), updated_at = now()
-                WHERE subscription_id = $1
+                UPDATE device_registry
+                SET status = 'DELETED'
+                WHERE tenant_id = $1 AND device_id = $2
                 """,
-                subscription_id,
+                tenant_id,
+                device_id,
             )
 
-        await log_subscription_event(
-            conn,
-            tenant_id,
-            event_type="DEVICE_REMOVED",
-            actor_type="user",
-            actor_id=user.get("sub") if user else None,
-            details={"device_id": device_id, "subscription_id": subscription_id},
-        )
+            subscription_id = device["subscription_id"]
+            if subscription_id:
+                await conn.execute(
+                    """
+                    UPDATE subscriptions
+                    SET active_device_count = GREATEST(0, active_device_count - 1), updated_at = now()
+                    WHERE subscription_id = $1
+                    """,
+                    subscription_id,
+                )
+
+            await log_subscription_event(
+                conn,
+                tenant_id,
+                event_type="DEVICE_REMOVED",
+                actor_type="user",
+                actor_id=user.get("sub") if user else None,
+                details={"device_id": device_id, "subscription_id": subscription_id},
+            )
 
     return {"device_id": device_id, "status": "deleted"}
 
@@ -902,34 +905,35 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
-            row = await conn.fetchrow(
-                f"""
-                UPDATE device_registry
-                SET {", ".join(sets)}
-                WHERE tenant_id = $1 AND device_id = $2
-                RETURNING tenant_id, device_id
-                """,
-                *params,
-            )
-            if not row:
-                raise HTTPException(status_code=404, detail="Device not found")
-
-            if tags_update is not None:
-                normalized_tags = _normalize_tags(tags_update)
-                await conn.execute(
-                    "DELETE FROM device_tags WHERE tenant_id = $1 AND device_id = $2",
-                    tenant_id,
-                    device_id,
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    f"""
+                    UPDATE device_registry
+                    SET {", ".join(sets)}
+                    WHERE tenant_id = $1 AND device_id = $2
+                    RETURNING tenant_id, device_id
+                    """,
+                    *params,
                 )
-                if normalized_tags:
-                    await conn.executemany(
-                        """
-                        INSERT INTO device_tags (tenant_id, device_id, tag)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        [(tenant_id, device_id, tag) for tag in normalized_tags],
+                if not row:
+                    raise HTTPException(status_code=404, detail="Device not found")
+
+                if tags_update is not None:
+                    normalized_tags = _normalize_tags(tags_update)
+                    await conn.execute(
+                        "DELETE FROM device_tags WHERE tenant_id = $1 AND device_id = $2",
+                        tenant_id,
+                        device_id,
                     )
+                    if normalized_tags:
+                        await conn.executemany(
+                            """
+                            INSERT INTO device_tags (tenant_id, device_id, tag)
+                            VALUES ($1, $2, $3)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            [(tenant_id, device_id, tag) for tag in normalized_tags],
+                        )
 
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
