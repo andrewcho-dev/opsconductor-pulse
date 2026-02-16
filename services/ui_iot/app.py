@@ -28,6 +28,7 @@ from routes.metrics import router as metrics_router
 from routes.exports import router as exports_router
 from routes.operator import router as operator_router
 from routes.dashboards import router as dashboards_router
+from routes.analytics import router as analytics_router
 from routes.system import (
     router as system_router,
 )
@@ -186,6 +187,7 @@ app.include_router(dashboards_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(api_v2_router)
+app.include_router(analytics_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
 app.include_router(users_router)

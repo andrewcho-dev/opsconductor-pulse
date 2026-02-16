@@ -43,6 +43,7 @@ import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
 import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import ProfilePage from "@/features/settings/ProfilePage";
+import AnalyticsPage from "@/features/analytics/AnalyticsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { usePermissions } from "@/services/auth";
@@ -115,6 +116,7 @@ export const router = createBrowserRouter(
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
             { path: "ota/firmware", element: <FirmwareListPage /> },
             { path: "reports", element: <ReportsPage /> },
+            { path: "analytics", element: <AnalyticsPage /> },
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "settings/profile", element: <ProfilePage /> },

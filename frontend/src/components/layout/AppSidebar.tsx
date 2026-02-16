@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Cpu,
   Bell,
+  BarChart3,
   Shield,
   ShieldAlert,
   Webhook,
@@ -79,6 +80,7 @@ const customerNotificationsNav: NavItem[] = [
 
 const customerAnalyticsNav: NavItem[] = [
   { label: "Metrics", href: "/metrics", icon: Gauge },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Reports", href: "/reports", icon: ScrollText },
 ];
 
