@@ -1,4 +1,5 @@
 import logging
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -481,8 +482,8 @@ async def add_widget(dashboard_id: int, data: WidgetCreate, pool=Depends(get_db_
             dashboard_id,
             data.widget_type,
             data.title.strip(),
-            data.config,
-            data.position,
+            json.dumps(data.config) if isinstance(data.config, dict) else data.config,
+            json.dumps(data.position) if isinstance(data.position, dict) else data.position,
         )
 
     return {
@@ -536,11 +537,11 @@ async def update_widget(
             idx += 1
         if data.config is not None:
             sets.append(f"config = ${idx}")
-            params.append(data.config)
+            params.append(json.dumps(data.config) if isinstance(data.config, dict) else data.config)
             idx += 1
         if data.position is not None:
             sets.append(f"position = ${idx}")
-            params.append(data.position)
+            params.append(json.dumps(data.position) if isinstance(data.position, dict) else data.position)
             idx += 1
 
         if not sets:
@@ -629,7 +630,7 @@ async def batch_update_layout(
                 SET position = $1, updated_at = NOW()
                 WHERE id = $2 AND dashboard_id = $3
                 """,
-                {"x": item.x, "y": item.y, "w": item.w, "h": item.h},
+                json.dumps({"x": item.x, "y": item.y, "w": item.w, "h": item.h}),
                 item.widget_id,
                 dashboard_id,
             )
@@ -705,8 +706,8 @@ async def bootstrap_default_dashboard(pool=Depends(get_db_pool)):
                 dashboard_id,
                 widget["widget_type"],
                 widget["title"],
-                widget["config"],
-                widget["position"],
+                json.dumps(widget["config"]),
+                json.dumps(widget["position"]),
             )
 
     return {"id": dashboard_id, "created": True}
