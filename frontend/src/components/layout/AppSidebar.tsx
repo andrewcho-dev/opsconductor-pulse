@@ -20,9 +20,7 @@ import {
   Users,
   Layers,
   LayoutGrid,
-  Wand2,
   CalendarOff,
-  ClipboardList,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
@@ -55,27 +53,27 @@ type NavItem = {
 };
 
 const customerFleetNav: NavItem[] = [
-  { label: "Sites", href: "/sites", icon: Building2 },
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Device Groups", href: "/device-groups", icon: Layers },
-  { label: "Onboarding Wizard", href: "/devices/wizard", icon: Wand2 },
+  { label: "Sites", href: "/sites", icon: Building2 },
 ];
 
 const customerMonitoringNav: NavItem[] = [
   { label: "Alerts", href: "/alerts", icon: Bell },
-  { label: "Jobs", href: "/jobs", icon: ClipboardList },
   { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
-  { label: "Escalation", href: "/escalation-policies", icon: ShieldAlert },
-  { label: "Notifications", href: "/notifications", icon: Webhook },
+  { label: "Escalation Policies", href: "/escalation-policies", icon: ShieldAlert },
   { label: "On-Call", href: "/oncall", icon: Users },
-  { label: "Maintenance", href: "/maintenance-windows", icon: CalendarOff },
+  { label: "Maintenance Windows", href: "/maintenance-windows", icon: CalendarOff },
 ];
 
-const customerDataNav: NavItem[] = [
-  { label: "Telemetry / Metrics", href: "/metrics", icon: Gauge },
-  { label: "Reports", href: "/reports", icon: ScrollText },
+const customerNotificationsNav: NavItem[] = [
+  { label: "Channels", href: "/notifications", icon: Webhook },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
-  { label: "Export", href: "/reports", icon: ScrollText },
+];
+
+const customerAnalyticsNav: NavItem[] = [
+  { label: "Metrics", href: "/metrics", icon: Gauge },
+  { label: "Reports", href: "/reports", icon: ScrollText },
 ];
 
 const operatorOverviewNav: NavItem[] = [
@@ -119,8 +117,11 @@ export function AppSidebar() {
   const [monitoringOpen, setMonitoringOpen] = useState(() =>
     readSidebarOpen("sidebar-monitoring", true)
   );
-  const [dataOpen, setDataOpen] = useState(() =>
-    readSidebarOpen("sidebar-data", false)
+  const [notificationsOpen, setNotificationsOpen] = useState(() =>
+    readSidebarOpen("sidebar-notifications", false)
+  );
+  const [analyticsOpen, setAnalyticsOpen] = useState(() =>
+    readSidebarOpen("sidebar-analytics", false)
   );
   const [settingsOpen, setSettingsOpen] = useState(() =>
     readSidebarOpen("sidebar-settings", false)
@@ -148,7 +149,6 @@ export function AppSidebar() {
     { label: "Subscription", href: "/subscription", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
     ...(canManageRoles ? [{ label: "Roles", href: "/roles", icon: Shield }] : []),
-    { label: "Notification Prefs", href: "/notifications", icon: Bell },
   ];
 
   function onToggle(setter: (next: boolean) => void, key: string, next: boolean) {
@@ -299,17 +299,43 @@ export function AppSidebar() {
         {isCustomer && (
           <SidebarGroup>
             <Collapsible
-              open={dataOpen}
-              onOpenChange={(next) => onToggle(setDataOpen, "sidebar-data", next)}
+              open={notificationsOpen}
+              onOpenChange={(next) =>
+                onToggle(setNotificationsOpen, "sidebar-notifications", next)
+              }
             >
               <SidebarGroupLabel asChild>
                 <CollapsibleTrigger className="w-full">
-                  {renderGroupHeader("Data & Integrations", dataOpen)}
+                  {renderGroupHeader("Notifications", notificationsOpen)}
                 </CollapsibleTrigger>
               </SidebarGroupLabel>
               <CollapsibleContent>
                 <SidebarGroupContent>
-                  <SidebarMenu>{customerDataNav.map((item) => renderNavItem(item))}</SidebarMenu>
+                  <SidebarMenu>
+                    {customerNotificationsNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {isCustomer && (
+          <SidebarGroup>
+            <Collapsible
+              open={analyticsOpen}
+              onOpenChange={(next) => onToggle(setAnalyticsOpen, "sidebar-analytics", next)}
+            >
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full">
+                  {renderGroupHeader("Analytics", analyticsOpen)}
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {customerAnalyticsNav.map((item) => renderNavItem(item))}
+                  </SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>
             </Collapsible>
