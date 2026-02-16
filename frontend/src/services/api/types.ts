@@ -150,6 +150,9 @@ export interface Alert {
   acknowledged_at?: string | null;
   escalation_level?: number;
   escalated_at?: string | null;
+  trigger_count?: number;
+  last_triggered_at?: string | null;
+  rule_id?: string | null;
 }
 
 export interface AlertListResponse {

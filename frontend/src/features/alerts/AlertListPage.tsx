@@ -306,10 +306,24 @@ export default function AlertListPage() {
                   </div>
                   <div>
                     <div className="font-medium">{alert.device_id}</div>
-                    <div className="text-xs text-muted-foreground">{alert.alert_type}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {alert.alert_type}
+                      {alert.trigger_count && alert.trigger_count > 1 && (
+                        <Badge variant="secondary" className="ml-2 text-[10px]">
+                          {alert.trigger_count}x
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {formatTimeAgo(alert.created_at)}
+                    {alert.trigger_count &&
+                      alert.trigger_count > 1 &&
+                      alert.last_triggered_at && (
+                        <div className="text-[10px] text-muted-foreground/70">
+                          last: {formatTimeAgo(alert.last_triggered_at)}
+                        </div>
+                      )}
                   </div>
                   <div>
                     <Badge variant="outline">{alert.status}</Badge>
@@ -374,6 +388,16 @@ export default function AlertListPage() {
                           : "—"}
                       </div>
                       <div>Escalation level: {alert.escalation_level ?? 0}</div>
+                      <div>
+                        Triggered: {alert.trigger_count ?? 1} time
+                        {(alert.trigger_count ?? 1) !== 1 ? "s" : ""}
+                      </div>
+                      <div>
+                        Last triggered:{" "}
+                        {alert.last_triggered_at
+                          ? formatTimeAgo(alert.last_triggered_at)
+                          : formatTimeAgo(alert.created_at)}
+                      </div>
                     </div>
                     <div className="mt-3">
                       <div className="mb-1 text-xs text-muted-foreground">Summary</div>

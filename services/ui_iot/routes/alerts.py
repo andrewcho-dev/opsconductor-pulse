@@ -97,7 +97,8 @@ async def list_alerts(
                 SELECT id AS alert_id, tenant_id, created_at, closed_at, device_id, site_id, alert_type,
                        fingerprint, status, severity, confidence, summary, details,
                        silenced_until, acknowledged_by, acknowledged_at,
-                       escalation_level, escalated_at
+                       escalation_level, escalated_at,
+                       trigger_count, last_triggered_at, rule_id
                 FROM fleet_alert
                 WHERE {where}
                 ORDER BY created_at DESC
@@ -132,7 +133,8 @@ async def get_alert(alert_id: str, pool=Depends(get_db_pool)):
             row = await conn.fetchrow(
                 """
                 SELECT id AS alert_id, tenant_id, device_id, site_id, alert_type,
-                       severity, confidence, summary, status, created_at
+                       severity, confidence, summary, status, created_at,
+                       trigger_count, last_triggered_at, rule_id
                 FROM fleet_alert
                 WHERE tenant_id = $1 AND id = $2
                 """,

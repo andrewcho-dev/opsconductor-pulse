@@ -212,6 +212,89 @@ async def close_alert(conn, tenant_id, fingerprint):
     )
 
 
+async def deduplicate_or_create_alert(
+    conn,
+    tenant_id: str,
+    site_id: str,
+    device_id: str,
+    alert_type: str,
+    fingerprint: str,
+    severity: int,
+    confidence: float,
+    summary: str,
+    details: dict,
+    rule_id: str | None = None,
+) -> tuple[int | None, bool]:
+    """
+    Check for an existing open/acknowledged alert for the same device + rule.
+    If found: increment trigger_count and update last_triggered_at, return (id, False).
+    If not found: create a new alert, return (id, True).
+    """
+    if rule_id:
+        existing = await conn.fetchrow(
+            """
+            SELECT id FROM fleet_alert
+            WHERE device_id = $1
+              AND rule_id = $2::uuid
+              AND status IN ('OPEN', 'ACKNOWLEDGED')
+            LIMIT 1
+            """,
+            device_id,
+            rule_id,
+        )
+        if existing:
+            await conn.execute(
+                """
+                UPDATE fleet_alert
+                SET trigger_count = trigger_count + 1,
+                    last_triggered_at = now(),
+                    severity = $2,
+                    summary = $3,
+                    details = $4::jsonb
+                WHERE id = $1
+                """,
+                existing["id"],
+                severity,
+                summary,
+                json.dumps(details),
+            )
+            return existing["id"], False
+
+    # No existing alert -- create new one
+    COUNTERS["alerts_created"] += 1
+    evaluator_alerts_created_total.labels(tenant_id=tenant_id).inc()
+    row = await conn.fetchrow(
+        """
+        INSERT INTO fleet_alert
+            (tenant_id, site_id, device_id, alert_type, fingerprint, status,
+             severity, confidence, summary, details, rule_id, trigger_count, last_triggered_at)
+        VALUES ($1, $2, $3, $4, $5, 'OPEN', $6, $7, $8, $9::jsonb, $10::uuid, 1, now())
+        ON CONFLICT (tenant_id, fingerprint) WHERE (status IN ('OPEN', 'ACKNOWLEDGED'))
+        DO UPDATE SET
+          severity = EXCLUDED.severity,
+          confidence = EXCLUDED.confidence,
+          summary = EXCLUDED.summary,
+          details = EXCLUDED.details,
+          trigger_count = fleet_alert.trigger_count + 1,
+          last_triggered_at = now()
+        RETURNING id, (xmax = 0) AS inserted
+        """,
+        tenant_id,
+        site_id,
+        device_id,
+        alert_type,
+        fingerprint,
+        severity,
+        confidence,
+        summary,
+        json.dumps(details),
+        rule_id,
+    )
+    if row:
+        return row["id"], row["inserted"]
+    return None, False
+
+
 async def is_silenced(conn, tenant_id: str, fingerprint: str) -> bool:
     row = await conn.fetchrow(
         """
@@ -335,7 +418,7 @@ async def maybe_process_telemetry_gap_rule(
             f"{gap_metric} data gap on {device_id}: "
             f"no readings in last {gap_minutes} minutes"
         )
-        await open_or_update_alert(
+        await deduplicate_or_create_alert(
             conn,
             tenant_id,
             site_id,
@@ -351,6 +434,7 @@ async def maybe_process_telemetry_gap_rule(
                 "metric_name": gap_metric,
                 "gap_minutes": gap_minutes,
             },
+            rule_id=str(rule_id),
         )
     else:
         await close_alert(conn, tenant_id, fingerprint)
@@ -1337,7 +1421,7 @@ async def main():
                                 f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
                                 f"{aggregation}({metric_name}) {op_symbol} {threshold} over {window_display}"
                             )
-                            alert_id, inserted = await open_or_update_alert(
+                            alert_id, inserted = await deduplicate_or_create_alert(
                                 conn,
                                 tenant_id,
                                 site_id,
@@ -1356,6 +1440,7 @@ async def main():
                                     "operator": operator,
                                     "threshold": threshold,
                                 },
+                                rule_id=str(rule_id),
                             )
                             if inserted:
                                 log_event(
@@ -1405,7 +1490,7 @@ async def main():
                                 f"value={stats['latest']:.2f}, mean={stats['mean']:.2f}, "
                                 f"stddev={stats['stddev']:.2f}, z={z_score:.2f}"
                             )
-                            await open_or_update_alert(
+                            await deduplicate_or_create_alert(
                                 conn,
                                 tenant_id,
                                 site_id,
@@ -1423,6 +1508,7 @@ async def main():
                                     "z_threshold": z_threshold,
                                     **stats,
                                 },
+                                rule_id=str(rule_id),
                             )
                             continue
 
@@ -1471,7 +1557,7 @@ async def main():
                             f"{site_id}: {device_id} rule '{rule['name']}' triggered "
                             f"({detail_match_mode})"
                         )
-                        alert_id, inserted = await open_or_update_alert(
+                        alert_id, inserted = await deduplicate_or_create_alert(
                             conn,
                             tenant_id,
                             site_id,
@@ -1491,6 +1577,7 @@ async def main():
                                 "match_mode": detail_match_mode,
                                 "conditions": active_conditions,
                             },
+                            rule_id=str(rule_id),
                         )
                         audit = get_audit_logger()
                         if audit and detail_metric and detail_operator and detail_threshold is not None:
