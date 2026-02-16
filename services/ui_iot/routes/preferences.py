@@ -102,9 +102,9 @@ async def get_preferences(request: Request):
             "user_id": row["user_id"],
             "display_name": row["display_name"],
             "timezone": row["timezone"],
-            "notification_prefs": dict(row["notification_prefs"])
-            if row["notification_prefs"]
-            else {},
+            "notification_prefs": json.loads(row["notification_prefs"])
+            if isinstance(row["notification_prefs"], str)
+            else (row["notification_prefs"] or {}),
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
@@ -186,7 +186,9 @@ async def update_preferences(payload: UpdatePreferencesRequest, request: Request
         "user_id": row["user_id"],
         "display_name": row["display_name"],
         "timezone": row["timezone"],
-        "notification_prefs": dict(row["notification_prefs"]) if row["notification_prefs"] else {},
+        "notification_prefs": json.loads(row["notification_prefs"])
+        if isinstance(row["notification_prefs"], str)
+        else (row["notification_prefs"] or {}),
         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         "message": "Preferences saved",
