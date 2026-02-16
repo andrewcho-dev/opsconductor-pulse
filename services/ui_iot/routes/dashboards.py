@@ -28,6 +28,79 @@ WIDGET_TYPES = {
     "health_score",
 }
 
+# Default dashboard template widgets
+DEFAULT_CUSTOMER_WIDGETS = [
+    {
+        "widget_type": "fleet_status",
+        "title": "Fleet Status",
+        "config": {},
+        "position": {"x": 0, "y": 0, "w": 3, "h": 3},
+    },
+    {
+        "widget_type": "device_count",
+        "title": "Total Devices",
+        "config": {},
+        "position": {"x": 3, "y": 0, "w": 2, "h": 1},
+    },
+    {
+        "widget_type": "kpi_tile",
+        "title": "Open Alerts",
+        "config": {"metric": "alert_count", "aggregation": "count", "time_range": "24h"},
+        "position": {"x": 5, "y": 0, "w": 2, "h": 1},
+    },
+    {
+        "widget_type": "kpi_tile",
+        "title": "Fleet Uptime",
+        "config": {"metric": "uptime_pct", "aggregation": "avg", "time_range": "24h"},
+        "position": {"x": 7, "y": 0, "w": 2, "h": 1},
+    },
+    {
+        "widget_type": "alert_feed",
+        "title": "Active Alerts",
+        "config": {"severity_filter": "", "max_items": 20},
+        "position": {"x": 3, "y": 1, "w": 4, "h": 3},
+    },
+    {
+        "widget_type": "table",
+        "title": "Recent Devices",
+        "config": {"limit": 10, "sort_by": "last_seen", "filter_status": ""},
+        "position": {"x": 7, "y": 1, "w": 5, "h": 3},
+    },
+    {
+        "widget_type": "health_score",
+        "title": "Fleet Health",
+        "config": {},
+        "position": {"x": 0, "y": 3, "w": 6, "h": 2},
+    },
+]
+
+DEFAULT_OPERATOR_WIDGETS = [
+    {
+        "widget_type": "kpi_tile",
+        "title": "Total Tenants",
+        "config": {"metric": "tenant_count", "aggregation": "count"},
+        "position": {"x": 0, "y": 0, "w": 2, "h": 1},
+    },
+    {
+        "widget_type": "kpi_tile",
+        "title": "Total Devices",
+        "config": {"metric": "device_count", "aggregation": "count"},
+        "position": {"x": 2, "y": 0, "w": 2, "h": 1},
+    },
+    {
+        "widget_type": "health_score",
+        "title": "System Health",
+        "config": {},
+        "position": {"x": 0, "y": 1, "w": 6, "h": 2},
+    },
+    {
+        "widget_type": "alert_feed",
+        "title": "System Alerts",
+        "config": {"severity_filter": "", "max_items": 30},
+        "position": {"x": 6, "y": 0, "w": 6, "h": 3},
+    },
+]
+
 router = APIRouter(
     prefix="/customer/dashboards",
     tags=["dashboards"],
@@ -49,6 +122,10 @@ class DashboardUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)
     is_default: Optional[bool] = None
+
+
+class DashboardShareUpdate(BaseModel):
+    shared: bool
 
 
 class WidgetCreate(BaseModel):
@@ -294,6 +371,44 @@ async def update_dashboard(dashboard_id: int, data: DashboardUpdate, pool=Depend
     }
 
 
+@router.put("/{dashboard_id}/share")
+async def toggle_share(
+    dashboard_id: int, data: DashboardShareUpdate, pool=Depends(get_db_pool)
+):
+    """Share or unshare a dashboard. Only the owner can share.
+    When shared, user_id is set to NULL (visible to all tenant members).
+    When unshared, user_id is set back to the current user.
+    """
+    tenant_id = get_tenant_id()
+    user = get_user()
+    user_id = user.get("sub", "")
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        existing = await conn.fetchrow(
+            "SELECT id, user_id FROM dashboards WHERE id = $1 AND tenant_id = $2",
+            dashboard_id,
+            tenant_id,
+        )
+        if not existing:
+            raise HTTPException(404, "Dashboard not found")
+
+        # Only the original owner can share/unshare
+        # Simplified: allow share if user_id matches or if user_id is NULL (already shared).
+        if existing["user_id"] is not None and existing["user_id"] != user_id:
+            raise HTTPException(403, "Only the owner can share/unshare this dashboard")
+
+        new_user_id = None if data.shared else user_id
+
+        await conn.execute(
+            "UPDATE dashboards SET user_id = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3",
+            new_user_id,
+            dashboard_id,
+            tenant_id,
+        )
+
+    return {"id": dashboard_id, "is_shared": data.shared}
+
+
 @router.delete("/{dashboard_id}", status_code=204)
 async def delete_dashboard(dashboard_id: int, pool=Depends(get_db_pool)):
     """Delete a dashboard. Only the owner can delete. Cascade deletes widgets."""
@@ -525,4 +640,74 @@ async def batch_update_layout(
         )
 
     return {"ok": True}
+
+
+@router.post("/bootstrap", status_code=201)
+async def bootstrap_default_dashboard(pool=Depends(get_db_pool)):
+    """Create a default dashboard for the current user if they have none.
+    Called by the frontend on first visit.
+    Returns the existing default if one already exists (idempotent).
+    """
+    tenant_id = get_tenant_id()
+    user = get_user()
+    user_id = user.get("sub", "")
+
+    realm_access = user.get("realm_access", {}) or {}
+    roles = set(realm_access.get("roles", []) or [])
+    is_operator = "operator" in roles or "operator-admin" in roles
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        existing = await conn.fetchrow(
+            """
+            SELECT id FROM dashboards
+            WHERE tenant_id = $1 AND user_id = $2
+            LIMIT 1
+            """,
+            tenant_id,
+            user_id,
+        )
+        if existing:
+            return {"id": existing["id"], "created": False}
+
+        shared = await conn.fetchrow(
+            """
+            SELECT id FROM dashboards
+            WHERE tenant_id = $1 AND user_id IS NULL
+            LIMIT 1
+            """,
+            tenant_id,
+        )
+        if shared:
+            return {"id": shared["id"], "created": False}
+
+        template_widgets = DEFAULT_OPERATOR_WIDGETS if is_operator else DEFAULT_CUSTOMER_WIDGETS
+        dashboard_name = "Operator Overview" if is_operator else "Fleet Overview"
+
+        row = await conn.fetchrow(
+            """
+            INSERT INTO dashboards (tenant_id, user_id, name, description, is_default)
+            VALUES ($1, $2, $3, $4, true)
+            RETURNING id
+            """,
+            tenant_id,
+            user_id,
+            dashboard_name,
+            "Default dashboard created automatically",
+        )
+        dashboard_id = row["id"]
+
+        for widget in template_widgets:
+            await conn.execute(
+                """
+                INSERT INTO dashboard_widgets (dashboard_id, widget_type, title, config, position)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                dashboard_id,
+                widget["widget_type"],
+                widget["title"],
+                widget["config"],
+                widget["position"],
+            )
+
+    return {"id": dashboard_id, "created": True}
 

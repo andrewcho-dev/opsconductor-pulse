@@ -126,3 +126,14 @@ export async function batchUpdateLayout(
   return apiPut(`/customer/dashboards/${dashboardId}/layout`, { layout });
 }
 
+export async function toggleDashboardShare(
+  id: number,
+  shared: boolean
+): Promise<{ id: number; is_shared: boolean }> {
+  return apiPut(`/customer/dashboards/${id}/share`, { shared });
+}
+
+export async function bootstrapDashboard(): Promise<{ id: number; created: boolean }> {
+  return apiPost("/customer/dashboards/bootstrap", {});
+}
+
