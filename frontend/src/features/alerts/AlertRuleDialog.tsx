@@ -96,6 +96,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   });
 
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
   const [metricName, setMetricName] = useState("");
   const [operator, setOperator] = useState<RuleOperator>("GT");
   const [threshold, setThreshold] = useState("");
@@ -260,6 +261,11 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!name.trim()) {
+      setNameError("Rule name is required");
+      return;
+    }
+    setNameError("");
     if (ruleMode === "simple" && !metricName.trim()) return;
     if (ruleMode === "anomaly" && !anomalyMetricName.trim()) return;
     if (ruleMode === "gap" && !gapMetricName.trim()) return;
@@ -445,7 +451,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           )}
 
           <div className="grid gap-2">
-            <Label htmlFor="rule-name">Name</Label>
+            <Label htmlFor="rule-name">Name *</Label>
             <Input
               id="rule-name"
               value={name}
@@ -455,6 +461,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
               maxLength={100}
               placeholder="Battery Low"
             />
+            {nameError && <p className="text-sm text-destructive">{nameError}</p>}
           </div>
 
           <div className="grid gap-2">
@@ -494,7 +501,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           {ruleMode === "simple" ? (
             <>
               <div className="grid gap-2">
-                <Label htmlFor="metric-name">Metric Name</Label>
+                <Label htmlFor="metric-name">Metric Name *</Label>
                 <div className="flex items-center gap-2">
                   <Select value={metricName || undefined} onValueChange={setMetricName}>
                     <SelectTrigger id="metric-name" className="w-full" disabled={metricsLoading}>
@@ -603,7 +610,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="threshold">Threshold</Label>
+                <Label htmlFor="threshold">Threshold *</Label>
                 <Input
                   id="threshold"
                   type="number"
@@ -668,7 +675,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           ) : ruleMode === "anomaly" ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <div className="grid gap-2">
-                <Label htmlFor="anomaly-metric-name">Metric Name</Label>
+                <Label htmlFor="anomaly-metric-name">Metric Name *</Label>
                 <Input
                   id="anomaly-metric-name"
                   value={anomalyMetricName}
@@ -719,7 +726,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           ) : (
             <div className="space-y-3 rounded-md border border-border p-3">
               <div className="grid gap-2">
-                <Label htmlFor="gap-metric-name">Metric Name</Label>
+                <Label htmlFor="gap-metric-name">Metric Name *</Label>
                 <Input
                   id="gap-metric-name"
                   value={gapMetricName}
