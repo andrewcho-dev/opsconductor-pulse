@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import {
   listAllCertificates,
-  downloadCaBundle,
+  downloadOperatorCaBundle,
 } from "@/services/api/certificates";
 
 function StatusBadge({ status }: { status: string }) {
@@ -57,7 +57,7 @@ export default function CertificateOverviewPage() {
 
   async function handleDownloadCaBundle() {
     try {
-      const pem = await downloadCaBundle();
+      const pem = await downloadOperatorCaBundle();
       const blob = new Blob([pem], { type: "application/x-pem-file" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
