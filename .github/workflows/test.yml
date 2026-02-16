@@ -74,14 +74,7 @@ jobs:
 
       - name: Lint check
         working-directory: frontend
-        run: npx eslint src/ --max-warnings=0 || true
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-test-results
-          path: test-results/frontend.xml
+        run: npx eslint src/ --max-warnings=0
 
       - name: Upload frontend coverage
         if: always()
@@ -152,7 +145,7 @@ jobs:
       - name: Run database migrations
         run: |
           for f in db/migrations/*.sql; do
-            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f" || true
+            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f"
           done
 
       - name: Run integration tests with coverage
@@ -205,16 +198,13 @@ jobs:
           playwright install chromium
 
       - name: Start services
-        run: |
-          cd compose
-          docker compose up -d
-          cd ..
+        run: docker compose -f compose/docker-compose.yml up -d --wait
 
       - name: Wait for services
         run: |
           echo "Waiting for UI..."
           for i in $(seq 1 30); do
-            curl -sf http://localhost:8080/login && break
+            curl -sf http://localhost:8080/healthz && break
             sleep 5
           done
           echo "Waiting for Keycloak..."
@@ -249,10 +239,8 @@ jobs:
       - name: Collect container logs on failure
         if: failure()
         run: |
-          cd compose
-          docker compose logs ui > ../test-results/ui.log 2>&1
-          docker compose logs keycloak > ../test-results/keycloak.log 2>&1
-          cd ..
+          docker compose -f compose/docker-compose.yml logs ui > test-results/ui.log 2>&1
+          docker compose -f compose/docker-compose.yml logs keycloak > test-results/keycloak.log 2>&1
 
       - name: Upload container logs on failure
         if: failure()
@@ -263,10 +251,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          cd compose
-          docker compose down -v
-          cd ..
+        run: docker compose -f compose/docker-compose.yml down -v
 
   lint:
     name: Lint
@@ -347,7 +332,7 @@ jobs:
       - name: Run database migrations
         run: |
           for f in db/migrations/*.sql; do
-            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f" || true
+            PGPASSWORD=iot_dev psql -h localhost -U iot -d iotcloud_test -f "$f"
           done
 
       - name: Run benchmarks

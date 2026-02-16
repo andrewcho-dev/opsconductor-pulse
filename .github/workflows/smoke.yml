@@ -26,6 +26,12 @@ jobs:
       - name: Start compose stack
         run: docker compose -f compose/docker-compose.yml up -d --wait
         timeout-minutes: 5
+        env:
+          POSTGRES_PASSWORD: iot_dev
+          PG_PASS: iot_dev
+          KEYCLOAK_ADMIN_PASSWORD: admin_dev
+          KEYCLOAK_CLIENT_SECRET: test-secret
+          MQTT_ADMIN_PASSWORD: test-mqtt
 
       - name: Wait for services healthy
         run: |
