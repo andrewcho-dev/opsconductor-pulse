@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, require_customer, get_tenant_id
+from middleware.permissions import require_permission
 from db.pool import tenant_connection
 from dependencies import get_db_pool
 
@@ -101,7 +102,12 @@ async def list_escalation_policies(pool=Depends(get_db_pool)):
     return {"policies": result}
 
 
-@router.post("/escalation-policies", response_model=EscalationPolicyOut, status_code=201)
+@router.post(
+    "/escalation-policies",
+    response_model=EscalationPolicyOut,
+    status_code=201,
+    dependencies=[require_permission("escalation.create")],
+)
 async def create_escalation_policy(body: EscalationPolicyIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -151,7 +157,11 @@ async def get_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
     return policy
 
 
-@router.put("/escalation-policies/{policy_id}", response_model=EscalationPolicyOut)
+@router.put(
+    "/escalation-policies/{policy_id}",
+    response_model=EscalationPolicyOut,
+    dependencies=[require_permission("escalation.update")],
+)
 async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -204,7 +214,11 @@ async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, poo
     return policy
 
 
-@router.delete("/escalation-policies/{policy_id}", status_code=204)
+@router.delete(
+    "/escalation-policies/{policy_id}",
+    status_code=204,
+    dependencies=[require_permission("escalation.delete")],
+)
 async def delete_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:

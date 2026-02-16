@@ -3,6 +3,7 @@
 from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _with_rule_conditions
+from middleware.permissions import require_permission
 
 router = APIRouter(
     prefix="/customer",
@@ -40,7 +41,10 @@ async def get_alert_digest_settings(pool=Depends(get_db_pool)):
     }
 
 
-@router.put("/alert-digest-settings")
+@router.put(
+    "/alert-digest-settings",
+    dependencies=[require_permission("alerts.digest.write")],
+)
 async def put_alert_digest_settings(
     body: AlertDigestSettingsUpdate,
     pool=Depends(get_db_pool),
@@ -145,7 +149,10 @@ async def get_alert(alert_id: str, pool=Depends(get_db_pool)):
     return {"tenant_id": tenant_id, "alert": dict(row)}
 
 
-@router.patch("/alerts/{alert_id}/acknowledge", dependencies=[Depends(require_customer)])
+@router.patch(
+    "/alerts/{alert_id}/acknowledge",
+    dependencies=[require_permission("alerts.acknowledge")],
+)
 async def acknowledge_alert(alert_id: str, request: Request, pool=Depends(get_db_pool)):
     try:
         alert_id_int = int(alert_id)
@@ -186,7 +193,10 @@ async def acknowledge_alert(alert_id: str, request: Request, pool=Depends(get_db
     return {"alert_id": alert_id, "status": "ACKNOWLEDGED", "acknowledged_by": user_ref}
 
 
-@router.patch("/alerts/{alert_id}/close", dependencies=[Depends(require_customer)])
+@router.patch(
+    "/alerts/{alert_id}/close",
+    dependencies=[require_permission("alerts.close")],
+)
 async def close_alert_endpoint(alert_id: str, request: Request, pool=Depends(get_db_pool)):
     try:
         alert_id_int = int(alert_id)
@@ -221,7 +231,10 @@ async def close_alert_endpoint(alert_id: str, request: Request, pool=Depends(get
     return {"alert_id": alert_id, "status": "CLOSED"}
 
 
-@router.patch("/alerts/{alert_id}/silence", dependencies=[Depends(require_customer)])
+@router.patch(
+    "/alerts/{alert_id}/silence",
+    dependencies=[require_permission("alerts.silence")],
+)
 async def silence_alert(
     alert_id: str,
     body: SilenceRequest,
@@ -273,7 +286,10 @@ async def list_alert_rule_templates(device_type: str | None = Query(None)):
     return {"templates": templates, "total": len(templates)}
 
 
-@router.post("/alert-rule-templates/apply", dependencies=[Depends(require_customer)])
+@router.post(
+    "/alert-rule-templates/apply",
+    dependencies=[require_permission("alert-rules.templates")],
+)
 @limiter.limit(CUSTOMER_RATE_LIMIT)
 async def apply_alert_rule_templates(
     request: Request,
@@ -360,7 +376,10 @@ async def get_alert_rule(rule_id: str, pool=Depends(get_db_pool)):
     return _with_rule_conditions(rule)
 
 
-@router.post("/alert-rules", dependencies=[Depends(require_customer_admin)])
+@router.post(
+    "/alert-rules",
+    dependencies=[require_permission("alert-rules.create")],
+)
 async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     conditions_json = None
@@ -478,7 +497,10 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
     return JSONResponse(status_code=201, content=jsonable_encoder(_with_rule_conditions(rule)))
 
 
-@router.patch("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
+@router.patch(
+    "/alert-rules/{rule_id}",
+    dependencies=[require_permission("alert-rules.update")],
+)
 async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=Depends(get_db_pool)):
     if not validate_uuid(rule_id):
         raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")
@@ -597,7 +619,10 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
     return _with_rule_conditions(rule)
 
 
-@router.delete("/alert-rules/{rule_id}", dependencies=[Depends(require_customer_admin)])
+@router.delete(
+    "/alert-rules/{rule_id}",
+    dependencies=[require_permission("alert-rules.delete")],
+)
 async def delete_alert_rule_endpoint(rule_id: str, pool=Depends(get_db_pool)):
     if not validate_uuid(rule_id):
         raise HTTPException(status_code=400, detail="Invalid rule_id format: must be a valid UUID")

@@ -3,6 +3,7 @@
 from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
+from middleware.permissions import require_permission
 from typing import Any, Optional
 
 from shared.logging import get_logger
@@ -98,7 +99,11 @@ def _jsonb_to_dict(value: Any) -> dict[str, Any]:
             return {}
     return {}
 
-@router.post("/devices", status_code=201)
+@router.post(
+    "/devices",
+    status_code=201,
+    dependencies=[require_permission("devices.create")],
+)
 async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
@@ -183,7 +188,11 @@ async def list_device_tokens(device_id: str, pool=Depends(get_db_pool)):
     return {"device_id": device_id, "tokens": tokens, "total": len(tokens)}
 
 
-@router.delete("/devices/{device_id}/tokens/{token_id}", status_code=204)
+@router.delete(
+    "/devices/{device_id}/tokens/{token_id}",
+    status_code=204,
+    dependencies=[require_permission("devices.tokens.revoke")],
+)
 async def revoke_device_token(device_id: str, token_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
@@ -210,7 +219,11 @@ async def revoke_device_token(device_id: str, token_id: str, pool=Depends(get_db
     return Response(status_code=204)
 
 
-@router.post("/devices/{device_id}/tokens/rotate", status_code=201)
+@router.post(
+    "/devices/{device_id}/tokens/rotate",
+    status_code=201,
+    dependencies=[require_permission("devices.tokens.rotate")],
+)
 async def rotate_device_token(
     device_id: str,
     body: TokenRotateRequest,
@@ -261,7 +274,10 @@ async def rotate_device_token(
     return {"client_id": client_id, "password": password, "broker_url": broker_url}
 
 
-@router.post("/devices/import")
+@router.post(
+    "/devices/import",
+    dependencies=[require_permission("devices.import")],
+)
 async def import_devices_csv(file: UploadFile = File(...), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
@@ -617,7 +633,10 @@ async def get_fleet_summary(pool=Depends(get_db_pool)):
     return summary
 
 
-@router.delete("/devices/{device_id}")
+@router.delete(
+    "/devices/{device_id}",
+    dependencies=[require_permission("devices.delete")],
+)
 async def delete_device(device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
@@ -819,7 +838,10 @@ async def export_telemetry_csv(
     )
 
 
-@router.patch("/devices/{device_id}")
+@router.patch(
+    "/devices/{device_id}",
+    dependencies=[require_permission("devices.update")],
+)
 async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     update_data = body.model_dump(exclude_unset=True)
@@ -921,7 +943,10 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
     return {"tenant_id": tenant_id, "device": device}
 
 
-@router.patch("/devices/{device_id}/decommission", dependencies=[Depends(require_customer)])
+@router.patch(
+    "/devices/{device_id}/decommission",
+    dependencies=[require_permission("devices.decommission")],
+)
 async def decommission_device(device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
@@ -987,7 +1012,10 @@ async def get_device_twin(device_id: str, pool=Depends(get_db_pool)):
     }
 
 
-@router.patch("/devices/{device_id}/twin/desired")
+@router.patch(
+    "/devices/{device_id}/twin/desired",
+    dependencies=[require_permission("devices.twin.write")],
+)
 async def update_desired_state(
     device_id: str, body: TwinDesiredUpdate, pool=Depends(get_db_pool)
 ):
@@ -1047,7 +1075,11 @@ async def get_twin_delta(device_id: str, pool=Depends(get_db_pool)):
     }
 
 
-@router.post("/devices/{device_id}/commands", status_code=201)
+@router.post(
+    "/devices/{device_id}/commands",
+    status_code=201,
+    dependencies=[require_permission("devices.commands.send")],
+)
 async def send_command(device_id: str, body: CommandCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
@@ -1205,7 +1237,10 @@ async def get_device_tags(device_id: str, pool=Depends(get_db_pool)):
     return {"tenant_id": tenant_id, "device_id": device_id, "tags": [r["tag"] for r in rows]}
 
 
-@router.put("/devices/{device_id}/tags")
+@router.put(
+    "/devices/{device_id}/tags",
+    dependencies=[require_permission("devices.tags.write")],
+)
 async def set_device_tags(device_id: str, body: TagListUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     tags = _normalize_tags(body.tags)
@@ -1243,7 +1278,10 @@ async def set_device_tags(device_id: str, body: TagListUpdate, pool=Depends(get_
     return {"tenant_id": tenant_id, "device_id": device_id, "tags": tags}
 
 
-@router.post("/devices/{device_id}/tags/{tag}")
+@router.post(
+    "/devices/{device_id}/tags/{tag}",
+    dependencies=[require_permission("devices.tags.write")],
+)
 async def add_device_tag(device_id: str, tag: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     tags = _normalize_tags([tag])
@@ -1280,7 +1318,10 @@ async def add_device_tag(device_id: str, tag: str, pool=Depends(get_db_pool)):
     return {"tenant_id": tenant_id, "device_id": device_id, "tag": tag_value}
 
 
-@router.delete("/devices/{device_id}/tags/{tag}")
+@router.delete(
+    "/devices/{device_id}/tags/{tag}",
+    dependencies=[require_permission("devices.tags.write")],
+)
 async def remove_device_tag(device_id: str, tag: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     tags = _normalize_tags([tag])
@@ -1363,7 +1404,11 @@ async def list_device_groups(pool=Depends(get_db_pool)):
     return {"groups": [dict(r) for r in rows], "total": len(rows)}
 
 
-@router.post("/device-groups", status_code=201)
+@router.post(
+    "/device-groups",
+    status_code=201,
+    dependencies=[require_permission("devices.groups.write")],
+)
 async def create_device_group(body: DeviceGroupCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     group_id = (body.group_id or f"grp-{uuid.uuid4().hex[:8]}").strip()
@@ -1392,7 +1437,10 @@ async def create_device_group(body: DeviceGroupCreate, pool=Depends(get_db_pool)
     return dict(row)
 
 
-@router.patch("/device-groups/{group_id}")
+@router.patch(
+    "/device-groups/{group_id}",
+    dependencies=[require_permission("devices.groups.write")],
+)
 async def update_device_group(group_id: str, body: DeviceGroupUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     updates = body.model_dump(exclude_none=True)
@@ -1426,7 +1474,10 @@ async def update_device_group(group_id: str, body: DeviceGroupUpdate, pool=Depen
     return dict(row)
 
 
-@router.delete("/device-groups/{group_id}")
+@router.delete(
+    "/device-groups/{group_id}",
+    dependencies=[require_permission("devices.groups.write")],
+)
 async def delete_device_group(group_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
@@ -1480,7 +1531,10 @@ async def list_group_members(group_id: str, pool=Depends(get_db_pool)):
     return {"group_id": group_id, "members": [dict(r) for r in rows], "total": len(rows)}
 
 
-@router.put("/device-groups/{group_id}/devices/{device_id}")
+@router.put(
+    "/device-groups/{group_id}/devices/{device_id}",
+    dependencies=[require_permission("devices.groups.write")],
+)
 async def add_group_member(group_id: str, device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
@@ -1518,7 +1572,10 @@ async def add_group_member(group_id: str, device_id: str, pool=Depends(get_db_po
     return {"group_id": group_id, "device_id": device_id, "action": "added"}
 
 
-@router.delete("/device-groups/{group_id}/devices/{device_id}")
+@router.delete(
+    "/device-groups/{group_id}/devices/{device_id}",
+    dependencies=[require_permission("devices.groups.write")],
+)
 async def remove_group_member(group_id: str, device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
@@ -1563,7 +1620,11 @@ async def list_maintenance_windows(pool=Depends(get_db_pool)):
     return {"windows": [dict(r) for r in rows], "total": len(rows)}
 
 
-@router.post("/maintenance-windows", status_code=201)
+@router.post(
+    "/maintenance-windows",
+    status_code=201,
+    dependencies=[require_permission("maintenance.create")],
+)
 async def create_maintenance_window(body: MaintenanceWindowCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     window_id = f"mw-{uuid.uuid4().hex[:8]}"
@@ -1593,7 +1654,10 @@ async def create_maintenance_window(body: MaintenanceWindowCreate, pool=Depends(
     return dict(row)
 
 
-@router.patch("/maintenance-windows/{window_id}")
+@router.patch(
+    "/maintenance-windows/{window_id}",
+    dependencies=[require_permission("maintenance.update")],
+)
 async def update_maintenance_window(
     window_id: str,
     body: MaintenanceWindowUpdate,
@@ -1641,7 +1705,10 @@ async def update_maintenance_window(
     return dict(row)
 
 
-@router.delete("/maintenance-windows/{window_id}")
+@router.delete(
+    "/maintenance-windows/{window_id}",
+    dependencies=[require_permission("maintenance.delete")],
+)
 async def delete_maintenance_window(window_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:

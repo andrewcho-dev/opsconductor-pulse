@@ -77,6 +77,31 @@ async def seed_tenants(pool):
             )
 
 
+async def seed_role_assignments(conn):
+    """Assign Full Admin role to demo admin users."""
+    full_admin = await conn.fetchrow(
+        "SELECT id FROM roles WHERE name = 'Full Admin' AND is_system = true AND tenant_id IS NULL"
+    )
+    if not full_admin:
+        print("  [skip] Full Admin role not found (run migration 080+081 first)")
+        return
+
+    role_id = full_admin["id"]
+    for tenant_id in TENANTS:
+        # Assign to demo admin user (sub = 'demo-admin-{tenant}')
+        await conn.execute(
+            """
+            INSERT INTO user_role_assignments (tenant_id, user_id, role_id, assigned_by)
+            VALUES ($1, $2, $3, 'seed-script')
+            ON CONFLICT (tenant_id, user_id, role_id) DO NOTHING
+            """,
+            tenant_id,
+            f"demo-admin-{tenant_id}",
+            role_id,
+        )
+    print("  [ok] Role assignments seeded")
+
+
 async def seed_device_registry(pool, devices):
     async with pool.acquire() as conn:
         for tenant_id, site_id, device_id in devices:
@@ -401,6 +426,10 @@ async def main():
 
     print("Seeding tenants...")
     await seed_tenants(pool)
+
+    print("Seeding IAM role assignments...")
+    async with pool.acquire() as conn:
+        await seed_role_assignments(conn)
 
     print("Seeding device_registry...")
     await seed_device_registry(pool, devices)

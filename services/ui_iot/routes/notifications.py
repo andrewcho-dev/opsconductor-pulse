@@ -10,6 +10,7 @@ from dependencies import get_db_pool
 from db.pool import tenant_connection
 from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
+from middleware.permissions import require_permission
 from notifications.senders import send_pagerduty, send_slack, send_teams, send_webhook
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,12 @@ async def list_channels(pool=Depends(get_db_pool)):
     return {"channels": channels}
 
 
-@router.post("/notification-channels", response_model=ChannelOut, status_code=201)
+@router.post(
+    "/notification-channels",
+    response_model=ChannelOut,
+    status_code=201,
+    dependencies=[require_permission("notifications.create")],
+)
 async def create_channel(body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
@@ -159,7 +165,11 @@ async def get_channel(channel_id: int, pool=Depends(get_db_pool)):
     return payload
 
 
-@router.put("/notification-channels/{channel_id}", response_model=ChannelOut)
+@router.put(
+    "/notification-channels/{channel_id}",
+    response_model=ChannelOut,
+    dependencies=[require_permission("notifications.update")],
+)
 async def update_channel(channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
@@ -185,7 +195,11 @@ async def update_channel(channel_id: int, body: ChannelIn, pool=Depends(get_db_p
     return payload
 
 
-@router.delete("/notification-channels/{channel_id}", status_code=204)
+@router.delete(
+    "/notification-channels/{channel_id}",
+    status_code=204,
+    dependencies=[require_permission("notifications.delete")],
+)
 async def delete_channel(channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -199,7 +213,10 @@ async def delete_channel(channel_id: int, pool=Depends(get_db_pool)):
     return Response(status_code=204)
 
 
-@router.post("/notification-channels/{channel_id}/test")
+@router.post(
+    "/notification-channels/{channel_id}/test",
+    dependencies=[require_permission("notifications.test")],
+)
 async def test_channel(channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -269,7 +286,12 @@ async def list_routing_rules(pool=Depends(get_db_pool)):
     return {"rules": [dict(row) for row in rows]}
 
 
-@router.post("/notification-routing-rules", response_model=RoutingRuleOut, status_code=201)
+@router.post(
+    "/notification-routing-rules",
+    response_model=RoutingRuleOut,
+    status_code=201,
+    dependencies=[require_permission("notifications.routing.create")],
+)
 async def create_routing_rule(body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -299,7 +321,11 @@ async def create_routing_rule(body: RoutingRuleIn, pool=Depends(get_db_pool)):
     return dict(row)
 
 
-@router.put("/notification-routing-rules/{rule_id}", response_model=RoutingRuleOut)
+@router.put(
+    "/notification-routing-rules/{rule_id}",
+    response_model=RoutingRuleOut,
+    dependencies=[require_permission("notifications.routing.update")],
+)
 async def update_routing_rule(rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -333,7 +359,11 @@ async def update_routing_rule(rule_id: int, body: RoutingRuleIn, pool=Depends(ge
     return dict(row)
 
 
-@router.delete("/notification-routing-rules/{rule_id}", status_code=204)
+@router.delete(
+    "/notification-routing-rules/{rule_id}",
+    status_code=204,
+    dependencies=[require_permission("notifications.routing.delete")],
+)
 async def delete_routing_rule(rule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:

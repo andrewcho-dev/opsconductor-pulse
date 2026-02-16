@@ -8,6 +8,7 @@ from dependencies import get_db_pool
 from db.pool import tenant_connection
 from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
+from middleware.permissions import require_permission
 from oncall.resolver import get_current_responder, get_shift_end
 
 
@@ -91,7 +92,11 @@ async def list_schedules(pool=Depends(get_db_pool)):
     return {"schedules": schedules}
 
 
-@router.post("/oncall-schedules", status_code=201)
+@router.post(
+    "/oncall-schedules",
+    status_code=201,
+    dependencies=[require_permission("oncall.create")],
+)
 async def create_schedule(body: OncallScheduleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -137,7 +142,10 @@ async def get_schedule(schedule_id: int, pool=Depends(get_db_pool)):
     return schedule
 
 
-@router.put("/oncall-schedules/{schedule_id}")
+@router.put(
+    "/oncall-schedules/{schedule_id}",
+    dependencies=[require_permission("oncall.update")],
+)
 async def update_schedule(schedule_id: int, body: OncallScheduleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -181,7 +189,11 @@ async def update_schedule(schedule_id: int, body: OncallScheduleIn, pool=Depends
     return schedule
 
 
-@router.delete("/oncall-schedules/{schedule_id}", status_code=204)
+@router.delete(
+    "/oncall-schedules/{schedule_id}",
+    status_code=204,
+    dependencies=[require_permission("oncall.delete")],
+)
 async def delete_schedule(schedule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -195,7 +207,11 @@ async def delete_schedule(schedule_id: int, pool=Depends(get_db_pool)):
     return Response(status_code=204)
 
 
-@router.post("/oncall-schedules/{schedule_id}/layers", status_code=201)
+@router.post(
+    "/oncall-schedules/{schedule_id}/layers",
+    status_code=201,
+    dependencies=[require_permission("oncall.layers.write")],
+)
 async def create_layer(schedule_id: int, body: OncallLayerIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -226,7 +242,10 @@ async def create_layer(schedule_id: int, body: OncallLayerIn, pool=Depends(get_d
     return dict(row)
 
 
-@router.put("/oncall-schedules/{schedule_id}/layers/{layer_id}")
+@router.put(
+    "/oncall-schedules/{schedule_id}/layers/{layer_id}",
+    dependencies=[require_permission("oncall.layers.write")],
+)
 async def update_layer(schedule_id: int, layer_id: int, body: OncallLayerIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -259,7 +278,11 @@ async def update_layer(schedule_id: int, layer_id: int, body: OncallLayerIn, poo
     return dict(row)
 
 
-@router.delete("/oncall-schedules/{schedule_id}/layers/{layer_id}", status_code=204)
+@router.delete(
+    "/oncall-schedules/{schedule_id}/layers/{layer_id}",
+    status_code=204,
+    dependencies=[require_permission("oncall.layers.write")],
+)
 async def delete_layer(schedule_id: int, layer_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -299,7 +322,11 @@ async def list_overrides(schedule_id: int, pool=Depends(get_db_pool)):
     return {"overrides": [dict(row) for row in rows]}
 
 
-@router.post("/oncall-schedules/{schedule_id}/overrides", status_code=201)
+@router.post(
+    "/oncall-schedules/{schedule_id}/overrides",
+    status_code=201,
+    dependencies=[require_permission("oncall.overrides.write")],
+)
 async def create_override(schedule_id: int, body: OncallOverrideIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -326,7 +353,11 @@ async def create_override(schedule_id: int, body: OncallOverrideIn, pool=Depends
     return dict(row)
 
 
-@router.delete("/oncall-schedules/{schedule_id}/overrides/{override_id}", status_code=204)
+@router.delete(
+    "/oncall-schedules/{schedule_id}/overrides/{override_id}",
+    status_code=204,
+    dependencies=[require_permission("oncall.overrides.write")],
+)
 async def delete_override(schedule_id: int, override_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
