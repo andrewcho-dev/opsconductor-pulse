@@ -9,6 +9,7 @@ import {
   BarChart3,
   Shield,
   ShieldAlert,
+  AlertTriangle,
   Webhook,
   Activity,
   Gauge,
@@ -76,6 +77,7 @@ const customerMonitoringNav: NavItem[] = [
 const customerNotificationsNav: NavItem[] = [
   { label: "Channels", href: "/notifications", icon: Webhook },
   { label: "Delivery Log", href: "/delivery-log", icon: Activity },
+  { label: "Dead Letter Queue", href: "/dead-letter", icon: AlertTriangle },
 ];
 
 const customerAnalyticsNav: NavItem[] = [

@@ -48,6 +48,14 @@ class TestRouteRequest(BaseModel):
     payload: dict = Field(default_factory=lambda: {"metrics": {"temperature": 90}})
 
 
+class ReplayBatchRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=100)
+
+
+class PurgeRequest(BaseModel):
+    older_than_days: int = Field(default=30, ge=1, le=365)
+
+
 MQTT_TOPIC_PATTERN = re.compile(r"^[a-zA-Z0-9_/+#-]+$")
 
 
@@ -270,6 +278,301 @@ async def delete_message_route(route_id: int, pool=Depends(get_db_pool)):
     from fastapi.responses import Response
 
     return Response(status_code=204)
+
+
+@router.get("/dead-letter")
+async def list_dead_letter(
+    status: Optional[str] = Query(
+        None,
+        description="Filter by status: FAILED, REPLAYED, DISCARDED",
+    ),
+    route_id: Optional[int] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+
+    conditions = ["d.tenant_id = $1"]
+    params: list[object] = [tenant_id]
+
+    if status:
+        if status.upper() not in ("FAILED", "REPLAYED", "DISCARDED"):
+            raise HTTPException(400, "Invalid status filter")
+        params.append(status.upper())
+        conditions.append(f"d.status = ${len(params)}")
+
+    if route_id is not None:
+        params.append(route_id)
+        conditions.append(f"d.route_id = ${len(params)}")
+
+    where_clause = " AND ".join(conditions)
+    params.extend([limit, offset])
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT d.id, d.tenant_id, d.route_id, d.original_topic, d.payload,
+                   d.destination_type, d.destination_config, d.error_message,
+                   d.attempts, d.status, d.created_at, d.replayed_at,
+                   mr.name AS route_name
+            FROM dead_letter_messages d
+            LEFT JOIN message_routes mr ON mr.id = d.route_id AND mr.tenant_id = d.tenant_id
+            WHERE {where_clause}
+            ORDER BY d.created_at DESC
+            LIMIT ${len(params) - 1} OFFSET ${len(params)}
+            """,
+            *params,
+        )
+        count_params = params[:-2]  # Remove limit/offset
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM dead_letter_messages d WHERE {where_clause}",
+            *count_params,
+        )
+
+    return {
+        "messages": [dict(r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.post("/dead-letter/replay-batch")
+async def replay_dead_letter_batch(body: ReplayBatchRequest, pool=Depends(get_db_pool)):
+    """Replay multiple dead letter messages."""
+    tenant_id = get_tenant_id()
+    results: list[dict[str, object]] = []
+
+    for dlq_id in body.ids:
+        try:
+            async with tenant_connection(pool, tenant_id) as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, route_id, original_topic, payload, destination_type,
+                           destination_config, attempts, status
+                    FROM dead_letter_messages
+                    WHERE tenant_id = $1 AND id = $2 AND status = 'FAILED'
+                    """,
+                    tenant_id,
+                    dlq_id,
+                )
+
+            if not row:
+                results.append(
+                    {
+                        "id": dlq_id,
+                        "status": "SKIPPED",
+                        "error": "Not found or not in FAILED status",
+                    }
+                )
+                continue
+
+            config = row["destination_config"] or {}
+            if isinstance(config, str):
+                config = json.loads(config)
+            payload = row["payload"] or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+
+            delivery_error: str | None = None
+            try:
+                if row["destination_type"] == "webhook":
+                    url = config.get("url")
+                    if not url:
+                        raise Exception("No URL in destination config")
+                    method = config.get("method", "POST").upper()
+                    headers = {"Content-Type": "application/json"}
+                    body_bytes = json.dumps(payload, default=str).encode()
+                    secret = config.get("secret")
+                    if secret:
+                        import hashlib
+                        import hmac as hmac_mod
+
+                        sig = hmac_mod.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+                        headers["X-Signature-256"] = f"sha256={sig}"
+
+                    import httpx
+
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.request(method, url, content=body_bytes, headers=headers)
+                        if resp.status_code >= 400:
+                            raise Exception(f"HTTP {resp.status_code}")
+                else:
+                    raise Exception(f"Replay not supported for {row['destination_type']}")
+            except Exception as exc:
+                delivery_error = str(exc)
+
+            async with tenant_connection(pool, tenant_id) as conn:
+                if delivery_error:
+                    await conn.execute(
+                        """
+                        UPDATE dead_letter_messages
+                        SET attempts = attempts + 1, error_message = $3
+                        WHERE tenant_id = $1 AND id = $2
+                        """,
+                        tenant_id,
+                        dlq_id,
+                        delivery_error[:2000],
+                    )
+                    results.append({"id": dlq_id, "status": "FAILED", "error": delivery_error})
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE dead_letter_messages
+                        SET status = 'REPLAYED', replayed_at = NOW(), attempts = attempts + 1
+                        WHERE tenant_id = $1 AND id = $2
+                        """,
+                        tenant_id,
+                        dlq_id,
+                    )
+                    results.append({"id": dlq_id, "status": "REPLAYED"})
+
+        except Exception as exc:
+            results.append({"id": dlq_id, "status": "ERROR", "error": str(exc)})
+
+    return {
+        "results": results,
+        "total": len(results),
+        "replayed": sum(1 for r in results if r["status"] == "REPLAYED"),
+        "failed": sum(1 for r in results if r["status"] in ("FAILED", "ERROR")),
+    }
+
+
+@router.delete("/dead-letter/purge")
+async def purge_dead_letter(
+    older_than_days: int = Query(default=30, ge=1, le=365),
+    pool=Depends(get_db_pool),
+):
+    """Purge (hard delete) all FAILED messages older than N days."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        result = await conn.execute(
+            """
+            DELETE FROM dead_letter_messages
+            WHERE tenant_id = $1
+              AND status = 'FAILED'
+              AND created_at < NOW() - INTERVAL '1 day' * $2
+            """,
+            tenant_id,
+            older_than_days,
+        )
+    deleted = 0
+    try:
+        deleted = int(result.split()[-1])
+    except (ValueError, IndexError):
+        pass
+    return {"purged": deleted, "older_than_days": older_than_days}
+
+
+@router.post("/dead-letter/{dlq_id}/replay")
+async def replay_dead_letter(dlq_id: int, pool=Depends(get_db_pool)):
+    """Re-attempt delivery for a single dead letter message."""
+    tenant_id = get_tenant_id()
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, route_id, original_topic, payload, destination_type,
+                   destination_config, attempts, status
+            FROM dead_letter_messages
+            WHERE tenant_id = $1 AND id = $2
+            """,
+            tenant_id,
+            dlq_id,
+        )
+
+    if not row:
+        raise HTTPException(404, "Dead letter message not found")
+    if row["status"] != "FAILED":
+        raise HTTPException(400, f"Cannot replay message with status {row['status']}")
+
+    config = row["destination_config"] or {}
+    if isinstance(config, str):
+        config = json.loads(config)
+    payload = row["payload"] or {}
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    delivery_error: str | None = None
+    try:
+        if row["destination_type"] == "webhook":
+            url = config.get("url")
+            if not url:
+                raise Exception("No URL in destination config")
+            method = config.get("method", "POST").upper()
+            headers = {"Content-Type": "application/json"}
+            body_bytes = json.dumps(payload, default=str).encode()
+            secret = config.get("secret")
+            if secret:
+                import hashlib
+                import hmac as hmac_mod
+
+                sig = hmac_mod.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+                headers["X-Signature-256"] = f"sha256={sig}"
+
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.request(method, url, content=body_bytes, headers=headers)
+                if resp.status_code >= 400:
+                    raise Exception(f"Webhook returned HTTP {resp.status_code}")
+
+        elif row["destination_type"] == "mqtt_republish":
+            raise Exception(
+                "MQTT republish replay not supported from API; message must be manually re-sent"
+            )
+
+    except Exception as exc:
+        delivery_error = str(exc)
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        if delivery_error:
+            await conn.execute(
+                """
+                UPDATE dead_letter_messages
+                SET attempts = attempts + 1,
+                    error_message = $3
+                WHERE tenant_id = $1 AND id = $2
+                """,
+                tenant_id,
+                dlq_id,
+                delivery_error[:2000],
+            )
+            raise HTTPException(502, f"Replay failed: {delivery_error}")
+        else:
+            await conn.execute(
+                """
+                UPDATE dead_letter_messages
+                SET status = 'REPLAYED',
+                    replayed_at = NOW(),
+                    attempts = attempts + 1
+                WHERE tenant_id = $1 AND id = $2
+                """,
+                tenant_id,
+                dlq_id,
+            )
+
+    return {"id": dlq_id, "status": "REPLAYED", "message": "Message replayed successfully"}
+
+
+@router.delete("/dead-letter/{dlq_id}")
+async def discard_dead_letter(dlq_id: int, pool=Depends(get_db_pool)):
+    """Mark a dead letter message as DISCARDED."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        res = await conn.execute(
+            """
+            UPDATE dead_letter_messages
+            SET status = 'DISCARDED'
+            WHERE tenant_id = $1 AND id = $2 AND status = 'FAILED'
+            """,
+            tenant_id,
+            dlq_id,
+        )
+    if res.endswith("0"):
+        raise HTTPException(404, "Dead letter message not found or already processed")
+    return {"id": dlq_id, "status": "DISCARDED"}
 
 
 @router.post("/message-routes/{route_id}/test")

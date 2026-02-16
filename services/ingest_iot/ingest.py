@@ -1222,9 +1222,33 @@ class Ingestor:
                                 },
                             )
                         except Exception as route_exc:
-                            # Delivery failed -- will be handled by DLQ in task 002
+                            # Write to dead letter queue
+                            try:
+                                assert self.pool is not None
+                                async with self.pool.acquire() as conn:
+                                    await _set_tenant_write_context(conn, tenant_id)
+                                    await conn.execute(
+                                        """
+                                        INSERT INTO dead_letter_messages
+                                            (tenant_id, route_id, original_topic, payload,
+                                             destination_type, destination_config, error_message)
+                                        VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
+                                        """,
+                                        tenant_id,
+                                        route["id"],
+                                        topic,
+                                        json.dumps(payload, default=str),
+                                        route["destination_type"],
+                                        json.dumps(route.get("destination_config") or {}, default=str),
+                                        str(route_exc)[:2000],
+                                    )
+                            except Exception as dlq_exc:
+                                logger.error(
+                                    "dlq_write_failed",
+                                    extra={"route_id": route["id"], "error": str(dlq_exc)},
+                                )
                             logger.warning(
-                                "route_delivery_failed",
+                                "route_delivery_failed_dlq",
                                 extra={
                                     "route_id": route["id"],
                                     "error": str(route_exc),

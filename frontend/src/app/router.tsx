@@ -37,6 +37,7 @@ import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
+import DeadLetterPage from "@/features/messaging/DeadLetterPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
@@ -111,6 +112,7 @@ export const router = createBrowserRouter(
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
             { path: "delivery-log", element: <DeliveryLogPage /> },
+            { path: "dead-letter", element: <DeadLetterPage /> },
             { path: "jobs", element: <JobsPage /> },
             { path: "ota/campaigns", element: <OtaCampaignsPage /> },
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
