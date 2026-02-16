@@ -47,6 +47,7 @@ from routes.oncall import router as oncall_router
 from routes.jobs import router as jobs_router
 from routes.ota import router as ota_router
 from routes.preferences import router as preferences_router
+from routes.message_routing import router as message_routing_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
@@ -354,6 +355,7 @@ app.include_router(jobs_router)
 app.include_router(ota_router)
 app.include_router(roles_router)
 app.include_router(preferences_router)
+app.include_router(message_routing_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")

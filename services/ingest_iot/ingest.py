@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
+import httpx
 import paho.mqtt.client as mqtt
 from aiohttp import web
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -23,6 +24,7 @@ from shared.audit import init_audit_logger, get_audit_logger
 from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import ingest_messages_total, ingest_queue_depth
+from topic_matcher import mqtt_topic_matches, evaluate_payload_filter
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -695,6 +697,7 @@ class Ingestor:
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=INGEST_QUEUE_SIZE)
         self.loop: asyncio.AbstractEventLoop | None = None
         self._workers = []
+        self._mqtt_client: mqtt.Client | None = None
 
         self.msg_received = 0
         self.msg_enqueued = 0
@@ -714,6 +717,9 @@ class Ingestor:
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
         self.device_subscription_cache = DeviceSubscriptionCache(ttl_seconds=60, max_size=50000)
         self.batch_writer: TimescaleBatchWriter | None = None
+        self._message_routes_cache: dict[str, list] = {}  # tenant_id -> [route_rows]
+        self._routes_cache_ts: dict[str, float] = {}  # tenant_id -> last_refresh_time
+        self._routes_cache_ttl = 30  # seconds
 
     async def _get_device_subscription_status(
         self,
@@ -963,6 +969,70 @@ class Ingestor:
             return True
         return False
 
+    async def _get_message_routes(self, tenant_id: str) -> list:
+        """Get enabled message routes for a tenant (cached)."""
+        now = time.time()
+        last_refresh = self._routes_cache_ts.get(tenant_id, 0)
+        if now - last_refresh < self._routes_cache_ttl:
+            return self._message_routes_cache.get(tenant_id, [])
+
+        assert self.pool is not None
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await _set_tenant_write_context(conn, tenant_id)
+                rows = await conn.fetch(
+                    """
+                    SELECT id, topic_filter, destination_type, destination_config, payload_filter
+                    FROM message_routes
+                    WHERE tenant_id = $1 AND is_enabled = TRUE
+                    """,
+                    tenant_id,
+                )
+        routes = [dict(r) for r in rows]
+        self._message_routes_cache[tenant_id] = routes
+        self._routes_cache_ts[tenant_id] = now
+        return routes
+
+    async def _deliver_to_route(self, route: dict, topic: str, payload: dict, tenant_id: str) -> None:
+        """Deliver a message to a route destination."""
+        dest_type = route["destination_type"]
+        config = route.get("destination_config") or {}
+
+        if dest_type == "webhook":
+            url = config.get("url")
+            if not url:
+                return
+            method = config.get("method", "POST").upper()
+            headers = {"Content-Type": "application/json"}
+
+            body_bytes = json.dumps(payload, default=str).encode()
+            secret = config.get("secret")
+            if secret:
+                import hashlib
+                import hmac as hmac_mod
+
+                sig_hex = hmac_mod.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+                headers["X-Signature-256"] = f"sha256={sig_hex}"
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.request(method, url, content=body_bytes, headers=headers)
+                if resp.status_code >= 400:
+                    raise Exception(f"Webhook returned HTTP {resp.status_code}")
+
+        elif dest_type == "mqtt_republish":
+            republish_topic = config.get("topic")
+            if not republish_topic:
+                return
+            republish_topic = republish_topic.replace("{tenant_id}", tenant_id)
+            republish_topic = republish_topic.replace("{device_id}", payload.get("device_id", ""))
+
+            if self._mqtt_client:
+                msg_bytes = json.dumps(payload, default=str).encode()
+                self._mqtt_client.publish(republish_topic, msg_bytes)
+
+        elif dest_type == "postgresql":
+            return  # Already written by the batch writer
+
     async def db_worker(self):
         while True:
             topic, payload = await self.queue.get()
@@ -1126,6 +1196,44 @@ class Ingestor:
                 )
                 COUNTERS["last_write_at"] = utcnow().isoformat()
                 await self.batch_writer.add(record)
+
+                # --- Message route fan-out ---
+                try:
+                    routes = await self._get_message_routes(tenant_id)
+                    for route in routes:
+                        try:
+                            if not mqtt_topic_matches(route["topic_filter"], topic):
+                                continue
+                            if route.get("payload_filter"):
+                                pf = route["payload_filter"]
+                                if isinstance(pf, str):
+                                    pf = json.loads(pf)
+                                if not evaluate_payload_filter(pf, payload):
+                                    continue
+                            if route["destination_type"] == "postgresql":
+                                continue  # Already written
+
+                            await self._deliver_to_route(route, topic, payload, tenant_id)
+                            logger.debug(
+                                "route_delivered",
+                                extra={
+                                    "route_id": route["id"],
+                                    "destination": route["destination_type"],
+                                },
+                            )
+                        except Exception as route_exc:
+                            # Delivery failed -- will be handled by DLQ in task 002
+                            logger.warning(
+                                "route_delivery_failed",
+                                extra={
+                                    "route_id": route["id"],
+                                    "error": str(route_exc),
+                                    "destination": route["destination_type"],
+                                },
+                            )
+                except Exception as route_fan_exc:
+                    logger.warning("route_fanout_error", extra={"error": str(route_fan_exc)})
+
                 ingest_messages_total.labels(tenant_id=tenant_id, result="accepted").inc()
                 metrics = payload.get("metrics", {}) or {}
                 log_event(
@@ -1376,6 +1484,7 @@ class Ingestor:
         asyncio.create_task(self.stats_worker())
 
         client = mqtt.Client()
+        self._mqtt_client = client
         if MQTT_USERNAME and MQTT_PASSWORD:
             client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
