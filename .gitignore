@@ -48,3 +48,15 @@ run_sanity_test.sh
 sanity_test_standalone.py
 tests/e2e/test_phase80_83_sanity.py
 docs/AWS Industrial*
+
+# Debug scripts
+debug_*.py
+decode_jwt.py
+
+# Backup / rotation snapshots
+*.bak-*
+*.pre-rotation.*
+
+# Internal strategy docs
+docs/Reply_to_*
+docs/OpsConductor-Pulse_Software_Strategy*
