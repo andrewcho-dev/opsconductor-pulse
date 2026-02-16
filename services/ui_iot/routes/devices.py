@@ -104,7 +104,8 @@ def _jsonb_to_dict(value: Any) -> dict[str, Any]:
     status_code=201,
     dependencies=[require_permission("devices.create")],
 )
-async def create_device(device: DeviceCreate, pool=Depends(get_db_pool)):
+@limiter.limit("30/minute")
+async def create_device(request: Request, device: DeviceCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
 
@@ -279,7 +280,8 @@ async def rotate_device_token(
     "/devices/import",
     dependencies=[require_permission("devices.import")],
 )
-async def import_devices_csv(file: UploadFile = File(...), pool=Depends(get_db_pool)):
+@limiter.limit("5/minute")
+async def import_devices_csv(request: Request, file: UploadFile = File(...), pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
     raw = await file.read()
@@ -639,7 +641,8 @@ async def get_fleet_summary(pool=Depends(get_db_pool)):
     "/devices/{device_id}",
     dependencies=[require_permission("devices.delete")],
 )
-async def delete_device(device_id: str, pool=Depends(get_db_pool)):
+@limiter.limit("10/minute")
+async def delete_device(request: Request, device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
 
@@ -776,7 +779,9 @@ async def get_telemetry_history(
 
 
 @router.get("/devices/{device_id}/telemetry/export", dependencies=[Depends(require_customer)])
+@limiter.limit("5/minute")
 async def export_telemetry_csv(
+    request: Request,
     device_id: str,
     range: str = Query("24h"),
     limit: int = Query(5000, ge=1, le=10000),
@@ -951,7 +956,8 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
     "/devices/{device_id}/decommission",
     dependencies=[require_permission("devices.decommission")],
 )
-async def decommission_device(device_id: str, pool=Depends(get_db_pool)):
+@limiter.limit("10/minute")
+async def decommission_device(request: Request, device_id: str, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:

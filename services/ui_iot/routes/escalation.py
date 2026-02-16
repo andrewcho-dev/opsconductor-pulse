@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from middleware.auth import JWTBearer
@@ -10,6 +10,7 @@ from middleware.tenant import inject_tenant_context, require_customer, get_tenan
 from middleware.permissions import require_permission
 from db.pool import tenant_connection
 from dependencies import get_db_pool
+from routes.customer import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,8 @@ async def list_escalation_policies(pool=Depends(get_db_pool)):
     status_code=201,
     dependencies=[require_permission("escalation.create")],
 )
-async def create_escalation_policy(body: EscalationPolicyIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def create_escalation_policy(request: Request, body: EscalationPolicyIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         async with conn.transaction():
@@ -163,7 +165,10 @@ async def get_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
     response_model=EscalationPolicyOut,
     dependencies=[require_permission("escalation.update")],
 )
-async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def update_escalation_policy(
+    request: Request, policy_id: int, body: EscalationPolicyIn, pool=Depends(get_db_pool)
+):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         exists = await conn.fetchval(
@@ -221,7 +226,8 @@ async def update_escalation_policy(policy_id: int, body: EscalationPolicyIn, poo
     status_code=204,
     dependencies=[require_permission("escalation.delete")],
 )
-async def delete_escalation_policy(policy_id: int, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def delete_escalation_policy(request: Request, policy_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         deleted = await conn.execute(

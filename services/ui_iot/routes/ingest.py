@@ -4,7 +4,7 @@ sys.path.insert(0, "/app")
 import logging
 import time
 from datetime import datetime, timezone
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from shared.ingest_core import (
@@ -16,6 +16,7 @@ from shared.ingest_core import (
 )
 from shared.rate_limiter import get_rate_limiter
 from shared.sampled_logger import get_sampled_logger
+from middleware.auth import JWTBearer
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class BatchResponse(BaseModel):
     results: list[BatchResultItem]
 
 
-@router.get("/metrics/rate-limits")
+@router.get("/metrics/rate-limits", dependencies=[Depends(JWTBearer())])
 async def rate_limit_stats():
     """Return rate limiting statistics for monitoring."""
     rate_limiter = get_rate_limiter()

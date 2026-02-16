@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from dependencies import get_db_pool
@@ -11,6 +11,7 @@ from db.pool import tenant_connection
 from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
 from middleware.permissions import require_permission
+from routes.customer import limiter
 from notifications.senders import send_pagerduty, send_slack, send_teams, send_webhook
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,8 @@ async def list_channels(pool=Depends(get_db_pool)):
     status_code=201,
     dependencies=[require_permission("notifications.create")],
 )
-async def create_channel(body: ChannelIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def create_channel(request: Request, body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -170,7 +172,8 @@ async def get_channel(channel_id: int, pool=Depends(get_db_pool)):
     response_model=ChannelOut,
     dependencies=[require_permission("notifications.update")],
 )
-async def update_channel(channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def update_channel(request: Request, channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -200,7 +203,8 @@ async def update_channel(channel_id: int, body: ChannelIn, pool=Depends(get_db_p
     status_code=204,
     dependencies=[require_permission("notifications.delete")],
 )
-async def delete_channel(channel_id: int, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -217,7 +221,8 @@ async def delete_channel(channel_id: int, pool=Depends(get_db_pool)):
     "/notification-channels/{channel_id}/test",
     dependencies=[require_permission("notifications.test")],
 )
-async def test_channel(channel_id: int, pool=Depends(get_db_pool)):
+@limiter.limit("5/minute")
+async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         channel = await conn.fetchrow(
@@ -292,7 +297,8 @@ async def list_routing_rules(pool=Depends(get_db_pool)):
     status_code=201,
     dependencies=[require_permission("notifications.routing.create")],
 )
-async def create_routing_rule(body: RoutingRuleIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def create_routing_rule(request: Request, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -326,7 +332,8 @@ async def create_routing_rule(body: RoutingRuleIn, pool=Depends(get_db_pool)):
     response_model=RoutingRuleOut,
     dependencies=[require_permission("notifications.routing.update")],
 )
-async def update_routing_rule(rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def update_routing_rule(request: Request, rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -364,7 +371,8 @@ async def update_routing_rule(rule_id: int, body: RoutingRuleIn, pool=Depends(ge
     status_code=204,
     dependencies=[require_permission("notifications.routing.delete")],
 )
-async def delete_routing_rule(rule_id: int, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def delete_routing_rule(request: Request, rule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(

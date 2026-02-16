@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from dependencies import get_db_pool
@@ -10,6 +10,7 @@ from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
 from middleware.permissions import require_permission
 from oncall.resolver import get_current_responder, get_shift_end
+from routes.customer import limiter
 
 
 class OncallLayerIn(BaseModel):
@@ -97,7 +98,8 @@ async def list_schedules(pool=Depends(get_db_pool)):
     status_code=201,
     dependencies=[require_permission("oncall.create")],
 )
-async def create_schedule(body: OncallScheduleIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def create_schedule(request: Request, body: OncallScheduleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         async with conn.transaction():
@@ -147,7 +149,10 @@ async def get_schedule(schedule_id: int, pool=Depends(get_db_pool)):
     "/oncall-schedules/{schedule_id}",
     dependencies=[require_permission("oncall.update")],
 )
-async def update_schedule(schedule_id: int, body: OncallScheduleIn, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def update_schedule(
+    request: Request, schedule_id: int, body: OncallScheduleIn, pool=Depends(get_db_pool)
+):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         exists = await conn.fetchval(
@@ -196,7 +201,8 @@ async def update_schedule(schedule_id: int, body: OncallScheduleIn, pool=Depends
     status_code=204,
     dependencies=[require_permission("oncall.delete")],
 )
-async def delete_schedule(schedule_id: int, pool=Depends(get_db_pool)):
+@limiter.limit("20/minute")
+async def delete_schedule(request: Request, schedule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
