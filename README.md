@@ -11,10 +11,10 @@ cd compose/
 docker compose up -d --build
 
 # Access
-# Application:       https://192.168.10.53  (or https://localhost)
-# Keycloak Admin:    https://192.168.10.53/admin  (admin / admin_dev)
+# Application:       https://localhost
+# Keycloak Admin:    https://localhost/admin  (admin / admin_dev)
 # Provisioning API:  http://localhost:8081
-# MQTT Broker:       localhost:1883
+# MQTT Broker:       localhost:8883  (TLS)
 # PostgreSQL:        localhost:5432
 ```
 
@@ -118,7 +118,7 @@ frontend/              # React SPA (Vite + TypeScript + TailwindCSS)
     lib/              # Chart wrappers (ECharts, uPlot), NOC theme tokens
   dist/               # Built SPA (volume-mounted into ui container)
 db/
-  migrations/         # 069 PostgreSQL + TimescaleDB migrations
+  migrations/         # 080 PostgreSQL + TimescaleDB migrations
 docs/
   ARCHITECTURE.md     # Full system architecture reference
   PROJECT_MAP.md      # Quick-reference network + data flow map
@@ -223,11 +223,11 @@ cd frontend && npm run build
 ## Applying Migrations
 
 ```bash
-# Apply a specific migration
-psql "$DATABASE_URL" -f db/migrations/066_escalation_policies.sql
+# Apply all pending migrations (idempotent, versioned runner)
+python db/migrate.py
 
-# Apply all pending (in order)
-for f in db/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+# Or apply a specific migration manually
+psql "$DATABASE_URL" -f db/migrations/080_iam_permissions.sql
 ```
 
 ## Rebuilding After Backend Changes
