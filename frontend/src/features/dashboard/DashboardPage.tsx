@@ -1,5 +1,12 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
-import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/services/auth/AuthProvider";
+import { fetchDashboards, fetchDashboard } from "@/services/api/dashboards";
+import { DashboardBuilder } from "./DashboardBuilder";
+
+// Legacy fallback imports (temporary; task 003 will auto-create a default dashboard)
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
@@ -9,11 +16,9 @@ import { UptimeSummaryWidget } from "@/features/devices/UptimeSummaryWidget";
 import FleetKpiStrip from "./FleetKpiStrip";
 import { useAlerts } from "@/hooks/use-alerts";
 import { acknowledgeAlert } from "@/services/api/alerts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/services/api/client";
 import type { DeviceListResponse } from "@/services/api/types";
 import { Link } from "react-router-dom";
-import { useAuth } from "@/services/auth/AuthProvider";
 
 function relativeTime(input?: string | null) {
   if (!input) return "never";
@@ -130,34 +135,9 @@ function RecentlyActiveDevicesPanel() {
   );
 }
 
-export default function DashboardPage() {
-  const { user } = useAuth();
-  const [now, setNow] = useState(Date.now());
-  const [lastUpdated, setLastUpdated] = useState(Date.now());
-  const subtitle = user?.tenantId ? `Tenant: ${user.tenantId}` : "Real-time operational view";
-
-  useEffect(() => {
-    const refreshTimer = window.setInterval(() => setLastUpdated(Date.now()), 30000);
-    const clockTimer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      window.clearInterval(refreshTimer);
-      window.clearInterval(clockTimer);
-    };
-  }, []);
-
+function LegacyDashboard() {
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Fleet Overview"
-        description={subtitle}
-        action={
-          <div className="text-xs text-muted-foreground">
-            Last updated: {Math.max(0, Math.round((now - lastUpdated) / 1000))}s ago
-          </div>
-        }
-      />
-
-      {/* NEW: Onboarding checklist for new tenants */}
       <OnboardingChecklist />
 
       <WidgetErrorBoundary widgetName="Fleet KPI Strip">
@@ -192,6 +172,64 @@ export default function DashboardPage() {
           <RecentlyActiveDevicesPanel />
         </WidgetErrorBoundary>
       </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const subtitle = user?.tenantId ? `Tenant: ${user.tenantId}` : "Real-time operational view";
+
+  const { data: dashboardList, isLoading: listLoading } = useQuery({
+    queryKey: ["dashboards"],
+    queryFn: fetchDashboards,
+  });
+
+  const defaultDashboard =
+    dashboardList?.dashboards?.find((d) => d.is_default) || dashboardList?.dashboards?.[0];
+
+  // This is wired up to a selector dropdown in task 003.
+  const [selectedId] = useState<number | null>(null);
+  const activeDashboardId = selectedId ?? defaultDashboard?.id ?? null;
+
+  const { data: dashboard, isLoading: dashLoading } = useQuery({
+    queryKey: ["dashboard", activeDashboardId],
+    queryFn: () => fetchDashboard(activeDashboardId!),
+    enabled: activeDashboardId !== null,
+  });
+
+  if (listLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Dashboard" description={subtitle} />
+        <Skeleton className="h-[400px]" />
+      </div>
+    );
+  }
+
+  if (!dashboardList?.dashboards?.length) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Fleet Overview" description={subtitle} />
+        <LegacyDashboard />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={dashboard?.name || "Dashboard"}
+        description={dashboard?.description || subtitle}
+      />
+
+      {dashLoading ? (
+        <Skeleton className="h-[400px]" />
+      ) : dashboard ? (
+        <DashboardBuilder dashboard={dashboard} canEdit={dashboard.is_owner} />
+      ) : (
+        <LegacyDashboard />
+      )}
     </div>
   );
 }
