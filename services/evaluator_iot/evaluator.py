@@ -212,6 +212,36 @@ async def close_alert(conn, tenant_id, fingerprint):
     )
 
 
+async def log_connection_event(
+    conn,
+    tenant_id: str,
+    device_id: str,
+    event_type: str,
+    details: dict | None = None,
+) -> None:
+    """
+    Insert a device connection event.
+    event_type: CONNECTED, DISCONNECTED, or CONNECTION_LOST
+    """
+    try:
+        await conn.execute(
+            """
+            INSERT INTO device_connection_events (tenant_id, device_id, event_type, details)
+            VALUES ($1, $2, $3, $4::jsonb)
+            """,
+            tenant_id,
+            device_id,
+            event_type,
+            json.dumps(details or {}),
+        )
+    except Exception:
+        logger.warning(
+            "Failed to log connection event",
+            extra={"tenant_id": tenant_id, "device_id": device_id, "event_type": event_type},
+            exc_info=True,
+        )
+
+
 async def deduplicate_or_create_alert(
     conn,
     tenant_id: str,
@@ -1293,6 +1323,41 @@ async def main():
                                     str(previous_status).lower(),
                                     str(new_status).lower(),
                                 )
+
+                            # Log connection events based on ONLINE <-> STALE transitions
+                            if new_status == "ONLINE":
+                                await log_connection_event(
+                                    conn,
+                                    tenant_id,
+                                    device_id,
+                                    "CONNECTED",
+                                    {
+                                        "previous_status": previous_status,
+                                        "trigger": "heartbeat_resumed",
+                                    },
+                                )
+                            elif new_status == "STALE" and previous_status == "ONLINE":
+                                await log_connection_event(
+                                    conn,
+                                    tenant_id,
+                                    device_id,
+                                    "DISCONNECTED",
+                                    {
+                                        "previous_status": previous_status,
+                                        "trigger": "heartbeat_timeout",
+                                        "stale_threshold_seconds": HEARTBEAT_STALE_SECONDS,
+                                    },
+                                )
+
+                        # First time seeing this device (INSERT, not UPDATE)
+                        if previous_status is None and new_status == "ONLINE":
+                            await log_connection_event(
+                                conn,
+                                tenant_id,
+                                device_id,
+                                "CONNECTED",
+                                {"previous_status": None, "trigger": "first_seen"},
+                            )
 
                     fp_nohb = f"NO_HEARTBEAT:{device_id}"
                     if status == "STALE":

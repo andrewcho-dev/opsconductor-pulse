@@ -5,7 +5,7 @@ from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
 from middleware.permissions import require_permission
 from typing import Any, Optional
-from fastapi import Response as FastAPIResponse
+from fastapi import Query, Response as FastAPIResponse
 
 from shared.logging import get_logger
 from shared.twin import compute_delta, sync_status
@@ -1158,6 +1158,68 @@ async def get_twin_delta(
         "in_sync": len(delta) == 0,
         "desired_version": row["desired_version"],
         "reported_version": row["reported_version"],
+    }
+
+
+@router.get("/devices/{device_id}/connections")
+async def list_device_connections(
+    device_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    """Paginated list of device connectivity events, newest first."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        # Verify device exists
+        exists = await conn.fetchval(
+            "SELECT 1 FROM device_state WHERE tenant_id = $1 AND device_id = $2",
+            tenant_id,
+            device_id,
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="Device not found")
+
+        rows = await conn.fetch(
+            """
+            SELECT id, event_type, timestamp, details
+            FROM device_connection_events
+            WHERE tenant_id = $1 AND device_id = $2
+            ORDER BY timestamp DESC
+            LIMIT $3 OFFSET $4
+            """,
+            tenant_id,
+            device_id,
+            limit,
+            offset,
+        )
+
+        total_row = await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM device_connection_events
+            WHERE tenant_id = $1 AND device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+
+    events = []
+    for r in rows:
+        e = dict(r)
+        e["id"] = str(e["id"])
+        if isinstance(e.get("details"), str):
+            e["details"] = json.loads(e["details"])
+        if e.get("timestamp"):
+            e["timestamp"] = e["timestamp"].isoformat()
+        events.append(e)
+
+    return {
+        "device_id": device_id,
+        "events": events,
+        "total": total_row or 0,
+        "limit": limit,
+        "offset": offset,
     }
 
 

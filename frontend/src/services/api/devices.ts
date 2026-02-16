@@ -204,6 +204,31 @@ export async function updateDesiredState(
   return res.json();
 }
 
+export interface ConnectionEvent {
+  id: string;
+  event_type: "CONNECTED" | "DISCONNECTED" | "CONNECTION_LOST";
+  timestamp: string;
+  details: Record<string, unknown>;
+}
+
+export interface ConnectionEventsResponse {
+  device_id: string;
+  events: ConnectionEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function fetchDeviceConnections(
+  deviceId: string,
+  limit = 50,
+  offset = 0
+): Promise<ConnectionEventsResponse> {
+  return apiGet(
+    `/customer/devices/${encodeURIComponent(deviceId)}/connections?limit=${limit}&offset=${offset}`
+  );
+}
+
 export async function sendCommand(
   deviceId: string,
   payload: SendCommandPayload

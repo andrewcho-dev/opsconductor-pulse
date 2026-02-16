@@ -14,6 +14,7 @@ import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
+import { DeviceConnectivityPanel } from "./DeviceConnectivityPanel";
 import { DeviceCommandPanel } from "./DeviceCommandPanel";
 import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 import {
@@ -199,6 +200,7 @@ export default function DeviceDetailPage() {
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceUptimePanel deviceId={deviceId} />}
       {deviceId && <DeviceTwinPanel deviceId={deviceId} />}
+      {deviceId && <DeviceConnectivityPanel deviceId={deviceId} />}
       {deviceId && <DeviceCommandPanel deviceId={deviceId} />}
       <div>
         <Button size="sm" variant="outline" onClick={() => setShowCreateJob(true)}>
