@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +18,17 @@ import {
 import {
   addGroupMember,
   createDeviceGroup,
+  createDynamicGroup,
   deleteDeviceGroup,
+  deleteDynamicGroup,
   fetchDeviceGroups,
-  fetchGroupMembers,
+  fetchGroupMembersV2,
   removeGroupMember,
   updateDeviceGroup,
+  updateDynamicGroup,
 } from "@/services/api/devices";
 import { fetchDevices } from "@/services/api/devices";
+import { Badge } from "@/components/ui/badge";
 
 export default function DeviceGroupsPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -32,6 +37,10 @@ export default function DeviceGroupsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [isDynamic, setIsDynamic] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [filterSiteId, setFilterSiteId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -47,7 +56,7 @@ export default function DeviceGroupsPage() {
   });
   const membersQuery = useQuery({
     queryKey: ["device-group-members", selectedGroupId],
-    queryFn: () => fetchGroupMembers(selectedGroupId),
+    queryFn: () => fetchGroupMembersV2(selectedGroupId),
     enabled: !!selectedGroupId,
   });
 
@@ -72,26 +81,57 @@ export default function DeviceGroupsPage() {
     setEditDescription(selectedGroup.description ?? "");
   }, [selectedGroup]);
 
+  function resetForm() {
+    setNewName("");
+    setNewDescription("");
+    setIsDynamic(false);
+    setFilterStatus("");
+    setFilterTags([]);
+    setFilterSiteId("");
+  }
+
   const createMutation = useMutation({
     mutationFn: createDeviceGroup,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setCreateOpen(false);
-      setNewName("");
-      setNewDescription("");
+      resetForm();
+    },
+  });
+
+  const createDynamicMutation = useMutation({
+    mutationFn: createDynamicGroup,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
+      setCreateOpen(false);
+      resetForm();
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, description }: { id: string; name?: string; description?: string }) =>
-      updateDeviceGroup(id, { name, description }),
+    mutationFn: async ({
+      id,
+      name,
+      description,
+    }: {
+      id: string;
+      name?: string;
+      description?: string;
+    }) => {
+      if (selectedGroup?.group_type === "dynamic") {
+        await updateDynamicGroup(id, { name, description });
+        return;
+      }
+      await updateDeviceGroup(id, { name, description });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteDeviceGroup,
+    mutationFn: (id: string) =>
+      selectedGroup?.group_type === "dynamic" ? deleteDynamicGroup(id) : deleteDeviceGroup(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       if (selectedGroupId) {
@@ -142,12 +182,17 @@ export default function DeviceGroupsPage() {
                   navigate(`/device-groups/${group.group_id}`);
                 }}
               >
-                <div className="font-medium">{group.name}</div>
+                <div className="flex items-center gap-2 font-medium">
+                  <span>{group.name}</span>
+                  {group.group_type === "dynamic" && (
+                    <Badge variant="secondary">Dynamic</Badge>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {group.description || "No description"}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Members: {group.member_count}
+                  Members: {group.member_count == null ? "-" : group.member_count}
                 </div>
               </button>
             ))}
@@ -200,34 +245,36 @@ export default function DeviceGroupsPage() {
                   </Button>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label>Add Device</Label>
-                  <div className="flex gap-2">
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedDeviceId}
-                      onChange={(e) => setSelectedDeviceId(e.target.value)}
-                    >
-                      <option value="">Select a device</option>
-                      {(devicesQuery.data?.devices ?? []).map((device) => (
-                        <option key={device.device_id} value={device.device_id}>
-                          {device.device_id}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      disabled={!selectedDeviceId}
-                      onClick={() =>
-                        addMemberMutation.mutate({
-                          gid: selectedGroup.group_id,
-                          did: selectedDeviceId,
-                        })
-                      }
-                    >
-                      Add
-                    </Button>
+                {selectedGroup.group_type !== "dynamic" && (
+                  <div className="grid gap-2">
+                    <Label>Add Device</Label>
+                    <div className="flex gap-2">
+                      <select
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={selectedDeviceId}
+                        onChange={(e) => setSelectedDeviceId(e.target.value)}
+                      >
+                        <option value="">Select a device</option>
+                        {(devicesQuery.data?.devices ?? []).map((device) => (
+                          <option key={device.device_id} value={device.device_id}>
+                            {device.device_id}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        disabled={!selectedDeviceId}
+                        onClick={() =>
+                          addMemberMutation.mutate({
+                            gid: selectedGroup.group_id,
+                            did: selectedDeviceId,
+                          })
+                        }
+                      >
+                        Add
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Members</Label>
@@ -245,17 +292,19 @@ export default function DeviceGroupsPage() {
                             {member.name} - {member.status}
                           </div>
                         </div>
-                        <Button
-                          variant="outline"
-                          onClick={() =>
-                            removeMemberMutation.mutate({
-                              gid: selectedGroup.group_id,
-                              did: member.device_id,
-                            })
-                          }
-                        >
-                          Remove
-                        </Button>
+                        {selectedGroup.group_type !== "dynamic" && (
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              removeMemberMutation.mutate({
+                                gid: selectedGroup.group_id,
+                                did: member.device_id,
+                              })
+                            }
+                          >
+                            Remove
+                          </Button>
+                        )}
                       </div>
                     ))
                   )}
@@ -290,6 +339,40 @@ export default function DeviceGroupsPage() {
                 onChange={(e) => setNewDescription(e.target.value)}
               />
             </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+              <div>
+                <Label>Dynamic Group</Label>
+                <div className="text-xs text-muted-foreground">
+                  Membership is resolved automatically from a filter.
+                </div>
+              </div>
+              <Switch checked={isDynamic} onCheckedChange={setIsDynamic} />
+            </div>
+            {isDynamic && (
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <Label>Status Filter</Label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                >
+                  <option value="">Any status</option>
+                  <option value="ONLINE">ONLINE</option>
+                  <option value="STALE">STALE</option>
+                </select>
+
+                <Label>Tags (comma-separated)</Label>
+                <Input
+                  value={filterTags.join(",")}
+                  onChange={(e) =>
+                    setFilterTags(e.target.value.split(",").map((t) => t.trim()).filter(Boolean))
+                  }
+                />
+
+                <Label>Site ID</Label>
+                <Input value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -298,7 +381,20 @@ export default function DeviceGroupsPage() {
             <Button
               disabled={!newName.trim()}
               onClick={() =>
-                createMutation.mutate({ name: newName.trim(), description: newDescription || undefined })
+                isDynamic
+                  ? createDynamicMutation.mutate({
+                      name: newName.trim(),
+                      description: newDescription || undefined,
+                      query_filter: {
+                        ...(filterStatus ? { status: filterStatus } : {}),
+                        ...(filterTags.length ? { tags: filterTags } : {}),
+                        ...(filterSiteId ? { site_id: filterSiteId } : {}),
+                      },
+                    })
+                  : createMutation.mutate({
+                      name: newName.trim(),
+                      description: newDescription || undefined,
+                    })
               }
             >
               Create

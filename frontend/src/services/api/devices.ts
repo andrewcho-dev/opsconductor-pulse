@@ -261,7 +261,9 @@ export interface DeviceGroup {
   group_id: string;
   name: string;
   description: string | null;
-  member_count: number;
+  member_count: number | null;
+  group_type?: "static" | "dynamic";
+  query_filter?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -270,7 +272,7 @@ export interface DeviceGroupMember {
   name: string;
   status: string;
   site_id: string;
-  added_at: string;
+  added_at?: string;
 }
 
 export interface DeviceToken {
@@ -352,6 +354,46 @@ export async function removeGroupMember(groupId: string, deviceId: string): Prom
   await apiDelete(
     `/customer/device-groups/${encodeURIComponent(groupId)}/devices/${encodeURIComponent(deviceId)}`
   );
+}
+
+export interface DynamicDeviceGroup {
+  group_id: string;
+  name: string;
+  description: string | null;
+  query_filter: Record<string, unknown>;
+  group_type: "dynamic";
+  created_at: string;
+}
+
+export interface DynamicGroupFilter {
+  status?: string;
+  tags?: string[];
+  site_id?: string;
+}
+
+export async function createDynamicGroup(data: {
+  name: string;
+  description?: string;
+  query_filter: DynamicGroupFilter;
+}): Promise<DynamicDeviceGroup> {
+  return apiPost("/customer/device-groups/dynamic", data);
+}
+
+export async function updateDynamicGroup(
+  groupId: string,
+  data: { name?: string; description?: string; query_filter?: DynamicGroupFilter }
+): Promise<DynamicDeviceGroup> {
+  return apiPatch(`/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`, data);
+}
+
+export async function deleteDynamicGroup(groupId: string): Promise<void> {
+  await apiDelete(`/customer/device-groups/${encodeURIComponent(groupId)}/dynamic`);
+}
+
+export async function fetchGroupMembersV2(
+  groupId: string
+): Promise<{ group_id: string; group_type: string; members: DeviceGroupMember[]; total: number }> {
+  return apiGet(`/customer/device-groups/${encodeURIComponent(groupId)}/members`);
 }
 
 export async function listDeviceTokens(
