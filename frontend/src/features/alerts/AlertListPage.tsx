@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAlerts } from "@/hooks/use-alerts";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
 import { Bell, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
@@ -84,10 +85,16 @@ export default function AlertListPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [expandedAlertId, setExpandedAlertId] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
   const activeApiStatus = TAB_CONFIG[tab].apiStatus;
   const activeSeverity = TAB_CONFIG[tab].severity;
-  const { data, isLoading, error, refetch, isFetching } = useAlerts(activeApiStatus, 200, 0);
-  const { data: allOpenData } = useAlerts("OPEN", 200, 0);
+  const { data, isLoading, error, refetch, isFetching } = useAlerts(
+    activeApiStatus,
+    pageSize,
+    pageIndex * pageSize
+  );
+  const { data: allOpenData } = useAlerts("OPEN", 1, 0);
   const { data: ackData } = useAlerts("ACKNOWLEDGED", 1, 0);
   const { data: closedData } = useAlerts("CLOSED", 1, 0);
 
@@ -103,26 +110,16 @@ export default function AlertListPage() {
 
   const allAlerts = data?.alerts ?? [];
   const counts = useMemo(() => {
-    const openAlerts = allOpenData?.alerts ?? [];
-    const byLevel: Record<SeverityLevel, number> = {
+    return {
+      ALL: (allOpenData?.total ?? 0) + (ackData?.total ?? 0) + (closedData?.total ?? 0),
       CRITICAL: 0,
       HIGH: 0,
       MEDIUM: 0,
       LOW: 0,
-    };
-    for (const alert of openAlerts) {
-      byLevel[levelFromSeverity(alert.severity)] += 1;
-    }
-    return {
-      ALL: (allOpenData?.total ?? 0) + (ackData?.total ?? 0) + (closedData?.total ?? 0),
-      CRITICAL: byLevel.CRITICAL,
-      HIGH: byLevel.HIGH,
-      MEDIUM: byLevel.MEDIUM,
-      LOW: byLevel.LOW,
       ACKNOWLEDGED: ackData?.total ?? 0,
       CLOSED: closedData?.total ?? 0,
     };
-  }, [allOpenData?.alerts, allOpenData?.total, ackData?.total, closedData?.total]);
+  }, [allOpenData?.total, ackData?.total, closedData?.total]);
 
   const filteredAlerts = useMemo(() => {
     const byTab = activeSeverity
@@ -199,6 +196,7 @@ export default function AlertListPage() {
               setTab(item.key);
               setSearch("");
               setSelected(new Set());
+              setPageIndex(0);
             }}
             className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
               tab === item.key
@@ -430,6 +428,47 @@ export default function AlertListPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!isLoading && filteredAlerts.length > 0 && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            Showing {pageIndex * pageSize + 1}–
+            {Math.min((pageIndex + 1) * pageSize, data?.total ?? 0)} of {data?.total ?? 0}
+          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPageIndex(0);
+              }}
+              className="h-8 rounded border border-border bg-background px-2 text-sm"
+            >
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size} / page
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+              disabled={pageIndex === 0}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPageIndex((p) => p + 1)}
+              disabled={(pageIndex + 1) * pageSize >= (data?.total ?? 0)}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
     </div>
