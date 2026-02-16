@@ -238,6 +238,11 @@ services:
     container_name: iot-ops-worker
     environment:
       SERVICE_NAME: ops_worker
+      MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
+      MQTT_TLS_INSECURE: "true"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -251,6 +256,8 @@ services:
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
       DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
+    volumes:
+      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     depends_on:
       postgres:
         condition: service_healthy
