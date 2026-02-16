@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/table";
 import { useRemoveTenantUser, useSendTenantPasswordReset, useTenantUsers } from "@/hooks/use-users";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { ChangeRoleDialog } from "./ChangeRoleDialog";
+import { ManageUserRolesDialog } from "./ManageUserRolesDialog";
 import { EditTenantUserDialog } from "./EditTenantUserDialog";
 import { InviteUserDialog } from "./InviteUserDialog";
 
@@ -175,7 +175,7 @@ export default function UsersPage() {
                           {!isSelf && (
                             <DropdownMenuItem onClick={() => setChangeRoleUserId(user.id)}>
                               <Shield className="mr-2 h-4 w-4" />
-                              Change Role
+                              Manage Roles
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
@@ -262,11 +262,11 @@ export default function UsersPage() {
       )}
 
       {changeRoleUserId && (
-        <ChangeRoleDialog
+        <ManageUserRolesDialog
           userId={changeRoleUserId}
           open={!!changeRoleUserId}
           onOpenChange={(open) => !open && setChangeRoleUserId(null)}
-          onChanged={() => {
+          onSaved={() => {
             setChangeRoleUserId(null);
             refetch();
           }}

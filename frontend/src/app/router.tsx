@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import DashboardPage from "@/features/dashboard/DashboardPage";
@@ -31,12 +32,14 @@ import NOCPage from "@/features/operator/noc/NOCPage";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
 import UsersPage from "@/features/users/UsersPage";
+import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import { useAuth } from "@/services/auth/AuthProvider";
+import { usePermissions } from "@/services/auth";
 
 function HomeRedirect() {
   const { isOperator } = useAuth();
@@ -56,15 +59,15 @@ function RequireCustomer() {
   return <Outlet />;
 }
 
-function RequireTenantAdminOrOperator() {
-  const { user } = useAuth();
-  const roles = user?.realmAccess?.roles ?? [];
-  const allowed =
-    roles.includes("tenant-admin") ||
-    roles.includes("operator") ||
-    roles.includes("operator-admin");
-  if (!allowed) return <Navigate to="/dashboard" replace />;
-  return <Outlet />;
+function RequirePermission({ permission, children }: { permission: string; children?: ReactNode }) {
+  const { hasPermission, loading } = usePermissions();
+  const { isOperator } = useAuth();
+
+  // While permissions are loading, show nothing (prevents flash of redirect)
+  if (loading && !isOperator) return null;
+
+  if (!hasPermission(permission)) return <Navigate to="/dashboard" replace />;
+  return children ? <>{children}</> : <Outlet />;
 }
 
 export const router = createBrowserRouter(
@@ -107,8 +110,12 @@ export const router = createBrowserRouter(
           ],
         },
         {
-          element: <RequireTenantAdminOrOperator />,
+          element: <RequirePermission permission="users.read" />,
           children: [{ path: "users", element: <UsersPage /> }],
+        },
+        {
+          element: <RequirePermission permission="users.roles" />,
+          children: [{ path: "roles", element: <RolesPage /> }],
         },
         // Operator routes
         {

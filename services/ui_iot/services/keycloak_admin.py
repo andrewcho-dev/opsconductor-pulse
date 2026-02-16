@@ -133,7 +133,17 @@ async def list_users(search: str | None = None, first: int = 0, max_results: int
 async def get_user(user_id: str) -> dict | None:
     """Get user by Keycloak ID."""
     resp = await _admin_request("GET", f"/users/{user_id}")
-    return resp if isinstance(resp, dict) else None
+    if not isinstance(resp, dict):
+        return None
+    # Keycloak may omit 'attributes' from single-user GET.
+    # Fall back to the list endpoint which returns the full representation.
+    if "attributes" not in resp:
+        username = resp.get("username")
+        if username:
+            users = await _admin_request("GET", "/users", params={"username": username, "exact": "true"})
+            if isinstance(users, list) and users:
+                return users[0]
+    return resp
 
 
 async def get_user_by_username(username: str) -> dict | None:

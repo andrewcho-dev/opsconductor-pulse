@@ -9,3 +9,4 @@ export * from "./integrations";
 export * from "./operator";
 export * from "./subscription";
 export * from "./users";
+export * from "./roles";

@@ -38,6 +38,7 @@ from routes.api_v2 import (
 )
 from routes.ingest import router as ingest_router
 from routes.users import router as users_router
+from routes.roles import router as roles_router
 from routes.escalation import router as escalation_router
 from routes.notifications import router as notifications_router
 from routes.oncall import router as oncall_router
@@ -182,6 +183,7 @@ app.include_router(escalation_router)
 app.include_router(notifications_router)
 app.include_router(oncall_router)
 app.include_router(jobs_router)
+app.include_router(roles_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")

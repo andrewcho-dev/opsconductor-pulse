@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Cpu,
   Bell,
+  Shield,
   ShieldAlert,
   Webhook,
   Activity,
@@ -25,6 +26,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
+import { usePermissions } from "@/services/auth";
 import { fetchAlerts } from "@/services/api/alerts";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,12 +108,10 @@ function readSidebarOpen(key: string, defaultValue: boolean) {
 
 export function AppSidebar() {
   const location = useLocation();
-  const { isOperator, isCustomer, user } = useAuth();
-  const roles = user?.realmAccess?.roles ?? [];
-  const canManageUsers =
-    roles.includes("tenant-admin") ||
-    roles.includes("operator") ||
-    roles.includes("operator-admin");
+  const { isOperator, isCustomer } = useAuth();
+  const { hasPermission } = usePermissions();
+  const canManageUsers = hasPermission("users.read");
+  const canManageRoles = hasPermission("users.roles");
   const [fleetOpen, setFleetOpen] = useState(() =>
     readSidebarOpen("sidebar-fleet", true)
   );
@@ -146,6 +146,7 @@ export function AppSidebar() {
   const settingsNav: NavItem[] = [
     { label: "Subscription", href: "/subscription", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
+    ...(canManageRoles ? [{ label: "Roles", href: "/roles", icon: Shield }] : []),
     { label: "Notification Prefs", href: "/alerts", icon: Bell },
   ];
 

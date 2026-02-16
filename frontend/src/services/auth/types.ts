@@ -19,3 +19,10 @@ export interface AuthContextValue {
   isCustomer: boolean;
   isOperator: boolean;
 }
+
+export interface PermissionContextValue {
+  permissions: Set<string>;
+  hasPermission: (action: string) => boolean;
+  loading: boolean;
+  refetchPermissions: () => void;
+}

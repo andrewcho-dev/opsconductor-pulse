@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr
 from starlette.requests import Request
 
 from middleware.auth import JWTBearer
+from middleware.permissions import require_permission
 from middleware.tenant import (
     inject_tenant_context,
     require_operator,
@@ -640,7 +641,7 @@ async def list_organizations():
 
 @router.get(
     "/customer/users",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.read")],
 )
 async def list_tenant_users(
     search: Optional[str] = Query(None),
@@ -652,11 +653,7 @@ async def list_tenant_users(
 
     Requires tenant-admin role (or operator).
     """
-    current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     try:
         users = await list_users(search=search, first=0, max_results=1000)
         member_ids = await _tenant_member_ids(tenant_id)
@@ -678,15 +675,11 @@ async def list_tenant_users(
 
 @router.get(
     "/customer/users/{user_id}",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.read")],
 )
 async def get_tenant_user_detail(user_id: str):
     """Get user details (must be in same tenant). Requires tenant-admin role."""
-    current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     try:
         user = await kc_get_user(user_id)
         if not user:
@@ -710,7 +703,7 @@ class InviteUserRequest(BaseModel):
 
 @router.post(
     "/customer/users/invite",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.invite")],
 )
 async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
     """
@@ -719,11 +712,7 @@ async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
     Creates user and sends password reset email.
     Requires tenant-admin role.
     """
-    current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     valid_roles = ["customer", "tenant-admin"]
     if payload.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
@@ -784,15 +773,11 @@ async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
 
 @router.put(
     "/customer/users/{user_id}",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.edit")],
 )
 async def update_tenant_user(user_id: str, payload: UpdateUserRequest, request: Request):
     """Update user details (must be in same tenant). Requires tenant-admin role."""
-    current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     try:
         user = await kc_get_user(user_id)
         if not user:
@@ -821,15 +806,12 @@ async def update_tenant_user(user_id: str, payload: UpdateUserRequest, request: 
 
 @router.post(
     "/customer/users/{user_id}/role",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.roles")],
 )
 async def change_tenant_user_role(user_id: str, payload: AssignRoleRequest, request: Request):
     """Change user's role within the tenant."""
     current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     valid_roles = ["customer", "tenant-admin"]
     if payload.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
@@ -865,7 +847,7 @@ async def change_tenant_user_role(user_id: str, payload: AssignRoleRequest, requ
 
 @router.delete(
     "/customer/users/{user_id}",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.remove")],
 )
 async def remove_user_from_tenant(user_id: str, request: Request):
     """
@@ -875,9 +857,6 @@ async def remove_user_from_tenant(user_id: str, request: Request):
     """
     current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     try:
         user = await kc_get_user(user_id)
         if not user:
@@ -916,15 +895,11 @@ async def remove_user_from_tenant(user_id: str, request: Request):
 
 @router.post(
     "/customer/users/{user_id}/reset-password",
-    dependencies=[Depends(JWTBearer()), Depends(inject_tenant_context)],
+    dependencies=[Depends(JWTBearer()), require_permission("users.edit")],
 )
 async def send_tenant_user_password_reset(user_id: str, request: Request):
     """Send password reset email to a tenant user."""
-    current_user = get_user()
     tenant_id = get_tenant_id()
-    roles = _user_roles(current_user)
-    if "tenant-admin" not in roles and not is_operator():
-        raise HTTPException(status_code=403, detail="Tenant admin access required")
     try:
         user = await kc_get_user(user_id)
         if not user:
