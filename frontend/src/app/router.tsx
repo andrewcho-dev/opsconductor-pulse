@@ -5,6 +5,7 @@ import DashboardPage from "@/features/dashboard/DashboardPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
+import FleetMapPage from "@/features/map/FleetMapPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
 import AlertListPage from "@/features/alerts/AlertListPage";
@@ -95,6 +96,7 @@ export const router = createBrowserRouter(
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
             { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
+            { path: "map", element: <FleetMapPage /> },
             { path: "alerts", element: <AlertListPage /> },
             { path: "alert-rules", element: <AlertRulesPage /> },
             { path: "maintenance-windows", element: <MaintenanceWindowsPage /> },

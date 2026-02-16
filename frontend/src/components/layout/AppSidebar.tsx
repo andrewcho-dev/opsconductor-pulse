@@ -23,6 +23,7 @@ import {
   Radio,
   LayoutGrid,
   CalendarOff,
+  MapPin,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
@@ -57,6 +58,7 @@ type NavItem = {
 const customerFleetNav: NavItem[] = [
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Device Groups", href: "/device-groups", icon: Layers },
+  { label: "Fleet Map", href: "/map", icon: MapPin },
   { label: "OTA Updates", href: "/ota/campaigns", icon: Radio },
   { label: "Firmware", href: "/ota/firmware", icon: Radio },
   { label: "Sites", href: "/sites", icon: Building2 },
