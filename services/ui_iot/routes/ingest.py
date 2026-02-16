@@ -206,6 +206,9 @@ async def ingest_single(
             "UNREGISTERED_DEVICE": 403,
             "PAYLOAD_TOO_LARGE": 400,
             "SITE_MISMATCH": 400,
+            "TOO_MANY_METRICS": 400,
+            "METRIC_KEY_TOO_LONG": 400,
+            "METRIC_KEY_INVALID": 400,
         }
         status = status_map.get(reason, 400)
         raise HTTPException(status_code=status, detail=reason)

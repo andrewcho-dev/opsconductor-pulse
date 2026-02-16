@@ -13,6 +13,9 @@ import asyncpg
 logger = logging.getLogger(__name__)
 SUPPORTED_ENVELOPE_VERSIONS = {"1"}
 
+MAX_METRIC_KEY_LENGTH = 128
+MAX_METRIC_KEYS = 50
+
 
 def parse_ts(v):
     """
@@ -312,6 +315,18 @@ async def validate_and_prepare(
         payload_bytes = max_payload_bytes + 1
     if payload_bytes > max_payload_bytes:
         return IngestResult(False, "PAYLOAD_TOO_LARGE")
+
+    # Validate metric key lengths and count
+    metrics = (payload or {}).get("metrics", {})
+    if isinstance(metrics, dict):
+        if len(metrics) > MAX_METRIC_KEYS:
+            return IngestResult(False, "TOO_MANY_METRICS")
+        for key in metrics:
+            if not isinstance(key, str) or len(key) > MAX_METRIC_KEY_LENGTH:
+                return IngestResult(False, "METRIC_KEY_TOO_LONG")
+            # Reject keys with control characters or null bytes
+            if any(ord(c) < 32 for c in key):
+                return IngestResult(False, "METRIC_KEY_INVALID")
 
     bucket_key = (tenant_id, device_id)
     bucket = rate_buckets.get(bucket_key)

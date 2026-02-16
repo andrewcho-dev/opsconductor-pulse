@@ -227,6 +227,33 @@ background_tasks: list[asyncio.Task] = []
 
 logger = logging.getLogger(__name__)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    trace_id = (
+        getattr(request.state, "trace_id", None)
+        or getattr(request.state, "request_id", None)
+        or ""
+    )
+    logger.error(
+        "unhandled_exception",
+        exc_info=exc,
+        extra={
+            "trace_id": trace_id,
+            "method": request.method,
+            "path": request.url.path,
+            "exception_type": type(exc).__name__,
+        },
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "trace_id": trace_id,
+        },
+    )
+
+
 async def _init_db_connection(conn: asyncpg.Connection) -> None:
     # Avoid passing statement_timeout as a startup parameter (PgBouncer rejects it).
     await conn.execute("SET statement_timeout TO 30000")
