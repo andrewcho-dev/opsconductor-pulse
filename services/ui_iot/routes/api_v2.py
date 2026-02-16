@@ -782,6 +782,21 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         tenant_id = "__operator__"
 
     conn = await ws_manager.connect(websocket, tenant_id, payload)
+
+    # Send deprecation notice if connecting via /api/v2/ws
+    if websocket.scope.get("path", "").startswith("/api/v2/"):
+        try:
+            await websocket.send_json(
+                {
+                    "type": "deprecation_notice",
+                    "message": "/api/v2/ws is deprecated. Migrate to /customer/ws by 2026-09-01.",
+                    "migrate_to": "/customer/ws",
+                    "sunset_date": "2026-09-01",
+                }
+            )
+        except Exception:
+            pass  # Non-fatal
+
     push_task = asyncio.create_task(_ws_push_loop(conn))
 
     try:
@@ -852,3 +867,30 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         except asyncio.CancelledError:
             pass
         await ws_manager.disconnect(conn)
+
+
+@ws_router.websocket("/customer/ws")
+async def customer_websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    """WebSocket endpoint for live telemetry and alert streaming.
+
+    This is the canonical WebSocket endpoint. /api/v2/ws is deprecated.
+
+    Auth: Pass JWT as query param: ws://host/customer/ws?token=JWT_TOKEN
+
+    Client messages (JSON):
+        {"action": "subscribe", "type": "device", "device_id": "dev-0001"}
+        {"action": "subscribe", "type": "alerts"}
+        {"action": "subscribe", "type": "fleet"}
+        {"action": "unsubscribe", "type": "device", "device_id": "dev-0001"}
+        {"action": "unsubscribe", "type": "alerts"}
+        {"action": "unsubscribe", "type": "fleet"}
+
+    Server messages (JSON):
+        {"type": "telemetry", "device_id": "dev-0001", "data": {...}}
+        {"type": "alerts", "alerts": [...]}
+        {"type": "fleet_summary", "data": {...}}
+        {"type": "subscribed", "channel": "device", "device_id": "dev-0001"}
+        {"type": "error", "message": "..."}
+    """
+    # Delegate to the existing handler
+    await websocket_endpoint(websocket, token)

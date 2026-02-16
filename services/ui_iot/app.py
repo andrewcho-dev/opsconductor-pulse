@@ -178,6 +178,21 @@ async def deprecate_legacy_integrations_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def deprecate_api_v2_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v2/"):
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "2026-09-01"
+        response.headers["Link"] = '</customer/>; rel="successor-version"'
+        response.headers["X-Deprecated"] = (
+            "true; The /api/v2/ endpoints are deprecated. "
+            "Migrate to /customer/ endpoints. "
+            "See /docs/api-migration-v2-to-customer for mapping."
+        )
+    return response
+
+
 app.include_router(devices_router)
 app.include_router(alerts_router)
 app.include_router(metrics_router)
@@ -441,7 +456,15 @@ async def shutdown():
 
 @app.get("/api/v2/health")
 async def api_v2_health():
-    return {"status": "ok", "service": "pulse-ui", "api_version": "v2"}
+    return {
+        "status": "ok",
+        "service": "pulse-ui",
+        "api_version": "v2",
+        "deprecated": True,
+        "migrate_to": "/customer/",
+        "sunset_date": "2026-09-01",
+        "migration_guide": "/docs/api-migration-v2-to-customer",
+    }
 
 
 @app.get("/healthz")
