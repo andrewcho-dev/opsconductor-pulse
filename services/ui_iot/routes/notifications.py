@@ -138,7 +138,7 @@ async def list_channels(pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.create")],
 )
 @limiter.limit("20/minute")
-async def create_channel(request: Request, body: ChannelIn, pool=Depends(get_db_pool)):
+async def create_channel(request: Request, response: Response, body: ChannelIn, pool=Depends(get_db_pool)):
     """Create a notification channel for the tenant."""
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
@@ -186,7 +186,7 @@ async def get_channel(channel_id: int, pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.update")],
 )
 @limiter.limit("20/minute")
-async def update_channel(request: Request, channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
+async def update_channel(request: Request, response: Response, channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -217,7 +217,7 @@ async def update_channel(request: Request, channel_id: int, body: ChannelIn, poo
     dependencies=[require_permission("notifications.delete")],
 )
 @limiter.limit("20/minute")
-async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
+async def delete_channel(request: Request, response: Response, channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -235,7 +235,7 @@ async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_
     dependencies=[require_permission("notifications.test")],
 )
 @limiter.limit("5/minute")
-async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
+async def test_channel(request: Request, response: Response, channel_id: int, pool=Depends(get_db_pool)):
     """Send a test notification for a specific channel."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -328,7 +328,7 @@ async def list_routing_rules(pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.routing.create")],
 )
 @limiter.limit("20/minute")
-async def create_routing_rule(request: Request, body: RoutingRuleIn, pool=Depends(get_db_pool)):
+async def create_routing_rule(request: Request, response: Response, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -363,7 +363,7 @@ async def create_routing_rule(request: Request, body: RoutingRuleIn, pool=Depend
     dependencies=[require_permission("notifications.routing.update")],
 )
 @limiter.limit("20/minute")
-async def update_routing_rule(request: Request, rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
+async def update_routing_rule(request: Request, response: Response, rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -402,7 +402,7 @@ async def update_routing_rule(request: Request, rule_id: int, body: RoutingRuleI
     dependencies=[require_permission("notifications.routing.delete")],
 )
 @limiter.limit("20/minute")
-async def delete_routing_rule(request: Request, rule_id: int, pool=Depends(get_db_pool)):
+async def delete_routing_rule(request: Request, response: Response, rule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
