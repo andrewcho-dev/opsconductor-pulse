@@ -57,7 +57,10 @@ def validate_channel_config(channel_type: str, config: dict) -> None:
         )
 
 
-def _masked_config(channel_type: str, config: dict) -> dict:
+def _masked_config(channel_type: str, config) -> dict:
+    if isinstance(config, str):
+        import json
+        config = json.loads(config)
     out = dict(config or {})
     for key in MASKED_FIELDS.get(channel_type, []):
         if key in out and out[key] not in (None, "", {}):
