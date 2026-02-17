@@ -123,8 +123,8 @@ export default function NotificationChannelsPage() {
                       size="sm"
                       onClick={async () => {
                         const result = await testMutation.mutateAsync(channel.channel_id);
-                        if (result.ok) {
-                          toast.success("Test sent successfully");
+                        if (result.status === "ok" || result.ok) {
+                          toast.success(result.message || "Test sent successfully");
                         } else {
                           toast.error(`Test failed: ${result.error ?? "Unknown error"}`);
                         }

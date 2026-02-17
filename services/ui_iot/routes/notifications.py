@@ -265,6 +265,8 @@ async def test_channel(request: Request, response: Response, channel_id: int, po
     }
     ch = dict(channel)
     cfg = ch.get("config") or {}
+    if isinstance(cfg, str):
+        cfg = json.loads(cfg)
     try:
         if ch["channel_type"] == "slack":
             await send_slack(cfg["webhook_url"], test_alert)
@@ -288,8 +290,20 @@ async def test_channel(request: Request, response: Response, channel_id: int, po
                 "delivery": result,
             }
         elif ch["channel_type"] == "email":
+            smtp_raw = cfg.get("smtp", {})
+            if isinstance(smtp_raw, str):
+                smtp_raw = json.loads(smtp_raw)
+            # Map channel config keys to send_email expected keys
+            smtp_mapped = {
+                "smtp_host": smtp_raw.get("host") or smtp_raw.get("smtp_host", ""),
+                "smtp_port": smtp_raw.get("port") or smtp_raw.get("smtp_port", 587),
+                "smtp_user": smtp_raw.get("username") or smtp_raw.get("smtp_user", ""),
+                "smtp_password": smtp_raw.get("password") or smtp_raw.get("smtp_password", ""),
+                "smtp_tls": smtp_raw.get("use_tls") if "use_tls" in smtp_raw else smtp_raw.get("smtp_tls", True),
+                "from_address": smtp_raw.get("from_address") or smtp_raw.get("username") or smtp_raw.get("smtp_user", ""),
+            }
             await send_email(
-                smtp_config=cfg.get("smtp", {}),
+                smtp_config=smtp_mapped,
                 recipients=cfg.get("recipients", {}),
                 alert=test_alert,
                 template=cfg.get("template"),
