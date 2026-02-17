@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   listDeviceCommands,
   sendCommand,
@@ -13,59 +17,37 @@ interface DeviceCommandPanelProps {
 
 const QUICK_COMMANDS = ["reboot", "flush_buffer", "ping", "run_diagnostics"];
 
-const STATUS_STYLE: Record<string, string> = {
-  queued: "text-blue-600",
-  delivered: "text-green-600",
-  missed: "text-orange-600",
-  expired: "text-muted-foreground",
-};
+function statusBadge(status: string) {
+  const s = (status || "").toLowerCase();
+  const variant =
+    s === "queued"
+      ? "secondary"
+      : s === "delivered"
+        ? "default"
+        : s === "missed"
+          ? "destructive"
+          : "outline";
+  return <Badge variant={variant}>{status.toUpperCase()}</Badge>;
+}
 
 export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
-  const [commands, setCommands] = useState<DeviceCommand[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [cmdType, setCmdType] = useState("");
   const [cmdParams, setCmdParams] = useState("{}");
   const [expiresMin, setExpiresMin] = useState(60);
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DeviceCommand | null>(null);
 
-  const loadCommands = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const rows = await listDeviceCommands(deviceId);
-      setCommands(rows);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Load failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const commandsQuery = useQuery({
+    queryKey: ["device-commands", deviceId],
+    queryFn: () => listDeviceCommands(deviceId),
+    enabled: !!deviceId,
+  });
 
-  useEffect(() => {
-    void loadCommands();
-  }, [deviceId]);
-
-  const handleSend = async () => {
-    setSending(true);
-    setError(null);
-    setLastResult(null);
-    try {
-      let params: Record<string, unknown> = {};
-      try {
-        params = JSON.parse(cmdParams) as Record<string, unknown>;
-      } catch {
-        throw new Error("Params must be valid JSON");
-      }
-
-      const payload: SendCommandPayload = {
-        command_type: cmdType,
-        command_params: params,
-        expires_in_minutes: expiresMin,
-      };
-      const result = await sendCommand(deviceId, payload);
+  const sendMutation = useMutation({
+    mutationFn: (payload: SendCommandPayload) => sendCommand(deviceId, payload),
+    onSuccess: async (result) => {
       setLastResult(
         `Command ${result.command_id.slice(0, 8)}... dispatched. MQTT: ${
           result.mqtt_published ? "published" : "broker unavailable"
@@ -74,20 +56,72 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
       setShowForm(false);
       setCmdType("");
       setCmdParams("{}");
-      await loadCommands();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Send failed");
-    } finally {
-      setSending(false);
-    }
-  };
+      await commandsQuery.refetch();
+    },
+  });
+
+  const columns: ColumnDef<DeviceCommand>[] = useMemo(
+    () => [
+      {
+        accessorKey: "command_id",
+        header: "Command ID",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs" title={row.original.command_id}>
+            {row.original.command_id.slice(0, 8)}...
+          </span>
+        ),
+      },
+      {
+        accessorKey: "command_type",
+        header: "Type",
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => statusBadge(row.original.status),
+      },
+      {
+        accessorKey: "created_at",
+        header: "Created",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {new Date(row.original.created_at).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "completed_at",
+        header: "Completed",
+        accessorFn: (c) => c.acked_at ?? "",
+        cell: ({ row }) =>
+          row.original.acked_at ? (
+            <span className="text-xs text-muted-foreground">
+              {new Date(row.original.acked_at).toLocaleString()}
+            </span>
+          ) : (
+            "—"
+          ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Button variant="outline" size="sm" onClick={() => setSelected(row.original)}>
+            View
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
 
   return (
     <div className="rounded border border-border p-3 space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">Commands</h4>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => void loadCommands()}>
+          <Button size="sm" variant="outline" onClick={() => void commandsQuery.refetch()}>
             Refresh
           </Button>
           <Button size="sm" onClick={() => setShowForm((v) => !v)}>
@@ -147,10 +181,36 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
             />
           </div>
 
-          {error && <div className="text-xs text-destructive">{error}</div>}
+          {(error || sendMutation.error) && (
+            <div className="text-xs text-destructive">
+              {error ||
+                (sendMutation.error instanceof Error
+                  ? sendMutation.error.message
+                  : "Send failed")}
+            </div>
+          )}
 
-          <Button size="sm" onClick={() => void handleSend()} disabled={sending || !cmdType.trim()}>
-            {sending ? "Sending..." : "Send"}
+          <Button
+            size="sm"
+            onClick={() => {
+              setError(null);
+              setLastResult(null);
+              let params: Record<string, unknown> = {};
+              try {
+                params = JSON.parse(cmdParams) as Record<string, unknown>;
+              } catch {
+                setError("Params must be valid JSON");
+                return;
+              }
+              sendMutation.mutate({
+                command_type: cmdType,
+                command_params: params,
+                expires_in_minutes: expiresMin,
+              });
+            }}
+            disabled={sendMutation.isPending || !cmdType.trim()}
+          >
+            {sendMutation.isPending ? "Sending..." : "Send"}
           </Button>
         </div>
       )}
@@ -161,42 +221,29 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
         </div>
       )}
 
-      {loading ? (
-        <div className="text-xs text-muted-foreground">Loading commands...</div>
-      ) : commands.length === 0 ? (
-        <div className="text-xs text-muted-foreground">No commands sent yet.</div>
-      ) : (
-        <div className="overflow-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="py-1 text-left font-medium">Type</th>
-                <th className="py-1 text-left font-medium">Status</th>
-                <th className="py-1 text-left font-medium">Sent</th>
-                <th className="py-1 text-left font-medium">Delivered</th>
-                <th className="py-1 text-left font-medium">Expires</th>
-              </tr>
-            </thead>
-            <tbody>
-              {commands.map((command) => (
-                <tr key={command.command_id} className="border-b border-border/40">
-                  <td className="py-1 font-mono">{command.command_type}</td>
-                  <td className={`py-1 font-semibold ${STATUS_STYLE[command.status] ?? ""}`}>
-                    {command.status}
-                  </td>
-                  <td className="py-1 text-muted-foreground">
-                    {command.published_at ? new Date(command.published_at).toLocaleTimeString() : "-"}
-                  </td>
-                  <td className="py-1 text-muted-foreground">
-                    {command.acked_at ? new Date(command.acked_at).toLocaleTimeString() : "-"}
-                  </td>
-                  <td className="py-1 text-muted-foreground">
-                    {new Date(command.expires_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <DataTable
+        columns={columns}
+        data={commandsQuery.data ?? []}
+        isLoading={commandsQuery.isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No commands sent to this device yet.
+          </div>
+        }
+        manualPagination={false}
+      />
+
+      {selected && (
+        <div className="rounded border border-border bg-muted/20 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">Command Details</div>
+            <Button size="sm" variant="outline" onClick={() => setSelected(null)}>
+              Close
+            </Button>
+          </div>
+          <pre className="max-h-64 overflow-auto rounded bg-background p-2 text-xs">
+            {JSON.stringify(selected, null, 2)}
+          </pre>
         </div>
       )}
     </div>

@@ -47,7 +47,7 @@ export async function deleteChannel(id: number): Promise<void> {
   await apiDelete(`/api/v1/customer/notification-channels/${id}`);
 }
 
-export async function testChannel(id: number): Promise<{ ok: boolean; error?: string }> {
+export async function testChannel(id: number): Promise<{ status?: string; ok?: boolean; message?: string; error?: string }> {
   return apiPost(`/api/v1/customer/notification-channels/${id}/test`, {});
 }
 

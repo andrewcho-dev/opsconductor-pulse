@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useInviteTenantUser } from "@/hooks/use-users";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription as AlertDialogDescriptionText,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -52,6 +63,11 @@ export function InviteUserDialog({ open, onOpenChange, onInvited }: InviteUserDi
     defaultValues: { email: "", firstName: "", lastName: "", role: "customer" },
   });
 
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose: () => onOpenChange(false),
+  });
+
   const handleSubmit = async (values: InviteUserFormValues) => {
     try {
       await inviteMutation.mutateAsync({
@@ -68,16 +84,23 @@ export function InviteUserDialog({ open, onOpenChange, onInvited }: InviteUserDi
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Invite Team Member</DialogTitle>
-          <DialogDescription>
-            Send an invitation email to add someone to your team.
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+          else onOpenChange(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite Team Member</DialogTitle>
+            <DialogDescription>
+              Send an invitation email to add someone to your team.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="email"
@@ -156,16 +179,37 @@ export function InviteUserDialog({ open, onOpenChange, onInvited }: InviteUserDi
               <div className="text-sm text-destructive">{(inviteMutation.error as Error).message}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
               <Button type="submit" disabled={inviteMutation.isPending}>
                 {inviteMutation.isPending ? "Sending..." : "Send Invitation"}
               </Button>
             </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescriptionText>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescriptionText>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

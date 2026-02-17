@@ -161,28 +161,12 @@ CREATE TABLE delivery_attempts (
 fleet_alert (new OPEN alert)
          │
          ▼
-    dispatcher
-         │
-         ├── fetch_open_alerts() - Get recent OPEN alerts
-         │
-         ├── fetch_routes(tenant_id) - Get enabled routes for tenant
-         │
-         ├── route_matches(alert, route) - Check if alert matches route criteria
-         │
-         └── INSERT delivery_job - Create job if no duplicate exists
+    notification routing engine (ui)
                   │
-                  ▼
-         delivery_worker
-                  │
-                  ├── fetch_jobs() - Get PENDING jobs, mark PROCESSING
-                  │
-                  ├── fetch_integration() - Get integration config
-                  │
-                  ├── deliver_webhook() / deliver_snmp() / deliver_email() / deliver_mqtt() - Send alert
-                  │
-                  ├── record_attempt() - Log attempt details
-                  │
-                  └── update_job_status() - COMPLETED, FAILED, or retry
+                  ├── match routing rules / integrations
+                  ├── attempt delivery (webhook/snmp/email/mqtt)
+                  ├── record attempts + audit trail
+                  └── retry with exponential backoff
 ```
 
 ## Retry Logic
@@ -303,26 +287,7 @@ In PROD mode, webhooks also require HTTPS.
 
 ## Configuration
 
-### Environment Variables (delivery_worker)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MODE` | DEV | DEV or PROD (affects SSRF checks) |
-| `WORKER_POLL_SECONDS` | 2 | How often to check for new jobs |
-| `WORKER_BATCH_SIZE` | 10 | Jobs to process per cycle |
-| `WORKER_TIMEOUT_SECONDS` | 30 | HTTP/SNMP/SMTP timeout |
-| `WORKER_MAX_ATTEMPTS` | 5 | Max retry attempts |
-| `WORKER_BACKOFF_BASE_SECONDS` | 30 | Initial retry delay |
-| `WORKER_BACKOFF_MAX_SECONDS` | 7200 | Maximum retry delay |
-
-### Environment Variables (dispatcher)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DISPATCH_POLL_SECONDS` | 5 | How often to check for new alerts |
-| `ALERT_LOOKBACK_MINUTES` | 30 | How far back to look for alerts |
-| `ALERT_LIMIT` | 200 | Max alerts per dispatch cycle |
-| `ROUTE_LIMIT` | 500 | Max routes to evaluate per tenant |
+Delivery is handled by the unified routing engine in the `ui` service (Phase 129+). No separate dispatcher or delivery worker services are required.
 
 ## Customer API
 

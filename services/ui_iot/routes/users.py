@@ -609,6 +609,36 @@ async def send_password_reset(user_id: str, request: Request):
 
 
 @router.post(
+    "/api/v1/operator/users/{user_id}/send-welcome-email",
+    dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
+)
+async def resend_welcome_email(user_id: str, request: Request):
+    """Re-send the password-set email to a user (welcome email equivalent).
+
+    Uses Keycloak execute-actions-email with UPDATE_PASSWORD action.
+    """
+    try:
+        user = await kc_get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        await send_password_reset_email(user_id)
+        _audit(
+            request,
+            tenant_id="__system__",
+            event_type="user.welcome_email_sent",
+            category="security",
+            action="send_welcome_email",
+            message=f"Welcome/password-set email sent to {user.get('username')}",
+            entity_type="user",
+            entity_id=user_id,
+            entity_name=user.get("username"),
+        )
+        return {"status": "ok", "message": "Password-set email sent"}
+    except KeycloakAdminError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post(
     "/api/v1/operator/users/{user_id}/password",
     dependencies=[Depends(JWTBearer()), Depends(require_operator_admin)],
 )

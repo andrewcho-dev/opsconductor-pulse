@@ -8,6 +8,9 @@ import { fetchTenantsSummary, type TenantSummary } from "@/services/api/tenants"
 import { fetchSubscriptions } from "@/services/api/operator";
 import TenantActivitySparkline from "./TenantActivitySparkline";
 
+// DataTable not used: TenantHealthMatrix uses a custom grid layout with
+// color-coded cells and visual indicators that don't map to standard table columns.
+
 type SortKey = "alerts" | "devices" | "lastActive" | "name";
 
 function formatRelativeTime(value: string | null): string {

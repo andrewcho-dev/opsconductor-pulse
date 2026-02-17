@@ -11,11 +11,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PermissionGrid } from "./PermissionGrid";
 import { useCreateRole, usePermissionsList, useUpdateRole } from "@/hooks/use-roles";
 import type { Role } from "@/services/api/roles";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import {
   Form,
   FormField,
@@ -52,6 +63,11 @@ export function CreateRoleDialog({ open, onOpenChange, onSaved, editRole }: Crea
     resolver: zodResolver(createRoleSchema),
     defaultValues: { name: "", description: "" },
     mode: "onChange",
+  });
+
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose: () => onOpenChange(false),
   });
 
   useEffect(() => {
@@ -94,11 +110,18 @@ export function CreateRoleDialog({ open, onOpenChange, onSaved, editRole }: Crea
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{editRole ? "Edit Role" : "Create Custom Role"}</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+          else onOpenChange(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editRole ? "Edit Role" : "Create Custom Role"}</DialogTitle>
+          </DialogHeader>
 
         {error ? (
           <div className="text-sm text-destructive">Failed to load permissions: {(error as Error).message}</div>
@@ -161,7 +184,7 @@ export function CreateRoleDialog({ open, onOpenChange, onSaved, editRole }: Crea
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
           </Button>
           <Button type="button" onClick={handleSave} disabled={!canSave}>
@@ -172,8 +195,29 @@ export function CreateRoleDialog({ open, onOpenChange, onSaved, editRole }: Crea
                 : "Create Role"}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

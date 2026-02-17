@@ -25,6 +25,7 @@ import TenantHealthMatrix from "@/features/operator/TenantHealthMatrix";
 import TenantDetailPage from "@/features/operator/TenantDetailPage";
 import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
 import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
+import DeviceTiersPage from "@/features/operator/DeviceTiersPage";
 import OperatorUsersPage from "@/features/operator/OperatorUsersPage";
 import UserDetailPage from "@/features/operator/UserDetailPage";
 import { SystemDashboard } from "@/features/operator/SystemDashboard";
@@ -45,6 +46,8 @@ import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
 import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import ProfilePage from "@/features/settings/ProfilePage";
+import OrganizationPage from "@/features/settings/OrganizationPage";
+import BillingPage from "@/features/settings/BillingPage";
 import AnalyticsPage from "@/features/analytics/AnalyticsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
@@ -123,6 +126,8 @@ export const router = createBrowserRouter(
             { path: "subscription", element: <SubscriptionPage /> },
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "settings/profile", element: <ProfilePage /> },
+            { path: "settings/organization", element: <OrganizationPage /> },
+            { path: "billing", element: <BillingPage /> },
           ],
         },
         {
@@ -147,6 +152,7 @@ export const router = createBrowserRouter(
             { path: "users/:userId", element: <UserDetailPage /> },
             { path: "subscriptions", element: <SubscriptionsPage /> },
             { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
+            { path: "device-tiers", element: <DeviceTiersPage /> },
             { path: "certificates", element: <CertificateOverviewPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "system-metrics", element: <SystemMetricsPage /> },

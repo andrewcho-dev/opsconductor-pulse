@@ -24,6 +24,9 @@ import {
 } from "@/hooks/use-metrics";
 import { ApiError } from "@/services/api/client";
 
+// DataTable not used: Small configuration table within a dialog.
+// DataTable would add unnecessary complexity for a few-row config display.
+
 interface NormalizedMetricDialogProps {
   open: boolean;
   metric: NormalizedMetricReference | null;

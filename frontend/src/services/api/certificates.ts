@@ -137,14 +137,32 @@ export async function listAllCertificates(params?: {
   limit?: number;
   offset?: number;
 }): Promise<CertificateListResponse> {
-  // Operator endpoint -- if it exists, use it. Otherwise fall back to customer endpoint.
-  // For now, reuse the customer endpoint (operator with tenant context).
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
   if (params?.tenant_id) query.set("tenant_id", params.tenant_id);
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.offset) query.set("offset", String(params.offset));
   const qs = query.toString();
-  return apiGet(`/api/v1/customer/certificates${qs ? `?${qs}` : ""}`);
+  return apiGet(`/api/v1/operator/certificates${qs ? `?${qs}` : ""}`);
+}
+
+export async function downloadOperatorCaBundle(): Promise<string> {
+  // Returns raw PEM text.
+  if (keycloak.authenticated) {
+    try {
+      await keycloak.updateToken(30);
+    } catch (error) {
+      console.error("Auth token refresh failed:", error);
+      keycloak.login();
+      throw new ApiError(401, "Token expired");
+    }
+  }
+
+  const headers: Record<string, string> = {};
+  if (keycloak.token) headers["Authorization"] = `Bearer ${keycloak.token}`;
+
+  const response = await fetch("/api/v1/operator/ca-bundle", { headers });
+  if (!response.ok) throw new Error("Failed to download CA bundle");
+  return response.text();
 }
 

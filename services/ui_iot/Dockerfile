@@ -8,6 +8,7 @@ COPY app.py /app/app.py
 COPY dependencies.py /app/dependencies.py
 COPY metrics_collector.py /app/metrics_collector.py
 COPY ws_manager.py /app/ws_manager.py
+COPY telemetry_stream.py /app/telemetry_stream.py
 COPY middleware /app/middleware
 COPY db /app/db
 COPY routes /app/routes

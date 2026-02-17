@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
 import {
   Select,
   SelectContent,
@@ -11,19 +13,20 @@ import {
 } from "@/components/ui/select";
 import {
   listAllCertificates,
-  downloadCaBundle,
+  downloadOperatorCaBundle,
 } from "@/services/api/certificates";
+import { Link } from "react-router-dom";
 
-function StatusBadge({ status }: { status: string }) {
+function statusVariant(status: string): "default" | "destructive" | "secondary" {
   switch (status) {
     case "ACTIVE":
-      return <Badge variant="default">Active</Badge>;
+      return "default";
     case "REVOKED":
-      return <Badge variant="destructive">Revoked</Badge>;
+      return "destructive";
     case "EXPIRED":
-      return <Badge variant="outline">Expired</Badge>;
+      return "secondary";
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return "secondary";
   }
 }
 
@@ -57,7 +60,7 @@ export default function CertificateOverviewPage() {
 
   async function handleDownloadCaBundle() {
     try {
-      const pem = await downloadCaBundle();
+      const pem = await downloadOperatorCaBundle();
       const blob = new Blob([pem], { type: "application/x-pem-file" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -69,6 +72,68 @@ export default function CertificateOverviewPage() {
       console.error("Failed to download CA bundle:", err);
     }
   }
+
+  type Row = (typeof certificates)[number];
+
+  const columns: ColumnDef<Row>[] = [
+    {
+      accessorKey: "tenant_id",
+      header: "Tenant",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.tenant_id}</span>,
+    },
+    {
+      accessorKey: "device_id",
+      header: "Device",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.device_id}</span>,
+    },
+    {
+      accessorKey: "common_name",
+      header: "Common Name",
+      cell: ({ row }) => <span className="text-xs">{row.original.common_name}</span>,
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={statusVariant(row.original.status)}>{row.original.status}</Badge>
+      ),
+    },
+    {
+      accessorKey: "not_after",
+      header: "Expiry",
+      cell: ({ row }) => {
+        const ts = new Date(row.original.not_after).getTime();
+        const days = Math.floor((ts - Date.now()) / (24 * 60 * 60 * 1000));
+        const warn = Number.isFinite(days) && days <= 30;
+        const expired = Number.isFinite(ts) && ts < Date.now();
+        return (
+          <span className={`text-xs ${expired || warn ? "text-red-600" : "text-muted-foreground"}`}>
+            {new Date(row.original.not_after).toLocaleDateString()}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: "fingerprint_sha256",
+      header: "Fingerprint",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground" title={row.original.fingerprint_sha256}>
+          {row.original.fingerprint_sha256.slice(0, 16)}...
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      header: "Actions",
+      cell: ({ row }) => (
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/operator/tenants/${row.original.tenant_id}`}>View</Link>
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="p-4 space-y-4">
@@ -121,85 +186,25 @@ export default function CertificateOverviewPage() {
 
       {/* Table */}
       {error && <div className="text-sm text-destructive">Failed to load certificates.</div>}
-      {isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading certificates...</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="py-2 pr-2">Tenant</th>
-                  <th className="py-2 pr-2">Device</th>
-                  <th className="py-2 pr-2">Fingerprint</th>
-                  <th className="py-2 pr-2">Common Name</th>
-                  <th className="py-2 pr-2">Status</th>
-                  <th className="py-2 pr-2">Issuer</th>
-                  <th className="py-2 pr-2">Valid Until</th>
-                  <th className="py-2 pr-2">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {certificates.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-4 text-center text-xs text-muted-foreground">
-                      No certificates found.
-                    </td>
-                  </tr>
-                ) : (
-                  certificates.map((cert) => (
-                    <tr key={cert.id} className="border-b border-border/50">
-                      <td className="py-2 pr-2 text-xs font-mono">{cert.tenant_id}</td>
-                      <td className="py-2 pr-2 text-xs">{cert.device_id}</td>
-                      <td className="py-2 pr-2 font-mono text-xs" title={cert.fingerprint_sha256}>
-                        {cert.fingerprint_sha256.slice(0, 16)}...
-                      </td>
-                      <td className="py-2 pr-2 text-xs">{cert.common_name}</td>
-                      <td className="py-2 pr-2">
-                        <StatusBadge status={cert.status} />
-                      </td>
-                      <td className="py-2 pr-2 text-xs">{cert.issuer}</td>
-                      <td className="py-2 pr-2 text-xs">
-                        {new Date(cert.not_after).toLocaleDateString()}
-                      </td>
-                      <td className="py-2 pr-2 text-xs">
-                        {new Date(cert.created_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      <DataTable
+        columns={columns}
+        data={certificates}
+        totalCount={total}
+        pagination={{ pageIndex: page, pageSize: limit }}
+        onPaginationChange={(updater) => {
+          const next =
+            typeof updater === "function"
+              ? updater({ pageIndex: page, pageSize: limit })
+              : (updater as PaginationState);
+          setPage(next.pageIndex);
+        }}
+        isLoading={isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No device certificates found across tenants.
           </div>
-
-          {/* Pagination */}
-          {total > limit && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                Showing {page * limit + 1}--{Math.min((page + 1) * limit, total)} of {total}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={(page + 1) * limit >= total}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+        }
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ from cryptography.x509.oid import NameOID
 from pydantic import BaseModel, Field
 
 from routes.customer import *  # noqa: F401,F403
+from middleware.tenant import require_operator
 
 # Path to Device CA cert and key for signing operations
 DEVICE_CA_CERT_PATH = os.getenv("DEVICE_CA_CERT_PATH", "/mosquitto/certs/device-ca.crt")
@@ -25,6 +26,16 @@ router = APIRouter(
         Depends(JWTBearer()),
         Depends(inject_tenant_context),
         Depends(require_customer),
+    ],
+)
+
+operator_router = APIRouter(
+    prefix="/api/v1/operator",
+    tags=["certificates"],
+    dependencies=[
+        Depends(JWTBearer()),
+        Depends(inject_tenant_context),
+        Depends(require_operator),
     ],
 )
 
@@ -220,6 +231,69 @@ async def list_certificates(
     }
 
 
+@operator_router.get("/certificates")
+async def list_all_certificates(
+    tenant_id: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    """Fleet-wide certificate list (operator-only).
+
+    Uses pulse_operator role to bypass RLS and does not require tenant context.
+    """
+    conditions: list[str] = ["TRUE"]
+    params: list[object] = []
+    idx = 1
+
+    if tenant_id:
+        conditions.append(f"tenant_id = ${idx}")
+        params.append(tenant_id)
+        idx += 1
+
+    if status:
+        status_upper = status.upper()
+        if status_upper not in ("ACTIVE", "REVOKED", "EXPIRED"):
+            raise HTTPException(400, "Invalid status filter")
+        conditions.append(f"status = ${idx}")
+        params.append(status_upper)
+        idx += 1
+
+    where = " AND ".join(conditions)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ROLE pulse_operator")
+
+            rows = await conn.fetch(
+                f"""
+                SELECT id, tenant_id, device_id, fingerprint_sha256, common_name,
+                       issuer, serial_number, status, not_before, not_after,
+                       revoked_at, revoked_reason, created_at, updated_at
+                FROM device_certificates
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
+
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM device_certificates WHERE {where}",
+                *params,
+            )
+
+    return {
+        "certificates": [dict(r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @router.post("/certificates", status_code=201)
 async def upload_certificate(body: CertificateUpload, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
@@ -356,6 +430,12 @@ async def get_ca_bundle():
         media_type="application/x-pem-file",
         headers={"Content-Disposition": "attachment; filename=device-ca-bundle.pem"},
     )
+
+
+@operator_router.get("/ca-bundle")
+async def get_operator_ca_bundle():
+    # No tenant context required; CA bundle is global.
+    return await get_ca_bundle()
 
 
 @router.post("/devices/{device_id}/certificates/generate", status_code=201)

@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.evaluator_iot import evaluator
-from services.dispatcher import dispatcher
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -27,10 +26,10 @@ async def test_queries_use_pool(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@pgbouncer:6432/app")
     create_pool_mock = AsyncMock(return_value=pool)
     connect_mock = AsyncMock()
-    monkeypatch.setattr("services.dispatcher.dispatcher.asyncpg.create_pool", create_pool_mock)
-    monkeypatch.setattr("services.dispatcher.dispatcher.asyncpg.connect", connect_mock)
+    monkeypatch.setattr("services.evaluator_iot.evaluator.asyncpg.create_pool", create_pool_mock)
+    monkeypatch.setattr("services.evaluator_iot.evaluator.asyncpg.connect", connect_mock)
 
-    result = await dispatcher.get_pool()
+    result = await evaluator.get_pool()
     assert result is pool
     create_pool_mock.assert_awaited_once()
     connect_mock.assert_not_awaited()

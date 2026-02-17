@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,10 +19,12 @@ import {
   generateCertificate,
   rotateCertificate,
   revokeCertificate,
+  type DeviceCertificate,
   type GenerateCertResponse,
   type RotateCertResponse,
 } from "@/services/api/certificates";
 import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 
 interface DeviceCertificatesTabProps {
   deviceId: string;
@@ -36,44 +40,22 @@ function downloadTextFile(filename: string, text: string, mime = "text/plain;cha
   URL.revokeObjectURL(url);
 }
 
-function ExpiryBadge({ notAfter }: { notAfter: string }) {
-  const expiry = new Date(notAfter);
-  const daysUntil = Math.floor((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-
-  if (daysUntil < 0) {
-    return <Badge variant="destructive">Expired</Badge>;
-  }
-  if (daysUntil <= 30) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-300 dark:bg-yellow-950/30">
-        <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
-        Expires in {daysUntil}d
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs text-green-600 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950/30">
-      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-      {daysUntil}d remaining
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
+function statusVariant(status: string): "default" | "destructive" | "secondary" {
   switch (status) {
     case "ACTIVE":
-      return <Badge variant="default">Active</Badge>;
+      return "default";
     case "REVOKED":
-      return <Badge variant="destructive">Revoked</Badge>;
+      return "destructive";
     case "EXPIRED":
-      return <Badge variant="outline">Expired</Badge>;
+      return "secondary";
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return "secondary";
   }
 }
 
 export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) {
   const queryClient = useQueryClient();
+  const [revokeTarget, setRevokeTarget] = useState<DeviceCertificate | null>(null);
   const [generatedCert, setGeneratedCert] = useState<
     GenerateCertResponse | RotateCertResponse | null
   >(null);
@@ -118,6 +100,66 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
   const privateKeyPem = generatedCert ? generatedCert.private_key_pem : "";
   const certPem = generatedCert ? generatedCert.cert_pem : "";
   const caPem = generatedCert ? generatedCert.ca_cert_pem : "";
+
+  const columns: ColumnDef<DeviceCertificate>[] = [
+    {
+      accessorKey: "common_name",
+      header: "Common Name",
+      cell: ({ row }) => <span className="text-xs">{row.original.common_name}</span>,
+    },
+    {
+      accessorKey: "fingerprint_sha256",
+      header: "Fingerprint",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span
+          className="font-mono text-xs text-muted-foreground"
+          title={row.original.fingerprint_sha256}
+        >
+          {row.original.fingerprint_sha256.slice(0, 16)}...
+        </span>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={statusVariant(row.original.status)}>{row.original.status}</Badge>
+      ),
+    },
+    {
+      accessorKey: "not_before",
+      header: "Valid From",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(row.original.not_before).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "not_after",
+      header: "Valid Until",
+      cell: ({ row }) => {
+        const ts = new Date(row.original.not_after).getTime();
+        const expired = Number.isFinite(ts) && ts < Date.now();
+        return (
+          <span className={`text-xs ${expired ? "text-red-600" : "text-muted-foreground"}`}>
+            {new Date(row.original.not_after).toLocaleDateString()}
+          </span>
+        );
+      },
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.status === "ACTIVE" ? (
+          <Button variant="destructive" size="sm" onClick={() => setRevokeTarget(row.original)}>
+            Revoke
+          </Button>
+        ) : null,
+    },
+  ];
 
   return (
     <div className="rounded-md border border-border p-3 space-y-3">
@@ -178,79 +220,17 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
 
       {error && <div className="text-sm text-destructive">Failed to load certificates.</div>}
 
-      {isLoading ? (
-        <div className="text-xs text-muted-foreground">Loading certificates...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="py-2 pr-2">Fingerprint</th>
-                <th className="py-2 pr-2">Common Name</th>
-                <th className="py-2 pr-2">Status</th>
-                <th className="py-2 pr-2">Valid From</th>
-                <th className="py-2 pr-2">Valid Until</th>
-                <th className="py-2 pr-2">Expiry</th>
-                <th className="py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.certificates ?? []).length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-4 text-center text-xs text-muted-foreground">
-                    No certificates found. Generate one to enable mTLS authentication.
-                  </td>
-                </tr>
-              ) : (
-                (data?.certificates ?? []).map((cert) => (
-                  <tr key={cert.id} className="border-b border-border/50">
-                    <td className="py-2 pr-2 font-mono text-xs" title={cert.fingerprint_sha256}>
-                      {cert.fingerprint_sha256.slice(0, 16)}...
-                    </td>
-                    <td className="py-2 pr-2 text-xs">{cert.common_name}</td>
-                    <td className="py-2 pr-2">
-                      <StatusBadge status={cert.status} />
-                    </td>
-                    <td className="py-2 pr-2 text-xs">
-                      {new Date(cert.not_before).toLocaleDateString()}
-                    </td>
-                    <td className="py-2 pr-2 text-xs">
-                      {new Date(cert.not_after).toLocaleDateString()}
-                    </td>
-                    <td className="py-2 pr-2">
-                      {cert.status === "ACTIVE" && <ExpiryBadge notAfter={cert.not_after} />}
-                      {cert.status === "REVOKED" && (
-                        <span className="text-xs text-muted-foreground">
-                          Revoked: {cert.revoked_reason || "—"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2">
-                      {cert.status === "ACTIVE" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            if (
-                              !window.confirm(
-                                "Revoke this certificate? The device will no longer be able to authenticate with it."
-                              )
-                            )
-                              return;
-                            await revokeMutation.mutateAsync(cert.id);
-                          }}
-                        >
-                          Revoke
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        data={data?.certificates ?? []}
+        isLoading={isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No certificates uploaded for this device.
+          </div>
+        }
+        manualPagination={false}
+      />
 
       {/* Generate Certificate Dialog */}
       <AlertDialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
@@ -302,6 +282,24 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title="Revoke Certificate"
+        description="Are you sure you want to revoke this certificate? The device will no longer be able to authenticate with it. This action cannot be undone."
+        confirmText="Revoke Certificate"
+        variant="destructive"
+        onConfirm={() => {
+          if (revokeTarget) {
+            void revokeMutation.mutateAsync(revokeTarget.id);
+            setRevokeTarget(null);
+          }
+        }}
+        isPending={revokeMutation.isPending}
+      />
     </div>
   );
 }

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import pytest
 
 from services.evaluator_iot import evaluator
-from services.dispatcher import dispatcher
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -62,93 +61,3 @@ async def test_check_escalations_severity_floor():
     conn = EvalConn()
     await evaluator.check_escalations(EvalPool(conn))
     assert "GREATEST(fa.severity - 1, 0)" in conn.last_query
-
-
-class DispConn:
-    def __init__(self):
-        self.fetch_calls = []
-        self.fetchval_calls = []
-        self.fetchrow_calls = []
-        self.inserted = True
-        self.already = False
-
-    async def fetch(self, query, *args):
-        self.fetch_calls.append((query, args))
-        if "FROM fleet_alert" in query:
-            return [
-                {
-                    "id": 5,
-                    "tenant_id": "tenant-a",
-                    "site_id": "site-1",
-                    "device_id": "dev-1",
-                    "alert_type": "THRESHOLD",
-                    "severity": 2,
-                    "confidence": 0.9,
-                    "summary": "Escalated",
-                    "status": "OPEN",
-                    "created_at": datetime.now(timezone.utc),
-                    "details": {},
-                    "escalated_at": datetime.now(timezone.utc),
-                    "escalation_level": 1,
-                }
-            ]
-        return []
-
-    async def fetchval(self, query, *args):
-        self.fetchval_calls.append((query, args))
-        if "FROM delivery_jobs" in query:
-            return 1 if self.already else None
-        return None
-
-    async def fetchrow(self, query, *args):
-        self.fetchrow_calls.append((query, args))
-        if "INSERT INTO delivery_jobs" in query and self.inserted:
-            return {"job_id": 99}
-        return None
-
-
-async def test_dispatch_escalated_alerts_creates_job(monkeypatch):
-    conn = DispConn()
-    async def _routes(_conn, _tenant_id):
-        return [
-            {
-                "route_id": "r1",
-                "integration_id": "i1",
-                "deliver_on": ["OPEN"],
-                "min_severity": None,
-                "alert_types": [],
-                "site_ids": [],
-                "device_prefixes": [],
-            }
-        ]
-    monkeypatch.setattr(
-        dispatcher,
-        "fetch_routes",
-        _routes,
-    )
-    created = await dispatcher.dispatch_escalated_alerts(conn, "tenant-a", lookback_minutes=5)
-    assert created == 1
-
-
-async def test_dispatch_escalated_no_duplicates(monkeypatch):
-    conn = DispConn()
-    conn.already = True
-    async def _routes(_conn, _tenant_id):
-        return [
-            {
-                "route_id": "r1",
-                "integration_id": "i1",
-                "deliver_on": ["OPEN"],
-                "min_severity": None,
-                "alert_types": [],
-                "site_ids": [],
-                "device_prefixes": [],
-            }
-        ]
-    monkeypatch.setattr(
-        dispatcher,
-        "fetch_routes",
-        _routes,
-    )
-    created = await dispatcher.dispatch_escalated_alerts(conn, "tenant-a", lookback_minutes=5)
-    assert created == 0

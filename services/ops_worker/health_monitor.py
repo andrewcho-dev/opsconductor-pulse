@@ -20,8 +20,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
 EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
-DISPATCHER_URL = os.getenv("DISPATCHER_HEALTH_URL", "http://iot-dispatcher:8080")
-DELIVERY_URL = os.getenv("DELIVERY_HEALTH_URL", "http://iot-delivery-worker:8080")
 
 HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
 SYSTEM_ALERT_ENABLED = os.getenv("SYSTEM_ALERT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
@@ -29,8 +27,6 @@ SYSTEM_ALERT_ENABLED = os.getenv("SYSTEM_ALERT_ENABLED", "true").lower() in {"1"
 HEALTH_MONITOR_ENDPOINTS = {
     "ingest": INGEST_URL,
     "evaluator": EVALUATOR_URL,
-    "dispatcher": DISPATCHER_URL,
-    "delivery_worker": DELIVERY_URL,
 }
 
 _pool: asyncpg.Pool | None = None

@@ -1,9 +1,20 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { provisionDevice, type ProvisionDeviceResponse } from "@/services/api/devices";
 import { CredentialModal } from "./CredentialModal";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -52,6 +63,11 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
     onClose();
   };
 
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose: closeAll,
+  });
+
   const submit = async (values: AddDeviceFormValues) => {
     setSaving(true);
     setError(null);
@@ -77,7 +93,12 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
 
   return (
     <>
-      <Dialog open={open && !credentials} onOpenChange={closeAll}>
+      <Dialog
+        open={open && !credentials}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Device</DialogTitle>
@@ -138,7 +159,7 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
               />
               {error && <div className="text-xs text-destructive">{error}</div>}
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={closeAll}>
+                <Button type="button" variant="outline" onClick={handleClose}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>
@@ -149,6 +170,27 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CredentialModal
         open={Boolean(credentials)}
         credentials={credentials}

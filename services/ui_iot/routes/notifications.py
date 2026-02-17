@@ -57,7 +57,10 @@ def validate_channel_config(channel_type: str, config: dict) -> None:
         )
 
 
-def _masked_config(channel_type: str, config: dict) -> dict:
+def _masked_config(channel_type: str, config) -> dict:
+    if isinstance(config, str):
+        import json
+        config = json.loads(config)
     out = dict(config or {})
     for key in MASKED_FIELDS.get(channel_type, []):
         if key in out and out[key] not in (None, "", {}):
@@ -135,7 +138,7 @@ async def list_channels(pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.create")],
 )
 @limiter.limit("20/minute")
-async def create_channel(request: Request, body: ChannelIn, pool=Depends(get_db_pool)):
+async def create_channel(request: Request, response: Response, body: ChannelIn, pool=Depends(get_db_pool)):
     """Create a notification channel for the tenant."""
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
@@ -183,7 +186,7 @@ async def get_channel(channel_id: int, pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.update")],
 )
 @limiter.limit("20/minute")
-async def update_channel(request: Request, channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
+async def update_channel(request: Request, response: Response, channel_id: int, body: ChannelIn, pool=Depends(get_db_pool)):
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -214,7 +217,7 @@ async def update_channel(request: Request, channel_id: int, body: ChannelIn, poo
     dependencies=[require_permission("notifications.delete")],
 )
 @limiter.limit("20/minute")
-async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
+async def delete_channel(request: Request, response: Response, channel_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(
@@ -232,7 +235,7 @@ async def delete_channel(request: Request, channel_id: int, pool=Depends(get_db_
     dependencies=[require_permission("notifications.test")],
 )
 @limiter.limit("5/minute")
-async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_pool)):
+async def test_channel(request: Request, response: Response, channel_id: int, pool=Depends(get_db_pool)):
     """Send a test notification for a specific channel."""
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
@@ -262,6 +265,8 @@ async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_po
     }
     ch = dict(channel)
     cfg = ch.get("config") or {}
+    if isinstance(cfg, str):
+        cfg = json.loads(cfg)
     try:
         if ch["channel_type"] == "slack":
             await send_slack(cfg["webhook_url"], test_alert)
@@ -285,8 +290,20 @@ async def test_channel(request: Request, channel_id: int, pool=Depends(get_db_po
                 "delivery": result,
             }
         elif ch["channel_type"] == "email":
+            smtp_raw = cfg.get("smtp", {})
+            if isinstance(smtp_raw, str):
+                smtp_raw = json.loads(smtp_raw)
+            # Map channel config keys to send_email expected keys
+            smtp_mapped = {
+                "smtp_host": smtp_raw.get("host") or smtp_raw.get("smtp_host", ""),
+                "smtp_port": smtp_raw.get("port") or smtp_raw.get("smtp_port", 587),
+                "smtp_user": smtp_raw.get("username") or smtp_raw.get("smtp_user", ""),
+                "smtp_password": smtp_raw.get("password") or smtp_raw.get("smtp_password", ""),
+                "smtp_tls": smtp_raw.get("use_tls") if "use_tls" in smtp_raw else smtp_raw.get("smtp_tls", True),
+                "from_address": smtp_raw.get("from_address") or smtp_raw.get("username") or smtp_raw.get("smtp_user", ""),
+            }
             await send_email(
-                smtp_config=cfg.get("smtp", {}),
+                smtp_config=smtp_mapped,
                 recipients=cfg.get("recipients", {}),
                 alert=test_alert,
                 template=cfg.get("template"),
@@ -325,7 +342,7 @@ async def list_routing_rules(pool=Depends(get_db_pool)):
     dependencies=[require_permission("notifications.routing.create")],
 )
 @limiter.limit("20/minute")
-async def create_routing_rule(request: Request, body: RoutingRuleIn, pool=Depends(get_db_pool)):
+async def create_routing_rule(request: Request, response: Response, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -360,7 +377,7 @@ async def create_routing_rule(request: Request, body: RoutingRuleIn, pool=Depend
     dependencies=[require_permission("notifications.routing.update")],
 )
 @limiter.limit("20/minute")
-async def update_routing_rule(request: Request, rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
+async def update_routing_rule(request: Request, response: Response, rule_id: int, body: RoutingRuleIn, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
@@ -399,7 +416,7 @@ async def update_routing_rule(request: Request, rule_id: int, body: RoutingRuleI
     dependencies=[require_permission("notifications.routing.delete")],
 )
 @limiter.limit("20/minute")
-async def delete_routing_rule(request: Request, rule_id: int, pool=Depends(get_db_pool)):
+async def delete_routing_rule(request: Request, response: Response, rule_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
         res = await conn.execute(

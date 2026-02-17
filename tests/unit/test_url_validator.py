@@ -78,6 +78,14 @@ async def test_allow_public_domain(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_valid_https_custom_port(monkeypatch):
+    monkeypatch.setattr(url_validator, "resolve_hostname", AsyncMock(return_value=["93.184.216.34"]))
+    ok, err = await url_validator.validate_webhook_url("https://webhook.example.com:8443/hook")
+    assert ok is True
+    assert err is None
+
+
+@pytest.mark.asyncio
 async def test_block_scheme_file():
     valid, error = await url_validator.validate_webhook_url("file:///etc/passwd")
     assert valid is False
@@ -89,6 +97,23 @@ async def test_block_scheme_ftp():
     valid, error = await url_validator.validate_webhook_url("ftp://example.com/hook")
     assert valid is False
     assert "only https" in error.lower()
+
+
+@pytest.mark.asyncio
+async def test_http_blocked_by_default(monkeypatch):
+    monkeypatch.setattr(url_validator, "resolve_hostname", AsyncMock(return_value=["93.184.216.34"]))
+    ok, err = await url_validator.validate_webhook_url("http://example.com/webhook")
+    assert ok is False
+    assert err is not None
+    assert "https" in err.lower() or "only https" in err.lower()
+
+
+@pytest.mark.asyncio
+async def test_http_allowed_when_flag_set(monkeypatch):
+    monkeypatch.setattr(url_validator, "resolve_hostname", AsyncMock(return_value=["93.184.216.34"]))
+    ok, err = await url_validator.validate_webhook_url("http://example.com/webhook", allow_http=True)
+    assert ok is True
+    assert err is None
 
 
 @pytest.mark.asyncio
@@ -141,6 +166,20 @@ async def test_block_internal_hostname_suffix():
 
 
 @pytest.mark.asyncio
+async def test_block_dot_local():
+    ok, err = await url_validator.validate_webhook_url("https://myservice.local/webhook")
+    assert ok is False
+    assert err is not None
+
+
+@pytest.mark.asyncio
+async def test_block_dot_localhost():
+    ok, err = await url_validator.validate_webhook_url("https://example.localhost/webhook")
+    assert ok is False
+    assert err is not None
+
+
+@pytest.mark.asyncio
 async def test_block_metadata_hostname():
     valid, error = await url_validator.validate_webhook_url("https://metadata.google.internal/hook")
     assert valid is False
@@ -161,6 +200,14 @@ async def test_resolve_hostname_timeout(monkeypatch):
     valid, error = await url_validator.validate_webhook_url("https://example.com/hook")
     assert valid is False
     assert "invalid url format" in error.lower()
+
+
+@pytest.mark.asyncio
+async def test_url_with_credentials(monkeypatch):
+    monkeypatch.setattr(url_validator, "resolve_hostname", AsyncMock(return_value=["93.184.216.34"]))
+    ok, err = await url_validator.validate_webhook_url("https://user:pass@example.com/webhook")
+    assert ok is True
+    assert err is None
 
 
 @pytest.mark.asyncio

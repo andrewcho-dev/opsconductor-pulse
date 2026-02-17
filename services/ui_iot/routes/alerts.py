@@ -5,6 +5,7 @@ from routes.customer import _normalize_optional_ids
 from routes.customer import _with_rule_conditions
 from middleware.permissions import require_permission
 from schemas.responses import AlertDetailResponse, AlertListResponse
+from middleware.entitlements import check_alert_rule_limit
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -534,6 +535,10 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
+            check = await check_alert_rule_limit(conn, tenant_id)
+            if not check["allowed"]:
+                raise HTTPException(check["status_code"], check["message"])
+
             rule = await create_alert_rule(
                 conn,
                 tenant_id=tenant_id,

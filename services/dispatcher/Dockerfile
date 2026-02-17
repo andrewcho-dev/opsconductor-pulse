@@ -1,8 +1,0 @@
-FROM python:3.12-slim
-WORKDIR /app
-COPY dispatcher/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY dispatcher/dispatcher.py .
-COPY shared/ ./shared/
-ENV PYTHONUNBUFFERED=1
-CMD ["python", "/app/dispatcher.py"]

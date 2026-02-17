@@ -158,88 +158,6 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  dispatcher:
-    build:
-      context: ../services
-      dockerfile: dispatcher/Dockerfile
-    container_name: iot-dispatcher
-    labels:
-      com.opsconductor.status: "DEPRECATED"
-      com.opsconductor.deprecated-since: "2026-02-16"
-      com.opsconductor.removal-phase: "phase129"
-    environment:
-      SERVICE_NAME: dispatcher
-      PG_HOST: iot-pgbouncer
-      PG_PORT: "5432"
-      PG_DB: iotcloud
-      PG_USER: iot
-      PG_PASS: ${PG_PASS}
-      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
-      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
-      DISPATCH_POLL_SECONDS: "5"
-      ALERT_LOOKBACK_MINUTES: "30"
-      ALERT_LIMIT: "200"
-      ROUTE_LIMIT: "500"
-    expose:
-      - "8080"
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      pgbouncer:
-        condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  delivery_worker:
-    build:
-      context: ../services
-      dockerfile: delivery_worker/Dockerfile
-    container_name: iot-delivery-worker
-    labels:
-      com.opsconductor.status: "DEPRECATED"
-      com.opsconductor.deprecated-since: "2026-02-16"
-      com.opsconductor.removal-phase: "phase129"
-    environment:
-      SERVICE_NAME: delivery_worker
-      PG_HOST: iot-pgbouncer
-      PG_PORT: "5432"
-      PG_DB: iotcloud
-      PG_USER: iot
-      PG_PASS: ${PG_PASS}
-      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
-      NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
-      MODE: "${MODE:-DEV}"
-      WORKER_POLL_SECONDS: "2"
-      WORKER_BATCH_SIZE: "10"
-      WORKER_TIMEOUT_SECONDS: "30"
-      WORKER_MAX_ATTEMPTS: "5"
-      WORKER_BACKOFF_BASE_SECONDS: "30"
-      WORKER_BACKOFF_MAX_SECONDS: "7200"
-      STUCK_JOB_MINUTES: "5"
-    expose:
-      - "8080"
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      pgbouncer:
-        condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
   ops_worker:
     build:
       context: ../services
@@ -263,8 +181,6 @@ services:
       METRICS_COLLECTION_INTERVAL: "5"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
-      DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
-      DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
       DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
       DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
       CRL_OUTPUT_PATH: "/mosquitto/certs/device-crl.pem"
@@ -284,10 +200,6 @@ services:
         condition: service_started
       evaluator:
         condition: service_started
-      dispatcher:
-        condition: service_started
-      delivery_worker:
-        condition: service_started
     healthcheck:
       test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
       interval: 60s
@@ -303,6 +215,12 @@ services:
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       WORKER_INTERVAL_SECONDS: "3600"
       # NOTIFICATION_WEBHOOK_URL: "https://your-webhook.example.com/notify"
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@pulse.local}
+      SMTP_TLS: ${SMTP_TLS:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -400,8 +318,6 @@ services:
       MQTT_TLS_INSECURE: "true"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
-      DISPATCHER_HEALTH_URL: "http://iot-dispatcher:8080"
-      DELIVERY_HEALTH_URL: "http://iot-delivery-worker:8080"
       METRICS_COLLECTION_INTERVAL: "5"
       AUTH_CACHE_TTL_SECONDS: "60"
       REQUIRE_TOKEN: "1"
@@ -411,6 +327,9 @@ services:
       WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"
       DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
       DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
     expose:
       - "8080"
     depends_on:
@@ -586,9 +505,67 @@ services:
     profiles:
       - dev
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: pulse-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - ui
+      - ingest
+      - evaluator
+      - ops_worker
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: pulse-grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: "3001"
+      GF_SERVER_ROOT_URL: "http://localhost:3001"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/api-overview.json
+    ports:
+      - "${GRAFANA_PORT:-3001}:3001"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - default
+
 volumes:
   caddy_data:
   caddy_config:
   export-data:
   mosquitto-data:
   mosquitto-passwd:
+  prometheus_data:
+  grafana_data:

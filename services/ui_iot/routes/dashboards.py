@@ -1,4 +1,5 @@
 import logging
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -14,6 +15,14 @@ from db.pool import tenant_connection
 from dependencies import get_db_pool
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_jsonb(val):
+    """Parse JSONB value that may be returned as string by asyncpg/PgBouncer."""
+    if isinstance(val, str):
+        return json.loads(val)
+    return val or {}
+
 
 # Valid widget types
 WIDGET_TYPES = {
@@ -285,14 +294,14 @@ async def get_dashboard(dashboard_id: int, pool=Depends(get_db_pool)):
         "is_default": dashboard["is_default"],
         "is_shared": dashboard["user_id"] is None,
         "is_owner": dashboard["user_id"] == user_id,
-        "layout": dashboard["layout"],
+        "layout": _parse_jsonb(dashboard["layout"]),
         "widgets": [
             {
                 "id": w["id"],
                 "widget_type": w["widget_type"],
                 "title": w["title"],
-                "config": w["config"],
-                "position": w["position"],
+                "config": _parse_jsonb(w["config"]),
+                "position": _parse_jsonb(w["position"]),
                 "created_at": w["created_at"].isoformat() if w["created_at"] else None,
                 "updated_at": w["updated_at"].isoformat() if w["updated_at"] else None,
             }
@@ -481,16 +490,16 @@ async def add_widget(dashboard_id: int, data: WidgetCreate, pool=Depends(get_db_
             dashboard_id,
             data.widget_type,
             data.title.strip(),
-            data.config,
-            data.position,
+            json.dumps(data.config) if isinstance(data.config, dict) else data.config,
+            json.dumps(data.position) if isinstance(data.position, dict) else data.position,
         )
 
     return {
         "id": row["id"],
         "widget_type": row["widget_type"],
         "title": row["title"],
-        "config": row["config"],
-        "position": row["position"],
+        "config": _parse_jsonb(row["config"]),
+        "position": _parse_jsonb(row["position"]),
         "created_at": row["created_at"].isoformat(),
     }
 
@@ -536,11 +545,11 @@ async def update_widget(
             idx += 1
         if data.config is not None:
             sets.append(f"config = ${idx}")
-            params.append(data.config)
+            params.append(json.dumps(data.config) if isinstance(data.config, dict) else data.config)
             idx += 1
         if data.position is not None:
             sets.append(f"position = ${idx}")
-            params.append(data.position)
+            params.append(json.dumps(data.position) if isinstance(data.position, dict) else data.position)
             idx += 1
 
         if not sets:
@@ -561,8 +570,8 @@ async def update_widget(
         "id": row["id"],
         "widget_type": row["widget_type"],
         "title": row["title"],
-        "config": row["config"],
-        "position": row["position"],
+        "config": _parse_jsonb(row["config"]),
+        "position": _parse_jsonb(row["position"]),
         "updated_at": row["updated_at"].isoformat(),
     }
 
@@ -629,7 +638,7 @@ async def batch_update_layout(
                 SET position = $1, updated_at = NOW()
                 WHERE id = $2 AND dashboard_id = $3
                 """,
-                {"x": item.x, "y": item.y, "w": item.w, "h": item.h},
+                json.dumps({"x": item.x, "y": item.y, "w": item.w, "h": item.h}),
                 item.widget_id,
                 dashboard_id,
             )
@@ -705,8 +714,8 @@ async def bootstrap_default_dashboard(pool=Depends(get_db_pool)):
                 dashboard_id,
                 widget["widget_type"],
                 widget["title"],
-                widget["config"],
-                widget["position"],
+                json.dumps(widget["config"]),
+                json.dumps(widget["position"]),
             )
 
     return {"id": dashboard_id, "created": True}

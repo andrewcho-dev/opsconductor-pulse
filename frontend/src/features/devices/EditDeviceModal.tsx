@@ -1,9 +1,31 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import type { Device } from "@/services/api/types";
 import { updateDevice } from "@/services/api/devices";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 interface EditDeviceModalProps {
   open: boolean;
@@ -12,28 +34,54 @@ interface EditDeviceModalProps {
   onSaved: () => Promise<void>;
 }
 
+const editDeviceSchema = z.object({
+  name: z.string().min(1, "Device name is required").max(100),
+  site_id: z.string().max(100).optional().or(z.literal("")),
+  tags: z.string().max(1000).optional().or(z.literal("")),
+});
+
+type EditDeviceFormValues = z.infer<typeof editDeviceSchema>;
+
 export function EditDeviceModal({ open, device, onClose, onSaved }: EditDeviceModalProps) {
-  const initialName = useMemo(() => device?.model ?? "", [device]);
-  const initialSite = useMemo(() => device?.site_id ?? "", [device]);
-  const initialTags = useMemo(() => (device?.tags ?? []).join(","), [device]);
-  const [name, setName] = useState(initialName);
-  const [siteId, setSiteId] = useState(initialSite);
-  const [tagsInput, setTagsInput] = useState(initialTags);
   const [saving, setSaving] = useState(false);
 
   if (!device) return null;
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const tags = tagsInput
+  const defaults = useMemo<EditDeviceFormValues>(
+    () => ({
+      // Keep existing semantics: this modal edits "name" but was seeded from device.model.
+      name: device.model ?? "",
+      site_id: device.site_id ?? "",
+      tags: (device.tags ?? []).join(","),
+    }),
+    [device]
+  );
+
+  const form = useForm<EditDeviceFormValues>({
+    resolver: zodResolver(editDeviceSchema),
+    defaultValues: defaults,
+  });
+
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    form.reset(defaults);
+  }, [defaults, form, open]);
+
+  const onSubmit = async (values: EditDeviceFormValues) => {
+    const tags = (values.tags ?? "")
       .split(",")
       .map((tag) => tag.trim())
       .filter(Boolean);
     setSaving(true);
     try {
       await updateDevice(device.device_id, {
-        name,
-        site_id: siteId,
+        name: values.name,
+        site_id: values.site_id ?? "",
         tags,
       });
       await onSaved();
@@ -44,21 +92,90 @@ export function EditDeviceModal({ open, device, onClose, onSaved }: EditDeviceMo
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit Device</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-3" onSubmit={submit}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Device Name" />
-          <Input value={siteId} onChange={(e) => setSiteId(e.target.value)} placeholder="Site" />
-          <Input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated)" />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Device</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form className="space-y-3" onSubmit={form.handleSubmit(onSubmit)}>
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Device Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Device Name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="site_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Site</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Site" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="tags"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tags</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Tags (comma separated)" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -63,14 +63,7 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
 │                                                              │
 │  Alert fires                                                 │
 │      │                                                       │
-│      ├──► Legacy pipeline:                                   │
-│      │    dispatcher → delivery_jobs → delivery_worker      │
-│      │                                 ├── Webhook (HTTP)   │
-│      │                                 ├── SNMP trap        │
-│      │                                 ├── Email (SMTP)     │
-│      │                                 └── MQTT publish     │
-│      │                                                       │
-│      └──► Phase 91+ routing engine:                         │
+│      └──► Routing engine:                                    │
 │           notification_channels + routing_rules             │
 │                ├── Slack webhook                            │
 │                ├── PagerDuty Events API v2                  │
@@ -125,15 +118,8 @@ State tracking and alert generation:
 - Evaluates customer-defined threshold rules and generates `THRESHOLD` alerts
 - Deduplicates alerts by fingerprint (same device + rule → one open alert)
 
-### dispatcher (`services/dispatcher/`)
-Legacy alert-to-delivery pipeline. Polls `alerts` for open alerts, matches against `integration_routes`, creates `delivery_jobs`.
-
-### delivery_worker (`services/delivery_worker/`)
-Legacy delivery. Processes `delivery_jobs` with exponential backoff retry (5 attempts, 30s–7200s):
-- **Webhook**: HTTP POST with JSON payload, configurable headers
-- **SNMP**: v2c (community string) and v3 (auth/priv) traps, custom OID prefix
-- **Email**: SMTP with TLS, HTML + plain text templates, multiple recipients
-- **MQTT**: Publish to customer topics with configurable QoS and retain
+### notification routing engine (`services/ui_iot/notifications/`)
+Notification delivery is handled by the unified routing engine (`senders.py`) in the `ui` service. It performs route matching, delivery attempts, and retry/audit logging without requiring separate dispatcher/delivery worker services.
 
 ### api (`services/provision_api/`)
 Device provisioning. Protected by `X-Admin-Key` header. Handles device registration, activation code generation, and token management.
@@ -218,7 +204,7 @@ Live alert count badge on the Alerts nav item (refetches every 30s). Red dot on 
 
 - **GaugeRow**: 4 ECharts circular gauges (fleet online %, ingest rate, open alerts, DB connections %)
 - **MetricsChartGrid**: 4 dark area charts (messages/s, alert rate, device state, delivery jobs)
-- **ServiceTopologyStrip**: Pipeline visualization (ingest → evaluator → dispatcher → delivery)
+- **ServiceTopologyStrip**: Pipeline visualization (ingest → evaluator → notification routing)
 - **AlertHeatmap**: ECharts calendar-style day × hour alert volume heatmap
 - **LiveEventFeed**: Monospace scrolling stream of recent events with pause control
 - **TV mode**: Press `F` for fullscreen, hides shell chrome, amber TV badge in corner

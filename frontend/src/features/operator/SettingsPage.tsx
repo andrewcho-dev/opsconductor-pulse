@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { PageHeader, ErrorMessage } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useAuth } from "@/services/auth/AuthProvider";
 import keycloak from "@/services/auth/keycloak";
 
@@ -35,14 +45,14 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 }
 
 async function saveSettings(data: {
-  mode: string;
-  store_rejects: string;
-  mirror_rejects: string;
+  mode: ModeValue;
+  store_rejects: boolean;
+  mirror_rejects: boolean;
 }) {
   const formData = new URLSearchParams();
   formData.set("mode", data.mode);
-  formData.set("store_rejects", data.store_rejects);
-  formData.set("mirror_rejects", data.mirror_rejects);
+  formData.set("store_rejects", data.store_rejects ? "true" : "false");
+  formData.set("mirror_rejects", data.mirror_rejects ? "true" : "false");
 
   const headers = await getAuthHeaders();
   const resp = await fetch("/operator/settings", {
@@ -53,41 +63,49 @@ async function saveSettings(data: {
   if (!resp.ok) throw new Error("Failed to save settings");
 }
 
+const systemModeSchema = z.object({
+  mode: z.enum(["PROD", "DEV"]),
+  store_rejects: z.boolean(),
+  mirror_rejects: z.boolean(),
+});
+
+type SystemModeFormValues = z.infer<typeof systemModeSchema>;
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "operator_admin";
 
-  const [mode, setMode] = useState<ModeValue>("PROD");
-  const [storeRejects, setStoreRejects] = useState(false);
-  const [mirrorRejects, setMirrorRejects] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
+  const form = useForm<SystemModeFormValues>({
+    resolver: zodResolver(systemModeSchema),
+    defaultValues: { mode: "PROD", store_rejects: false, mirror_rejects: false },
+  });
+
+  const mode = form.watch("mode");
   const rejectsDisabled = mode === "PROD";
 
   useEffect(() => {
     if (mode === "PROD") {
-      setStoreRejects(false);
-      setMirrorRejects(false);
+      form.setValue("store_rejects", false, { shouldDirty: true });
+      form.setValue("mirror_rejects", false, { shouldDirty: true });
     }
-  }, [mode]);
+  }, [form, mode]);
 
-  const payload = useMemo(() => {
-    return {
-      mode,
-      store_rejects: rejectsDisabled ? "false" : storeRejects ? "true" : "false",
-      mirror_rejects: rejectsDisabled ? "false" : mirrorRejects ? "true" : "false",
-    };
-  }, [mode, storeRejects, mirrorRejects, rejectsDisabled]);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function onSubmit(values: SystemModeFormValues) {
     setError("");
     setSuccess("");
     setIsSaving(true);
     try {
-      await saveSettings(payload);
+      // In PROD, rejects toggles are forced off.
+      await saveSettings({
+        mode: values.mode,
+        store_rejects: rejectsDisabled ? false : values.store_rejects,
+        mirror_rejects: rejectsDisabled ? false : values.mirror_rejects,
+      });
+      form.reset(values);
       setSuccess("Settings saved");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save settings");
@@ -116,59 +134,84 @@ export default function SettingsPage() {
           <CardTitle className="text-lg">System Mode</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid gap-2">
-              <Label>Mode</Label>
-              <Select value={mode} onValueChange={(v) => setMode(v as ModeValue)}>
-                <SelectTrigger className="w-full max-w-sm">
-                  <SelectValue placeholder="Select mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PROD">PROD</SelectItem>
-                  <SelectItem value="DEV">DEV</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label className="text-sm">Store Rejects</Label>
-                <p className="text-xs text-muted-foreground">
-                  Persist rejected ingest payloads (DEV only).
-                </p>
-              </div>
-              <Switch
-                checked={rejectsDisabled ? false : storeRejects}
-                onCheckedChange={setStoreRejects}
-                disabled={rejectsDisabled}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="mode"
+                render={({ field }) => (
+                  <FormItem className="grid gap-2">
+                    <FormLabel>Mode</FormLabel>
+                    <Select value={field.value} onValueChange={(v) => field.onChange(v as ModeValue)}>
+                      <FormControl>
+                        <SelectTrigger className="w-full max-w-sm">
+                          <SelectValue placeholder="Select mode" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="PROD">PROD</SelectItem>
+                        <SelectItem value="DEV">DEV</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label className="text-sm">Mirror Rejects</Label>
-                <p className="text-xs text-muted-foreground">
-                  Mirror rejects to quarantine log (DEV only).
-                </p>
-              </div>
-              <Switch
-                checked={rejectsDisabled ? false : mirrorRejects}
-                onCheckedChange={setMirrorRejects}
-                disabled={rejectsDisabled}
+              <FormField
+                control={form.control}
+                name="store_rejects"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border border-border p-3">
+                    <div>
+                      <FormLabel className="text-sm">Store Rejects</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Persist rejected ingest payloads (DEV only).
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={rejectsDisabled ? false : Boolean(field.value)}
+                        onCheckedChange={field.onChange}
+                        disabled={rejectsDisabled}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
               />
-            </div>
 
-            {error && <ErrorMessage error={error} title="Failed to save settings" />}
-            {success && (
-              <div className="text-sm text-green-700 dark:text-green-400">
-                {success}
-              </div>
-            )}
+              <FormField
+                control={form.control}
+                name="mirror_rejects"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border border-border p-3">
+                    <div>
+                      <FormLabel className="text-sm">Mirror Rejects</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Mirror rejects to quarantine log (DEV only).
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={rejectsDisabled ? false : Boolean(field.value)}
+                        onCheckedChange={field.onChange}
+                        disabled={rejectsDisabled}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save"}
-            </Button>
-          </form>
+              {error && <ErrorMessage error={error} title="Failed to save settings" />}
+              {success && (
+                <div className="text-sm text-green-700 dark:text-green-400">{success}</div>
+              )}
+
+              <Button type="submit" disabled={!form.formState.isDirty || isSaving}>
+                {isSaving ? "Saving..." : "Save"}
+              </Button>
+            </form>
+          </Form>
         </CardContent>
       </Card>
 

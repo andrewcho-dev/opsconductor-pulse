@@ -85,8 +85,8 @@ async def list_available_metrics(pool=Depends(get_db_pool)):
         async with tenant_connection(pool, tenant_id) as conn:
             rows = await conn.fetch(
                 """
-                SELECT DISTINCT jsonb_object_keys(metrics) AS metric_name
-                FROM telemetry
+                SELECT DISTINCT k AS metric_name
+                FROM telemetry, LATERAL jsonb_object_keys(metrics) AS k
                 WHERE tenant_id = $1
                   AND time > now() - interval '7 days'
                 ORDER BY metric_name

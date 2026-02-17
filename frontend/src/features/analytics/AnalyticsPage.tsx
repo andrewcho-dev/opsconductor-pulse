@@ -16,6 +16,8 @@ import { fetchDevices, fetchDeviceGroups } from "@/services/api/devices";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   Select,
   SelectContent,
@@ -142,6 +144,37 @@ export default function AnalyticsPage() {
   const metrics = metricsData?.metrics ?? [];
   const devices = devicesData?.devices ?? [];
   const groups = groupsData?.groups ?? [];
+
+  const queryResult = useMemo(() => {
+    if (!results) return null;
+    const rows: Array<Record<string, string>> = [];
+    const includeLabel = results.series.length > 1;
+    for (const s of results.series) {
+      for (const p of s.points) {
+        const row: Record<string, string> = {};
+        if (includeLabel) row.label = s.label;
+        row.time = new Date(p.time).toLocaleString();
+        row.value = p.value != null ? p.value.toFixed(2) : "--";
+        rows.push(row);
+      }
+    }
+    const columns = rows.length > 0 ? Object.keys(rows[0]) : includeLabel ? ["label", "time", "value"] : ["time", "value"];
+    return { columns, rows };
+  }, [results]);
+
+  const rawTableColumns: ColumnDef<Record<string, string>>[] = useMemo(() => {
+    if (!queryResult?.columns) return [];
+    return queryResult.columns.map((col: string) => ({
+      accessorKey: col,
+      header: col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      enableSorting: true,
+      cell: ({ row }) => {
+        const val = row.original[col] ?? "";
+        const mono = col === "time" || col === "value";
+        return <span className={mono ? "font-mono text-xs" : ""}>{val}</span>;
+      },
+    }));
+  }, [queryResult?.columns]);
 
   return (
     <div className="space-y-6">
@@ -393,47 +426,26 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
 
-              {results.series.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Raw Data</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="max-h-64 overflow-auto">
-                      <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-background">
-                          <tr className="border-b">
-                            {results.series.length > 1 && (
-                              <th className="text-left py-2 px-2 font-medium">
-                                Label
-                              </th>
-                            )}
-                            <th className="text-left py-2 px-2 font-medium">Time</th>
-                            <th className="text-right py-2 px-2 font-medium">Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {results.series.flatMap((s) =>
-                            s.points.map((p, idx) => (
-                              <tr key={`${s.label}-${idx}`} className="border-b">
-                                {results.series.length > 1 && (
-                                  <td className="py-1 px-2">{s.label}</td>
-                                )}
-                                <td className="py-1 px-2">
-                                  {new Date(p.time).toLocaleString()}
-                                </td>
-                                <td className="py-1 px-2 text-right font-mono">
-                                  {p.value?.toFixed(2) ?? "--"}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Raw Data</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="max-h-64 overflow-auto">
+                    <DataTable
+                      columns={rawTableColumns}
+                      data={queryResult?.rows ?? []}
+                      isLoading={queryMutation.isPending}
+                      emptyState={
+                        <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+                          Run a query to see results.
+                        </div>
+                      }
+                      manualPagination={false}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
         </div>

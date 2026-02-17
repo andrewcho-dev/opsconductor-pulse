@@ -22,17 +22,21 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
   const [configuringWidgetId, setConfiguringWidgetId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localLayoutRef = useRef<Layout | null>(null);
 
   const layoutItems: RglLayoutItem[] = useMemo(
     () =>
-      dashboard.widgets.map((w) => ({
-        i: String(w.id),
-        x: w.position?.x ?? 0,
-        y: w.position?.y ?? 0,
-        w: w.position?.w ?? 2,
-        h: w.position?.h ?? 2,
-        static: !isEditing,
-      })),
+      dashboard.widgets.map((w) => {
+        const local = localLayoutRef.current?.find((l) => l.i === String(w.id));
+        return {
+          i: String(w.id),
+          x: local?.x ?? w.position?.x ?? 0,
+          y: local?.y ?? w.position?.y ?? 0,
+          w: local?.w ?? w.position?.w ?? 2,
+          h: local?.h ?? w.position?.h ?? 2,
+          static: !isEditing,
+        };
+      }),
     [dashboard.widgets, isEditing]
   );
 
@@ -52,6 +56,7 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
 
   const handleLayoutChange = useCallback(
     (layout: Layout) => {
+      localLayoutRef.current = layout;
       if (!isEditing) return;
 
       if (debounceRef.current) {
@@ -71,6 +76,30 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
     },
     [isEditing, layoutMutation]
   );
+
+  const handleToggleEdit = useCallback(() => {
+    if (isEditing) {
+      // Flush pending debounce immediately before locking.
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      if (localLayoutRef.current) {
+        const layoutData: LayoutItem[] = localLayoutRef.current.map((item) => ({
+          widget_id: Number(item.i),
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+        }));
+        layoutMutation.mutate(layoutData);
+      }
+    } else {
+      // Reset local state when entering edit mode.
+      localLayoutRef.current = null;
+    }
+    setIsEditing(!isEditing);
+  }, [isEditing, layoutMutation]);
 
   const handleRemoveWidget = useCallback(
     (widgetId: number) => {
@@ -94,7 +123,7 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
           <Button
             variant={isEditing ? "default" : "outline"}
             size="sm"
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={handleToggleEdit}
           >
             {isEditing ? (
               <>

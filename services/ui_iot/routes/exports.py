@@ -42,6 +42,160 @@ async def delivery_status(
     return {"tenant_id": tenant_id, "attempts": attempts}
 
 
+def _to_iso_z(dt):
+    if not dt:
+        return None
+    s = dt.isoformat()
+    # Normalize common UTC format to 'Z' to match UI expectations.
+    if s.endswith("+00:00"):
+        return s[:-6] + "Z"
+    if s.endswith("Z"):
+        return s
+    return s + "Z"
+
+
+@router.get("/delivery-jobs")
+async def list_delivery_jobs(
+    status: str | None = Query(None),
+    integration_id: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_db_pool),
+):
+    """List delivery jobs for the tenant.
+
+    Backed by notification_jobs, but shaped to match DeliveryLogPage expectations.
+    """
+    tenant_id = get_tenant_id()
+
+    channel_id = None
+    if integration_id:
+        try:
+            raw = integration_id.strip()
+            if raw.startswith("ch-"):
+                raw = raw[3:]
+            channel_id = int(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid integration_id")
+
+    where = ["tenant_id = $1"]
+    params = [tenant_id]
+    idx = 2
+    if status:
+        where.append(f"status = ${idx}")
+        params.append(status)
+        idx += 1
+    if channel_id is not None:
+        where.append(f"channel_id = ${idx}")
+        params.append(channel_id)
+        idx += 1
+
+    where_clause = " AND ".join(where)
+
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM notification_jobs WHERE {where_clause}",
+                *params,
+            )
+
+            rows = await conn.fetch(
+                f"""
+                SELECT job_id, alert_id, channel_id, rule_id, status, attempts,
+                       last_error, deliver_on_event, created_at, updated_at
+                FROM notification_jobs
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to list delivery jobs")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    jobs = []
+    for row in rows:
+        jobs.append(
+            {
+                "job_id": row["job_id"],
+                "alert_id": row["alert_id"],
+                "integration_id": str(row["channel_id"]),
+                "route_id": str(row["rule_id"]) if row["rule_id"] else None,
+                "status": row["status"],
+                "attempts": row["attempts"],
+                "last_error": row["last_error"],
+                "deliver_on_event": row["deliver_on_event"],
+                "created_at": _to_iso_z(row["created_at"]),
+                "updated_at": _to_iso_z(row["updated_at"]),
+            }
+        )
+
+    return {"jobs": jobs, "total": total}
+
+
+@router.get("/delivery-jobs/{job_id}/attempts")
+async def get_delivery_job_attempts(
+    job_id: int,
+    pool=Depends(get_db_pool),
+):
+    """Return delivery attempts for a job_id.
+
+    Backed by notification_log, with synthesized attempt_no/http_status/latency_ms.
+    """
+    tenant_id = get_tenant_id()
+
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                """
+                SELECT 1
+                FROM notification_jobs
+                WHERE job_id = $1 AND tenant_id = $2
+                """,
+                job_id,
+                tenant_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Delivery job not found")
+
+            rows = await conn.fetch(
+                """
+                SELECT log_id, success, error_msg, sent_at
+                FROM notification_log
+                WHERE job_id = $1
+                ORDER BY sent_at ASC
+                """,
+                job_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch delivery job attempts")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    attempts = []
+    for idx, row in enumerate(rows):
+        ok = row["success"] if row["success"] is not None else True
+        attempts.append(
+            {
+                "attempt_no": idx + 1,
+                "ok": ok,
+                "http_status": 200 if ok else 500,
+                "latency_ms": None,
+                "error": row["error_msg"],
+                "started_at": _to_iso_z(row["sent_at"]),
+                "finished_at": _to_iso_z(row["sent_at"]),
+            }
+        )
+
+    return {"job_id": job_id, "attempts": attempts}
+
+
 @router.get("/audit-log")
 async def get_audit_log(
     request: Request,

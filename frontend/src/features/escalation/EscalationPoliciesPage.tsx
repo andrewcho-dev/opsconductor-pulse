@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +69,67 @@ export default function EscalationPoliciesPage() {
 
   const rows = useMemo(() => data?.policies ?? [], [data?.policies]);
 
+  const columns: ColumnDef<EscalationPolicy>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium">{row.original.name}</div>
+          {row.original.description && (
+            <div className="text-xs text-muted-foreground">{row.original.description}</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "is_default",
+      header: "Default",
+      cell: ({ row }) => (row.original.is_default ? <Badge>Default</Badge> : null),
+    },
+    {
+      id: "levels_count",
+      header: "# Levels",
+      accessorFn: (p) => p.levels?.length ?? 0,
+      cell: ({ getValue }) => <span>{String(getValue() ?? 0)}</span>,
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{relativeTime(row.original.created_at)}</span>
+      ),
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const policy = row.original;
+        return (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setEditing(policy);
+                setOpen(true);
+              }}
+            >
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setConfirmDeletePolicy(policy)}
+            >
+              Delete
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -84,71 +147,17 @@ export default function EscalationPoliciesPage() {
         }
       />
 
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-left">
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Default</th>
-              <th className="px-3 py-2"># Levels</th>
-              <th className="px-3 py-2">Created</th>
-              <th className="px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr>
-                <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
-                  Loading policies...
-                </td>
-              </tr>
-            )}
-            {!isLoading && rows.length === 0 && (
-              <tr>
-                <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
-                  No escalation policies configured.
-                </td>
-              </tr>
-            )}
-            {rows.map((policy) => (
-              <tr key={policy.policy_id} className="border-b border-border/60">
-                <td className="px-3 py-2">
-                  <div className="font-medium">{policy.name}</div>
-                  {policy.description && (
-                    <div className="text-xs text-muted-foreground">{policy.description}</div>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {policy.is_default ? <Badge>Default</Badge> : <Badge variant="outline">No</Badge>}
-                </td>
-                <td className="px-3 py-2">{policy.levels.length}</td>
-                <td className="px-3 py-2 text-muted-foreground">{relativeTime(policy.created_at)}</td>
-                <td className="px-3 py-2">
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setEditing(policy);
-                        setOpen(true);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setConfirmDeletePolicy(policy)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={rows}
+        isLoading={isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No escalation policies configured. Create a policy to define alert escalation behavior.
+          </div>
+        }
+        manualPagination={false}
+      />
 
       <EscalationPolicyModal
         open={open}

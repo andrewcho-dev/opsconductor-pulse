@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,30 +23,6 @@ import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
 
 interface DeviceApiTokensPanelProps {
   deviceId: string;
-}
-
-function TokenAgeChip({ createdAt }: { createdAt: string }) {
-  const created = new Date(createdAt);
-  const ageDays = Number.isNaN(created.getTime())
-    ? 0
-    : Math.floor((Date.now() - created.getTime()) / (24 * 60 * 60 * 1000));
-  const tone =
-    ageDays < 30
-      ? "text-green-600 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950/30"
-      : ageDays <= 90
-        ? "text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-300 dark:bg-yellow-950/30"
-        : "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${tone}`}>
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          ageDays < 30 ? "bg-green-500" : ageDays <= 90 ? "bg-yellow-500" : "bg-red-500"
-        }`}
-      />
-      {ageDays} days old
-      {ageDays > 90 ? " (consider rotating)" : ""}
-    </span>
-  );
 }
 
 export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
@@ -75,6 +52,72 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     },
   });
 
+  const tokens = data?.tokens ?? [];
+
+  type TokenRow = (typeof tokens)[number] & { expires_at?: string; token_prefix?: string };
+
+  const columns: ColumnDef<TokenRow>[] = [
+    {
+      accessorKey: "label",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium">{row.original.label}</span>,
+    },
+    {
+      id: "token_prefix",
+      header: "Token",
+      enableSorting: false,
+      accessorFn: (t) => t.token_prefix ?? t.client_id ?? t.id,
+      cell: ({ row }) => {
+        const raw = row.original.token_prefix ?? row.original.client_id ?? row.original.id;
+        const prefix = raw ? `${String(raw).slice(0, 8)}...` : "—";
+        return (
+          <span className="font-mono text-xs text-muted-foreground" title={raw}>
+            {prefix}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.created_at ? new Date(row.original.created_at).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "expires_at",
+      header: "Expires",
+      accessorFn: (t) => t.expires_at ?? "",
+      cell: ({ row }) => {
+        const expiresAt = row.original.expires_at;
+        if (!expiresAt) return <span className="text-xs text-muted-foreground">—</span>;
+        const ts = new Date(expiresAt).getTime();
+        const expired = Number.isFinite(ts) && ts < Date.now();
+        return (
+          <span className={`text-xs ${expired ? "text-red-600" : "text-muted-foreground"}`}>
+            {new Date(expiresAt).toLocaleString()}
+          </span>
+        );
+      },
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.revoked_at ? null : (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmRevokeToken(row.original.id)}
+          >
+            Revoke
+          </Button>
+        ),
+    },
+  ];
+
   return (
     <div className="rounded-md border border-border p-3 space-y-3">
       <div className="flex items-center justify-between">
@@ -101,52 +144,17 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
       )}
 
       {error && <div className="text-sm text-destructive">Failed to load tokens.</div>}
-      {isLoading ? (
-        <div className="text-xs text-muted-foreground">Loading tokens...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="py-2 pr-2">Client ID</th>
-                <th className="py-2 pr-2">Label</th>
-                <th className="py-2 pr-2">Created</th>
-                <th className="py-2 pr-2">Age</th>
-                <th className="py-2 pr-2">Status</th>
-                <th className="py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.tokens ?? []).map((token) => (
-                <tr key={token.id} className="border-b border-border/50">
-                  <td className="py-2 pr-2 font-mono text-xs">{token.client_id}</td>
-                  <td className="py-2 pr-2">{token.label}</td>
-                  <td className="py-2 pr-2 text-xs">{new Date(token.created_at).toLocaleString()}</td>
-                  <td className="py-2 pr-2">
-                    <TokenAgeChip createdAt={token.created_at} />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <Badge variant={token.revoked_at ? "outline" : "default"}>
-                      {token.revoked_at ? "Revoked" : "Active"}
-                    </Badge>
-                  </td>
-                  <td className="py-2">
-                    {!token.revoked_at && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfirmRevokeToken(token.id)}
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        data={tokens as TokenRow[]}
+        isLoading={isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No API tokens for this device. Create a token to enable programmatic access.
+          </div>
+        }
+        manualPagination={false}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
