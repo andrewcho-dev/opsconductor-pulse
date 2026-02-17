@@ -11,16 +11,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
 import type { OtaDeviceStatus } from "@/services/api/ota";
 
-const DEVICE_STATUS_COLOR: Record<string, string> = {
-  PENDING: "text-muted-foreground",
-  DOWNLOADING: "text-blue-500",
-  INSTALLING: "text-amber-500",
-  SUCCESS: "text-green-600",
-  FAILED: "text-destructive",
-  SKIPPED: "text-muted-foreground",
-};
+function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (status) {
+    case "PENDING":
+      return "secondary";
+    case "DOWNLOADING":
+    case "INSTALLING":
+      return "default";
+    case "SUCCESS":
+      return "outline";
+    case "FAILED":
+      return "destructive";
+    default:
+      return "secondary";
+  }
+}
 
 export default function OtaCampaignDetailPage() {
   const { campaignId } = useParams<{ campaignId: string }>();
@@ -55,9 +64,65 @@ export default function OtaCampaignDetailPage() {
 
   const devices: OtaDeviceStatus[] = devicesData?.devices ?? [];
   const totalDevices = devicesData?.total ?? 0;
-  const totalPages = Math.ceil(totalDevices / PAGE_SIZE);
 
   const description = `Firmware ${campaign.firmware_version} -> Group ${campaign.target_group_id}`;
+
+  const columns: ColumnDef<OtaDeviceStatus>[] = [
+    {
+      accessorKey: "device_id",
+      header: "Device ID",
+      cell: ({ row }) => (
+        <Link
+          to={`/devices/${row.original.device_id}`}
+          className="font-mono text-xs text-primary hover:underline"
+        >
+          {row.original.device_id}
+        </Link>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge
+          variant={statusVariant(row.original.status)}
+          className={row.original.status === "SUCCESS" ? "text-green-600" : ""}
+        >
+          {row.original.status === "SUCCESS" ? "SUCCEEDED" : row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "started_at",
+      header: "Started",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.started_at ? new Date(row.original.started_at).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "completed_at",
+      header: "Completed",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.completed_at ? new Date(row.original.completed_at).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "error_message",
+      header: "Error",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="max-w-[240px] truncate text-xs text-destructive">
+          {row.original.error_message ?? "—"}
+        </span>
+      ),
+    },
+  ];
+
+  const useServerPagination = totalDevices > PAGE_SIZE;
 
   return (
     <div className="p-4 space-y-6">
@@ -167,102 +232,31 @@ export default function OtaCampaignDetailPage() {
         )}
       </div>
 
-      <div className="rounded border border-border overflow-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              {["Device ID", "Status", "Progress", "Error", "Started", "Completed"].map(
-                (h) => (
-                  <th key={h} className="px-3 py-2 text-left font-medium">
-                    {h}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {devices.map((d) => (
-              <tr
-                key={d.device_id}
-                className="border-b border-border/40 hover:bg-muted/30"
-              >
-                <td className="px-3 py-2 font-mono text-xs">
-                  <Link
-                    to={`/devices/${d.device_id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {d.device_id}
-                  </Link>
-                </td>
-                <td
-                  className={`px-3 py-2 font-semibold text-xs ${
-                    DEVICE_STATUS_COLOR[d.status] ?? ""
-                  }`}
-                >
-                  {d.status}
-                </td>
-                <td className="px-3 py-2">
-                  {d.status === "DOWNLOADING" || d.status === "INSTALLING" ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${d.progress_pct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs">{d.progress_pct}%</span>
-                    </div>
-                  ) : d.status === "SUCCESS" ? (
-                    <span className="text-xs text-green-600">100%</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-xs text-destructive max-w-[200px] truncate">
-                  {d.error_message ?? "-"}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  {d.started_at ? new Date(d.started_at).toLocaleString() : "-"}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  {d.completed_at ? new Date(d.completed_at).toLocaleString() : "-"}
-                </td>
-              </tr>
-            ))}
-            {devices.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-sm text-muted-foreground">
-                  No devices{statusFilter ? ` with status ${statusFilter}` : ""}.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page >= totalPages - 1}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        data={devices}
+        totalCount={useServerPagination ? totalDevices : undefined}
+        pagination={
+          useServerPagination ? { pageIndex: page, pageSize: PAGE_SIZE } : undefined
+        }
+        onPaginationChange={
+          useServerPagination
+            ? (updater) => {
+                const next =
+                  typeof updater === "function"
+                    ? updater({ pageIndex: page, pageSize: PAGE_SIZE })
+                    : (updater as PaginationState);
+                setPage(next.pageIndex);
+              }
+            : undefined
+        }
+        isLoading={false}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No devices targeted in this campaign.
+          </div>
+        }
+      />
     </div>
   );
 }

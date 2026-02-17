@@ -4,6 +4,9 @@ import { createOverride, deleteOverride, getTimeline, listOverrides } from "@/se
 import OverrideModal from "./OverrideModal";
 import { useState } from "react";
 
+// DataTable not used: TimelineView renders a visual timeline/Gantt-style layout
+// for on-call schedules that doesn't map to standard table rows and columns.
+
 interface TimelineViewProps {
   scheduleId: number;
 }

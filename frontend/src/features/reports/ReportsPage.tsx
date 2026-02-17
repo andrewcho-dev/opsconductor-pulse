@@ -2,12 +2,17 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   exportAlertsCSV,
   exportDevicesCSV,
   getSLASummary,
   listReportRuns,
+  type ReportRun,
+  type SLASummary,
 } from "@/services/api/reports";
 
 function formatDuration(start: string, end: string | null): string {
@@ -40,6 +45,61 @@ export default function ReportsPage() {
     if (pct >= 80) return "text-yellow-600";
     return "text-red-600";
   }, [slaQuery.data?.online_pct]);
+
+  const topDevicesColumns: ColumnDef<SLASummary["top_alerting_devices"][number]>[] = [
+    {
+      accessorKey: "device_id",
+      header: "Device",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.device_id}</span>,
+    },
+    {
+      accessorKey: "count",
+      header: "Alert Count",
+    },
+  ];
+
+  const statusBadge = (status: string) => {
+    const s = (status || "").toLowerCase();
+    const variant =
+      s.includes("success") || s.includes("completed")
+        ? "default"
+        : s.includes("failed") || s.includes("error")
+          ? "destructive"
+          : "secondary";
+    return <Badge variant={variant}>{status}</Badge>;
+  };
+
+  const runsColumns: ColumnDef<ReportRun>[] = [
+    {
+      accessorKey: "report_type",
+      header: "Type",
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => statusBadge(row.original.status),
+    },
+    {
+      accessorKey: "triggered_by",
+      header: "Triggered By",
+    },
+    {
+      accessorKey: "row_count",
+      header: "Rows",
+      cell: ({ row }) => row.original.row_count ?? "—",
+    },
+    {
+      accessorKey: "created_at",
+      header: "Started",
+      cell: ({ row }) => new Date(row.original.created_at).toLocaleString(),
+    },
+    {
+      id: "duration",
+      header: "Duration",
+      accessorFn: (r) => formatDuration(r.created_at, r.completed_at),
+      cell: ({ getValue }) => String(getValue() ?? "-"),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -111,24 +171,17 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="px-3 py-2 text-left">Top Alerting Devices</th>
-                  <th className="px-3 py-2 text-left">Alert Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(slaQuery.data?.top_alerting_devices ?? []).map((row) => (
-                  <tr key={row.device_id} className="border-b border-border/50">
-                    <td className="px-3 py-2 font-mono text-xs">{row.device_id}</td>
-                    <td className="px-3 py-2">{row.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={topDevicesColumns}
+            data={slaQuery.data?.top_alerting_devices ?? []}
+            isLoading={slaQuery.isLoading}
+            emptyState={
+              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+                No alerting devices found.
+              </div>
+            }
+            manualPagination={false}
+          />
         </CardContent>
       </Card>
 
@@ -137,32 +190,17 @@ export default function ReportsPage() {
           <CardTitle>Recent Reports</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="px-3 py-2 text-left">Type</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-left">Triggered By</th>
-                  <th className="px-3 py-2 text-left">Rows</th>
-                  <th className="px-3 py-2 text-left">Started</th>
-                  <th className="px-3 py-2 text-left">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(runsQuery.data?.runs ?? []).map((run) => (
-                  <tr key={run.run_id} className="border-b border-border/50">
-                    <td className="px-3 py-2">{run.report_type}</td>
-                    <td className="px-3 py-2">{run.status}</td>
-                    <td className="px-3 py-2">{run.triggered_by}</td>
-                    <td className="px-3 py-2">{run.row_count ?? "-"}</td>
-                    <td className="px-3 py-2">{new Date(run.created_at).toLocaleString()}</td>
-                    <td className="px-3 py-2">{formatDuration(run.created_at, run.completed_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={runsColumns}
+            data={runsQuery.data?.runs ?? []}
+            isLoading={runsQuery.isLoading}
+            emptyState={
+              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+                No reports found.
+              </div>
+            }
+            manualPagination={false}
+          />
         </CardContent>
       </Card>
     </div>

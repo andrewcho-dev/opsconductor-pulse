@@ -1,9 +1,10 @@
-import { Fragment, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
 import { fetchDeliveryJobs, fetchDeliveryJobAttempts } from "@/services/api/delivery";
 
 const LIMIT = 50;
@@ -38,6 +39,53 @@ export default function DeliveryLogPage() {
   const jobs = data?.jobs ?? [];
   const total = data?.total ?? 0;
 
+  const columns: ColumnDef<(typeof jobs)[number]>[] = useMemo(
+    () => [
+      {
+        accessorKey: "integration_id",
+        header: "Channel",
+        cell: ({ row }) => <span className="font-mono text-xs">{row.original.integration_id}</span>,
+      },
+      {
+        accessorKey: "alert_id",
+        header: "Alert ID",
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge
+            variant={statusVariant(row.original.status)}
+            className={row.original.status === "COMPLETED" ? "text-green-600" : ""}
+          >
+            {row.original.status === "COMPLETED" ? "delivered" : row.original.status.toLowerCase()}
+          </Badge>
+        ),
+      },
+      {
+        id: "sent_at",
+        header: "Sent At",
+        accessorFn: (j) => j.updated_at ?? j.created_at,
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {new Date(row.original.updated_at ?? row.original.created_at).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "last_error",
+        header: "Error",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="max-w-[260px] truncate text-xs text-muted-foreground">
+            {row.original.last_error || "—"}
+          </span>
+        ),
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader title="Delivery Log" description={`${total} jobs`} />
@@ -61,70 +109,45 @@ export default function DeliveryLogPage() {
       ) : isLoading ? (
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th className="p-2">Job ID</th>
-                <th className="p-2">Alert ID</th>
-                <th className="p-2">Integration</th>
-                <th className="p-2">Status</th>
-                <th className="p-2">Attempts</th>
-                <th className="p-2">Last Error</th>
-                <th className="p-2">Event</th>
-                <th className="p-2">Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <Fragment key={job.job_id}>
-                  <tr
-                    className="cursor-pointer border-t border-border"
-                    onClick={() => setExpanded(expanded === job.job_id ? null : job.job_id)}
-                  >
-                    <td className="p-2">{job.job_id}</td>
-                    <td className="p-2">{job.alert_id}</td>
-                    <td className="p-2 font-mono">{job.integration_id}</td>
-                    <td className="p-2">
-                      <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
-                    </td>
-                    <td className="p-2">{job.attempts}</td>
-                    <td className="max-w-[260px] truncate p-2">{job.last_error || "-"}</td>
-                    <td className="p-2">{job.deliver_on_event}</td>
-                    <td className="p-2">{new Date(job.created_at).toLocaleString()}</td>
-                  </tr>
-                  {expanded === job.job_id && (
-                    <tr className="border-t border-border bg-muted/30">
-                      <td className="p-2" colSpan={8}>
-                        {attemptsQuery.isLoading ? (
-                          "Loading attempts..."
-                        ) : (
-                          <div className="space-y-1 text-xs">
-                            {(attemptsQuery.data?.attempts ?? []).map((a) => (
-                              <div key={a.attempt_no}>
-                                attempt {a.attempt_no}: {a.ok ? "ok" : "fail"} / HTTP {a.http_status ?? "-"} / {a.latency_ms ?? "-"}ms {a.error ? ` / ${a.error}` : ""}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={jobs}
+          totalCount={total}
+          pagination={{ pageIndex: Math.floor(offset / LIMIT), pageSize: LIMIT }}
+          onPaginationChange={(updater) => {
+            const next =
+              typeof updater === "function"
+                ? updater({ pageIndex: Math.floor(offset / LIMIT), pageSize: LIMIT })
+                : (updater as PaginationState);
+            setOffset(next.pageIndex * LIMIT);
+          }}
+          isLoading={isLoading}
+          emptyState={
+            <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+              No delivery logs. Logs appear when notifications are sent.
+            </div>
+          }
+          onRowClick={(row) => setExpanded(expanded === row.job_id ? null : row.job_id)}
+        />
       )}
 
-      <div className="flex items-center gap-2">
-        <Button variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - LIMIT))}>
-          Previous
-        </Button>
-        <Button variant="outline" disabled={offset + LIMIT >= total} onClick={() => setOffset(offset + LIMIT)}>
-          Next
-        </Button>
-      </div>
+      {expanded != null && (
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <div className="mb-2 text-sm font-medium">Attempts for job {expanded}</div>
+          {attemptsQuery.isLoading ? (
+            <div className="text-xs text-muted-foreground">Loading attempts...</div>
+          ) : (
+            <div className="space-y-1 text-xs">
+              {(attemptsQuery.data?.attempts ?? []).map((a) => (
+                <div key={a.attempt_no}>
+                  attempt {a.attempt_no}: {a.ok ? "ok" : "fail"} / HTTP {a.http_status ?? "-"} /{" "}
+                  {a.latency_ms ?? "-"}ms {a.error ? ` / ${a.error}` : ""}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

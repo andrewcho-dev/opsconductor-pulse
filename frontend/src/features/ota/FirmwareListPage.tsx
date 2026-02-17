@@ -2,6 +2,18 @@ import { useState } from "react";
 import { useCreateFirmware, useFirmwareVersions } from "@/hooks/use-ota";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
+import type { FirmwareVersion } from "@/services/api/ota";
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
 
 export default function FirmwareListPage() {
   const { data, isLoading } = useFirmwareVersions();
@@ -15,6 +27,56 @@ export default function FirmwareListPage() {
   const [checksum, setChecksum] = useState("");
 
   const firmwareVersions = data?.firmware_versions ?? [];
+
+  const columns: ColumnDef<FirmwareVersion>[] = [
+    {
+      accessorKey: "version",
+      header: "Version",
+      cell: ({ row }) => (
+        <span className="font-mono font-medium">{row.original.version}</span>
+      ),
+    },
+    {
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) => (
+        <span className="max-w-[200px] truncate text-xs">
+          {row.original.description ?? "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "device_type",
+      header: "Device Type",
+      cell: ({ row }) => <span className="text-xs">{row.original.device_type ?? "—"}</span>,
+    },
+    {
+      accessorKey: "file_size_bytes",
+      header: "File Size",
+      cell: ({ row }) => (
+        <span className="text-xs">{formatFileSize(row.original.file_size_bytes)}</span>
+      ),
+    },
+    {
+      accessorKey: "checksum_sha256",
+      header: "Checksum",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="max-w-[140px] truncate font-mono text-xs text-muted-foreground">
+          {row.original.checksum_sha256 ? `${row.original.checksum_sha256.slice(0, 16)}...` : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(row.original.created_at).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ];
 
   async function handleCreate() {
     try {
@@ -46,56 +108,17 @@ export default function FirmwareListPage() {
         action={<Button onClick={() => setShowUpload(true)}>+ Register Firmware</Button>}
       />
 
-      {isLoading && (
-        <div className="text-sm text-muted-foreground">
-          Loading firmware versions...
-        </div>
-      )}
-
-      <div className="rounded border border-border overflow-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              {["Version", "Description", "Device Type", "File Size", "Checksum", "Created"].map(
-                (h) => (
-                  <th key={h} className="px-3 py-2 text-left font-medium">
-                    {h}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {firmwareVersions.map((fw) => (
-              <tr key={fw.id} className="border-b border-border/40 hover:bg-muted/30">
-                <td className="px-3 py-2 font-mono font-medium">{fw.version}</td>
-                <td className="px-3 py-2 text-xs max-w-[200px] truncate">
-                  {fw.description ?? "-"}
-                </td>
-                <td className="px-3 py-2 text-xs">{fw.device_type ?? "All"}</td>
-                <td className="px-3 py-2 text-xs">
-                  {fw.file_size_bytes
-                    ? `${(fw.file_size_bytes / 1024 / 1024).toFixed(1)} MB`
-                    : "-"}
-                </td>
-                <td className="px-3 py-2 text-xs font-mono max-w-[120px] truncate">
-                  {fw.checksum_sha256 ? fw.checksum_sha256.slice(0, 16) + "..." : "-"}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  {new Date(fw.created_at).toLocaleDateString()}
-                </td>
-              </tr>
-            ))}
-            {firmwareVersions.length === 0 && !isLoading && (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  No firmware versions registered yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={firmwareVersions}
+        isLoading={isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No firmware versions registered yet. Upload a firmware version to begin OTA updates.
+          </div>
+        }
+        manualPagination={false}
+      />
 
       {showUpload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

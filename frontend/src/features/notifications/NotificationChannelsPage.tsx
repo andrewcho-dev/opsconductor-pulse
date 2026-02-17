@@ -3,6 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -74,6 +83,105 @@ export default function NotificationChannelsPage() {
   const channels = channelsQuery.data?.channels ?? [];
   const rules = rulesQuery.data?.rules ?? [];
 
+  const columns: ColumnDef<NotificationChannel>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => {
+        const ch = row.original;
+        const migrated = Boolean(
+          (ch.config as Record<string, unknown>)?.migrated_from_integration_id
+        );
+        return (
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{ch.name}</span>
+            {migrated && (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                Migrated
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "channel_type",
+      header: "Type",
+      cell: ({ row }) => (
+        <Badge variant="outline" className="capitalize">
+          {row.original.channel_type}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "is_enabled",
+      header: "Enabled",
+      cell: ({ row }) => (
+        <Badge variant={row.original.is_enabled ? "default" : "secondary"}>
+          {row.original.is_enabled ? "Enabled" : "Disabled"}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.created_at
+            ? new Date(row.original.created_at).toLocaleDateString()
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ch = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Open channel actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={async () => {
+                  const result = await testMutation.mutateAsync(ch.channel_id);
+                  if (result.status === "ok" || result.ok) {
+                    toast.success(result.message || "Test sent successfully");
+                  } else {
+                    toast.error(`Test failed: ${result.error ?? "Unknown error"}`);
+                  }
+                }}
+              >
+                Test
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setEditing(ch);
+                  setOpen(true);
+                }}
+              >
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSelectedChannelId(ch.channel_id)}>
+                History
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setConfirmDelete(ch.channel_id)}
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -91,78 +199,17 @@ export default function NotificationChannelsPage() {
         }
       />
 
-      <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {channels.map((channel) => (
-              <tr key={channel.channel_id} className="border-b border-border/50">
-                <td className="px-3 py-2">
-                  <span>{channel.name}</span>
-                  {Boolean(
-                    (channel.config as Record<string, unknown>)?.migrated_from_integration_id
-                  ) && (
-                    <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
-                      Migrated
-                    </Badge>
-                  )}
-                </td>
-                <td className="px-3 py-2">{channel.channel_type}</td>
-                <td className="px-3 py-2">{channel.is_enabled ? "Enabled" : "Disabled"}</td>
-                <td className="px-3 py-2">
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        const result = await testMutation.mutateAsync(channel.channel_id);
-                        if (result.status === "ok" || result.ok) {
-                          toast.success(result.message || "Test sent successfully");
-                        } else {
-                          toast.error(`Test failed: ${result.error ?? "Unknown error"}`);
-                        }
-                      }}
-                    >
-                      Test
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setEditing(channel);
-                        setOpen(true);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedChannelId(channel.channel_id)}
-                    >
-                      History
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setConfirmDelete(channel.channel_id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={channels}
+        isLoading={channelsQuery.isLoading}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No notification channels configured. Add a channel to start receiving alerts.
+          </div>
+        }
+        manualPagination={false}
+      />
 
       <RoutingRulesPanel channels={channels} rules={rules} />
       {selectedChannelId && (

@@ -1,9 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
+import { Switch } from "@/components/ui/switch";
 import {
   createRoutingRule,
   deleteRoutingRule,
+  updateRoutingRule,
   type NotificationChannel,
   type RoutingRule,
 } from "@/services/api/notifications";
@@ -28,9 +33,17 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
     throttle_minutes: 0,
     is_enabled: true,
   });
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
 
   const createMutation = useMutation({
     mutationFn: createRoutingRule,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Partial<RoutingRule> }) =>
+      updateRoutingRule(id, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
     },
@@ -41,6 +54,100 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
       await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
     },
   });
+
+  const channelName = (channelId: number) =>
+    channels.find((c) => c.channel_id === channelId)?.name ?? String(channelId);
+
+  const severityBadge = (severity?: number) => {
+    if (severity == null) return <span className="text-muted-foreground">Any</span>;
+    const variant =
+      severity >= 5 ? "destructive" : severity >= 4 ? "secondary" : "outline";
+    return <Badge variant={variant}>{severity}</Badge>;
+  };
+
+  const columns: ColumnDef<RoutingRule>[] = [
+    {
+      id: "channel",
+      header: "Channel",
+      accessorFn: (r) => channelName(r.channel_id),
+      cell: ({ row }) => <span className="font-medium">{channelName(row.original.channel_id)}</span>,
+    },
+    {
+      accessorKey: "min_severity",
+      header: "Min Severity",
+      cell: ({ row }) => severityBadge(row.original.min_severity),
+    },
+    {
+      accessorKey: "alert_type",
+      header: "Type",
+      cell: ({ row }) => row.original.alert_type || "Any",
+    },
+    {
+      accessorKey: "throttle_minutes",
+      header: "Throttle",
+      cell: ({ row }) =>
+        row.original.throttle_minutes > 0
+          ? `${row.original.throttle_minutes}m`
+          : "None",
+    },
+    {
+      accessorKey: "is_enabled",
+      header: "Enabled",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={row.original.is_enabled}
+            onCheckedChange={(next) =>
+              updateMutation.mutate({ id: row.original.rule_id, body: { is_enabled: next } })
+            }
+          />
+          <span className="text-xs text-muted-foreground">
+            {row.original.is_enabled ? "Enabled" : "Disabled"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const r = row.original;
+              setEditingRuleId(r.rule_id);
+              setDraft({
+                channel_id: r.channel_id,
+                min_severity: r.min_severity,
+                alert_type: r.alert_type ?? "",
+                device_tag_key: r.device_tag_key ?? "",
+                device_tag_val: r.device_tag_val ?? "",
+                site_ids: r.site_ids ?? [],
+                device_prefixes: r.device_prefixes ?? [],
+                deliver_on: r.deliver_on ?? ["OPEN"],
+                priority: r.priority ?? 100,
+                throttle_minutes: r.throttle_minutes ?? 0,
+                is_enabled: r.is_enabled,
+              });
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={async () => {
+              await deleteMutation.mutateAsync(row.original.rule_id);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
@@ -160,61 +267,38 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
           <Button
             onClick={async () => {
               if (!draft.channel_id) return;
-              await createMutation.mutateAsync({
+              const payload: Omit<RoutingRule, "rule_id"> = {
                 ...draft,
                 alert_type: draft.alert_type || undefined,
                 device_tag_key: draft.device_tag_key || undefined,
                 device_tag_val: draft.device_tag_val || undefined,
                 site_ids: draft.site_ids?.length ? draft.site_ids : undefined,
                 device_prefixes: draft.device_prefixes?.length ? draft.device_prefixes : undefined,
-              });
+              };
+              if (editingRuleId != null) {
+                await updateMutation.mutateAsync({ id: editingRuleId, body: payload });
+                setEditingRuleId(null);
+              } else {
+                await createMutation.mutateAsync(payload);
+              }
             }}
           >
-            Add
+            {editingRuleId != null ? "Save" : "Add"}
           </Button>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-2 py-1 text-left">Channel</th>
-              <th className="px-2 py-1 text-left">Min Severity</th>
-              <th className="px-2 py-1 text-left">Type</th>
-              <th className="px-2 py-1 text-left">Deliver On</th>
-              <th className="px-2 py-1 text-left">Priority</th>
-              <th className="px-2 py-1 text-left">Throttle</th>
-              <th className="px-2 py-1 text-left">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rules.map((rule) => (
-              <tr key={rule.rule_id} className="border-b border-border/40">
-                <td className="px-2 py-1">
-                  {channels.find((c) => c.channel_id === rule.channel_id)?.name ?? rule.channel_id}
-                </td>
-                <td className="px-2 py-1">{rule.min_severity ?? "any"}</td>
-                <td className="px-2 py-1">{rule.alert_type ?? "any"}</td>
-                <td className="px-2 py-1">{(rule.deliver_on ?? ["OPEN"]).join(",")}</td>
-                <td className="px-2 py-1">{rule.priority ?? 100}</td>
-                <td className="px-2 py-1">{rule.throttle_minutes}m</td>
-                <td className="px-2 py-1">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={async () => {
-                      await deleteMutation.mutateAsync(rule.rule_id);
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={rules}
+        isLoading={false}
+        emptyState={
+          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            No routing rules. Add a rule to control which alerts go to which channels.
+          </div>
+        }
+        manualPagination={false}
+      />
     </div>
   );
 }
