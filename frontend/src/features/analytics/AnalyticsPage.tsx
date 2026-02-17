@@ -171,7 +171,7 @@ export default function AnalyticsPage() {
       cell: ({ row }) => {
         const val = row.original[col] ?? "";
         const mono = col === "time" || col === "value";
-        return <span className={mono ? "font-mono text-xs" : ""}>{val}</span>;
+        return <span className={mono ? "font-mono text-sm" : ""}>{val}</span>;
       },
     }));
   }, [queryResult?.columns]);
@@ -304,7 +304,7 @@ export default function AnalyticsPage() {
                     {devices.map((d) => (
                       <label
                         key={d.device_id}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
+                        className="flex items-center gap-2 text-sm cursor-pointer"
                       >
                         <input
                           type="checkbox"
@@ -323,14 +323,14 @@ export default function AnalyticsPage() {
                       </label>
                     ))}
                     {devices.length === 0 && (
-                      <div className="text-xs text-muted-foreground">No devices found</div>
+                      <div className="text-sm text-muted-foreground">No devices found</div>
                     )}
                   </div>
                   {selectedDeviceIds.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-xs h-6"
+                      className="h-8 text-sm"
                       onClick={() => setSelectedDeviceIds([])}
                     >
                       Clear selection ({selectedDeviceIds.length})
@@ -358,7 +358,7 @@ export default function AnalyticsPage() {
               </Button>
 
               {queryMutation.isError && (
-                <div className="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                <div className="rounded border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
                   Query failed. Adjust filters and try again.
                 </div>
               )}
@@ -437,7 +437,7 @@ export default function AnalyticsPage() {
                       data={queryResult?.rows ?? []}
                       isLoading={queryMutation.isPending}
                       emptyState={
-                        <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+                        <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                           Run a query to see results.
                         </div>
                       }

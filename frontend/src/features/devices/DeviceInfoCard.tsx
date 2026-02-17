@@ -29,7 +29,7 @@ export function DeviceInfoCard({
   const [tagInput, setTagInput] = useState("");
   if (isLoading) {
     return (
-      <div className="border rounded p-3 bg-card text-xs space-y-1">
+      <div className="border rounded p-3 bg-card text-sm space-y-1">
         <Skeleton className="h-3 w-64" />
         <Skeleton className="h-3 w-72" />
         <Skeleton className="h-3 w-56" />
@@ -39,16 +39,16 @@ export function DeviceInfoCard({
 
   if (!device) {
     return (
-      <div className="border rounded p-3 bg-card text-xs space-y-1">
-        <p className="text-xs text-muted-foreground">Device not found.</p>
+      <div className="border rounded p-3 bg-card text-sm space-y-1">
+        <p className="text-sm text-muted-foreground">Device not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="border rounded p-2 bg-card text-xs">
+    <div className="border rounded p-2 bg-card text-sm">
       <div className="flex items-center gap-3 mb-1">
-        <span className="font-mono font-semibold text-xs">
+        <span className="font-mono font-semibold text-sm">
           {device.device_id}
         </span>
         <StatusBadge status={device.status} />
@@ -66,7 +66,7 @@ export function DeviceInfoCard({
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-x-3 gap-y-0.5 text-xs">
+      <div className="grid grid-cols-4 gap-x-3 gap-y-0.5 text-sm">
         <div>
           <span className="text-muted-foreground">Model:</span>{" "}
           {device.model || "—"}
@@ -101,7 +101,7 @@ export function DeviceInfoCard({
         </div>
       </div>
 
-      <div className="mt-1 flex items-center gap-1 text-xs">
+      <div className="mt-1 flex items-center gap-1 text-sm">
         <span className="text-muted-foreground">Location:</span>
         {device.latitude != null && device.longitude != null ? (
           <>
@@ -111,26 +111,26 @@ export function DeviceInfoCard({
             {device.address && (
               <span className="text-muted-foreground">({device.address})</span>
             )}
-            <span className="text-muted-foreground text-[10px]">
+            <span className="text-muted-foreground text-sm">
               [{device.location_source || "auto"}]
             </span>
           </>
         ) : device.address ? (
           <>
             <span>{device.address}</span>
-            <span className="text-muted-foreground text-[10px]">[manual]</span>
+            <span className="text-muted-foreground text-sm">[manual]</span>
           </>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </div>
 
-      <div className="mt-1 flex items-center gap-1 text-xs">
+      <div className="mt-1 flex items-center gap-1 text-sm">
         <span className="text-muted-foreground">Tags:</span>
         {tags.map((tag) => (
           <span
             key={tag}
-            className="bg-muted px-1 py-0 rounded text-xs inline-flex items-center"
+              className="bg-muted px-1 py-0 rounded text-sm inline-flex items-center"
           >
             {tag}
             <button
@@ -148,7 +148,7 @@ export function DeviceInfoCard({
           placeholder="+"
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
-          className="w-12 text-xs bg-transparent border-b border-border py-0 px-0"
+          className="w-12 text-sm bg-transparent border-b border-border py-0 px-0"
           aria-label="Add device tag"
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -168,14 +168,14 @@ export function DeviceInfoCard({
         />
       </div>
 
-      <div className="mt-1 flex items-center gap-1 text-xs">
+      <div className="mt-1 flex items-center gap-1 text-sm">
         <span className="text-muted-foreground">Notes:</span>
         <input
           type="text"
           value={notesValue}
           onChange={(e) => onNotesChange(e.target.value)}
           onBlur={onNotesBlur}
-          className="flex-1 text-xs bg-transparent border-b border-border py-0"
+          className="flex-1 text-sm bg-transparent border-b border-border py-0"
           placeholder="—"
         />
       </div>

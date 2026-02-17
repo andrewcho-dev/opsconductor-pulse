@@ -170,33 +170,33 @@ export default function SetupWizard() {
           <div className="space-y-3">
             <h3 className="font-medium">Step 1 - Device Identity</h3>
             <div>
-              <label className="text-xs text-muted-foreground">Device ID</label>
+              <label className="text-sm text-muted-foreground">Device ID</label>
               <Input
                 value={state.deviceId}
                 onChange={(e) => dispatch({ type: "set", key: "deviceId", value: e.target.value })}
               />
               {invalidDeviceId && (
-                <p className="text-xs text-red-600">
+                <p className="text-sm text-red-600">
                   Device ID must match /^[a-z0-9][a-z0-9-_]*$/
                 </p>
               )}
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Display Name</label>
+              <label className="text-sm text-muted-foreground">Display Name</label>
               <Input
                 value={state.displayName}
                 onChange={(e) => dispatch({ type: "set", key: "displayName", value: e.target.value })}
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Model / Device Type</label>
+              <label className="text-sm text-muted-foreground">Model / Device Type</label>
               <Input
                 value={state.model}
                 onChange={(e) => dispatch({ type: "set", key: "model", value: e.target.value })}
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Site</label>
+              <label className="text-sm text-muted-foreground">Site</label>
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                 value={state.siteId}
@@ -239,7 +239,7 @@ export default function SetupWizard() {
               Add Tag
             </Button>
             <div>
-              <label className="text-xs text-muted-foreground">Notes</label>
+              <label className="text-sm text-muted-foreground">Notes</label>
               <Textarea
                 value={state.notes}
                 onChange={(e) => dispatch({ type: "set", key: "notes", value: e.target.value })}
@@ -261,7 +261,7 @@ export default function SetupWizard() {
                   >
                     <div>
                       <div className="font-medium">{rule.name}</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-sm text-muted-foreground">
                         {rule.metric_name} {rule.operator} {rule.threshold}
                       </div>
                     </div>
@@ -299,15 +299,15 @@ export default function SetupWizard() {
             </div>
             <div className="grid gap-2 text-sm">
               <div>
-                <div className="text-xs text-muted-foreground">Device ID</div>
+                <div className="text-sm text-muted-foreground">Device ID</div>
                 <div className="font-mono">{state.credentials.device_id}</div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">API Token</div>
+                <div className="text-sm text-muted-foreground">API Token</div>
                 <div className="font-mono">{state.credentials.api_token}</div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">MQTT Topic</div>
+                <div className="text-sm text-muted-foreground">MQTT Topic</div>
                 <div className="font-mono">{state.credentials.mqtt_topic}</div>
               </div>
             </div>

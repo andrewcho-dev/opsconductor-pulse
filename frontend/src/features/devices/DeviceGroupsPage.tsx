@@ -162,7 +162,7 @@ export default function DeviceGroupsPage() {
     <div className="space-y-6">
       <PageHeader title="Device Groups" description="Create and manage reusable device groups." />
 
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Groups</CardTitle>
@@ -188,10 +188,10 @@ export default function DeviceGroupsPage() {
                     <Badge variant="secondary">Dynamic</Badge>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   {group.description || "No description"}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="mt-1 text-sm text-muted-foreground">
                   Members: {group.member_count == null ? "-" : group.member_count}
                 </div>
               </button>
@@ -288,7 +288,7 @@ export default function DeviceGroupsPage() {
                       >
                         <div>
                           <div className="font-medium">{member.device_id}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-sm text-muted-foreground">
                             {member.name} - {member.status}
                           </div>
                         </div>
@@ -342,7 +342,7 @@ export default function DeviceGroupsPage() {
             <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
               <div>
                 <Label>Dynamic Group</Label>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   Membership is resolved automatically from a filter.
                 </div>
               </div>

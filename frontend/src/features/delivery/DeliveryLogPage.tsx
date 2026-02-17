@@ -44,7 +44,7 @@ export default function DeliveryLogPage() {
       {
         accessorKey: "integration_id",
         header: "Channel",
-        cell: ({ row }) => <span className="font-mono text-xs">{row.original.integration_id}</span>,
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.integration_id}</span>,
       },
       {
         accessorKey: "alert_id",
@@ -67,7 +67,7 @@ export default function DeliveryLogPage() {
         header: "Sent At",
         accessorFn: (j) => j.updated_at ?? j.created_at,
         cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {new Date(row.original.updated_at ?? row.original.created_at).toLocaleString()}
           </span>
         ),
@@ -77,7 +77,7 @@ export default function DeliveryLogPage() {
         header: "Error",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="max-w-[260px] truncate text-xs text-muted-foreground">
+          <span className="max-w-[260px] truncate text-sm text-muted-foreground">
             {row.original.last_error || "—"}
           </span>
         ),
@@ -123,7 +123,7 @@ export default function DeliveryLogPage() {
           }}
           isLoading={isLoading}
           emptyState={
-            <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+            <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
               No delivery logs. Logs appear when notifications are sent.
             </div>
           }
@@ -132,12 +132,12 @@ export default function DeliveryLogPage() {
       )}
 
       {expanded != null && (
-        <div className="rounded-md border border-border bg-muted/30 p-3">
+        <div className="rounded-lg border border-border bg-muted/30 p-3">
           <div className="mb-2 text-sm font-medium">Attempts for job {expanded}</div>
           {attemptsQuery.isLoading ? (
-            <div className="text-xs text-muted-foreground">Loading attempts...</div>
+            <div className="text-sm text-muted-foreground">Loading attempts...</div>
           ) : (
-            <div className="space-y-1 text-xs">
+            <div className="space-y-1 text-sm">
               {(attemptsQuery.data?.attempts ?? []).map((a) => (
                 <div key={a.attempt_no}>
                   attempt {a.attempt_no}: {a.ok ? "ok" : "fail"} / HTTP {a.http_status ?? "-"} /{" "}

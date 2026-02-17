@@ -3,21 +3,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchFleetHealth } from "@/services/api/devices";
 
 function scoreColor(score: number): string {
-  if (score > 80) return "text-green-500";
-  if (score >= 50) return "text-yellow-500";
-  return "text-red-500";
+  if (score > 80) return "text-status-online";
+  if (score >= 50) return "text-status-warning";
+  return "text-status-critical";
 }
 
 function strokeColor(score: number): string {
-  if (score > 80) return "stroke-green-500";
-  if (score >= 50) return "stroke-yellow-500";
-  return "stroke-red-500";
+  if (score > 80) return "stroke-status-online";
+  if (score >= 50) return "stroke-status-warning";
+  return "stroke-status-critical";
 }
 
 function trackColor(score: number): string {
-  if (score > 80) return "stroke-green-500/20";
-  if (score >= 50) return "stroke-yellow-500/20";
-  return "stroke-red-500/20";
+  if (score > 80) return "stroke-status-online/20";
+  if (score >= 50) return "stroke-status-warning/20";
+  return "stroke-status-critical/20";
 }
 
 export function FleetHealthWidget() {
@@ -98,14 +98,14 @@ export function FleetHealthWidget() {
               <span className="font-medium">{healthy}</span>
               <span className="text-muted-foreground">/{total} devices healthy</span>
             </div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-sm text-muted-foreground">
               {online} online, {critical} with critical alerts
             </div>
             {score <= 50 && (
-              <div className="text-xs font-medium text-red-500">Fleet health is degraded</div>
+              <div className="text-sm font-medium text-status-critical">Fleet health is degraded</div>
             )}
             {score > 50 && score <= 80 && (
-              <div className="text-xs font-medium text-yellow-500">
+              <div className="text-sm font-medium text-status-warning">
                 Some devices need attention
               </div>
             )}

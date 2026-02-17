@@ -36,13 +36,13 @@ function AlertStreamWidgetInner() {
           {wsStatus === "connected" && (
             <Badge
               variant="outline"
-              className="text-[10px] text-green-700 border-green-200 dark:text-green-400 dark:border-green-700/50"
+              className="text-xs text-status-online border-status-online"
             >
               LIVE
             </Badge>
           )}
         </div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           {lastUpdateText && `Updated ${lastUpdateText}`}
         </div>
       </CardHeader>
@@ -68,12 +68,12 @@ function AlertStreamWidgetInner() {
                 <SeverityBadge severity={a.severity} className="shrink-0" />
                 <Link
                   to={`/devices/${a.device_id}`}
-                  className="font-mono text-xs text-primary hover:underline shrink-0"
+                  className="font-mono text-sm text-primary hover:underline shrink-0"
                 >
                   {a.device_id}
                 </Link>
                 <span className="truncate flex-1">{a.summary}</span>
-                <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
+                <span className="text-sm text-muted-foreground shrink-0 hidden md:inline">
                   {a.alert_type}
                 </span>
               </div>
@@ -82,7 +82,7 @@ function AlertStreamWidgetInner() {
               <div className="pt-2 text-center">
                 <Link
                   to="/alerts"
-                  className="text-xs text-primary hover:underline"
+                  className="text-sm text-primary hover:underline"
                 >
                   View all {alerts.length} alerts
                 </Link>

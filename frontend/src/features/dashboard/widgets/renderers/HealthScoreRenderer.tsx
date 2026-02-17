@@ -4,21 +4,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { WidgetRendererProps } from "../widget-registry";
 
 function scoreColor(score: number): string {
-  if (score > 80) return "text-green-500";
-  if (score >= 50) return "text-yellow-500";
-  return "text-red-500";
+  if (score > 80) return "text-status-online";
+  if (score >= 50) return "text-status-warning";
+  return "text-status-critical";
 }
 
 function strokeColor(score: number): string {
-  if (score > 80) return "stroke-green-500";
-  if (score >= 50) return "stroke-yellow-500";
-  return "stroke-red-500";
+  if (score > 80) return "stroke-status-online";
+  if (score >= 50) return "stroke-status-warning";
+  return "stroke-status-critical";
 }
 
 function trackColor(score: number): string {
-  if (score > 80) return "stroke-green-500/20";
-  if (score >= 50) return "stroke-yellow-500/20";
-  return "stroke-red-500/20";
+  if (score > 80) return "stroke-status-online/20";
+  if (score >= 50) return "stroke-status-warning/20";
+  return "stroke-status-critical/20";
 }
 
 export default function HealthScoreRenderer(_props: WidgetRendererProps) {

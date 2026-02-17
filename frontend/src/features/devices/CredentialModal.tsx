@@ -47,7 +47,7 @@ MQTT_BROKER_URL=${credentials.broker_url}
         <DialogHeader>
           <DialogTitle>Device Credentials</DialogTitle>
         </DialogHeader>
-        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-900 dark:text-yellow-200">
+        <div className="rounded-md border border-status-warning/30 bg-status-warning/10 p-2 text-xs text-status-warning">
           These credentials will not be shown again. Save them now.
         </div>
         {credentials && (

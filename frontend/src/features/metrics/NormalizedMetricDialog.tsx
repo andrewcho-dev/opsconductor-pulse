@@ -211,7 +211,7 @@ export default function NormalizedMetricDialog({
                 onChange={(event) => setMinValue(event.target.value)}
                 placeholder="Min"
               />
-              <span className="text-xs text-muted-foreground">to</span>
+              <span className="text-sm text-muted-foreground">to</span>
               <Input
                 value={maxValue}
                 onChange={(event) => setMaxValue(event.target.value)}
@@ -259,7 +259,7 @@ export default function NormalizedMetricDialog({
                   </table>
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   No raw metrics mapped yet.
                 </div>
               )}
@@ -327,7 +327,7 @@ export default function NormalizedMetricDialog({
             </div>
           )}
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter className="justify-between">
           <Button

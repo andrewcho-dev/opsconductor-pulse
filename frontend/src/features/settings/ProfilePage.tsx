@@ -81,7 +81,7 @@ export default function ProfilePage() {
         description="Manage your display name, timezone, and notification preferences."
       />
 
-      <div className="grid gap-6 max-w-2xl">
+      <div className="grid gap-4 max-w-2xl">
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -99,7 +99,7 @@ export default function ProfilePage() {
                 placeholder="Enter your display name"
                 maxLength={100}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 This name will be shown in team views and activity logs.
               </p>
             </div>
@@ -113,7 +113,7 @@ export default function ProfilePage() {
                 readOnly
                 className="bg-muted"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Email is managed by your identity provider and cannot be changed here.
               </p>
             </div>
@@ -138,7 +138,7 @@ export default function ProfilePage() {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Timestamps across the application will be displayed in this timezone.
             </p>
           </CardContent>
@@ -177,7 +177,7 @@ export default function ProfilePage() {
                   </Label>
                 </div>
               </RadioGroup>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Receive a periodic summary of fleet activity and alerts to your email.
               </p>
             </div>

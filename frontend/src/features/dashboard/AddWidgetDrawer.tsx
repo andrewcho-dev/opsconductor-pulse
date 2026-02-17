@@ -83,8 +83,8 @@ export function AddWidgetDrawer({ open, onOpenChange, dashboardId }: AddWidgetDr
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{def.label}</div>
-                  <div className="text-xs text-muted-foreground">{def.description}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="text-sm text-muted-foreground">{def.description}</div>
+                  <div className="text-sm text-muted-foreground mt-1">
                     Default size: {def.defaultSize.w}x{def.defaultSize.h}
                   </div>
                 </div>

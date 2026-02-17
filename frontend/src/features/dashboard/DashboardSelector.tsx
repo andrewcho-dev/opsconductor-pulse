@@ -97,7 +97,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
         <DropdownMenuContent align="start" className="w-[280px]">
           {dashboards.filter((d) => !d.is_shared).length > 0 && (
             <>
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
                 My Dashboards
               </div>
               {dashboards
@@ -117,7 +117,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
                       </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground">{d.widget_count}w</span>
+                      <span className="text-sm text-muted-foreground">{d.widget_count}w</span>
                       {d.is_owner && !d.is_default && (
                         <button
                           onClick={(e) => {
@@ -151,7 +151,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
           {dashboards.filter((d) => d.is_shared).length > 0 && (
             <>
               <DropdownMenuSeparator />
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
                 <Share2 className="inline h-3 w-3 mr-1" />
                 Shared Dashboards
               </div>
@@ -166,7 +166,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
                     <span className={d.id === activeDashboardId ? "font-medium" : ""}>
                       {d.name}
                     </span>
-                    <span className="text-xs text-muted-foreground">{d.widget_count}w</span>
+                    <span className="text-sm text-muted-foreground">{d.widget_count}w</span>
                   </DropdownMenuItem>
                 ))}
             </>

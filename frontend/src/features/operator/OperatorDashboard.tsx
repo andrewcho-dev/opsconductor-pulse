@@ -8,9 +8,9 @@ import { fetchSystemAggregates, fetchSystemErrors, fetchSystemHealth } from "@/s
 function kpiCard(title: string, value: string, sub: string) {
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="text-sm uppercase tracking-wide text-muted-foreground">{title}</div>
       <div className="mt-1 text-2xl font-semibold">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+      <div className="mt-1 text-sm text-muted-foreground">{sub}</div>
     </div>
   );
 }
@@ -27,7 +27,7 @@ function navCard(to: string, title: string, description: string, icon: React.Ele
         <div className="font-semibold">{title}</div>
       </div>
       <div className="text-sm text-muted-foreground">{description}</div>
-      <div className="mt-3 text-xs font-medium text-primary">Open -&gt;</div>
+      <div className="mt-3 text-sm font-medium text-primary">Open -&gt;</div>
     </Link>
   );
 }
@@ -72,7 +72,7 @@ export default function OperatorDashboard() {
           <div className="text-sm text-muted-foreground">
             <span
               className={`mr-2 inline-block h-2 w-2 rounded-full ${
-                health?.status === "healthy" ? "bg-green-500" : "bg-yellow-500"
+                health?.status === "healthy" ? "bg-status-online" : "bg-status-warning"
               }`}
             />
             {health?.status?.toUpperCase() ?? "UNKNOWN"} | Last: {lastUpdated}
@@ -107,7 +107,7 @@ export default function OperatorDashboard() {
           <Server className="h-4 w-4 text-muted-foreground" />
           <div className="font-medium">Recent Errors (last hour)</div>
         </div>
-        <div className="space-y-1 text-xs">
+        <div className="space-y-1 text-sm">
           {(errors?.errors ?? []).slice(0, 5).map((err, idx) => (
             <div key={`${err.timestamp}-${idx}`} className="flex items-start gap-2">
               <span className="text-muted-foreground">

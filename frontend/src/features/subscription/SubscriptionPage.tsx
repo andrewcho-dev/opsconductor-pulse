@@ -122,7 +122,7 @@ function SubscriptionCard({ subscription }: { subscription: Subscription }) {
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={subscription.subscription_type} />
             <StatusBadge status={subscription.status} variant="subscription" />
-            <span className="text-xs text-muted-foreground font-mono">
+            <span className="text-sm text-muted-foreground font-mono">
               {subscription.subscription_id}
             </span>
           </div>
@@ -145,7 +145,7 @@ function SubscriptionCard({ subscription }: { subscription: Subscription }) {
             <span className="text-muted-foreground">{usagePercent}%</span>
           </div>
           <ProgressBar value={usagePercent} />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>{subscription.devices_available} available</span>
             {subscription.term_end && (
               <span
@@ -187,14 +187,14 @@ function SubscriptionCard({ subscription }: { subscription: Subscription }) {
                   <TableBody>
                     {visibleDevices.map((device) => (
                       <TableRow key={device.device_id}>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-sm">
                           {device.device_id}
                         </TableCell>
                         <TableCell>{device.site_id}</TableCell>
                         <TableCell>
                           <StatusBadge status={device.status} variant="device" />
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="text-sm text-muted-foreground">
                           {device.last_seen_at
                             ? formatDistanceToNow(new Date(device.last_seen_at), { addSuffix: true })
                             : "—"}
@@ -204,7 +204,7 @@ function SubscriptionCard({ subscription }: { subscription: Subscription }) {
                   </TableBody>
                 </Table>
                 {totalDevices > visibleDevices.length && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     Showing {visibleDevices.length} of {totalDevices} devices
                   </p>
                 )}
@@ -398,13 +398,13 @@ export default function SubscriptionPage() {
               <TableBody>
                 {auditData?.events.map((event) => (
                   <TableRow key={event.id}>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="font-mono text-sm">
                       {event.event_type}
                     </TableCell>
                     <TableCell className="text-sm">
                       {event.event_type.replace(/_/g, " ").toLowerCase()}
                     </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
+                    <TableCell className="text-right text-sm text-muted-foreground">
                       {formatDistanceToNow(new Date(event.event_timestamp), {
                         addSuffix: true,
                       })}

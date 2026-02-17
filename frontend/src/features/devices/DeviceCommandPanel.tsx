@@ -66,7 +66,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
         accessorKey: "command_id",
         header: "Command ID",
         cell: ({ row }) => (
-          <span className="font-mono text-xs" title={row.original.command_id}>
+          <span className="font-mono text-sm" title={row.original.command_id}>
             {row.original.command_id.slice(0, 8)}...
           </span>
         ),
@@ -133,7 +133,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
       {showForm && (
         <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Quick commands</div>
+            <div className="text-sm text-muted-foreground">Quick commands</div>
             <div className="flex flex-wrap gap-2">
               {QUICK_COMMANDS.map((q) => (
                 <Button
@@ -150,7 +150,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Command type</label>
+            <label className="text-sm text-muted-foreground">Command type</label>
             <input
               className="w-full rounded border border-border bg-background p-2 text-sm"
               value={cmdType}
@@ -160,9 +160,9 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Params (JSON)</label>
+            <label className="text-sm text-muted-foreground">Params (JSON)</label>
             <textarea
-              className="w-full rounded border border-border bg-background p-2 font-mono text-xs"
+              className="w-full rounded border border-border bg-background p-2 font-mono text-sm"
               rows={3}
               value={cmdParams}
               onChange={(event) => setCmdParams(event.target.value)}
@@ -170,7 +170,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground">Expires in minutes</label>
+            <label className="text-sm text-muted-foreground">Expires in minutes</label>
             <input
               className="h-8 w-24 rounded border border-border bg-background px-2 text-sm"
               type="number"
@@ -182,7 +182,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           </div>
 
           {(error || sendMutation.error) && (
-            <div className="text-xs text-destructive">
+            <div className="text-sm text-destructive">
               {error ||
                 (sendMutation.error instanceof Error
                   ? sendMutation.error.message
@@ -216,7 +216,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
       )}
 
       {lastResult && (
-        <div className="rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-900">
+        <div className="rounded border border-green-300 bg-green-50 px-2 py-1 text-sm text-green-900">
           {lastResult}
         </div>
       )}
@@ -226,7 +226,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
         data={commandsQuery.data ?? []}
         isLoading={commandsQuery.isLoading}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No commands sent to this device yet.
           </div>
         }
@@ -241,7 +241,7 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
               Close
             </Button>
           </div>
-          <pre className="max-h-64 overflow-auto rounded bg-background p-2 text-xs">
+          <pre className="max-h-64 overflow-auto rounded bg-background p-2 text-sm">
             {JSON.stringify(selected, null, 2)}
           </pre>
         </div>

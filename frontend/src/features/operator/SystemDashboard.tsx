@@ -32,7 +32,10 @@ import {
 } from "lucide-react";
 
 function StatusDot({ status }: { status: string }) {
-  const color = { healthy: "bg-green-500", degraded: "bg-yellow-500", down: "bg-red-500", unknown: "bg-gray-400" }[status] || "bg-gray-400";
+  const color =
+    { healthy: "bg-status-online", degraded: "bg-status-warning", down: "bg-status-critical", unknown: "bg-status-offline" }[
+      status
+    ] || "bg-status-offline";
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
 }
 
@@ -42,9 +45,9 @@ function ServiceChip({ name, icon: Icon, health }: { name: string; icon: React.E
   const isDegraded = status === "degraded";
   return (
     <div
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs border ${
-        isDown ? "border-red-400 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-400"
-        : isDegraded ? "border-yellow-400 bg-yellow-50 dark:bg-yellow-950/50 text-yellow-700"
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-sm border ${
+        isDown ? "border-status-critical bg-status-critical/10 text-status-critical"
+        : isDegraded ? "border-status-warning bg-status-warning/10 text-status-warning"
         : "border-border text-muted-foreground"
       }`}
       title={health?.error || (health?.latency_ms !== undefined ? `${name}: ${health.latency_ms}ms` : name)}
@@ -53,7 +56,7 @@ function ServiceChip({ name, icon: Icon, health }: { name: string; icon: React.E
       <Icon className="h-3 w-3" />
       <span>{name}</span>
       {health?.latency_ms !== undefined && !isDown && (
-        <span className="text-[10px] opacity-60">{health.latency_ms}ms</span>
+        <span className="text-sm opacity-60">{health.latency_ms}ms</span>
       )}
     </div>
   );
@@ -101,14 +104,14 @@ function MetricCard({
   return (
     <div className="border border-border rounded px-2 py-1.5 bg-card">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
           <Icon className="h-3 w-3" />
           <span>{label}</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-sm font-semibold tabular-nums" style={{ color }}>{formatValue(value)}{unit}</span>
-          {trend === "up" && <TrendingUp className="h-3 w-3 text-green-500" />}
-          {trend === "down" && <TrendingDown className="h-3 w-3 text-red-500" />}
+          {trend === "up" && <TrendingUp className="h-3 w-3 text-status-online" />}
+          {trend === "down" && <TrendingDown className="h-3 w-3 text-status-critical" />}
         </div>
       </div>
       <Sparkline data={sparkData} color={color} height={24} />
@@ -144,18 +147,20 @@ function CapacityBar({ label, pct, detail }: { label: string; pct: number; detai
   const isHigh = pct > 80;
   const isCrit = pct > 95;
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex items-center gap-2 text-sm">
       <span className="text-muted-foreground w-12">{label}</span>
       <div className="flex-1 h-2 bg-muted rounded overflow-hidden max-w-32">
         <div
-          className={`h-full transition-all ${isCrit ? "bg-red-500" : isHigh ? "bg-yellow-500" : "bg-green-500"}`}
+          className={`h-full transition-all ${isCrit ? "bg-status-critical" : isHigh ? "bg-status-warning" : "bg-status-online"}`}
           style={{ width: `${Math.min(100, pct)}%` }}
         />
       </div>
-      <span className={`tabular-nums w-10 text-right ${isCrit ? "text-red-600 font-medium" : isHigh ? "text-yellow-600" : ""}`}>
+      <span
+        className={`tabular-nums w-10 text-right ${isCrit ? "text-status-critical font-medium" : isHigh ? "text-status-warning" : ""}`}
+      >
         {pct}%
       </span>
-      {detail && <span className="text-muted-foreground text-[10px]">{detail}</span>}
+      {detail && <span className="text-muted-foreground text-sm">{detail}</span>}
     </div>
   );
 }
@@ -230,7 +235,7 @@ export function SystemDashboard() {
           <div className="flex items-center gap-1.5">
             <StatusDot status={health?.status || "unknown"} />
             <span className="font-semibold">System</span>
-            {!isOnline && <span className="text-xs text-red-600 font-medium ml-2">OFFLINE</span>}
+            {!isOnline && <span className="text-sm text-status-critical font-medium ml-2">OFFLINE</span>}
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             <ServiceChip name="Postgres" icon={Database} health={health?.components.postgres} />
@@ -246,7 +251,7 @@ export function SystemDashboard() {
           <select
             value={refreshInterval}
             onChange={e => setRefreshInterval(Number(e.target.value))}
-            className="h-7 text-xs border border-border rounded bg-background px-2"
+            className="h-8 text-sm border border-border rounded bg-background px-2"
           >
             <option value={5000}>5s</option>
             <option value={10000}>10s</option>
@@ -284,7 +289,7 @@ export function SystemDashboard() {
 
       {/* Stats + Capacity Row */}
       <div className="flex items-start gap-2 flex-wrap">
-        <div className="flex items-center gap-4 text-xs border border-border rounded px-2 py-1.5">
+        <div className="flex items-center gap-4 text-sm border border-border rounded px-2 py-1.5">
           <div><span className="font-semibold text-sm">{aggregates?.tenants.active || 0}</span> <span className="text-muted-foreground">tenants</span></div>
           <div><span className="font-semibold text-sm">{aggregates?.devices.online || 0}</span><span className="text-muted-foreground">/{aggregates?.devices.registered || 0} devices</span></div>
           <div><span className="font-semibold text-sm">{aggregates?.integrations.active || 0}</span><span className="text-muted-foreground">/{aggregates?.integrations.total || 0} integrations</span></div>
@@ -293,7 +298,7 @@ export function SystemDashboard() {
           <CapacityBar label="Disk" pct={diskPct} detail={capacity?.disk?.volumes?.root ? `${capacity.disk.volumes.root.used_gb.toFixed(0)}/${capacity.disk.volumes.root.total_gb.toFixed(0)}GB` : undefined} />
           <CapacityBar label="Conn" pct={connPct} detail={capacity?.postgres ? `${capacity.postgres.connections_used}/${capacity.postgres.connections_max}` : undefined} />
           {capacity?.postgres?.db_size_mb && (
-            <div className="flex items-center gap-1 text-xs">
+            <div className="flex items-center gap-1 text-sm">
               <span className="text-muted-foreground">DB</span>
               <span className="font-medium">{capacity.postgres.db_size_mb.toFixed(0)}MB</span>
             </div>
@@ -305,8 +310,8 @@ export function SystemDashboard() {
       {errCount > 0 && (
         <div className="border border-border rounded px-2 py-1.5">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-muted-foreground">Errors</span>
-            <div className="flex gap-2 text-[11px]">
+            <span className="text-sm font-medium text-muted-foreground">Errors</span>
+            <div className="flex gap-2 text-sm">
               <span className="text-red-600">{errors?.counts?.delivery_failures || 0} failed</span>
               <span className="text-yellow-600">{errors?.counts?.quarantined || 0} quarantined</span>
             </div>
@@ -315,7 +320,7 @@ export function SystemDashboard() {
             {errors?.errors?.slice(0, 6).map((err, i) => {
               const d = err.details as { device_id?: string; reason?: string } | null;
               return (
-                <div key={i} className="flex items-center gap-2 text-[11px]">
+                <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="text-muted-foreground tabular-nums">{new Date(err.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                   <span className="font-medium text-red-600">{err.error_type}</span>
                   <span className="text-muted-foreground truncate">{err.tenant_id && `[${err.tenant_id}]`} {d?.device_id} {d?.reason}</span>

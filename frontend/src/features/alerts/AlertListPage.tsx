@@ -51,10 +51,10 @@ function levelFromSeverity(severity: number): SeverityLevel {
 
 function severityDotClass(severity: number) {
   const level = levelFromSeverity(severity);
-  if (level === "CRITICAL") return "bg-red-500";
-  if (level === "HIGH") return "bg-orange-500";
-  if (level === "MEDIUM") return "bg-yellow-500";
-  return "bg-blue-500";
+  if (level === "CRITICAL") return "bg-status-critical";
+  if (level === "HIGH") return "bg-status-warning";
+  if (level === "MEDIUM") return "bg-status-stale";
+  return "bg-status-info";
 }
 
 function formatTimeAgo(input: string) {
@@ -205,7 +205,7 @@ export default function AlertListPage() {
             }`}
           >
             {item.label}
-            <span className="ml-2 rounded bg-background/70 px-1.5 py-0.5 text-xs">
+            <span className="ml-2 rounded bg-background/70 px-1.5 py-0.5 text-sm">
               {counts[item.key]}
             </span>
           </button>
@@ -218,20 +218,20 @@ export default function AlertListPage() {
             <>
               <button
                 onClick={() => runBulk("ack")}
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
               >
                 Ack Selected
               </button>
               <button
                 onClick={() => runBulk("close")}
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
               >
                 Close Selected
               </button>
             </>
           )}
           {selected.size === 0 && (
-            <span className="text-xs text-muted-foreground">Select alerts for bulk actions</span>
+            <span className="text-sm text-muted-foreground">Select alerts for bulk actions</span>
           )}
         </div>
         <input
@@ -260,7 +260,7 @@ export default function AlertListPage() {
         />
       ) : (
         <div className="rounded-md border border-border">
-          <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] border-b border-border bg-muted/30 px-2 py-2 text-xs font-semibold uppercase text-muted-foreground">
+          <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] border-b border-border bg-muted/30 px-2 py-2 text-sm font-semibold uppercase text-muted-foreground">
             <div>
               <input
                 type="checkbox"
@@ -306,21 +306,21 @@ export default function AlertListPage() {
                   </div>
                   <div>
                     <div className="font-medium">{alert.device_id}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-sm text-muted-foreground">
                       {alert.alert_type}
                       {alert.trigger_count && alert.trigger_count > 1 && (
-                        <Badge variant="secondary" className="ml-2 text-[10px]">
+                        <Badge variant="secondary" className="ml-2">
                           {alert.trigger_count}x
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {formatTimeAgo(alert.created_at)}
                     {alert.trigger_count &&
                       alert.trigger_count > 1 &&
                       alert.last_triggered_at && (
-                        <div className="text-[10px] text-muted-foreground/70">
+                        <div className="text-sm text-muted-foreground/70">
                           last: {formatTimeAgo(alert.last_triggered_at)}
                         </div>
                       )}
@@ -336,7 +336,7 @@ export default function AlertListPage() {
                           await acknowledgeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                        className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
                       >
                         Acknowledge
                       </button>
@@ -345,7 +345,7 @@ export default function AlertListPage() {
                           await closeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                        className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
                       >
                         Close
                       </button>
@@ -356,14 +356,14 @@ export default function AlertListPage() {
                             await refreshAlerts();
                           }}
                           key={opt.value}
-                          className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                          className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
                         >
                           Silence {opt.label}
                         </button>
                       ))}
                       <Link
                         to={`/devices/${alert.device_id}`}
-                        className="block rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                        className="block rounded px-2 py-1 text-left text-sm hover:bg-accent"
                       >
                         View Device
                       </Link>
@@ -400,12 +400,12 @@ export default function AlertListPage() {
                       </div>
                     </div>
                     <div className="mt-3">
-                      <div className="mb-1 text-xs text-muted-foreground">Summary</div>
+                      <div className="mb-1 text-sm text-muted-foreground">Summary</div>
                       <p>{alert.summary}</p>
                     </div>
                     <div className="mt-3">
-                      <div className="mb-1 text-xs text-muted-foreground">Details</div>
-                      <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-xs">
+                      <div className="mb-1 text-sm text-muted-foreground">Details</div>
+                      <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-sm">
                         {JSON.stringify(alert.details ?? {}, null, 2)}
                       </pre>
                     </div>
@@ -415,7 +415,7 @@ export default function AlertListPage() {
                           await acknowledgeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                        className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
                       >
                         Acknowledge
                       </button>
@@ -424,7 +424,7 @@ export default function AlertListPage() {
                           await closeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                        className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
                       >
                         Close
                       </button>
@@ -435,14 +435,14 @@ export default function AlertListPage() {
                             await silenceAlert(String(alert.alert_id), opt.value);
                             await refreshAlerts();
                           }}
-                          className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                          className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
                         >
                           Silence {opt.label}
                         </button>
                       ))}
                       <Link
                         to={`/devices/${alert.device_id}`}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                        className="rounded border border-border px-2 py-1 text-sm hover:bg-accent"
                       >
                         View Device →
                       </Link>

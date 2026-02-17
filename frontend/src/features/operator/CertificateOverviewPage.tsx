@@ -79,17 +79,17 @@ export default function CertificateOverviewPage() {
     {
       accessorKey: "tenant_id",
       header: "Tenant",
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.tenant_id}</span>,
+      cell: ({ row }) => <span className="font-mono text-sm">{row.original.tenant_id}</span>,
     },
     {
       accessorKey: "device_id",
       header: "Device",
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.device_id}</span>,
+      cell: ({ row }) => <span className="font-mono text-sm">{row.original.device_id}</span>,
     },
     {
       accessorKey: "common_name",
       header: "Common Name",
-      cell: ({ row }) => <span className="text-xs">{row.original.common_name}</span>,
+      cell: ({ row }) => <span className="text-sm">{row.original.common_name}</span>,
     },
     {
       accessorKey: "status",
@@ -107,7 +107,7 @@ export default function CertificateOverviewPage() {
         const warn = Number.isFinite(days) && days <= 30;
         const expired = Number.isFinite(ts) && ts < Date.now();
         return (
-          <span className={`text-xs ${expired || warn ? "text-red-600" : "text-muted-foreground"}`}>
+          <span className={`text-sm ${expired || warn ? "text-red-600" : "text-muted-foreground"}`}>
             {new Date(row.original.not_after).toLocaleDateString()}
           </span>
         );
@@ -118,7 +118,7 @@ export default function CertificateOverviewPage() {
       header: "Fingerprint",
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground" title={row.original.fingerprint_sha256}>
+        <span className="font-mono text-sm text-muted-foreground" title={row.original.fingerprint_sha256}>
           {row.original.fingerprint_sha256.slice(0, 16)}...
         </span>
       ),
@@ -136,7 +136,7 @@ export default function CertificateOverviewPage() {
   ];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Certificate Overview</h1>
@@ -150,22 +150,22 @@ export default function CertificateOverviewPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded-md border p-3 text-center">
           <div className="text-2xl font-bold">{total}</div>
-          <div className="text-xs text-muted-foreground">Total Certificates</div>
+          <div className="text-sm text-muted-foreground">Total Certificates</div>
         </div>
         <div className="rounded-md border p-3 text-center">
           <div className="text-2xl font-bold text-green-600">{activeCount}</div>
-          <div className="text-xs text-muted-foreground">Active</div>
+          <div className="text-sm text-muted-foreground">Active</div>
         </div>
         <div className="rounded-md border p-3 text-center">
           <div className="text-2xl font-bold text-red-600">{revokedCount}</div>
-          <div className="text-xs text-muted-foreground">Revoked</div>
+          <div className="text-sm text-muted-foreground">Revoked</div>
         </div>
         <div className="rounded-md border p-3 text-center">
           <div className="text-2xl font-bold text-yellow-600">{expiringCount}</div>
-          <div className="text-xs text-muted-foreground">Expiring (30d)</div>
+          <div className="text-sm text-muted-foreground">Expiring (30d)</div>
         </div>
       </div>
 
@@ -200,7 +200,7 @@ export default function CertificateOverviewPage() {
         }}
         isLoading={isLoading}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No device certificates found across tenants.
           </div>
         }

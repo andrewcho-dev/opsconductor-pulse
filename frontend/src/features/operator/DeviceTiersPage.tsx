@@ -245,7 +245,7 @@ export default function DeviceTiersPage() {
                 )}
                 {sorted.map((t) => (
                   <TableRow key={t.tier_id}>
-                    <TableCell className="font-mono text-xs">{t.name}</TableCell>
+                    <TableCell className="font-mono text-sm">{t.name}</TableCell>
                     <TableCell>{t.display_name}</TableCell>
                     <TableCell className="max-w-[260px] truncate">
                       {t.description || "—"}
@@ -302,7 +302,7 @@ export default function DeviceTiersPage() {
                       <FormControl>
                         <Input id="tier-name" placeholder="basic" {...field} />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                         Lowercase identifier (used in APIs and seed data).
                       </p>
                       <FormMessage />
@@ -341,10 +341,10 @@ export default function DeviceTiersPage() {
 
               <fieldset className="space-y-3 rounded-md border p-4">
                 <legend className="px-1 text-sm font-medium">Features</legend>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                   {KNOWN_FEATURES.map((f) => (
                     <div key={f} className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-xs">{f}</span>
+                      <span className="font-mono text-sm">{f}</span>
                       <Switch
                         checked={Boolean(form.watch(`features.${f}` as any))}
                         onCheckedChange={(v) => setFeature(f, v)}
@@ -382,7 +382,7 @@ export default function DeviceTiersPage() {
                       <FormItem className="flex items-center justify-between rounded-md border p-3">
                         <div className="space-y-0.5">
                           <div className="text-sm font-medium">Active</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-sm text-muted-foreground">
                             Disable to hide tier from customers.
                           </div>
                         </div>

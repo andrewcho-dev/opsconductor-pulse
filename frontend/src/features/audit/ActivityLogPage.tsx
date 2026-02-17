@@ -55,7 +55,7 @@ function PaginationControls({
   setLimit: (n: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between text-xs">
+    <div className="flex items-center justify-between text-sm">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">
           {totalCount > 0 ? `${offset + 1}-${Math.min(offset + limit, totalCount)}` : "0"} of {totalCount.toLocaleString()}
@@ -66,7 +66,7 @@ function PaginationControls({
             setLimit(Number(e.target.value));
             setOffset(0);
           }}
-          className="h-6 px-1 rounded border border-border bg-background text-xs"
+          className="h-6 px-1 rounded border border-border bg-background text-sm"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -79,28 +79,28 @@ function PaginationControls({
         <button
           onClick={() => setOffset(0)}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           First
         </button>
         <button
           onClick={() => setOffset(Math.max(0, offset - limit))}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           Prev
         </button>
         <button
           onClick={() => setOffset(offset + limit)}
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           Next
         </button>
         <button
           onClick={() => setOffset(Math.max(0, Math.floor((totalCount - 1) / limit) * limit))}
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           Last
         </button>
@@ -152,7 +152,7 @@ export default function ActivityLogPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <PageHeader
         title="Activity Log"
         description={
@@ -167,36 +167,36 @@ export default function ActivityLogPage() {
           value={categoryInput}
           onChange={(e) => setCategoryInput(e.target.value)}
           placeholder="Category"
-          className="h-8 text-xs w-28"
+          className="h-8 text-sm w-28"
         />
         <Input
           value={severityInput}
           onChange={(e) => setSeverityInput(e.target.value)}
           placeholder="Severity"
-          className="h-8 text-xs w-24"
+          className="h-8 text-sm w-24"
         />
         <Input
           value={startInput}
           onChange={(e) => setStartInput(e.target.value)}
           type="datetime-local"
-          className="h-8 text-xs w-44"
+          className="h-8 text-sm w-44"
         />
         <Input
           value={endInput}
           onChange={(e) => setEndInput(e.target.value)}
           type="datetime-local"
-          className="h-8 text-xs w-44"
+          className="h-8 text-sm w-44"
         />
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search"
-          className="h-8 text-xs w-32"
+          className="h-8 text-sm w-32"
         />
         <Button
           variant="outline"
           size="sm"
-          className="h-8 text-xs"
+          className="h-8 text-sm"
           onClick={() => {
             setAppliedFilters({
               category: categoryInput.trim(),
@@ -213,7 +213,7 @@ export default function ActivityLogPage() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 text-xs"
+          className="h-8 text-sm"
           onClick={() => {
             setCategoryInput("");
             setSeverityInput("");
@@ -261,7 +261,7 @@ export default function ActivityLogPage() {
           />
 
           <div className="rounded-md border border-border overflow-hidden">
-            <Table className="text-xs">
+            <Table className="text-sm">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="h-8 py-1 px-2">Time</TableHead>

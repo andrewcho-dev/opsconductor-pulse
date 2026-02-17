@@ -55,7 +55,7 @@ function AlertFeedRendererInner({ config }: WidgetRendererProps) {
   return (
     <div className="space-y-1">
       {wsStatus === "connected" && (
-        <div className="text-[10px] text-muted-foreground pb-1">LIVE</div>
+        <div className="text-sm text-muted-foreground pb-1">LIVE</div>
       )}
       {filtered.slice(0, maxItems).map((a) => (
         <div
@@ -65,19 +65,19 @@ function AlertFeedRendererInner({ config }: WidgetRendererProps) {
           <SeverityBadge severity={a.severity} className="shrink-0" />
           <Link
             to={`/devices/${a.device_id}`}
-            className="font-mono text-xs text-primary hover:underline shrink-0"
+            className="font-mono text-sm text-primary hover:underline shrink-0"
           >
             {a.device_id}
           </Link>
           <span className="truncate flex-1">{a.summary}</span>
-          <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
+          <span className="text-sm text-muted-foreground shrink-0 hidden md:inline">
             {a.alert_type}
           </span>
         </div>
       ))}
       {filtered.length > maxItems && (
         <div className="pt-2 text-center">
-          <Link to="/alerts" className="text-xs text-primary hover:underline">
+          <Link to="/alerts" className="text-sm text-primary hover:underline">
             View all {filtered.length} alerts
           </Link>
         </div>

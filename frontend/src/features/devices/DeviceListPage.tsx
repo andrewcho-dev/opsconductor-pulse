@@ -23,9 +23,9 @@ interface DeviceListFilters {
 }
 
 function statusDot(status: string) {
-  if (status === "ONLINE") return "bg-green-500";
-  if (status === "STALE") return "bg-yellow-500";
-  return "bg-red-500";
+  if (status === "ONLINE") return "bg-status-online";
+  if (status === "STALE") return "bg-status-stale";
+  return "bg-status-offline";
 }
 
 function formatTimeAgo(input?: string | null) {
@@ -90,7 +90,7 @@ export default function DeviceListPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader
         title="Devices"
         description={
@@ -199,12 +199,12 @@ export default function DeviceListPage() {
                         <span className={`h-2.5 w-2.5 rounded-full ${statusDot(device.status)}`} />
                         <span className="font-semibold">{device.device_id}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm text-muted-foreground">
                         {formatTimeAgo(device.last_seen_at)}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm text-muted-foreground">
                         {device.model || "unknown-type"}
                       </span>
                       {openAlerts > 0 && (
@@ -227,7 +227,7 @@ export default function DeviceListPage() {
                   }))
                 }
                 disabled={filters.offset === 0}
-                className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50"
+                className="rounded border border-border px-2 py-1 text-sm disabled:opacity-50"
               >
                 {"< Prev"}
               </button>
@@ -239,7 +239,7 @@ export default function DeviceListPage() {
                   }))
                 }
                 disabled={filters.offset + filters.limit >= totalCount}
-                className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50"
+                className="rounded border border-border px-2 py-1 text-sm disabled:opacity-50"
               >
                 {"Next >"}
               </button>

@@ -167,7 +167,7 @@ export default function DeviceDetailPage() {
   };
 
   return (
-    <div className="p-3 space-y-3">
+    <div className="space-y-6">
       <PageHeader
         title={device?.device_id ?? "Device"}
         description={device?.model || undefined}
@@ -177,7 +177,7 @@ export default function DeviceDetailPage() {
         ]}
       />
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-4">
         <DeviceInfoCard
           device={device}
           isLoading={deviceLoading}
@@ -201,13 +201,13 @@ export default function DeviceDetailPage() {
           />
           {pendingLocation && (
             <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
-              <Button size="sm" className="h-6 text-xs" onClick={handleSaveLocation}>
+              <Button size="sm" className="h-8" onClick={handleSaveLocation}>
                 Save Location
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 text-xs"
+                className="h-8"
                 onClick={() => setPendingLocation(null)}
               >
                 Cancel
@@ -276,7 +276,7 @@ export default function DeviceDetailPage() {
       <div className="grid grid-cols-4 gap-2">
         {metrics.slice(0, 8).map((metricName) => (
           <div key={metricName} className="border rounded p-1 text-center">
-            <div className="text-[10px] text-muted-foreground truncate">
+            <div className="text-sm text-muted-foreground truncate">
               {metricName}
             </div>
             <div className="text-sm font-semibold">
@@ -302,14 +302,14 @@ export default function DeviceDetailPage() {
       </WidgetErrorBoundary>
 
       {notesSaving && (
-        <div className="text-[10px] text-muted-foreground">Saving notes...</div>
+        <div className="text-sm text-muted-foreground">Saving notes...</div>
       )}
       {tagsSaving && (
-        <div className="text-[10px] text-muted-foreground">Saving tags...</div>
+        <div className="text-sm text-muted-foreground">Saving tags...</div>
       )}
 
       {openAlertCount > 0 && (
-        <Link to="/alerts" className="text-xs text-primary hover:underline">
+        <Link to="/alerts" className="text-sm text-primary hover:underline">
           View {openAlertCount} alerts
         </Link>
       )}

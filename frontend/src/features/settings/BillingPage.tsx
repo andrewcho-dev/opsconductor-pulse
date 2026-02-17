@@ -33,9 +33,9 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 function usageColor(pct: number) {
-  if (pct > 90) return "bg-red-500";
-  if (pct >= 75) return "bg-yellow-500";
-  return "bg-green-500";
+  if (pct > 90) return "bg-status-critical";
+  if (pct >= 75) return "bg-status-warning";
+  return "bg-status-online";
 }
 
 function ProgressBar({ percent }: { percent: number }) {
@@ -218,12 +218,12 @@ export default function BillingPage() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <TypeBadge type={s.subscription_type} />
-                        <span className="text-xs font-mono text-muted-foreground">
+                        <span className="text-sm font-mono text-muted-foreground">
                           {s.subscription_id}
                         </span>
                       </div>
                       {s.parent_subscription_id && (
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           Parent: {s.parent_subscription_id}
                         </div>
                       )}
@@ -285,7 +285,7 @@ export default function BillingPage() {
                     <TableCell>{a.tier_display_name}</TableCell>
                     <TableCell>
                       {a.slots_used} / {a.slot_limit}{" "}
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm text-muted-foreground">
                         ({a.percent_used}%)
                       </span>
                     </TableCell>
@@ -330,7 +330,7 @@ export default function BillingPage() {
                         <div className="flex-1">
                           <ProgressBar percent={r.percent_used} />
                         </div>
-                        <div className="w-12 text-right text-xs text-muted-foreground">
+                        <div className="w-12 text-right text-sm text-muted-foreground">
                           {r.percent_used}%
                         </div>
                       </div>

@@ -36,7 +36,7 @@ function TenantHealthBar({ onlinePct }: { onlinePct: number }) {
           style={{ width: `${Math.max(0, Math.min(100, onlinePct))}%`, backgroundColor: color }}
         />
       </div>
-      <span className="text-xs tabular-nums" style={{ color }}>
+      <span className="text-sm tabular-nums" style={{ color }}>
         {onlinePct.toFixed(0)}%
       </span>
     </div>
@@ -128,7 +128,7 @@ export default function TenantHealthMatrix() {
             <option value="lastActive">Sort: Last Active</option>
             <option value="name">Sort: Tenant Name</option>
           </select>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
             <span>↻ 30s</span>
           </div>
@@ -137,7 +137,7 @@ export default function TenantHealthMatrix() {
 
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full min-w-[980px] text-sm">
-          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/40 text-sm uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">Tenant</th>
               <th className="px-3 py-2 text-left">Devices</th>
@@ -160,8 +160,8 @@ export default function TenantHealthMatrix() {
                 >
                   <td className="px-3 py-2">
                     <div className="font-semibold">{tenant.tenant_id}</div>
-                    <div className="text-xs text-muted-foreground">{tenant.name}</div>
-                    <Badge variant="outline" className="mt-1 text-[10px]">
+                    <div className="text-sm text-muted-foreground">{tenant.name}</div>
+                    <Badge variant="outline" className="mt-1">
                       {sub?.type ?? "STANDARD"}
                     </Badge>
                   </td>
@@ -181,18 +181,18 @@ export default function TenantHealthMatrix() {
                         <span>none</span>
                       </div>
                     ) : tenant.open_alerts <= 5 ? (
-                      <div className="flex items-center gap-1 text-yellow-500">
+                      <div className="flex items-center gap-1 text-status-warning">
                         <AlertTriangle className="h-4 w-4" />
                         <span>{tenant.open_alerts} open</span>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1 text-red-500">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+                      <div className="flex items-center gap-1 text-status-critical">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-status-critical" />
                         <span>{tenant.open_alerts} open</span>
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                  <td className="px-3 py-2 text-sm text-muted-foreground">
                     {formatRelativeTime(tenant.last_activity)}
                   </td>
                   <td className="px-3 py-2">

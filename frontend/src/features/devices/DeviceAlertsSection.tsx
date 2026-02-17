@@ -31,7 +31,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
         <CardTitle className="text-lg">Device Alerts</CardTitle>
         <Link
           to="/alerts"
-          className="text-xs text-primary hover:underline"
+          className="text-sm text-primary hover:underline"
         >
           View all alerts
         </Link>
@@ -61,7 +61,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
               >
                 <SeverityBadge severity={a.severity} className="shrink-0" />
                 <span className="truncate flex-1">{a.summary}</span>
-                <span className="text-xs text-muted-foreground shrink-0">
+                <span className="text-sm text-muted-foreground shrink-0">
                   {a.alert_type}
                 </span>
                 <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
@@ -73,7 +73,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                       await acknowledgeAlert(String(a.alert_id));
                       await refresh();
                     }}
-                    className="px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                    className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
                   >
                     Ack
                   </button>
@@ -85,13 +85,13 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                         await closeAlert(String(a.alert_id));
                         await refresh();
                       }}
-                      className="px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
                     >
                       Close
                     </button>
                     <button
                       onClick={() => setSilenceForAlert(a.alert_id)}
-                      className="px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
                     >
                       Silence
                     </button>
@@ -100,7 +100,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                         <select
                           value={silenceMinutes}
                           onChange={(e) => setSilenceMinutes(Number(e.target.value))}
-                          className="px-2 py-1 text-xs rounded border border-border bg-background"
+                          className="px-2 py-1 text-sm rounded border border-border bg-background"
                         >
                           <option value={15}>15m</option>
                           <option value={30}>30m</option>
@@ -114,7 +114,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                             setSilenceForAlert(null);
                             await refresh();
                           }}
-                          className="px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                          className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
                         >
                           Apply
                         </button>

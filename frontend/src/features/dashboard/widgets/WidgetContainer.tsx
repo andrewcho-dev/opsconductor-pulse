@@ -52,7 +52,7 @@ function WidgetContainerInner({
             {onConfigure && (
               <button
                 onClick={() => onConfigure(widget.id)}
-                className="rounded p-1 text-xs text-muted-foreground hover:bg-accent"
+                className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
                 title="Configure"
               >
                 &#9881;
@@ -61,7 +61,7 @@ function WidgetContainerInner({
             {onRemove && (
               <button
                 onClick={() => onRemove(widget.id)}
-                className="rounded p-1 text-xs text-destructive hover:bg-destructive/10"
+                className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
                 title="Remove"
               >
                 &times;

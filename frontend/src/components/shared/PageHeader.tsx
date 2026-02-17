@@ -18,7 +18,7 @@ export function PageHeader({ title, description, action, breadcrumbs }: PageHead
     <div className="flex items-center justify-between">
       <div>
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <nav className="mb-1 flex items-center gap-2 text-xs text-muted-foreground" aria-label="Breadcrumb">
+          <nav className="mb-1 flex items-center gap-1.5 text-sm text-muted-foreground" aria-label="Breadcrumb">
             {breadcrumbs.map((crumb, index) => (
               <span key={`${crumb.label}-${index}`} className="flex items-center gap-2">
                 {crumb.href ? (
@@ -33,7 +33,7 @@ export function PageHeader({ title, description, action, breadcrumbs }: PageHead
             ))}
           </nav>
         )}
-        <h1 className="text-2xl font-bold">{title}</h1>
+        <h1 className="text-xl font-semibold">{title}</h1>
         {description && (
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}

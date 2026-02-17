@@ -176,11 +176,11 @@ export default function MaintenanceWindowsPage() {
             {rows.map((window) => (
               <div
                 key={window.window_id}
-                className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]"
+                className="grid gap-4 rounded-md border border-border p-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]"
               >
                 <div>
                   <div className="font-medium">{window.name}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {window.recurring ? "Recurring" : "One-time"} -{" "}
                     {window.enabled ? "Enabled" : "Disabled"}
                   </div>
@@ -195,7 +195,7 @@ export default function MaintenanceWindowsPage() {
                     {window.ends_at ? new Date(window.ends_at).toLocaleString() : "Indefinite"}
                   </div>
                 </div>
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 text-sm text-muted-foreground">
                   <div>Sites: {window.site_ids?.join(", ") || "All"}</div>
                   <div>Device Types: {window.device_types?.join(", ") || "All"}</div>
                   <Badge variant={window.recurring ? "default" : "outline"}>
@@ -226,7 +226,7 @@ export default function MaintenanceWindowsPage() {
             <DialogTitle>{editing ? "Edit Maintenance Window" : "Add Maintenance Window"}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             <div className="grid gap-2">
               <Label>Name</Label>
               <Input
@@ -253,7 +253,7 @@ export default function MaintenanceWindowsPage() {
             <div className="flex items-center justify-between rounded-md border border-border p-3">
               <div>
                 <Label>Recurring</Label>
-                <p className="text-xs text-muted-foreground">Repeat by day/hour window</p>
+                <p className="text-sm text-muted-foreground">Repeat by day/hour window</p>
               </div>
               <Switch
                 checked={form.recurringEnabled}
@@ -282,7 +282,7 @@ export default function MaintenanceWindowsPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-1">
                     <Label>Start Hour</Label>
                     <Input

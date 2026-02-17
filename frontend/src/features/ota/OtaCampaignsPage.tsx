@@ -45,7 +45,7 @@ export default function OtaCampaignsPage() {
   }
 
   const statusClass = (status: CampaignStatus) => {
-    if (status === "COMPLETED") return "text-green-600";
+    if (status === "COMPLETED") return "text-status-online";
     return "";
   };
 
@@ -77,7 +77,7 @@ export default function OtaCampaignsPage() {
     {
       accessorKey: "firmware_version",
       header: "Firmware",
-      cell: ({ row }) => <span className="text-xs font-mono">{row.original.firmware_version}</span>,
+      cell: ({ row }) => <span className="text-sm font-mono">{row.original.firmware_version}</span>,
     },
     {
       accessorKey: "total_devices",
@@ -96,7 +96,7 @@ export default function OtaCampaignsPage() {
             <div className="h-2 w-24 rounded-full bg-muted overflow-hidden">
               <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {c.succeeded}/{c.total_devices}
               {c.failed > 0 && <span className="text-destructive"> ({c.failed} failed)</span>}
             </span>
@@ -144,7 +144,7 @@ export default function OtaCampaignsPage() {
   ];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-6">
       <PageHeader
         title="OTA Campaigns"
         description="Manage firmware rollouts to your device fleet."
@@ -156,7 +156,7 @@ export default function OtaCampaignsPage() {
         data={campaigns}
         isLoading={isLoading}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No OTA campaigns created yet.
           </div>
         }

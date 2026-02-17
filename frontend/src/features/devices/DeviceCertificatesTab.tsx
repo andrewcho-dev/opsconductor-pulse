@@ -105,7 +105,7 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
     {
       accessorKey: "common_name",
       header: "Common Name",
-      cell: ({ row }) => <span className="text-xs">{row.original.common_name}</span>,
+      cell: ({ row }) => <span className="text-sm">{row.original.common_name}</span>,
     },
     {
       accessorKey: "fingerprint_sha256",
@@ -113,7 +113,7 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
       enableSorting: false,
       cell: ({ row }) => (
         <span
-          className="font-mono text-xs text-muted-foreground"
+          className="font-mono text-sm text-muted-foreground"
           title={row.original.fingerprint_sha256}
         >
           {row.original.fingerprint_sha256.slice(0, 16)}...
@@ -143,7 +143,7 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
         const ts = new Date(row.original.not_after).getTime();
         const expired = Number.isFinite(ts) && ts < Date.now();
         return (
-          <span className={`text-xs ${expired ? "text-red-600" : "text-muted-foreground"}`}>
+          <span className={`text-xs ${expired ? "text-status-critical" : "text-muted-foreground"}`}>
             {new Date(row.original.not_after).toLocaleDateString()}
           </span>
         );
@@ -166,7 +166,7 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">X.509 Certificates</h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Manage device certificates for mutual TLS authentication on MQTT port 8883.
           </p>
         </div>

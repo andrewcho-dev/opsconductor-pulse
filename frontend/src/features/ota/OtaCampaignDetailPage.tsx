@@ -52,7 +52,7 @@ export default function OtaCampaignDetailPage() {
 
   if (isLoading || !campaign) {
     return (
-      <div className="p-4 text-sm text-muted-foreground">Loading campaign...</div>
+      <div className="text-sm text-muted-foreground">Loading campaign...</div>
     );
   }
 
@@ -74,7 +74,7 @@ export default function OtaCampaignDetailPage() {
       cell: ({ row }) => (
         <Link
           to={`/devices/${row.original.device_id}`}
-          className="font-mono text-xs text-primary hover:underline"
+          className="font-mono text-sm text-primary hover:underline"
         >
           {row.original.device_id}
         </Link>
@@ -86,7 +86,7 @@ export default function OtaCampaignDetailPage() {
       cell: ({ row }) => (
         <Badge
           variant={statusVariant(row.original.status)}
-          className={row.original.status === "SUCCESS" ? "text-green-600" : ""}
+          className={row.original.status === "SUCCESS" ? "text-status-online" : ""}
         >
           {row.original.status === "SUCCESS" ? "SUCCEEDED" : row.original.status}
         </Badge>
@@ -115,7 +115,7 @@ export default function OtaCampaignDetailPage() {
       header: "Error",
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="max-w-[240px] truncate text-xs text-destructive">
+        <span className="max-w-[240px] truncate text-sm text-destructive">
           {row.original.error_message ?? "—"}
         </span>
       ),
@@ -125,7 +125,7 @@ export default function OtaCampaignDetailPage() {
   const useServerPagination = totalDevices > PAGE_SIZE;
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title={campaign.name}
         description={description}
@@ -177,11 +177,11 @@ export default function OtaCampaignDetailPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded border border-border p-3">
-          <div className="text-xs text-muted-foreground">Status</div>
+          <div className="text-sm text-muted-foreground">Status</div>
           <Badge className="mt-1">{campaign.status}</Badge>
         </div>
         <div className="rounded border border-border p-3">
-          <div className="text-xs text-muted-foreground">Progress</div>
+          <div className="text-sm text-muted-foreground">Progress</div>
           <div className="mt-1 text-lg font-semibold">{progressPct}%</div>
           <div className="h-2 w-full rounded-full bg-muted mt-1 overflow-hidden">
             <div
@@ -191,13 +191,13 @@ export default function OtaCampaignDetailPage() {
           </div>
         </div>
         <div className="rounded border border-border p-3">
-          <div className="text-xs text-muted-foreground">Succeeded / Total</div>
-          <div className="mt-1 text-lg font-semibold text-green-600">
+          <div className="text-sm text-muted-foreground">Succeeded / Total</div>
+          <div className="mt-1 text-lg font-semibold text-status-online">
             {campaign.succeeded} / {campaign.total_devices}
           </div>
         </div>
         <div className="rounded border border-border p-3">
-          <div className="text-xs text-muted-foreground">Failed</div>
+          <div className="text-sm text-muted-foreground">Failed</div>
           <div className="mt-1 text-lg font-semibold text-destructive">{campaign.failed}</div>
         </div>
       </div>
@@ -210,7 +210,7 @@ export default function OtaCampaignDetailPage() {
               setPage(0);
               setStatusFilter(statusFilter === status ? undefined : status);
             }}
-            className={`rounded border px-3 py-1 text-xs transition-colors ${
+            className={`rounded border px-3 py-1 text-sm transition-colors ${
               statusFilter === status
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border hover:bg-muted"
@@ -225,7 +225,7 @@ export default function OtaCampaignDetailPage() {
               setPage(0);
               setStatusFilter(undefined);
             }}
-            className="rounded border border-border px-3 py-1 text-xs hover:bg-muted"
+            className="rounded border border-border px-3 py-1 text-sm hover:bg-muted"
           >
             Clear filter
           </button>
@@ -252,7 +252,7 @@ export default function OtaCampaignDetailPage() {
         }
         isLoading={false}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No devices targeted in this campaign.
           </div>
         }

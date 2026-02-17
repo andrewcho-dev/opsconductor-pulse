@@ -75,7 +75,7 @@ export default function RolesPage() {
   const customRoles = useMemo(() => data?.roles?.filter((r) => !r.is_system) ?? [], [data]);
 
   if (!hasPermission("users.roles")) {
-    return <div className="p-6 text-muted-foreground">You don't have permission to manage roles.</div>;
+    return <div className="text-muted-foreground">You don't have permission to manage roles.</div>;
   }
 
   const toggleExpanded = (roleId: string) => {

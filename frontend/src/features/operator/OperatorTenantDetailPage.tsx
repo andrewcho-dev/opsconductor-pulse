@@ -153,7 +153,7 @@ export default function OperatorTenantDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.devices.total}</div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {stats.devices.active} active
             </p>
           </CardContent>
@@ -162,13 +162,13 @@ export default function OperatorTenantDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Online / Stale</CardTitle>
-            <Wifi className="h-4 w-4 text-green-500" />
+            <Wifi className="h-4 w-4 text-status-online" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              <span className="text-green-500">{stats.devices.online}</span>
+              <span className="text-status-online">{stats.devices.online}</span>
               {" / "}
-              <span className="text-orange-500">{stats.devices.stale}</span>
+              <span className="text-status-stale">{stats.devices.stale}</span>
             </div>
           </CardContent>
         </Card>
@@ -176,11 +176,11 @@ export default function OperatorTenantDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Open Alerts</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            <AlertTriangle className="h-4 w-4 text-status-warning" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.alerts.open}</div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {stats.alerts.last_24h} in last 24h
             </p>
           </CardContent>
@@ -193,14 +193,14 @@ export default function OperatorTenantDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.integrations.active}</div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {stats.integrations.total} total
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

@@ -121,7 +121,7 @@ export default function UserListPage() {
               {row.original.username}
             </Link>
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-sm text-muted-foreground">
             {`${row.original.first_name || ""} ${row.original.last_name || ""}`.trim() || "—"}
           </div>
         </div>
@@ -160,11 +160,11 @@ export default function UserListPage() {
       header: "Created",
       cell: ({ row }) =>
         row.original.created_at != null ? (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {new Date(row.original.created_at).toLocaleDateString()}
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-sm text-muted-foreground">—</span>
         ),
     },
     {
@@ -222,7 +222,7 @@ export default function UserListPage() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Users</CardTitle>
@@ -248,7 +248,7 @@ export default function UserListPage() {
             }}
             isLoading={usersQ.isLoading}
             emptyState={
-              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+              <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                 No users found.
               </div>
             }

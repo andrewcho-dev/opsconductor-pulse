@@ -72,7 +72,7 @@ export default function UserDetailPage() {
   }, [user]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>User Profile</CardTitle>

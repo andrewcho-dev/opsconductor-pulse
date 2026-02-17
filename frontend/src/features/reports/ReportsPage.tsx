@@ -41,16 +41,16 @@ export default function ReportsPage() {
 
   const onlineTone = useMemo(() => {
     const pct = slaQuery.data?.online_pct ?? 0;
-    if (pct >= 95) return "text-green-600";
-    if (pct >= 80) return "text-yellow-600";
-    return "text-red-600";
+    if (pct >= 95) return "text-status-online";
+    if (pct >= 80) return "text-status-warning";
+    return "text-status-critical";
   }, [slaQuery.data?.online_pct]);
 
   const topDevicesColumns: ColumnDef<SLASummary["top_alerting_devices"][number]>[] = [
     {
       accessorKey: "device_id",
       header: "Device",
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.device_id}</span>,
+      cell: ({ row }) => <span className="font-mono text-sm">{row.original.device_id}</span>,
     },
     {
       accessorKey: "count",
@@ -148,23 +148,23 @@ export default function ReportsPage() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded border border-border p-3">
-              <div className="text-xs text-muted-foreground">Online %</div>
+              <div className="text-sm text-muted-foreground">Online %</div>
               <div className={`text-xl font-semibold ${onlineTone}`}>
                 {(slaQuery.data?.online_pct ?? 0).toFixed(1)}%
               </div>
             </div>
             <div className="rounded border border-border p-3">
-              <div className="text-xs text-muted-foreground">Total Alerts</div>
+              <div className="text-sm text-muted-foreground">Total Alerts</div>
               <div className="text-xl font-semibold">{slaQuery.data?.total_alerts ?? 0}</div>
             </div>
             <div className="rounded border border-border p-3">
-              <div className="text-xs text-muted-foreground">Unresolved</div>
+              <div className="text-sm text-muted-foreground">Unresolved</div>
               <div className="text-xl font-semibold">{slaQuery.data?.unresolved_alerts ?? 0}</div>
             </div>
             <div className="rounded border border-border p-3">
-              <div className="text-xs text-muted-foreground">MTTR</div>
+              <div className="text-sm text-muted-foreground">MTTR</div>
               <div className="text-xl font-semibold">
                 {slaQuery.data?.mttr_minutes != null ? `${Math.round(slaQuery.data.mttr_minutes)}m` : "-"}
               </div>
@@ -176,7 +176,7 @@ export default function ReportsPage() {
             data={slaQuery.data?.top_alerting_devices ?? []}
             isLoading={slaQuery.isLoading}
             emptyState={
-              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+              <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                 No alerting devices found.
               </div>
             }
@@ -195,7 +195,7 @@ export default function ReportsPage() {
             data={runsQuery.data?.runs ?? []}
             isLoading={runsQuery.isLoading}
             emptyState={
-              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+              <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                 No reports found.
               </div>
             }

@@ -117,7 +117,7 @@ export default function OrganizationPage() {
         description="Manage your company profile, address, and billing contact info."
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -281,15 +281,15 @@ export default function OrganizationPage() {
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
             <div>
-              <div className="text-xs text-muted-foreground">Data Residency Region</div>
+              <div className="text-sm text-muted-foreground">Data Residency Region</div>
               <div className="text-sm">{data?.data_residency_region ?? "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Support Tier</div>
+              <div className="text-sm text-muted-foreground">Support Tier</div>
               <div className="text-sm">{data?.support_tier ?? "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">SLA Level</div>
+              <div className="text-sm text-muted-foreground">SLA Level</div>
               <div className="text-sm">
                 {data?.sla_level != null ? String(data.sla_level) : "—"}
               </div>

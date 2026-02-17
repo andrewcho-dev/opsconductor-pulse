@@ -199,7 +199,7 @@ export function AppSidebar() {
                   <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
                 </div>
-                <Badge variant="destructive" className="h-5 min-w-5 px-1 text-xs">
+                <Badge variant="destructive" className="h-5 min-w-5 px-1">
                   {openAlertCount > 99 ? "99+" : openAlertCount}
                 </Badge>
               </div>
@@ -247,7 +247,7 @@ export function AppSidebar() {
           />
           <div>
             <div className="text-sm font-bold text-sidebar-foreground">OpsConductor</div>
-            <div className="text-xs text-muted-foreground">Pulse</div>
+            <div className="text-sm text-muted-foreground">Pulse</div>
           </div>
         </Link>
       </SidebarHeader>
@@ -479,7 +479,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4">
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           OpsConductor Pulse v{packageJson.version}
         </div>
       </SidebarFooter>

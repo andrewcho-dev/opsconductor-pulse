@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143]
 ---
 
 # Frontend
@@ -80,6 +80,19 @@ Forms use:
 
 - `react-hook-form` for state and submission
 - `zod` schemas (Phase 136) for validation
+
+## Design System
+
+Phase 143 establishes a baseline visual system to keep the UI consistent and readable in a data-dense console.
+
+- Spacing: page-level wrappers use `space-y-6`; card grids use `gap-4`; internal card spacing can use `space-y-2` to `space-y-4`.
+- Layout padding: pages do not add `p-*` wrappers (the AppShell `<main>` provides `p-6`).
+- Typography: page titles use `text-xl font-semibold`; card titles use `text-sm font-semibold`; body content defaults to `text-sm`.
+- Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
+- Radius: cards/containers/modals use `rounded-lg`; buttons/inputs use `rounded-md`; pills/dots use `rounded-full`.
+- Cards: border-based containment (no shadow) with tighter default padding (see `components/ui/card.tsx`).
+- Backgrounds: light mode uses a light gray page background with white cards (tokens in `src/index.css`); dark mode keeps its existing scheme.
+- Status colors: use semantic token utilities instead of Tailwind color literals, e.g. `text-status-online`, `text-status-warning`, `text-status-critical`, `text-status-offline` and `bg-status-*`.
 
 ## State Management
 

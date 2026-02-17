@@ -23,7 +23,7 @@ function PaginationControls({
     return null;
   }
   return (
-    <div className="flex items-center justify-between text-xs">
+    <div className="flex items-center justify-between text-sm">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">
           {totalCount > 0
@@ -37,7 +37,7 @@ function PaginationControls({
             setLimit(Number(e.target.value));
             setOffset(0);
           }}
-          className="h-6 px-1 rounded border border-border bg-background text-xs"
+          className="h-6 px-1 rounded border border-border bg-background text-sm"
           aria-label="Devices per page"
         >
           {[100, 250, 500, 1000].map((size) => (
@@ -51,7 +51,7 @@ function PaginationControls({
         <button
           onClick={() => setOffset(0)}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="First page"
         >
           First
@@ -59,7 +59,7 @@ function PaginationControls({
         <button
           onClick={() => setOffset(Math.max(0, offset - limit))}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Previous page"
         >
           Prev
@@ -67,7 +67,7 @@ function PaginationControls({
         <button
           onClick={() => setOffset(offset + limit)}
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Next page"
         >
           Next
@@ -77,7 +77,7 @@ function PaginationControls({
             setOffset(Math.max(0, Math.floor((totalCount - 1) / limit) * limit))
           }
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Last page"
         >
           Last
@@ -181,17 +181,17 @@ export function DeviceFilters({
           <option value="OFFLINE">Offline</option>
         </select>
 
-        <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
+        <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-green-500" />
+            <span className="h-2 w-2 rounded-full bg-status-online" />
             Online
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-yellow-500" />
+            <span className="h-2 w-2 rounded-full bg-status-stale" />
             Stale
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-red-500" />
+            <span className="h-2 w-2 rounded-full bg-status-offline" />
             Offline
           </span>
         </div>
@@ -209,12 +209,12 @@ export function DeviceFilters({
 
       {selectedTags.length > 0 && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Tags filter active ({selectedTags.length})
           </span>
           <button
             onClick={() => setSelectedTags([])}
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="text-sm text-muted-foreground hover:text-foreground"
             aria-label="Clear tag filters"
           >
             Clear
@@ -231,7 +231,7 @@ export function DeviceFilters({
             {allTags.map((tag) => (
               <label
                 key={tag}
-                className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted p-1 rounded"
+                className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted p-1 rounded"
               >
                 <input
                   type="checkbox"
@@ -244,21 +244,21 @@ export function DeviceFilters({
               </label>
             ))}
             {allTags.length === 0 && (
-              <div className="text-xs text-muted-foreground">No tags defined</div>
+              <div className="text-sm text-muted-foreground">No tags defined</div>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
+              className="h-8 text-sm"
               onClick={() => setSelectedTags([])}
             >
               Clear All
             </Button>
             <Button
               size="sm"
-              className="h-7 text-xs"
+              className="h-8 text-sm"
               onClick={() => setTagFilterOpen(false)}
             >
               Done

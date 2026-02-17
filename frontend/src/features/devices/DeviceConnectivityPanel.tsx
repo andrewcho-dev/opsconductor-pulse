@@ -59,7 +59,7 @@ export function DeviceConnectivityPanel({ deviceId }: DeviceConnectivityPanelPro
         </Button>
       </div>
 
-      {error && <div className="text-xs text-destructive">{error}</div>}
+      {error && <div className="text-sm text-destructive">{error}</div>}
 
       {data && data.events.length === 0 && (
         <div className="text-sm text-muted-foreground">No connectivity events recorded yet.</div>
@@ -81,7 +81,7 @@ export function DeviceConnectivityPanel({ deviceId }: DeviceConnectivityPanelPro
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-muted-foreground">{ts.toLocaleString()}</div>
                   {event.details && Object.keys(event.details).length > 0 && (
-                    <div className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-1 text-sm text-muted-foreground">
                       {Object.entries(event.details)
                         .filter(([, v]) => v != null)
                         .map(([k, v]) => `${k}: ${String(v)}`)

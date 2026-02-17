@@ -119,11 +119,11 @@ export function DeviceSelectionModal({
                   <Checkbox checked={isSelected} disabled={isDisabled} />
                   <div className="flex-1">
                     <div className="font-mono text-sm">{device.device_id}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-sm text-muted-foreground">
                       Site: {device.site_id}
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline">
                     {device.status}
                   </Badge>
                 </div>
@@ -140,7 +140,7 @@ export function DeviceSelectionModal({
                 <p className="font-medium text-orange-800 dark:text-orange-200">
                   {selectedDevices.length} device(s) will be deactivated
                 </p>
-                <p className="mt-1 text-xs text-orange-700 dark:text-orange-300">
+                <p className="mt-1 text-sm text-orange-700 dark:text-orange-300">
                   These devices will stop accepting telemetry after renewal.
                 </p>
               </div>

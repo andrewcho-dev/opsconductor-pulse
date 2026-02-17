@@ -109,10 +109,10 @@ export default function OperatorDevices() {
               <TableBody>
                 {devices.map((d) => (
                   <TableRow key={`${d.tenant_id}-${d.device_id}`}>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="font-mono text-sm">
                       {d.tenant_id}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="font-mono text-sm">
                       {d.device_id}
                     </TableCell>
                     <TableCell className="text-sm">{d.site_id}</TableCell>
@@ -121,7 +121,7 @@ export default function OperatorDevices() {
                     </TableCell>
                     <TableCell>
                       {d.subscription_id ? (
-                        <Badge variant="outline" className="font-mono text-xs">
+                        <Badge variant="outline" className="font-mono">
                           {d.subscription_id}
                         </Badge>
                       ) : (
