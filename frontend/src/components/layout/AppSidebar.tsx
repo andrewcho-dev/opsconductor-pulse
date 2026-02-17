@@ -97,6 +97,7 @@ const operatorTenantNav: NavItem[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Health Matrix", href: "/operator/tenant-matrix", icon: LayoutGrid },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
+  { label: "Device Tiers", href: "/operator/device-tiers", icon: Layers },
 ];
 
 const operatorUsersAuditNav: NavItem[] = [
@@ -159,7 +160,9 @@ export function AppSidebar() {
   const openAlertCount = alertData?.total ?? 0;
   const settingsNav: NavItem[] = [
     { label: "Profile", href: "/settings/profile", icon: UserCircle },
+    { label: "Organization", href: "/settings/organization", icon: Building2 },
     { label: "Subscription", href: "/subscription", icon: CreditCard },
+    { label: "Billing", href: "/billing", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),
     ...(canManageRoles ? [{ label: "Roles", href: "/roles", icon: Shield }] : []),
   ];

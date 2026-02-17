@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/shared";
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
@@ -24,6 +32,12 @@ import {
   updateDevice,
 } from "@/services/api/devices";
 import { getLatestValue } from "@/lib/charts/transforms";
+import { toast } from "sonner";
+import {
+  getDeviceTiers,
+  assignDeviceTier,
+  removeDeviceTier,
+} from "@/services/api/billing";
 
 export default function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -45,6 +59,11 @@ export default function DeviceDetailPage() {
   const { data: alertsData } = useDeviceAlerts(deviceId || "", "OPEN", 50);
 
   const device = deviceData?.device;
+
+  const { data: tiers } = useQuery({
+    queryKey: ["device-tiers"],
+    queryFn: getDeviceTiers,
+  });
 
   const [notesValue, setNotesValue] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
@@ -197,6 +216,50 @@ export default function DeviceDetailPage() {
           )}
         </div>
       </div>
+
+      {deviceId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Device Tier</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/*
+              DeviceDetail API now returns tier_id/tier_name (phase134 task 007),
+              but the frontend Device type may lag behind; treat it as optional.
+            */}
+            <Select
+              value={
+                (device as any)?.tier_id != null ? String((device as any).tier_id) : "none"
+              }
+              onValueChange={async (val) => {
+                try {
+                  if (val === "none") {
+                    await removeDeviceTier(deviceId);
+                  } else {
+                    await assignDeviceTier(deviceId, parseInt(val));
+                  }
+                  await queryClient.invalidateQueries({ queryKey: ["device", deviceId] });
+                  toast.success("Device tier updated");
+                } catch (err: any) {
+                  toast.error(err?.message || "Failed to update tier");
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select tier..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No tier assigned</SelectItem>
+                {tiers?.map((tier) => (
+                  <SelectItem key={tier.tier_id} value={tier.tier_id.toString()}>
+                    {tier.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
 
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceCertificatesTab deviceId={deviceId} />}

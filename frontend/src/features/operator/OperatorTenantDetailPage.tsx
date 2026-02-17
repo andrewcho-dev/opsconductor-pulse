@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -19,7 +20,6 @@ import { apiGet } from "@/services/api/client";
 import {
   fetchTenant,
   fetchTenantStats,
-  type Tenant,
 } from "@/services/api/tenants";
 import {
   fetchExpiryNotifications,
@@ -58,13 +58,18 @@ export default function OperatorTenantDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showSubscriptionCreate, setShowSubscriptionCreate] = useState(false);
   const [showBulkAssign, setShowBulkAssign] = useState(false);
-  const [fullTenant, setFullTenant] = useState<Tenant | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tenant-stats", tenantId],
     queryFn: () => fetchTenantStats(tenantId!),
     enabled: !!tenantId,
     refetchInterval: 30000,
+  });
+
+  const { data: fullTenant } = useQuery({
+    queryKey: ["tenant-detail", tenantId],
+    queryFn: () => fetchTenant(tenantId!),
+    enabled: !!tenantId,
   });
 
   const { data: subscriptionList, refetch: refetchSubscriptions } = useQuery<{
@@ -85,13 +90,6 @@ export default function OperatorTenantDetailPage() {
     queryFn: () => fetchExpiryNotifications({ tenant_id: tenantId, limit: 50 }),
     enabled: !!tenantId,
   });
-
-  const handleEditClick = async () => {
-    if (!tenantId) return;
-    const tenant = await fetchTenant(tenantId);
-    setFullTenant(tenant);
-    setShowEdit(true);
-  };
 
   if (isLoading) {
     return <Skeleton className="h-96" />;
@@ -119,6 +117,17 @@ export default function OperatorTenantDetailPage() {
     EXPIRED: "bg-gray-200 text-gray-700",
   };
 
+  const t = fullTenant;
+  const valOrDash = (v?: string | number | null) =>
+    v == null || v === "" ? "—" : String(v);
+
+  const addressLine = t
+    ? [t.address_line1, t.address_line2].filter(Boolean).join(", ")
+    : "";
+  const addressCityLine = t
+    ? [t.city, t.state_province, t.postal_code, t.country].filter(Boolean).join(" ")
+    : "";
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -130,7 +139,7 @@ export default function OperatorTenantDetailPage() {
         <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
           {data.status}
         </Badge>
-        <Button variant="outline" size="sm" onClick={handleEditClick}>
+        <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
           <Pencil className="mr-2 h-4 w-4" />
           Edit Tenant
         </Button>
@@ -247,6 +256,71 @@ export default function OperatorTenantDetailPage() {
         </Card>
 
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Company Profile</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Legal Name</Label>
+              <div className="text-sm">{valOrDash(t?.legal_name)}</div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>Industry</Label>
+                <div className="text-sm">{valOrDash(t?.industry)}</div>
+              </div>
+              <div className="space-y-1">
+                <Label>Size</Label>
+                <div className="text-sm">{valOrDash(t?.company_size)}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 md:col-span-2">
+              <div className="space-y-1">
+                <Label>Phone</Label>
+                <div className="text-sm">{valOrDash(t?.phone)}</div>
+              </div>
+              <div className="space-y-1">
+                <Label>Billing Email</Label>
+                <div className="text-sm">{valOrDash(t?.billing_email)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Address</Label>
+            <div className="text-sm">{addressLine || "—"}</div>
+            <div className="text-sm">{addressCityLine || "—"}</div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Region</Label>
+              <div className="text-sm">{valOrDash(t?.data_residency_region)}</div>
+            </div>
+            <div className="space-y-1">
+              <Label>Support</Label>
+              <div className="text-sm">{valOrDash(t?.support_tier)}</div>
+            </div>
+            <div className="space-y-1">
+              <Label>SLA</Label>
+              <div className="text-sm">
+                {t?.sla_level != null ? `${t.sla_level}%` : "—"}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Stripe</Label>
+              <div className="text-sm">{valOrDash(t?.stripe_customer_id)}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -382,7 +456,7 @@ export default function OperatorTenantDetailPage() {
         </CardContent>
       </Card>
       <EditTenantDialog
-        tenant={fullTenant}
+        tenant={fullTenant || null}
         open={showEdit}
         onOpenChange={setShowEdit}
       />

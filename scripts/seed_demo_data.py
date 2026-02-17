@@ -63,18 +63,184 @@ def pick_special_devices(devices):
 
 
 async def seed_tenants(pool):
+    tenant_profiles = {
+        "tenant-a": {
+            "name": "Acme IoT Corp",
+            "legal_name": "Acme IoT Corporation",
+            "contact_email": "admin@acme-iot.example.com",
+            "contact_name": "Jane Doe",
+            "phone": "+1-555-0100",
+            "industry": "Manufacturing",
+            "company_size": "51-200",
+            "address_line1": "123 Industrial Blvd",
+            "address_line2": "Suite 400",
+            "city": "Austin",
+            "state_province": "TX",
+            "postal_code": "78701",
+            "country": "US",
+            "data_residency_region": "us-east",
+            "support_tier": "business",
+            "sla_level": 99.95,
+            "billing_email": "billing@acme-iot.example.com",
+        },
+        "tenant-b": {
+            "name": "Nordic Sensors AB",
+            "legal_name": "Nordic Sensors Aktiebolag",
+            "contact_email": "ops@nordicsensors.example.com",
+            "contact_name": "Erik Lindqvist",
+            "phone": "+46-8-555-1234",
+            "industry": "Agriculture",
+            "company_size": "11-50",
+            "address_line1": "Storgatan 12",
+            "address_line2": None,
+            "city": "Stockholm",
+            "state_province": "Stockholm",
+            "postal_code": "111 23",
+            "country": "SE",
+            "data_residency_region": "eu-west",
+            "support_tier": "standard",
+            "sla_level": 99.90,
+            "billing_email": "finance@nordicsensors.example.com",
+        },
+    }
     async with pool.acquire() as conn:
         for tenant_id in TENANTS:
-            name = tenant_id.replace("-", " ").title()
+            profile = tenant_profiles.get(tenant_id) or {}
+            name = profile.get("name") or tenant_id.replace("-", " ").title()
             await conn.execute(
                 """
-                INSERT INTO tenants (tenant_id, name, status)
-                VALUES ($1,$2,'ACTIVE')
-                ON CONFLICT (tenant_id) DO NOTHING
+                INSERT INTO tenants (
+                    tenant_id, name, status,
+                    legal_name, contact_email, contact_name, phone,
+                    industry, company_size,
+                    address_line1, address_line2, city, state_province, postal_code, country,
+                    data_residency_region, support_tier, sla_level,
+                    billing_email
+                )
+                VALUES (
+                    $1,$2,'ACTIVE',
+                    $3,$4,$5,$6,
+                    $7,$8,
+                    $9,$10,$11,$12,$13,$14,
+                    $15,$16,$17,
+                    $18
+                )
+                ON CONFLICT (tenant_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    status = EXCLUDED.status,
+                    legal_name = EXCLUDED.legal_name,
+                    contact_email = EXCLUDED.contact_email,
+                    contact_name = EXCLUDED.contact_name,
+                    phone = EXCLUDED.phone,
+                    industry = EXCLUDED.industry,
+                    company_size = EXCLUDED.company_size,
+                    address_line1 = EXCLUDED.address_line1,
+                    address_line2 = EXCLUDED.address_line2,
+                    city = EXCLUDED.city,
+                    state_province = EXCLUDED.state_province,
+                    postal_code = EXCLUDED.postal_code,
+                    country = EXCLUDED.country,
+                    data_residency_region = EXCLUDED.data_residency_region,
+                    support_tier = EXCLUDED.support_tier,
+                    sla_level = EXCLUDED.sla_level,
+                    billing_email = EXCLUDED.billing_email
                 """,
                 tenant_id,
                 name,
+                profile.get("legal_name"),
+                profile.get("contact_email"),
+                profile.get("contact_name"),
+                profile.get("phone"),
+                profile.get("industry"),
+                profile.get("company_size"),
+                profile.get("address_line1"),
+                profile.get("address_line2"),
+                profile.get("city"),
+                profile.get("state_province"),
+                profile.get("postal_code"),
+                profile.get("country"),
+                profile.get("data_residency_region"),
+                profile.get("support_tier"),
+                profile.get("sla_level"),
+                profile.get("billing_email"),
             )
+
+
+async def ensure_subscription_plan_ids(pool):
+    """Ensure demo subscriptions have plan_id so tier allocations can seed."""
+    tenant_plans = {"tenant-a": "pro", "tenant-b": "starter"}
+    async with pool.acquire() as conn:
+        for tenant_id, plan_id in tenant_plans.items():
+            try:
+                await conn.execute(
+                    """
+                    UPDATE subscriptions
+                    SET plan_id = $1
+                    WHERE tenant_id = $2
+                      AND plan_id IS NULL
+                      AND status IN ('ACTIVE', 'TRIAL')
+                    """,
+                    plan_id,
+                    tenant_id,
+                )
+            except Exception:
+                # Subscriptions may not exist in all setups; keep seeding idempotent.
+                return
+
+
+async def seed_tier_allocations(pool):
+    async with pool.acquire() as conn:
+        try:
+            subs = await conn.fetch(
+                """
+                SELECT subscription_id, plan_id
+                FROM subscriptions
+                WHERE status IN ('ACTIVE', 'TRIAL')
+                  AND plan_id IS NOT NULL
+                """
+            )
+        except Exception:
+            return
+
+        for sub in subs:
+            defaults = await conn.fetch(
+                "SELECT tier_id, slot_limit FROM plan_tier_defaults WHERE plan_id = $1",
+                sub["plan_id"],
+            )
+            for d in defaults:
+                await conn.execute(
+                    """
+                    INSERT INTO subscription_tier_allocations (subscription_id, tier_id, slot_limit)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (subscription_id, tier_id) DO NOTHING
+                    """,
+                    sub["subscription_id"],
+                    d["tier_id"],
+                    d["slot_limit"],
+                )
+
+
+async def seed_device_tiers(pool):
+    async with pool.acquire() as conn:
+        try:
+            devices = await conn.fetch(
+                "SELECT device_id, tenant_id FROM device_registry WHERE tier_id IS NULL LIMIT 20"
+            )
+            tiers = await conn.fetch(
+                "SELECT tier_id FROM device_tiers WHERE is_active = true ORDER BY sort_order"
+            )
+        except Exception:
+            return
+
+        tier_ids = [t["tier_id"] for t in tiers]
+        for i, dev in enumerate(devices):
+            if tier_ids:
+                await conn.execute(
+                    "UPDATE device_registry SET tier_id = $1 WHERE device_id = $2 AND tenant_id = $3",
+                    tier_ids[i % len(tier_ids)],
+                    dev["device_id"],
+                    dev["tenant_id"],
+                )
 
 
 async def seed_role_assignments(conn):
@@ -427,12 +593,19 @@ async def main():
     print("Seeding tenants...")
     await seed_tenants(pool)
 
+    # Ensure demo subscriptions are associated with plans (for tier allocation seeding)
+    await ensure_subscription_plan_ids(pool)
+    await seed_tier_allocations(pool)
+
     print("Seeding IAM role assignments...")
     async with pool.acquire() as conn:
         await seed_role_assignments(conn)
 
     print("Seeding device_registry...")
     await seed_device_registry(pool, devices)
+
+    # Assign demo devices into tiers (best-effort)
+    await seed_device_tiers(pool)
 
     print("Seeding device_state...")
     await seed_device_state(pool, devices, stale, low_battery, high_temp, weak_signal)

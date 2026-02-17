@@ -6,6 +6,21 @@ export interface Tenant {
   status: string;
   contact_email?: string;
   contact_name?: string;
+  legal_name?: string;
+  phone?: string;
+  industry?: string;
+  company_size?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state_province?: string;
+  postal_code?: string;
+  country?: string;
+  data_residency_region?: string;
+  support_tier?: string;
+  sla_level?: number;
+  stripe_customer_id?: string;
+  billing_email?: string;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -42,6 +57,21 @@ export interface TenantCreate {
   name: string;
   contact_email?: string;
   contact_name?: string;
+  legal_name?: string;
+  phone?: string;
+  industry?: string;
+  company_size?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state_province?: string;
+  postal_code?: string;
+  country?: string;
+  data_residency_region?: string;
+  support_tier?: string;
+  sla_level?: number;
+  stripe_customer_id?: string;
+  billing_email?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -49,6 +79,21 @@ export interface TenantUpdate {
   name?: string;
   contact_email?: string;
   contact_name?: string;
+  legal_name?: string;
+  phone?: string;
+  industry?: string;
+  company_size?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state_province?: string;
+  postal_code?: string;
+  country?: string;
+  data_residency_region?: string;
+  support_tier?: string;
+  sla_level?: number;
+  stripe_customer_id?: string;
+  billing_email?: string;
   status?: string;
   metadata?: Record<string, unknown>;
 }
