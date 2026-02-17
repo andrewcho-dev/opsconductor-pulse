@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useChangeTenantUserRole, useTenantUser } from "@/hooks/use-users";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,8 +13,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ChangeRoleDialogProps {
   userId: string;
@@ -18,6 +45,16 @@ interface ChangeRoleDialogProps {
   onOpenChange: (open: boolean) => void;
   onChanged: () => void;
 }
+
+const changeRoleSchema = z.object({
+  role: z.string().min(1, "Please select a role"),
+});
+type ChangeRoleFormValues = z.infer<typeof changeRoleSchema>;
+
+const availableRoles = [
+  { value: "customer", label: "User" },
+  { value: "tenant-admin", label: "Admin" },
+];
 
 export function ChangeRoleDialog({
   userId,
@@ -29,20 +66,30 @@ export function ChangeRoleDialog({
   const changeMutation = useChangeTenantUserRole();
 
   const currentRole = user?.roles?.includes("tenant-admin") ? "tenant-admin" : "customer";
-  const [role, setRole] = useState(currentRole);
+  const form = useForm<ChangeRoleFormValues>({
+    resolver: zodResolver(changeRoleSchema),
+    defaultValues: { role: currentRole || "" },
+  });
+
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose: () => onOpenChange(false),
+  });
 
   useEffect(() => {
-    setRole(currentRole);
-  }, [currentRole, open]);
+    if (open && user) {
+      const nextRole = user.roles?.includes("tenant-admin") ? "tenant-admin" : "customer";
+      form.reset({ role: nextRole || "" });
+    }
+  }, [form, open, user]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (role === currentRole) {
+  const onSubmit = async (values: ChangeRoleFormValues) => {
+    if (values.role === currentRole) {
       onChanged();
       return;
     }
     try {
-      await changeMutation.mutateAsync({ userId, role });
+      await changeMutation.mutateAsync({ userId, role: values.role });
       onChanged();
     } catch {
       // mutation state shows error
@@ -50,56 +97,88 @@ export function ChangeRoleDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Change Role</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            Changing role for:{" "}
-            <strong>
-              {[user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username}
-            </strong>
-          </div>
-
-          <RadioGroup value={role} onValueChange={setRole} className="space-y-3">
-            <div className="flex items-start space-x-3 rounded-lg border p-3">
-              <RadioGroupItem value="customer" id="customer" className="mt-1" />
-              <Label htmlFor="customer" className="flex-1 cursor-pointer">
-                <div className="font-medium">User</div>
-                <div className="text-sm text-muted-foreground">
-                  Can view devices, alerts, dashboards, and integrations.
-                </div>
-              </Label>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+          else onOpenChange(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change Role</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              Changing role for:{" "}
+              <strong>
+                {[user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username}
+              </strong>
             </div>
-            <div className="flex items-start space-x-3 rounded-lg border p-3">
-              <RadioGroupItem value="tenant-admin" id="tenant-admin" className="mt-1" />
-              <Label htmlFor="tenant-admin" className="flex-1 cursor-pointer">
-                <div className="font-medium">Admin</div>
-                <div className="text-sm text-muted-foreground">
-                  Can manage team members, alert rules, integrations, and settings.
-                </div>
-              </Label>
-            </div>
-          </RadioGroup>
 
-          {changeMutation.isError && (
-            <div className="text-sm text-destructive">
-              {(changeMutation.error as Error).message}
-            </div>
-          )}
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New Role *</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableRoles.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={changeMutation.isPending}>
-              {changeMutation.isPending ? "Saving..." : "Save Role"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            {changeMutation.isError && (
+              <div className="text-sm text-destructive">{(changeMutation.error as Error).message}</div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={changeMutation.isPending}>
+                {changeMutation.isPending ? "Saving..." : "Save Role"}
+              </Button>
+            </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

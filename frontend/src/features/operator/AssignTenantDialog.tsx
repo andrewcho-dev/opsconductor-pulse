@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useAssignOperatorUserTenant, useOperatorUser, useOrganizations } from "@/hooks/use-users";
+import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,7 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -17,6 +30,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 
 interface AssignTenantDialogProps {
   userId: string;
@@ -24,6 +45,12 @@ interface AssignTenantDialogProps {
   onOpenChange: (open: boolean) => void;
   onAssigned: () => void;
 }
+
+const assignTenantSchema = z.object({
+  tenant_id: z.string().min(1, "Please select a tenant"),
+});
+
+type AssignTenantFormValues = z.infer<typeof assignTenantSchema>;
 
 export function AssignTenantDialog({
   userId,
@@ -35,13 +62,26 @@ export function AssignTenantDialog({
   const { data: orgsData } = useOrganizations();
   const assignMutation = useAssignOperatorUserTenant();
 
-  const [tenantId, setTenantId] = useState("");
+  const form = useForm<AssignTenantFormValues>({
+    resolver: zodResolver(assignTenantSchema),
+    defaultValues: { tenant_id: "" },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tenantId) return;
+  const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
+    form,
+    onClose: () => onOpenChange(false),
+  });
+
+  const tenantValue = form.watch("tenant_id");
+
+  useEffect(() => {
+    if (!open) return;
+    form.reset({ tenant_id: "" });
+  }, [form, open]);
+
+  const onSubmit = async (values: AssignTenantFormValues) => {
     try {
-      await assignMutation.mutateAsync({ userId, tenantId });
+      await assignMutation.mutateAsync({ userId, tenantId: values.tenant_id });
       onAssigned();
     } catch {
       // mutation state shows error
@@ -49,50 +89,89 @@ export function AssignTenantDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Assign Tenant</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            Assigning tenant for user: <strong>{user?.username}</strong>
-          </div>
-          {user?.tenant_id && (
-            <div className="text-sm">
-              Current tenant: <code className="rounded bg-muted px-1">{user.tenant_id}</code>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+          else onOpenChange(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Tenant</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              Assigning tenant for user: <strong>{user?.username}</strong>
             </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="tenant">New Tenant</Label>
-            <Select value={tenantId} onValueChange={setTenantId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select tenant..." />
-              </SelectTrigger>
-              <SelectContent>
-                {orgsData?.organizations?.map((org) => (
-                  <SelectItem key={org.id} value={org.alias || org.name}>
-                    {org.alias || org.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {assignMutation.isError && (
-            <div className="text-sm text-destructive">
-              {(assignMutation.error as Error).message}
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!tenantId || assignMutation.isPending}>
-              {assignMutation.isPending ? "Assigning..." : "Assign Tenant"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            {user?.tenant_id && (
+              <div className="text-sm">
+                Current tenant: <code className="rounded bg-muted px-1">{user.tenant_id}</code>
+              </div>
+            )}
+
+            <FormField
+              control={form.control}
+              name="tenant_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New Tenant</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tenant..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {orgsData?.organizations?.map((org) => (
+                        <SelectItem key={org.id} value={org.alias || org.name}>
+                          {org.alias || org.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {assignMutation.isError && (
+              <div className="text-sm text-destructive">{(assignMutation.error as Error).message}</div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!tenantValue || assignMutation.isPending}>
+                {assignMutation.isPending ? "Assigning..." : "Assign Tenant"}
+              </Button>
+            </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showConfirm} onOpenChange={cancelDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDiscard}>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

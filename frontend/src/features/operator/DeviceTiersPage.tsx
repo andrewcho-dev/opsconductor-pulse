@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -30,6 +29,17 @@ import {
   updateDeviceTier,
   type OperatorDeviceTier,
 } from "@/services/api/device-tiers";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 
 const KNOWN_FEATURES = [
   "telemetry",
@@ -69,6 +79,29 @@ function makeDefaultFeatures(): Record<string, boolean> {
 
 type DialogMode = { mode: "create" } | { mode: "edit"; tier: OperatorDeviceTier };
 
+const deviceTierSchema = z.object({
+  name: z.string().min(2, "Tier name required").max(50),
+  display_name: z.string().min(2, "Display name required").max(100),
+  description: z.string().max(500).optional().or(z.literal("")),
+  // Zod v4: record requires key schema + value schema.
+  features: z.record(z.string(), z.boolean()).optional(),
+  sort_order: z.coerce.number().int().min(0, "Must be non-negative").optional(),
+  is_active: z.boolean().optional(),
+});
+
+type DeviceTierFormValues = z.infer<typeof deviceTierSchema>;
+
+function mapTierToFormValues(tier: OperatorDeviceTier): DeviceTierFormValues {
+  return {
+    name: tier.name,
+    display_name: tier.display_name || "",
+    description: tier.description || "",
+    features: { ...makeDefaultFeatures(), ...(tier.features || {}) },
+    sort_order: tier.sort_order ?? 0,
+    is_active: Boolean(tier.is_active),
+  };
+}
+
 export default function DeviceTiersPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -84,41 +117,41 @@ export default function DeviceTiersPage() {
 
   const [dialog, setDialog] = useState<DialogMode | null>(null);
 
-  const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [description, setDescription] = useState("");
-  const [features, setFeatures] = useState<Record<string, boolean>>(makeDefaultFeatures());
-  const [sortOrder, setSortOrder] = useState("0");
-  const [isActive, setIsActive] = useState(true);
+  const defaultCreateValues: DeviceTierFormValues = useMemo(
+    () => ({
+      name: "",
+      display_name: "",
+      description: "",
+      features: makeDefaultFeatures(),
+      sort_order: 0,
+      is_active: true,
+    }),
+    []
+  );
+
+  const form = useForm<DeviceTierFormValues>({
+    // zodResolver types can get confused with Zod v4 coercion; runtime validation is correct.
+    resolver: zodResolver(deviceTierSchema) as any,
+    defaultValues: defaultCreateValues,
+  });
 
   useEffect(() => {
     if (!dialog) return;
     if (dialog.mode === "create") {
-      setName("");
-      setDisplayName("");
-      setDescription("");
-      setFeatures(makeDefaultFeatures());
-      setSortOrder("0");
-      setIsActive(true);
+      form.reset(defaultCreateValues);
       return;
     }
-    const t = dialog.tier;
-    setName(t.name);
-    setDisplayName(t.display_name);
-    setDescription(t.description || "");
-    setFeatures({ ...makeDefaultFeatures(), ...(t.features || {}) });
-    setSortOrder(String(t.sort_order ?? 0));
-    setIsActive(!!t.is_active);
-  }, [dialog]);
+    form.reset(mapTierToFormValues(dialog.tier));
+  }, [defaultCreateValues, dialog, form]);
 
   const createMutation = useMutation({
-    mutationFn: async () => {
-      const order = Number.parseInt(sortOrder || "0", 10);
+    mutationFn: async (values: DeviceTierFormValues) => {
+      const order = values.sort_order ?? 0;
       const payload = {
-        name: name.trim().toLowerCase(),
-        display_name: displayName.trim(),
-        description: description.trim() || undefined,
-        features,
+        name: values.name.trim().toLowerCase(),
+        display_name: values.display_name.trim(),
+        description: values.description?.trim() || undefined,
+        features: values.features || makeDefaultFeatures(),
         sort_order: Number.isFinite(order) ? order : 0,
       };
       return createDeviceTier(payload);
@@ -132,14 +165,14 @@ export default function DeviceTiersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (tierId: number) => {
-      const order = Number.parseInt(sortOrder || "0", 10);
-      return updateDeviceTier(tierId, {
-        display_name: displayName.trim() || undefined,
-        description: description.trim() || undefined,
-        features,
+    mutationFn: async (args: { tierId: number; values: DeviceTierFormValues }) => {
+      const order = args.values.sort_order ?? 0;
+      return updateDeviceTier(args.tierId, {
+        display_name: args.values.display_name.trim() || undefined,
+        description: args.values.description?.trim() || undefined,
+        features: args.values.features || makeDefaultFeatures(),
         sort_order: Number.isFinite(order) ? order : 0,
-        is_active: isActive,
+        is_active: Boolean(args.values.is_active),
       });
     },
     onSuccess: () => {
@@ -161,16 +194,15 @@ export default function DeviceTiersPage() {
   });
 
   function setFeature(name: string, value: boolean) {
-    setFeatures((prev) => ({ ...prev, [name]: value }));
+    form.setValue(`features.${name}` as any, value, { shouldDirty: true });
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  function onSubmit(values: DeviceTierFormValues) {
     if (!dialog) return;
     if (dialog.mode === "create") {
-      createMutation.mutate();
+      createMutation.mutate(values);
     } else {
-      updateMutation.mutate(dialog.tier.tier_id);
+      updateMutation.mutate({ tierId: dialog.tier.tier_id, values });
     }
   }
 
@@ -258,97 +290,127 @@ export default function DeviceTiersPage() {
             </DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {dialog?.mode === "create" && (
-              <div className="space-y-2">
-                <Label htmlFor="tier-name">Name</Label>
-                <Input
-                  id="tier-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="basic"
-                  required
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {dialog?.mode === "create" && (
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input id="tier-name" placeholder="basic" {...field} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Lowercase identifier (used in APIs and seed data).
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Lowercase identifier (used in APIs and seed data).
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="tier-display-name">Display Name</Label>
-              <Input
-                id="tier-display-name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Basic"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tier-description">Description</Label>
-              <Textarea
-                id="tier-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what this tier enables..."
-              />
-            </div>
-
-            <fieldset className="space-y-3 rounded-md border p-4">
-              <legend className="px-1 text-sm font-medium">Features</legend>
-              <div className="grid gap-3 md:grid-cols-2">
-                {KNOWN_FEATURES.map((f) => (
-                  <div key={f} className="flex items-center justify-between gap-3">
-                    <Label className="font-mono text-xs">{f}</Label>
-                    <Switch checked={!!features[f]} onCheckedChange={(v) => setFeature(f, v)} />
-                  </div>
-                ))}
-              </div>
-            </fieldset>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="tier-sort-order">Sort Order</Label>
-                <Input
-                  id="tier-sort-order"
-                  type="number"
-                  value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value)}
-                />
-              </div>
-              {dialog?.mode === "edit" && (
-                <div className="flex items-center justify-between rounded-md border p-3">
-                  <div className="space-y-0.5">
-                    <div className="text-sm font-medium">Active</div>
-                    <div className="text-xs text-muted-foreground">
-                      Disable to hide tier from customers.
-                    </div>
-                  </div>
-                  <Switch checked={isActive} onCheckedChange={setIsActive} />
-                </div>
               )}
-            </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialog(null)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending}
-              >
-                {dialog?.mode === "create"
-                  ? createMutation.isPending
-                    ? "Creating..."
-                    : "Create"
-                  : updateMutation.isPending
-                    ? "Saving..."
-                    : "Save"}
-              </Button>
-            </div>
-          </form>
+              <FormField
+                control={form.control}
+                name="display_name"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel>Display Name</FormLabel>
+                    <FormControl>
+                      <Input id="tier-display-name" placeholder="Basic" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea id="tier-description" placeholder="Describe what this tier enables..." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Features</legend>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {KNOWN_FEATURES.map((f) => (
+                    <div key={f} className="flex items-center justify-between gap-3">
+                      <span className="font-mono text-xs">{f}</span>
+                      <Switch
+                        checked={Boolean(form.watch(`features.${f}` as any))}
+                        onCheckedChange={(v) => setFeature(f, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="sort_order"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel>Sort Order</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="tier-sort-order"
+                          type="number"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {dialog?.mode === "edit" && (
+                  <FormField
+                    control={form.control}
+                    name="is_active"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-md border p-3">
+                        <div className="space-y-0.5">
+                          <div className="text-sm font-medium">Active</div>
+                          <div className="text-xs text-muted-foreground">
+                            Disable to hide tier from customers.
+                          </div>
+                        </div>
+                        <FormControl>
+                          <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setDialog(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {dialog?.mode === "create"
+                    ? createMutation.isPending
+                      ? "Creating..."
+                      : "Create"
+                    : updateMutation.isPending
+                      ? "Saving..."
+                      : "Save"}
+                </Button>
+              </div>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
