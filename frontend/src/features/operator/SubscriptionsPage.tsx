@@ -85,7 +85,7 @@ export default function SubscriptionsPage() {
   const rows = data?.subscriptions ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Subscriptions"
         description="Manage subscriptions across all tenants"

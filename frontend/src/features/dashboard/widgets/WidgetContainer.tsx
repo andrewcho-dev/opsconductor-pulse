@@ -45,7 +45,7 @@ function WidgetContainerInner({
 
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between py-2 px-3 shrink-0">
+      <CardHeader className="flex flex-row items-center justify-between py-1.5 px-2 shrink-0">
         <CardTitle className="text-sm font-medium truncate">{displayTitle}</CardTitle>
         {isEditing && (
           <div className="flex gap-1 shrink-0">
@@ -70,7 +70,7 @@ function WidgetContainerInner({
           </div>
         )}
       </CardHeader>
-      <CardContent className="flex-1 overflow-auto p-2">
+      <CardContent className="flex-1 overflow-auto p-1.5">
         <WidgetErrorBoundary widgetName={displayTitle}>
           <Suspense fallback={<Skeleton className="h-full w-full min-h-[80px]" />}>
             <LazyComponent

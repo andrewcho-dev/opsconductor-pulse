@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144]
 ---
 
 # Frontend
@@ -83,16 +83,27 @@ Forms use:
 
 ## Design System
 
-Phase 143 establishes a baseline visual system to keep the UI consistent and readable in a data-dense console.
+Phases 143–144 establish a baseline visual system to keep the UI consistent and readable in a data-dense console.
 
-- Spacing: page-level wrappers use `space-y-6`; card grids use `gap-4`; internal card spacing can use `space-y-2` to `space-y-4`.
-- Layout padding: pages do not add `p-*` wrappers (the AppShell `<main>` provides `p-6`).
-- Typography: page titles use `text-xl font-semibold`; card titles use `text-sm font-semibold`; body content defaults to `text-sm`.
+- Spacing: AppShell `<main>` uses `p-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
+- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-8`) frames the bottom and shows version + year.
+- Typography hierarchy:
+
+| Role | Tailwind |
+|------|----------|
+| Page title | `text-lg font-semibold` |
+| Section heading | `text-sm font-semibold uppercase tracking-wide text-muted-foreground` |
+| Card title | `text-sm font-semibold` (default; no size overrides) |
+| KPI number | `text-2xl font-semibold` (universal) |
+| KPI label / caption | `text-xs text-muted-foreground` |
+| Body | `text-sm` |
+| Modal/dialog title | `text-base font-semibold` |
+
+- Weight rule: use `font-semibold` for emphasis; avoid `font-bold` (exceptions: 404 and NOC label).
+- Shapes: cards/modals use `rounded-lg`; buttons/inputs/badges use `rounded-md`; `rounded-full` only for semantically circular elements (status dots, switches, radio items, progress bars, stepper circles, avatars).
+- Empty states: cap empty/loading padding at `py-8`; prefer the shared `EmptyState` component.
 - Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
-- Radius: cards/containers/modals use `rounded-lg`; buttons/inputs use `rounded-md`; pills/dots use `rounded-full`.
-- Cards: border-based containment (no shadow) with tighter default padding (see `components/ui/card.tsx`).
-- Backgrounds: light mode uses a light gray page background with white cards (tokens in `src/index.css`); dark mode keeps its existing scheme.
-- Status colors: use semantic token utilities instead of Tailwind color literals, e.g. `text-status-online`, `text-status-warning`, `text-status-critical`, `text-status-offline` and `bg-status-*`.
+- Cards/backgrounds/status colors: border-based containment (no shadow); light mode uses a light gray page background with white cards (tokens in `src/index.css`); use semantic status token utilities (e.g. `text-status-online`, `bg-status-critical`), not Tailwind color literals.
 
 ## State Management
 

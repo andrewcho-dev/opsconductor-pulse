@@ -157,7 +157,7 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Jobs"
         description={isLoading ? "Loading..." : `${jobs.length} jobs`}

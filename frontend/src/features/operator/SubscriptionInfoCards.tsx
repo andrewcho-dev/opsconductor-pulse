@@ -14,7 +14,7 @@ export function SubscriptionInfoCards({
   usagePercent,
 }: SubscriptionInfoCardsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-3">
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
@@ -23,7 +23,7 @@ export function SubscriptionInfoCards({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
+          <div className="text-2xl font-semibold">
             {subscription.active_device_count} / {subscription.device_limit}
           </div>
           <div className="mt-2 h-2 rounded-full bg-muted">

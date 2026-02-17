@@ -8,7 +8,7 @@ export default function SiteDetailPage() {
   const { data, isLoading, error } = useSiteSummary(siteId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={data?.site?.name || "Site"}
         description={data?.site?.location || siteId}
@@ -26,7 +26,7 @@ export default function SiteDetailPage() {
           <Skeleton className="h-24" />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-border p-4">
             <div className="mb-2 text-sm font-medium">Devices ({data?.device_count ?? 0})</div>
             <div className="space-y-2">

@@ -140,7 +140,7 @@ export default function FleetKpiStrip() {
             <span className="text-sm text-muted-foreground">{card.label}</span>
             <card.icon className={`h-4 w-4 ${card.iconColor}`} />
           </div>
-          <div className="mt-1 text-3xl font-bold">{card.value}</div>
+          <div className="mt-1 text-2xl font-semibold">{card.value}</div>
         </div>
       ))}
     </div>

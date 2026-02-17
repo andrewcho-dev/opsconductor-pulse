@@ -183,7 +183,7 @@ export default function NotificationChannelsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Notification Channels"
         description="Configure channels and alert routing rules."

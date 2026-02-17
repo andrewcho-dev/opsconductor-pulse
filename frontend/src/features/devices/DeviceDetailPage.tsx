@@ -167,7 +167,7 @@ export default function DeviceDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={device?.device_id ?? "Device"}
         description={device?.model || undefined}

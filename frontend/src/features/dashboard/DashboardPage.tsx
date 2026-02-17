@@ -51,9 +51,9 @@ export default function DashboardPage() {
 
   if (listLoading || bootstrapMutation.isPending) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader title="Dashboard" description={subtitle} />
-        <div className="grid gap-4 grid-cols-3">
+        <div className="grid gap-3 grid-cols-3">
           <Skeleton className="h-[200px]" />
           <Skeleton className="h-[200px]" />
           <Skeleton className="h-[200px]" />
@@ -63,7 +63,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={dashboard?.name || "Dashboard"}
         description={dashboard?.description || subtitle}
@@ -79,7 +79,7 @@ export default function DashboardPage() {
       />
 
       {dashLoading ? (
-        <div className="grid gap-4 grid-cols-3">
+        <div className="grid gap-3 grid-cols-3">
           <Skeleton className="h-[200px]" />
           <Skeleton className="h-[200px]" />
           <Skeleton className="h-[200px]" />
@@ -87,7 +87,7 @@ export default function DashboardPage() {
       ) : dashboard ? (
         <DashboardBuilder dashboard={dashboard} canEdit={dashboard.is_owner} />
       ) : (
-        <div className="text-center py-20 text-muted-foreground">
+        <div className="text-center py-8 text-muted-foreground">
           No dashboards available. Create one to get started.
         </div>
       )}

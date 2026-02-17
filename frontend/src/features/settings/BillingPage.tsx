@@ -137,7 +137,7 @@ export default function BillingPage() {
 
   if (statusLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -147,7 +147,7 @@ export default function BillingPage() {
   const canSubscribe = !status?.has_billing_account && config?.stripe_configured;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Billing"
         description="Manage subscriptions, tier allocations, and plan limits."
@@ -155,7 +155,7 @@ export default function BillingPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             Subscriptions
           </CardTitle>
@@ -268,7 +268,7 @@ export default function BillingPage() {
       {tierRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Device Tier Allocations</CardTitle>
+            <CardTitle>Device Tier Allocations</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -302,7 +302,7 @@ export default function BillingPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Usage & Limits</CardTitle>
+          <CardTitle>Usage & Limits</CardTitle>
         </CardHeader>
         <CardContent>
           {usageRows.length === 0 ? (

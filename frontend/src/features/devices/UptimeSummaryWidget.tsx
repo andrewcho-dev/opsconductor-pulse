@@ -12,7 +12,7 @@ export function UptimeSummaryWidget() {
   return (
     <div className="rounded-md border border-border p-3 space-y-2">
       <h3 className="text-sm font-semibold">Fleet Availability</h3>
-      <div className="text-3xl font-semibold">{(data?.avg_uptime_pct ?? 0).toFixed(1)}%</div>
+      <div className="text-2xl font-semibold">{(data?.avg_uptime_pct ?? 0).toFixed(1)}%</div>
       <UptimeBar uptimePct={data?.avg_uptime_pct ?? 0} />
       <div className="text-xs text-muted-foreground">
         {data?.online ?? 0} Online | {data?.offline ?? 0} Offline | {data?.total_devices ?? 0} Total

@@ -111,7 +111,7 @@ export default function OperatorUsersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="User Management"
         description="Manage users across all tenants"
@@ -169,7 +169,7 @@ export default function OperatorUsersPage() {
           ))}
         </div>
       ) : users.length === 0 ? (
-        <div className="py-12 text-center text-muted-foreground">No users found.</div>
+        <div className="py-8 text-center text-muted-foreground">No users found.</div>
       ) : (
         <>
           <div className="rounded-md border">

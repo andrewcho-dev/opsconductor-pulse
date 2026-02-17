@@ -177,7 +177,7 @@ export default function AnalyticsPage() {
   }, [queryResult?.columns]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5" />
@@ -369,7 +369,7 @@ export default function AnalyticsPage() {
         {/* Results */}
         <div className="flex-1 space-y-4 min-w-0">
           {!results ? (
-            <div className="text-center py-20 text-muted-foreground">
+            <div className="text-center py-8 text-muted-foreground">
               Select a metric and run a query to see results.
             </div>
           ) : (
@@ -379,7 +379,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Min</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.min?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -387,7 +387,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Max</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.max?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -395,7 +395,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Avg</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.avg?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -403,7 +403,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Data Points</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.total_points.toLocaleString()}
                       </div>
                     </CardContent>

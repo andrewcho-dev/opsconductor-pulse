@@ -59,7 +59,7 @@ export default function SubscriptionDetailPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center gap-4">
         <Link to="/operator/subscriptions">
           <Button variant="ghost" size="sm">

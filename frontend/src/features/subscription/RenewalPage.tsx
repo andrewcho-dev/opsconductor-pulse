@@ -122,7 +122,7 @@ export default function RenewalPage() {
 
   if (!targetSub) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader
           title="Renew Subscription"
           description="No subscription found to renew"
@@ -142,7 +142,7 @@ export default function RenewalPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Renew Subscription"
         description="Choose a plan and extend your subscription term"
@@ -175,7 +175,7 @@ export default function RenewalPage() {
         </CardHeader>
         <CardContent>
           <RadioGroup value={selectedPlan} onValueChange={setSelectedPlan}>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               {RENEWAL_OPTIONS.map((option) => (
                 <Label
                   key={option.id}

@@ -93,7 +93,7 @@ export default function DeadLetterPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Dead Letter Queue" description={`${total} messages`} />
 
       <div className="flex items-center gap-2 flex-wrap">

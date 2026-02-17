@@ -68,14 +68,14 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Profile"
         description="Manage your display name, timezone, and notification preferences."
@@ -84,7 +84,7 @@ export default function ProfilePage() {
       <div className="grid gap-4 max-w-2xl">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <UserCircle className="h-4 w-4" />
               Personal Information
             </CardTitle>
@@ -122,7 +122,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Timezone</CardTitle>
+            <CardTitle>Timezone</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <Label htmlFor="timezone">Display timezone</Label>
@@ -146,7 +146,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Notification Preferences</CardTitle>
+            <CardTitle>Notification Preferences</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">

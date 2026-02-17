@@ -159,7 +159,7 @@ export default function DeviceGroupsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Device Groups" description="Create and manage reusable device groups." />
 
       <div className="grid gap-4 lg:grid-cols-[380px_1fr]">

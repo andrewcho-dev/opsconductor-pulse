@@ -222,7 +222,7 @@ export default function UserListPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Users</CardTitle>

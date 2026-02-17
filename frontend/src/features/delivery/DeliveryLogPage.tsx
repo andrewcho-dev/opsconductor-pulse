@@ -87,7 +87,7 @@ export default function DeliveryLogPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Delivery Log" description={`${total} jobs`} />
       <div className="flex items-center gap-2">
         <Select value={status} onValueChange={(v) => { setStatus(v); setOffset(0); }}>

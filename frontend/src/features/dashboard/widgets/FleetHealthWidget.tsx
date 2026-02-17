@@ -45,7 +45,7 @@ export function FleetHealthWidget() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Fleet Health</CardTitle>
+          <CardTitle>Fleet Health</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
           <div className="h-[120px] w-[120px] animate-pulse rounded-full bg-muted" />
@@ -57,7 +57,7 @@ export function FleetHealthWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Fleet Health</CardTitle>
+        <CardTitle>Fleet Health</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-6">
@@ -89,7 +89,7 @@ export function FleetHealthWidget() {
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className={`text-2xl font-bold ${scoreColor(score)}`}>{score}%</span>
+              <span className={`text-2xl font-semibold ${scoreColor(score)}`}>{score}%</span>
             </div>
           </div>
 

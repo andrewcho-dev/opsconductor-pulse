@@ -233,9 +233,9 @@ export default function SubscriptionPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader title="Subscription" description="Loading..." />
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
         </div>
@@ -248,7 +248,7 @@ export default function SubscriptionPage() {
 
   if (!subscriptions.length) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader title="Subscription" description="No active subscriptions" />
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
@@ -273,13 +273,13 @@ export default function SubscriptionPage() {
       : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Subscription"
         description="Manage your subscriptions and device entitlements"
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Capacity</CardTitle>
@@ -332,7 +332,7 @@ export default function SubscriptionPage() {
         {primarySubs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No primary subscriptions.</p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             {primarySubs.map((subscription) => (
               <SubscriptionCard
                 key={subscription.subscription_id}
@@ -348,7 +348,7 @@ export default function SubscriptionPage() {
         {addonSubs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No add-on subscriptions.</p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             {addonSubs.map((subscription) => (
               <SubscriptionCard
                 key={subscription.subscription_id}
@@ -366,7 +366,7 @@ export default function SubscriptionPage() {
             No trial or temporary subscriptions.
           </p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             {otherSubs.map((subscription) => (
               <SubscriptionCard
                 key={subscription.subscription_id}

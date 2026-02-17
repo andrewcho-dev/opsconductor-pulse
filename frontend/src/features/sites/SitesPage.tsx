@@ -10,19 +10,19 @@ export default function SitesPage() {
   const sites = data?.sites ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Sites" description={isLoading ? "Loading..." : `${data?.total ?? 0} sites`} />
 
       {error ? (
         <div className="text-destructive">Failed to load sites: {(error as Error).message}</div>
       ) : isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           {[1, 2, 3, 4].map((n) => (
             <Skeleton key={n} className="h-36" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           {sites.map((site) => (
             <button
               key={site.site_id}

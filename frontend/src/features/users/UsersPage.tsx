@@ -182,7 +182,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Team Members"
         description="Manage users in your organization"
@@ -236,7 +236,7 @@ export default function UsersPage() {
           }}
           isLoading={isLoading}
           emptyState={
-            <div className="py-12 text-center">
+            <div className="py-8 text-center">
               <div className="mb-4 text-muted-foreground">No team members found.</div>
               <Button onClick={() => setInviteDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />

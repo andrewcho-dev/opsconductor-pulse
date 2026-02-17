@@ -131,7 +131,7 @@ export default function EscalationPoliciesPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Escalation Policies"
         description="Define multi-level escalation actions for unacknowledged alerts."

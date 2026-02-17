@@ -125,7 +125,7 @@ export default function OtaCampaignDetailPage() {
   const useServerPagination = totalDevices > PAGE_SIZE;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={campaign.name}
         description={description}

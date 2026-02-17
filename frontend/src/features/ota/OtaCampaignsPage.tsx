@@ -144,7 +144,7 @@ export default function OtaCampaignsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="OTA Campaigns"
         description="Manage firmware rollouts to your device fleet."

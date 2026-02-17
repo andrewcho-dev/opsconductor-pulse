@@ -40,7 +40,7 @@ export default function DeviceOnboardingWizard() {
   }, [step1Data, step2Data]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Device Onboarding Wizard</CardTitle>

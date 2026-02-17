@@ -30,7 +30,7 @@ function StatCard({
         {loading ? (
           <Skeleton className="h-8 w-16" />
         ) : (
-          <div className="text-3xl font-bold">{value}</div>
+          <div className="text-2xl font-semibold">{value}</div>
         )}
       </CardContent>
     </Card>
@@ -50,7 +50,7 @@ function StatCardsWidgetInner() {
   const openAlerts = summary?.alerts_open ?? 0;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard
         title="Total Devices"
         value={totalDevices}

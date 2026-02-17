@@ -40,7 +40,7 @@ export default function OperatorDevices() {
   const canGoNext = total > 0 ? offset + devices.length < total : devices.length === limit;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="All Devices"
         description="Cross-tenant device inventory"

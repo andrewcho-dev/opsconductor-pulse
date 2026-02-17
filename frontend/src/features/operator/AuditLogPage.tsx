@@ -124,7 +124,7 @@ export default function AuditLogPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Audit Log"
         description={isLoading ? "Loading..." : `${totalCount.toLocaleString()} events across all tenants`}

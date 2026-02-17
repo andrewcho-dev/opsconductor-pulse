@@ -136,10 +136,10 @@ export default function CertificateOverviewPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Certificate Overview</h1>
+          <h1 className="text-lg font-semibold">Certificate Overview</h1>
           <p className="text-sm text-muted-foreground">
             Fleet-wide view of device X.509 certificates across all tenants.
           </p>
@@ -150,21 +150,21 @@ export default function CertificateOverviewPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-md border p-3 text-center">
-          <div className="text-2xl font-bold">{total}</div>
+          <div className="text-2xl font-semibold">{total}</div>
           <div className="text-sm text-muted-foreground">Total Certificates</div>
         </div>
         <div className="rounded-md border p-3 text-center">
-          <div className="text-2xl font-bold text-green-600">{activeCount}</div>
+          <div className="text-2xl font-semibold text-green-600">{activeCount}</div>
           <div className="text-sm text-muted-foreground">Active</div>
         </div>
         <div className="rounded-md border p-3 text-center">
-          <div className="text-2xl font-bold text-red-600">{revokedCount}</div>
+          <div className="text-2xl font-semibold text-red-600">{revokedCount}</div>
           <div className="text-sm text-muted-foreground">Revoked</div>
         </div>
         <div className="rounded-md border p-3 text-center">
-          <div className="text-2xl font-bold text-yellow-600">{expiringCount}</div>
+          <div className="text-2xl font-semibold text-yellow-600">{expiringCount}</div>
           <div className="text-sm text-muted-foreground">Expiring (30d)</div>
         </div>
       </div>

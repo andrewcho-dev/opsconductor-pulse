@@ -22,7 +22,7 @@ export default function DeviceCountRenderer(_props: WidgetRendererProps) {
   return (
     <div className="h-full flex items-center justify-between px-2">
       <div>
-        <div className="text-3xl font-bold">{(total ?? 0).toLocaleString()}</div>
+        <div className="text-2xl font-semibold">{(total ?? 0).toLocaleString()}</div>
         <div className="text-xs text-muted-foreground">Total devices</div>
       </div>
       <div className="text-right text-xs text-muted-foreground">

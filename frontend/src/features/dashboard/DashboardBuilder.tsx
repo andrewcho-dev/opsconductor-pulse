@@ -152,7 +152,7 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
       )}
 
       {dashboard.widgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex flex-col items-center justify-center py-8 text-center">
           <p className="text-muted-foreground mb-4">This dashboard has no widgets yet.</p>
           {canEdit && (
             <Button

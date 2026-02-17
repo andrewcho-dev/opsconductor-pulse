@@ -152,7 +152,7 @@ export default function SetupWizard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Guided Setup Wizard" description="Identity -> Tags -> Rules -> Credentials" />
       <div className="flex items-center gap-2">
         {dots.map((dot) => (

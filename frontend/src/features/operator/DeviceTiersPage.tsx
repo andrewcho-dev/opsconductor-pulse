@@ -207,7 +207,7 @@ export default function DeviceTiersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Device Tiers"
         description="Manage tier definitions and feature access for tenant devices."
@@ -215,7 +215,7 @@ export default function DeviceTiersPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Tiers</CardTitle>
+          <CardTitle>Tiers</CardTitle>
           <Button size="sm" onClick={() => setDialog({ mode: "create" })}>
             <Plus className="mr-2 h-4 w-4" />
             Create Tier
@@ -341,7 +341,7 @@ export default function DeviceTiersPage() {
 
               <fieldset className="space-y-3 rounded-md border p-4">
                 <legend className="px-1 text-sm font-medium">Features</legend>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {KNOWN_FEATURES.map((f) => (
                     <div key={f} className="flex items-center justify-between gap-3">
                       <span className="font-mono text-sm">{f}</span>
@@ -354,7 +354,7 @@ export default function DeviceTiersPage() {
                 </div>
               </fieldset>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="sort_order"

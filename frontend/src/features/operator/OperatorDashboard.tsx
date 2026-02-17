@@ -65,10 +65,10 @@ export default function OperatorDashboard() {
     alerts?.alerts.filter((a) => (a.severity ?? 0) === 3).length ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-2xl font-semibold">Operator Console</div>
+          <div className="text-lg font-semibold">Operator Console</div>
           <div className="text-sm text-muted-foreground">
             <span
               className={`mr-2 inline-block h-2 w-2 rounded-full ${
@@ -80,7 +80,7 @@ export default function OperatorDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         {kpiCard(
           "Tenants",
           String(aggregates?.tenants.active ?? 0),
@@ -90,7 +90,7 @@ export default function OperatorDashboard() {
         {kpiCard("Alerts", String(openAlerts), `${criticalCount} critical, ${highCount} high`)}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {navCard("/operator/noc", "NOC Console", "Full system monitoring wallboard", Monitor)}
         {navCard(
           "/operator/tenant-matrix",

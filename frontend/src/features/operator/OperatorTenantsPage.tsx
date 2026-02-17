@@ -71,7 +71,7 @@ export default function OperatorTenantsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Tenant Management"
         description="Manage all tenants in the system"

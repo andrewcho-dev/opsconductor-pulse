@@ -92,7 +92,7 @@ export default function RolesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Roles & Permissions"
         description="Manage role bundles for your organization"

@@ -28,7 +28,7 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">Device Alerts</CardTitle>
+        <CardTitle>Device Alerts</CardTitle>
         <Link
           to="/alerts"
           className="text-sm text-primary hover:underline"

@@ -165,7 +165,7 @@ export default function AlertListPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Alerts"
         description="Professional inbox for real-time alert triage"

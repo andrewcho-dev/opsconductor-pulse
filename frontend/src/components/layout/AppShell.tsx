@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
+import { AppFooter } from "./AppFooter";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { SubscriptionBanner } from "./SubscriptionBanner";
 import { Toaster } from "sonner";
@@ -12,14 +13,15 @@ export default function AppShell() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full">
+      <div className="flex h-screen w-full overflow-hidden">
         <AppSidebar />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col overflow-hidden">
           <AppHeader />
           <SubscriptionBanner />
-          <main className="flex-1 overflow-auto p-6">
+          <main className="flex-1 overflow-auto p-4">
             <Outlet />
           </main>
+          <AppFooter />
           <Toaster richColors position="bottom-right" />
         </div>
       </div>

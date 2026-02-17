@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import packageJson from "../../../package.json";
 import {
   LayoutDashboard,
   Cpu,
@@ -246,7 +245,7 @@ export function AppSidebar() {
             className="h-8 w-8"
           />
           <div>
-            <div className="text-sm font-bold text-sidebar-foreground">OpsConductor</div>
+            <div className="text-sm font-semibold text-sidebar-foreground">OpsConductor</div>
             <div className="text-sm text-muted-foreground">Pulse</div>
           </div>
         </Link>
@@ -478,11 +477,7 @@ export function AppSidebar() {
 
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
-        <div className="text-sm text-muted-foreground">
-          OpsConductor Pulse v{packageJson.version}
-        </div>
-      </SidebarFooter>
+      <SidebarFooter className="p-2" />
     </Sidebar>
   );
 }

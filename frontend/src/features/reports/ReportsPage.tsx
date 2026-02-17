@@ -102,7 +102,7 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Reports" description="Exports, SLA summaries, and report history." />
 
       <Card>
@@ -148,7 +148,7 @@ export default function ReportsPage() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded border border-border p-3">
               <div className="text-sm text-muted-foreground">Online %</div>
               <div className={`text-xl font-semibold ${onlineTone}`}>

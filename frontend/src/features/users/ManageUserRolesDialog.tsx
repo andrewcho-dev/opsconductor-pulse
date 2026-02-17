@@ -113,7 +113,7 @@ export function ManageUserRolesDialog({
             <Skeleton className="h-24 w-full" />
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-4">
               <div className="rounded-lg border p-3">
                 <div className="mb-2 text-sm font-medium">System Roles</div>

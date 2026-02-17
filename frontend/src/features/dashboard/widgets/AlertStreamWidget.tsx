@@ -32,7 +32,7 @@ function AlertStreamWidgetInner() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div className="flex items-center gap-2">
-          <CardTitle className="text-lg">Open Alerts</CardTitle>
+          <CardTitle>Open Alerts</CardTitle>
           {wsStatus === "connected" && (
             <Badge
               variant="outline"

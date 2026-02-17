@@ -178,7 +178,7 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
         )
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <strong className="text-sm">Desired</strong>

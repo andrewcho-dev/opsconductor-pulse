@@ -105,7 +105,7 @@ export default function KpiTileRenderer({ config }: WidgetRendererProps) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <div className="text-3xl font-bold">{value}</div>
+        <div className="text-2xl font-semibold">{value}</div>
         <div className="text-xs text-muted-foreground mt-1">{metric}</div>
       </div>
     </div>

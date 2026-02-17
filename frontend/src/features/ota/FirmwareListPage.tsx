@@ -101,7 +101,7 @@ export default function FirmwareListPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Firmware Versions"
         description="Registered firmware binaries available for OTA deployment."
@@ -122,7 +122,7 @@ export default function FirmwareListPage() {
 
       {showUpload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg space-y-4">
+          <div className="w-full max-w-md rounded-lg border border-border bg-background p-4 shadow-lg space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Register Firmware Version</h3>
               <Button variant="ghost" size="sm" onClick={() => setShowUpload(false)}>

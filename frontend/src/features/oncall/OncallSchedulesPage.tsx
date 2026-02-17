@@ -81,7 +81,7 @@ export default function OncallSchedulesPage() {
   const schedules = schedulesQuery.data?.schedules ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="On-Call Schedules"
         description="Configure rotation layers and temporary overrides."

@@ -179,7 +179,7 @@ export default function BulkImportPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Import Devices"
         description="Upload CSV with columns: device_id, name, model, site_id, tags."
