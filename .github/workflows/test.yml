@@ -26,7 +26,42 @@ jobs:
       - name: Run unit tests
         run: |
           mkdir -p test-results
-          pytest -m unit -v --tb=short --cov=services/ui_iot --cov-fail-under=30 --junitxml=test-results/unit.xml
+          pytest -m unit -v --tb=short \
+            --cov=services/ui_iot \
+            --cov-fail-under=70 \
+            --junitxml=test-results/unit.xml
+
+      - name: Enforce critical path coverage
+        run: |
+          # Auth middleware: 90% minimum
+          pytest tests/unit/test_auth_middleware.py -v --tb=short \
+            --cov=middleware.auth \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: auth middleware coverage below 90%" && exit 1)
+
+          # Tenant middleware: 90% minimum
+          pytest tests/unit/test_tenant_middleware.py -v --tb=short \
+            --cov=middleware.tenant \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: tenant middleware coverage below 90%" && exit 1)
+
+          # DB pool: 90% minimum
+          pytest tests/unit/test_db_pool.py -v --tb=short \
+            --cov=db.pool \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: db pool coverage below 90%" && exit 1)
+
+          # URL validator: 90% minimum
+          pytest tests/unit/test_url_validator.py -v --tb=short \
+            --cov=utils.url_validator \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: url_validator coverage below 90%" && exit 1)
+
+          echo "All critical path coverage checks passed!"
 
       - name: Upload unit test results
         if: always()
@@ -156,8 +191,41 @@ jobs:
           mkdir -p test-results
           pytest -m integration -v --tb=short \
             --cov=services/ui_iot \
-            --cov-report=xml --cov-report=term-missing --cov-fail-under=55 \
+            --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=70 \
             --junitxml=test-results/integration.xml
+
+      - name: Enforce critical path coverage
+        run: |
+          # Auth middleware: 90% minimum
+          pytest tests/unit/test_auth_middleware.py -v --tb=short \
+            --cov=middleware.auth \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: auth middleware coverage below 90%" && exit 1)
+
+          # Tenant middleware: 90% minimum
+          pytest tests/unit/test_tenant_middleware.py -v --tb=short \
+            --cov=middleware.tenant \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: tenant middleware coverage below 90%" && exit 1)
+
+          # DB pool: 90% minimum
+          pytest tests/unit/test_db_pool.py -v --tb=short \
+            --cov=db.pool \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: db pool coverage below 90%" && exit 1)
+
+          # URL validator: 90% minimum
+          pytest tests/unit/test_url_validator.py -v --tb=short \
+            --cov=utils.url_validator \
+            --cov-fail-under=90 \
+            --no-header -q 2>/dev/null || \
+            (echo "FAILED: url_validator coverage below 90%" && exit 1)
+
+          echo "All critical path coverage checks passed!"
 
       - name: Enforce coverage thresholds
         run: python scripts/check_coverage.py

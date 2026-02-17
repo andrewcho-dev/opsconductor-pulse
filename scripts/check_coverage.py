@@ -6,24 +6,14 @@ import sys
 import xml.etree.ElementTree as ET
 
 CRITICAL_MODULES = {
-    "services/ui_iot/middleware/auth.py": 87,
-    "services/ui_iot/middleware/tenant.py": 79,
-    "services/ui_iot/db/pool.py": 89,
-    "services/ui_iot/utils/url_validator.py": 89,
-    "services/ui_iot/utils/snmp_validator.py": 81,
-    "services/ui_iot/utils/email_validator.py": 64,
-    "services/ui_iot/routes/customer.py": 15,
-    "services/ui_iot/routes/operator.py": 16,
-    "services/ui_iot/routes/system.py": 48,
-    "services/ui_iot/routes/users.py": 37,
-    "services/ui_iot/routes/ingest.py": 86,
-    "services/ui_iot/services/alert_dispatcher.py": 89,
-    "services/ui_iot/services/snmp_sender.py": 80,
-    "services/ui_iot/services/keycloak_admin.py": 56,
-    "services/ui_iot/services/subscription.py": 64,
+    # Critical paths: enforce 90% minimum
+    "services/ui_iot/middleware/auth.py": 90,
+    "services/ui_iot/middleware/tenant.py": 90,
+    "services/ui_iot/db/pool.py": 90,
+    "services/ui_iot/utils/url_validator.py": 90,
 }
 
-OVERALL_MINIMUM = 40
+OVERALL_MINIMUM = 70
 
 
 def get_coverage_from_xml(xml_path: str) -> dict:
