@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, get_user, require_customer
+from middleware.entitlements import get_plan_usage
 from dependencies import get_db_pool
 from db.pool import tenant_connection
 from services.stripe_service import (
@@ -62,6 +63,17 @@ async def get_billing_config():
         "stripe_configured": is_stripe_configured(),
         "publishable_key": STRIPE_PUBLISHABLE_KEY if is_stripe_configured() else None,
     }
+
+
+@customer_router.get("/entitlements")
+async def get_entitlements(pool=Depends(get_db_pool)):
+    """Get plan limits and current usage for display on billing page."""
+    tenant_id = get_tenant_id()
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        usage = await get_plan_usage(conn, tenant_id)
+
+    return usage
 
 
 @customer_router.post("/checkout-session")

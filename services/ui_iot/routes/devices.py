@@ -4,6 +4,7 @@ from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
 from middleware.permissions import require_permission
+from middleware.entitlements import check_device_limit
 from typing import Any, Optional
 from fastapi import Query, Response as FastAPIResponse
 
@@ -141,6 +142,10 @@ async def create_device(request: Request, device: DeviceCreate, pool=Depends(get
 
     p = pool
     async with tenant_connection(p, tenant_id) as conn:
+        check = await check_device_limit(conn, tenant_id)
+        if not check["allowed"]:
+            raise HTTPException(check["status_code"], check["message"])
+
         subscription_id = device.subscription_id
         if not subscription_id:
             sub = await conn.fetchrow(
