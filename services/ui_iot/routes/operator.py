@@ -101,6 +101,24 @@ class TenantResponse(BaseModel):
     updated_at: datetime
 
 
+# ── Device Tier Management ────────────────────────────────────
+
+class DeviceTierCreate(BaseModel):
+    name: str = Field(..., max_length=50, pattern="^[a-z][a-z0-9_-]*$")
+    display_name: str = Field(..., max_length=100)
+    description: Optional[str] = ""
+    features: dict = Field(default_factory=dict)
+    sort_order: int = Field(default=0)
+
+
+class DeviceTierUpdate(BaseModel):
+    display_name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = None
+    features: Optional[dict] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 class SubscriptionCreate(BaseModel):
     tenant_id: str
     subscription_type: str = Field(..., pattern="^(MAIN|ADDON|TRIAL|TEMPORARY)$")
@@ -185,6 +203,104 @@ router = APIRouter(
         Depends(require_operator),
     ],
 )
+
+
+@router.get("/device-tiers")
+async def list_device_tiers():
+    """List all device tiers (operator view — includes inactive)."""
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        rows = await conn.fetch(
+            "SELECT tier_id, name, display_name, description, features, sort_order, is_active, created_at FROM device_tiers ORDER BY sort_order"
+        )
+    return {
+        "tiers": [
+            {
+                **dict(r),
+                "features": json.loads(r["features"])
+                if isinstance(r["features"], str)
+                else (r["features"] or {}),
+                "created_at": r["created_at"].isoformat() + "Z" if r["created_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/device-tiers", status_code=201)
+async def create_device_tier(
+    data: DeviceTierCreate,
+    _: None = Depends(require_operator_admin),
+):
+    """Create a new device tier (operator_admin only)."""
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO device_tiers (name, display_name, description, features, sort_order)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING tier_id, name, display_name, description, features, sort_order, is_active, created_at
+                """,
+                data.name,
+                data.display_name,
+                data.description,
+                json.dumps(data.features),
+                data.sort_order,
+            )
+        except Exception as exc:
+            if "unique" in str(exc).lower():
+                raise HTTPException(409, f"Tier name '{data.name}' already exists")
+            raise
+
+    return {
+        **dict(row),
+        "features": json.loads(row["features"])
+        if isinstance(row["features"], str)
+        else (row["features"] or {}),
+        "created_at": row["created_at"].isoformat() + "Z" if row["created_at"] else None,
+    }
+
+
+@router.put("/device-tiers/{tier_id}")
+async def update_device_tier(
+    tier_id: int,
+    data: DeviceTierUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    """Update a device tier (operator_admin only)."""
+    pool = await get_pool()
+    updates = []
+    params = []
+    idx = 1
+
+    for field_name, value in data.model_dump(exclude_unset=True).items():
+        if field_name == "features" and value is not None:
+            value = json.dumps(value)
+        updates.append(f"{field_name} = ${idx}")
+        params.append(value)
+        idx += 1
+
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    updates.append("updated_at = NOW()")
+    params.append(tier_id)
+
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            f"UPDATE device_tiers SET {', '.join(updates)} WHERE tier_id = ${idx} RETURNING *",
+            *params,
+        )
+    if not row:
+        raise HTTPException(404, "Device tier not found")
+
+    return {
+        **dict(row),
+        "features": json.loads(row["features"])
+        if isinstance(row["features"], str)
+        else (row["features"] or {}),
+    }
 
 
 @router.get("/migration/integration-status")

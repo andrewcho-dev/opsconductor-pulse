@@ -70,6 +70,10 @@ class DynamicGroupUpdate(BaseModel):
     query_filter: dict[str, Any] | None = None
 
 
+class TierAssignment(BaseModel):
+    tier_id: int
+
+
 async def _publish_shadow_desired(
     tenant_id: str, device_id: str, desired: dict[str, Any], desired_version: int
 ) -> None:
@@ -659,6 +663,173 @@ async def list_devices(
     }
 
 
+# ── Device Tiers (Customer) ──────────────────────────────────
+
+@router.get("/device-tiers")
+async def list_customer_device_tiers(pool=Depends(get_db_pool)):
+    """List active device tiers available to customers."""
+    tenant_id = get_tenant_id()
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            "SELECT tier_id, name, display_name, description, features FROM device_tiers WHERE is_active = true ORDER BY sort_order"
+        )
+
+    return {
+        "tiers": [
+            {
+                **dict(r),
+                "features": json.loads(r["features"])
+                if isinstance(r["features"], str)
+                else (r["features"] or {}),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.put("/devices/{device_id}/tier")
+async def assign_device_tier(
+    device_id: str,
+    data: TierAssignment,
+    pool=Depends(get_db_pool),
+):
+    """Assign a device to a tier, checking subscription slot availability."""
+    tenant_id = get_tenant_id()
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        async with conn.transaction():
+            # 1. Verify device exists and belongs to tenant
+            device = await conn.fetchrow(
+                "SELECT device_id, subscription_id, tier_id FROM device_registry WHERE device_id = $1 AND tenant_id = $2",
+                device_id,
+                tenant_id,
+            )
+            if not device:
+                raise HTTPException(404, "Device not found")
+
+            # 2. Verify tier exists and is active
+            tier = await conn.fetchrow(
+                "SELECT tier_id, name, display_name FROM device_tiers WHERE tier_id = $1 AND is_active = true",
+                data.tier_id,
+            )
+            if not tier:
+                raise HTTPException(404, "Device tier not found or inactive")
+
+            # 3. Device must have a subscription
+            subscription_id = device["subscription_id"]
+            if not subscription_id:
+                raise HTTPException(
+                    400,
+                    "Device has no subscription assigned. Assign a subscription first.",
+                )
+
+            # 4. Check slot availability
+            alloc = await conn.fetchrow(
+                """
+                SELECT slot_limit, slots_used FROM subscription_tier_allocations
+                WHERE subscription_id = $1 AND tier_id = $2
+                """,
+                subscription_id,
+                data.tier_id,
+            )
+            if not alloc:
+                raise HTTPException(
+                    402,
+                    f"Your plan does not include {tier['display_name']} tier slots. Upgrade your plan.",
+                )
+
+            old_tier_id = device["tier_id"]
+            if old_tier_id == data.tier_id:
+                return {"status": "ok", "device_id": device_id, "tier_id": data.tier_id}
+
+            if alloc["slots_used"] >= alloc["slot_limit"]:
+                raise HTTPException(
+                    402,
+                    f"No available {tier['display_name']} slots. Used: {alloc['slots_used']}/{alloc['slot_limit']}. Upgrade your plan or reassign another device.",
+                )
+
+            # 5. Decrement old tier slots_used if device had a tier
+            if old_tier_id is not None:
+                await conn.execute(
+                    """
+                    UPDATE subscription_tier_allocations
+                    SET slots_used = GREATEST(slots_used - 1, 0), updated_at = NOW()
+                    WHERE subscription_id = $1 AND tier_id = $2
+                    """,
+                    subscription_id,
+                    old_tier_id,
+                )
+
+            # 6. Update device tier
+            await conn.execute(
+                "UPDATE device_registry SET tier_id = $1 WHERE device_id = $2 AND tenant_id = $3",
+                data.tier_id,
+                device_id,
+                tenant_id,
+            )
+
+            # 7. Increment new tier slots_used
+            await conn.execute(
+                """
+                UPDATE subscription_tier_allocations
+                SET slots_used = slots_used + 1, updated_at = NOW()
+                WHERE subscription_id = $1 AND tier_id = $2
+                """,
+                subscription_id,
+                data.tier_id,
+            )
+
+    return {
+        "status": "ok",
+        "device_id": device_id,
+        "tier_id": data.tier_id,
+        "tier_name": tier["display_name"],
+    }
+
+
+@router.delete("/devices/{device_id}/tier")
+async def remove_device_tier(
+    device_id: str,
+    pool=Depends(get_db_pool),
+):
+    """Remove tier assignment from a device (goes back to untiered)."""
+    tenant_id = get_tenant_id()
+
+    async with tenant_connection(pool, tenant_id) as conn:
+        async with conn.transaction():
+            device = await conn.fetchrow(
+                "SELECT device_id, subscription_id, tier_id FROM device_registry WHERE device_id = $1 AND tenant_id = $2",
+                device_id,
+                tenant_id,
+            )
+            if not device:
+                raise HTTPException(404, "Device not found")
+
+            old_tier_id = device["tier_id"]
+            if old_tier_id is None:
+                return {"status": "ok", "device_id": device_id, "tier_id": None}
+
+            if device["subscription_id"]:
+                await conn.execute(
+                    """
+                    UPDATE subscription_tier_allocations
+                    SET slots_used = GREATEST(slots_used - 1, 0), updated_at = NOW()
+                    WHERE subscription_id = $1 AND tier_id = $2
+                    """,
+                    device["subscription_id"],
+                    old_tier_id,
+                )
+
+            await conn.execute(
+                "UPDATE device_registry SET tier_id = NULL WHERE device_id = $1 AND tenant_id = $2",
+                device_id,
+                tenant_id,
+            )
+
+    return {"status": "ok", "device_id": device_id, "tier_id": None}
+
+
 @router.get("/devices/summary")
 async def get_fleet_summary(pool=Depends(get_db_pool)):
     """Fleet status summary: counts of ONLINE/STALE/OFFLINE devices."""
@@ -743,6 +914,21 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
             device = await fetch_device(conn, tenant_id, device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
+
+            tier_row = await conn.fetchrow(
+                """
+                SELECT dr.tier_id, dt.name as tier_name, dt.display_name as tier_display_name
+                FROM device_registry dr
+                LEFT JOIN device_tiers dt ON dt.tier_id = dr.tier_id
+                WHERE dr.device_id = $1 AND dr.tenant_id = $2
+                """,
+                device_id,
+                tenant_id,
+            )
+            if tier_row:
+                device["tier_id"] = tier_row["tier_id"]
+                device["tier_name"] = tier_row["tier_name"]
+                device["tier_display_name"] = tier_row["tier_display_name"]
 
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
