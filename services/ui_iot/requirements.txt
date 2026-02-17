@@ -21,3 +21,4 @@ cryptography>=42.0.0
 prometheus_client>=0.20.0
 slowapi>=0.1.9
 passlib[bcrypt]>=1.7.4
+stripe>=8.0.0

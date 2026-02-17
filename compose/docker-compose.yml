@@ -411,6 +411,9 @@ services:
       WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"
       DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
       DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
     expose:
       - "8080"
     depends_on:
