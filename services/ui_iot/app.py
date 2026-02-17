@@ -57,6 +57,7 @@ from routes.billing import (
     customer_router as billing_customer_router,
     webhook_router as billing_webhook_router,
 )
+from routes.organization import router as organization_router
 from routes.certificates import router as certificates_router, operator_router as operator_certificates_router
 from middleware.auth import validate_token
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
@@ -374,6 +375,7 @@ app.include_router(certificates_router)
 app.include_router(operator_certificates_router)
 app.include_router(billing_customer_router)
 app.include_router(billing_webhook_router)
+app.include_router(organization_router)
 
 # React SPA — serve built frontend if available
 SPA_DIR = Path("/app/spa")

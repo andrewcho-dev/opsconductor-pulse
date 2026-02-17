@@ -50,7 +50,21 @@ class TenantCreate(BaseModel):
     name: str
     contact_email: Optional[EmailStr] = None
     contact_name: Optional[str] = None
-    metadata: dict = {}
+    legal_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=50)
+    industry: Optional[str] = Field(None, max_length=100)
+    company_size: Optional[str] = Field(None, max_length=50)
+    address_line1: Optional[str] = Field(None, max_length=200)
+    address_line2: Optional[str] = Field(None, max_length=200)
+    city: Optional[str] = Field(None, max_length=100)
+    state_province: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    country: Optional[str] = Field(None, max_length=2)
+    data_residency_region: Optional[str] = Field(None, max_length=50)
+    support_tier: Optional[str] = Field(None, max_length=20)
+    sla_level: Optional[float] = None
+    billing_email: Optional[str] = Field(None, max_length=255)
+    metadata: Optional[dict] = None
 
 
 class TenantUpdate(BaseModel):
@@ -58,6 +72,21 @@ class TenantUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_name: Optional[str] = None
     status: Optional[str] = None  # ACTIVE, SUSPENDED
+    legal_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=50)
+    industry: Optional[str] = Field(None, max_length=100)
+    company_size: Optional[str] = Field(None, max_length=50)
+    address_line1: Optional[str] = Field(None, max_length=200)
+    address_line2: Optional[str] = Field(None, max_length=200)
+    city: Optional[str] = Field(None, max_length=100)
+    state_province: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    country: Optional[str] = Field(None, max_length=2)
+    data_residency_region: Optional[str] = Field(None, max_length=50)
+    support_tier: Optional[str] = Field(None, max_length=20)
+    sla_level: Optional[float] = None
+    billing_email: Optional[str] = Field(None, max_length=255)
+    stripe_customer_id: Optional[str] = Field(None, max_length=100)  # operator can manually link
     metadata: Optional[dict] = None
 
 
@@ -319,6 +348,10 @@ async def get_tenant(request: Request, tenant_id: str):
         row = await conn.fetchrow(
             """
             SELECT tenant_id, name, status, contact_email, contact_name,
+                   legal_name, phone, industry, company_size,
+                   address_line1, address_line2, city, state_province, postal_code, country,
+                   data_residency_region, support_tier, sla_level,
+                   stripe_customer_id, billing_email,
                    metadata, created_at, updated_at
             FROM tenants
             WHERE tenant_id = $1
@@ -340,7 +373,12 @@ async def get_tenant(request: Request, tenant_id: str):
             rls_bypassed=True,
         )
 
-    return dict(row)
+    result = dict(row)
+    if isinstance(result.get("metadata"), str):
+        result["metadata"] = json.loads(result["metadata"])
+    if result.get("sla_level") is not None:
+        result["sla_level"] = float(result["sla_level"])
+    return result
 
 
 @router.post("/subscriptions", status_code=201)
@@ -920,14 +958,40 @@ async def create_tenant(
 
         await conn.execute(
             """
-            INSERT INTO tenants (tenant_id, name, contact_email, contact_name, metadata)
-            VALUES ($1, $2, $3, $4, $5::jsonb)
+            INSERT INTO tenants (
+                tenant_id, name, contact_email, contact_name,
+                legal_name, phone, industry, company_size,
+                address_line1, address_line2, city, state_province, postal_code, country,
+                data_residency_region, support_tier, sla_level, billing_email,
+                metadata
+            )
+            VALUES (
+                $1, $2, $3, $4,
+                $5, $6, $7, $8,
+                $9, $10, $11, $12, $13, $14,
+                $15, $16, $17, $18,
+                $19::jsonb
+            )
             """,
             tenant.tenant_id,
             tenant.name,
             tenant.contact_email,
             tenant.contact_name,
-            json.dumps(tenant.metadata),
+            tenant.legal_name,
+            tenant.phone,
+            tenant.industry,
+            tenant.company_size,
+            tenant.address_line1,
+            tenant.address_line2,
+            tenant.city,
+            tenant.state_province,
+            tenant.postal_code,
+            tenant.country,
+            tenant.data_residency_region,
+            tenant.support_tier,
+            tenant.sla_level,
+            tenant.billing_email,
+            json.dumps(tenant.metadata or {}),
         )
 
     async with pool.acquire() as conn:
@@ -968,6 +1032,21 @@ async def update_tenant(
         "contact_email",
         "contact_name",
         "status",
+        "legal_name",
+        "phone",
+        "industry",
+        "company_size",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state_province",
+        "postal_code",
+        "country",
+        "data_residency_region",
+        "support_tier",
+        "sla_level",
+        "billing_email",
+        "stripe_customer_id",
     ]:
         value = getattr(update, field, None)
         if value is not None:
