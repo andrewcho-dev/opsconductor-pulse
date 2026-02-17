@@ -49,10 +49,8 @@ async def bootstrap_user_roles(pool, tenant_id: str, user_id: str, realm_roles: 
             if count > 0:
                 return set()
 
-            if "tenant-admin" in realm_roles:
+            if "tenant-admin" in realm_roles or "customer" in realm_roles:
                 role_name = "Full Admin"
-            elif "customer" in realm_roles:
-                role_name = "Viewer"
             else:
                 return set()
 

@@ -82,10 +82,10 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
         const smtp = (config.smtp as Record<string, unknown>) || {};
         config.smtp = {
           host: smtp.host || "",
-          port: 587,
+          port: typeof smtp.port === "number" ? smtp.port : 587,
           username: smtp.username || "",
           password: smtp.password || "",
-          use_tls: true,
+          use_tls: smtp.use_tls !== false,
         };
         if (!config.recipients) config.recipients = { to: [] };
       }
@@ -197,30 +197,120 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
           )}
           {draft.channel_type === "email" && (
             <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">SMTP Host</label>
-              <Input
-                placeholder="smtp.example.com"
-                value={cfgValue("smtp_host")}
-                onChange={(e) =>
-                  setCfgObj("smtp", {
-                    ...(typeof draft.config.smtp === "object" && draft.config.smtp ? draft.config.smtp : {}),
-                    host: e.target.value,
-                  })
-                }
-              />
-              <label className="text-xs text-muted-foreground">Recipients (comma separated)</label>
-              <Input
-                placeholder="ops@example.com, noc@example.com"
-                value={cfgValue("to")}
-                onChange={(e) => {
-                  const list = e.target.value
-                    .split(",")
-                    .map((entry) => entry.trim())
-                    .filter(Boolean);
-                  setCfgObj("recipients", { to: list });
-                  setCfg("to", e.target.value);
-                }}
-              />
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="text-xs text-muted-foreground">SMTP Host</label>
+                  <Input
+                    placeholder="smtp.example.com"
+                    value={
+                      typeof draft.config.smtp === "object" && draft.config.smtp
+                        ? (((draft.config.smtp as Record<string, unknown>).host as string) || "")
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setCfgObj("smtp", {
+                        ...(typeof draft.config.smtp === "object" && draft.config.smtp
+                          ? (draft.config.smtp as Record<string, unknown>)
+                          : {}),
+                        host: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">SMTP Port</label>
+                  <Input
+                    type="number"
+                    placeholder="587"
+                    value={
+                      typeof draft.config.smtp === "object" && draft.config.smtp
+                        ? String((draft.config.smtp as Record<string, unknown>).port ?? 587)
+                        : "587"
+                    }
+                    onChange={(e) =>
+                      setCfgObj("smtp", {
+                        ...(typeof draft.config.smtp === "object" && draft.config.smtp
+                          ? (draft.config.smtp as Record<string, unknown>)
+                          : {}),
+                        port: parseInt(e.target.value) || 587,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Username</label>
+                  <Input
+                    placeholder="noreply@example.com"
+                    value={
+                      typeof draft.config.smtp === "object" && draft.config.smtp
+                        ? (((draft.config.smtp as Record<string, unknown>).username as string) || "")
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setCfgObj("smtp", {
+                        ...(typeof draft.config.smtp === "object" && draft.config.smtp
+                          ? (draft.config.smtp as Record<string, unknown>)
+                          : {}),
+                        username: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Password</label>
+                  <Input
+                    type="password"
+                    placeholder="••••••••"
+                    value={
+                      typeof draft.config.smtp === "object" && draft.config.smtp
+                        ? (((draft.config.smtp as Record<string, unknown>).password as string) || "")
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setCfgObj("smtp", {
+                        ...(typeof draft.config.smtp === "object" && draft.config.smtp
+                          ? (draft.config.smtp as Record<string, unknown>)
+                          : {}),
+                        password: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-4">
+                  <input
+                    type="checkbox"
+                    checked={
+                      typeof draft.config.smtp === "object" && draft.config.smtp
+                        ? (draft.config.smtp as Record<string, unknown>).use_tls !== false
+                        : true
+                    }
+                    onChange={(e) =>
+                      setCfgObj("smtp", {
+                        ...(typeof draft.config.smtp === "object" && draft.config.smtp
+                          ? (draft.config.smtp as Record<string, unknown>)
+                          : {}),
+                        use_tls: e.target.checked,
+                      })
+                    }
+                  />
+                  <label className="text-xs text-muted-foreground">Use TLS</label>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Recipients (comma separated)</label>
+                <Input
+                  placeholder="ops@example.com, noc@example.com"
+                  value={cfgValue("to")}
+                  onChange={(e) => {
+                    const list = e.target.value
+                      .split(",")
+                      .map((entry) => entry.trim())
+                      .filter(Boolean);
+                    setCfgObj("recipients", { to: list });
+                    setCfg("to", e.target.value);
+                  }}
+                />
+              </div>
             </div>
           )}
           {draft.channel_type === "snmp" && (
