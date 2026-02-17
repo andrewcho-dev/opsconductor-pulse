@@ -95,6 +95,7 @@ async def process_pending_notifications(pool: asyncpg.Pool) -> None:
         pending = await conn.fetch(
             """
             SELECT n.id, n.tenant_id, n.notification_type, t.name as tenant_name,
+                   t.billing_email, t.contact_email,
                    s.subscription_id, s.term_end, s.grace_end, s.status,
                    s.device_limit, s.active_device_count
             FROM subscription_notifications n
@@ -113,7 +114,12 @@ async def process_pending_notifications(pool: asyncpg.Pool) -> None:
                 email_sent = await send_expiry_notification_email(
                     notification=dict(row),
                     subscription=dict(row),
-                    tenant={"tenant_id": row["tenant_id"], "name": row["tenant_name"]},
+                    tenant={
+                        "tenant_id": row["tenant_id"],
+                        "name": row["tenant_name"],
+                        "billing_email": row["billing_email"],
+                        "contact_email": row["contact_email"],
+                    },
                 )
                 channel = "email" if email_sent else ("webhook" if NOTIFICATION_WEBHOOK_URL else "log")
 
@@ -178,8 +184,10 @@ async def send_expiry_notification_email(
     if not smtp_host:
         return False
 
-    to_address = os.environ.get("NOTIFICATION_EMAIL_TO")
+    # Use tenant's billing_email, falling back to contact_email
+    to_address = tenant.get("billing_email") or tenant.get("contact_email")
     if not to_address:
+        logger.warning("No email address for tenant %s", tenant.get("tenant_id"))
         return False
 
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
@@ -346,6 +354,7 @@ async def process_grace_transitions(pool: asyncpg.Pool) -> None:
                 updated_at = now()
             WHERE status = 'ACTIVE'
               AND term_end < $1
+              AND stripe_subscription_id IS NULL  -- Only transition non-Stripe subs
             RETURNING subscription_id, tenant_id
             """,
             now,
