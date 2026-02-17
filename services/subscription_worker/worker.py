@@ -36,7 +36,7 @@ from shared.logging import configure_logging, get_logger
 configure_logging("subscription_worker")
 logger = get_logger(__name__)
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 NOTIFICATION_WEBHOOK_URL = os.getenv("NOTIFICATION_WEBHOOK_URL")
 NOTIFICATION_DAYS = [90, 60, 30, 14, 7, 1]
 GRACE_PERIOD_DAYS = 14

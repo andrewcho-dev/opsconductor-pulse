@@ -24,13 +24,25 @@ os.environ.setdefault("PG_PORT", "5432")
 os.environ.setdefault("PG_DB", "iotcloud_test")
 os.environ.setdefault("PG_USER", "iot")
 os.environ.setdefault("PG_PASS", "iot_dev")
+os.environ.setdefault("KEYCLOAK_ADMIN_PASSWORD", "admin")
+os.environ.setdefault("DATABASE_URL", "")
+os.environ.setdefault("ADMIN_KEY", "test-admin-key")
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ui_root = os.path.join(repo_root, "services", "ui_iot")
-sys.path.insert(0, repo_root)
-sys.path.insert(0, ui_root)
 services_path = Path(repo_root) / "services"
-sys.path.insert(0, str(services_path))
+
+# Ensure the repo's top-level `services/` directory can be imported as a namespace
+# package (many legacy tests use `import services.<svc>`). We only need `ui_root`
+# temporarily to import `app` / `routes` using the ui_iot entrypoint style.
+for p in (repo_root, str(services_path)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+_added_ui_root = False
+if ui_root not in sys.path:
+    sys.path.insert(0, ui_root)
+    _added_ui_root = True
 
 from routes import customer as customer_routes
 from routes import operator as operator_routes
@@ -40,6 +52,11 @@ try:
     from app import app
 finally:
     os.chdir(_orig_cwd)
+    if _added_ui_root:
+        # Prevent `services/` inside ui_iot from shadowing the top-level namespace.
+        sys.path.remove(ui_root)
+        if sys.modules.get("services", None) and getattr(sys.modules["services"], "__file__", "").startswith(ui_root):
+            del sys.modules["services"]
 from tests.helpers.auth import (
     get_customer1_token,
     get_customer2_token,

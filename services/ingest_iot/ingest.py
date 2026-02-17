@@ -24,7 +24,12 @@ from shared.audit import init_audit_logger, get_audit_logger
 from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import ingest_messages_total, ingest_queue_depth
-from topic_matcher import mqtt_topic_matches, evaluate_payload_filter
+try:
+    # Package import (e.g. `import services.ingest_iot.ingest`)
+    from .topic_matcher import mqtt_topic_matches, evaluate_payload_filter
+except ImportError:  # pragma: no cover
+    # Script/legacy import when `services/ingest_iot` is on sys.path
+    from topic_matcher import mqtt_topic_matches, evaluate_payload_filter
 
 MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -40,7 +45,7 @@ PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.environ["PG_PASS"]
+PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 AUTO_PROVISION = os.getenv("AUTO_PROVISION", "0") == "1"
