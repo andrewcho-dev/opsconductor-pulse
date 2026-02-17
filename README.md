@@ -51,8 +51,7 @@ All traffic goes through a **Caddy** reverse proxy on ports 80/443. Port 80 redi
 - On-call schedules: rotation layers, daily/weekly cadence, temporary overrides, 14-day timeline
 
 ### Outbound Notifications
-- **Legacy delivery pipeline**: Webhook, SNMP (v2c/v3), Email (SMTP), MQTT
-- **Phase 91+ routing engine**: Slack, PagerDuty (Events API v2), Microsoft Teams, generic HTTP
+- Slack, PagerDuty (Events API v2), Microsoft Teams, generic HTTP webhook
 - Per-channel routing rules with severity filter, alert type filter, and throttle
 - HMAC signing for generic webhooks
 
@@ -82,7 +81,7 @@ All traffic goes through a **Caddy** reverse proxy on ports 80/443. Port 80 redi
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend framework | React 18 + TypeScript |
+| Frontend framework | React + TypeScript |
 | Build tool | Vite |
 | Styling | TailwindCSS + shadcn/ui |
 | Charts | ECharts (gauges, heatmaps, area charts), uPlot (time-series) |
@@ -120,14 +119,8 @@ frontend/              # React SPA (Vite + TypeScript + TailwindCSS)
 db/
   migrations/         # 080 PostgreSQL + TimescaleDB migrations
 docs/
-  ARCHITECTURE.md     # Full system architecture reference
-  PROJECT_MAP.md      # Quick-reference network + data flow map
-  API_REFERENCE.md    # Complete API endpoint reference
-  RUNBOOK.md          # Operations, migrations, troubleshooting
-  TENANT_CONTEXT_CONTRACT.md  # Tenant isolation invariants
-  CUSTOMER_PLANE_ARCHITECTURE.md  # Auth and customer API design
-  INTEGRATIONS_AND_DELIVERY.md    # Alert delivery pipeline
-  cursor-prompts/     # Phase-by-phase implementation history (phases 1–92)
+  index.md            # Documentation hub (architecture/api/services/features/ops/dev)
+  cursor-prompts/     # Phase-by-phase implementation history (phases 1–142)
 services/
   ingest_iot/         # MQTT + HTTP telemetry ingestion
   evaluator_iot/      # State evaluation, alert generation
@@ -139,11 +132,9 @@ services/
     notifications/    # dispatcher.py, senders.py
     oncall/           # resolver.py
   provision_api/      # Device provisioning admin API
-  dispatcher/         # Alert → delivery job routing (legacy pipeline)
-  delivery_worker/    # Webhook/SNMP/email/MQTT delivery (legacy pipeline)
-  ops_worker/         # Platform health monitoring
+  ops_worker/         # Health monitoring, metrics collection, background jobs
+                      #   (escalation, reports, export, OTA, certificates, commands)
   subscription_worker/# Subscription lifecycle management
-  maintenance/        # DB housekeeping
   shared/             # Shared utilities (ingest_core, auth cache, batch writer)
 simulator/
   device_sim_iot/     # 25-device IoT simulator
@@ -192,15 +183,18 @@ OpsConductor-Pulse uses **Keycloak** for OIDC authentication. The React SPA uses
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, data flows, security model |
-| [API_REFERENCE.md](docs/API_REFERENCE.md) | All API endpoints with parameters and examples |
-| [RUNBOOK.md](docs/RUNBOOK.md) | Operations guide — migrations, deployment, troubleshooting |
-| [PROJECT_MAP.md](docs/PROJECT_MAP.md) | Quick-reference topology and flow map |
-| [TENANT_CONTEXT_CONTRACT.md](docs/TENANT_CONTEXT_CONTRACT.md) | Tenant isolation invariants |
-| [CUSTOMER_PLANE_ARCHITECTURE.md](docs/CUSTOMER_PLANE_ARCHITECTURE.md) | Auth and customer API design |
-| [INTEGRATIONS_AND_DELIVERY.md](docs/INTEGRATIONS_AND_DELIVERY.md) | Legacy alert delivery pipeline |
+All documentation lives in the [`docs/`](docs/index.md) directory, organized by topic:
+
+| Section | What |
+|---------|------|
+| [Architecture](docs/architecture/overview.md) | System design, service map, tenant isolation |
+| [API Reference](docs/api/overview.md) | Endpoints, authentication, Pulse Envelope spec |
+| [Services](docs/services/ui-iot.md) | Per-service configuration and internals |
+| [Features](docs/features/alerting.md) | Alerting, integrations, devices, dashboards, billing |
+| [Operations](docs/operations/deployment.md) | Deployment, runbook, database, monitoring, security |
+| [Development](docs/development/getting-started.md) | Getting started, testing, frontend, conventions |
+
+Full index: [`docs/index.md`](docs/index.md)
 
 ---
 
@@ -208,10 +202,10 @@ OpsConductor-Pulse uses **Keycloak** for OIDC authentication. The React SPA uses
 
 ```bash
 # Unit tests
-python3 -m pytest tests/unit/ -v
+pytest tests/unit/ -m unit -q
 
 # With coverage
-pytest --cov=services tests/unit/
+pytest -o addopts='' tests/unit/ -m unit --cov=services --cov-report=term-missing -q
 
 # Frontend type check
 cd frontend && npx tsc --noEmit
@@ -219,6 +213,8 @@ cd frontend && npx tsc --noEmit
 # Frontend build
 cd frontend && npm run build
 ```
+
+See [docs/development/testing.md](docs/development/testing.md) for full testing guide.
 
 ## Applying Migrations
 
@@ -229,6 +225,8 @@ python db/migrate.py
 # Or apply a specific migration manually
 psql "$DATABASE_URL" -f db/migrations/080_iam_permissions.sql
 ```
+
+See [docs/operations/database.md](docs/operations/database.md) for the full migration index (84 migrations).
 
 ## Rebuilding After Backend Changes
 

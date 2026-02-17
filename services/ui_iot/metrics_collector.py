@@ -18,7 +18,7 @@ PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.environ["PG_PASS"]
+PG_PASS = os.getenv("PG_PASS", "iot_dev")
 
 # Service URLs
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")

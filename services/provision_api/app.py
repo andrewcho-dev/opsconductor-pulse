@@ -20,10 +20,10 @@ PG_HOST = os.getenv("PG_HOST", "iot-postgres")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.environ["PG_PASS"]
+PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-ADMIN_KEY = os.environ["ADMIN_KEY"]
+ADMIN_KEY = os.getenv("ADMIN_KEY", "")
 ACTIVATION_TTL_MINUTES = int(os.getenv("ACTIVATION_TTL_MINUTES", "60"))
 MQTT_PASSWD_FILE = os.getenv("MQTT_PASSWD_FILE", "/mosquitto/passwd/passwd")
 app = FastAPI(title="IoT Provisioning API", version="0.1")

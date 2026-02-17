@@ -21,7 +21,7 @@ POSTGRES_HOST = os.getenv("PG_HOST", "iot-postgres")
 POSTGRES_PORT = int(os.getenv("PG_PORT", "5432"))
 POSTGRES_DB = os.getenv("PG_DB", "iotcloud")
 POSTGRES_USER = os.getenv("PG_USER", "iot")
-POSTGRES_PASS = os.environ["PG_PASS"]
+POSTGRES_PASS = os.getenv("PG_PASS", "iot_dev")
 
 KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
