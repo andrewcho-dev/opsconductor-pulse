@@ -1,0 +1,96 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 10, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (status) (pulse_fleet_devices_by_status)",
+          "instant": true,
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices by Status",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 10, "y": 0 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        { "expr": "sum(pulse_fleet_devices_by_status{status=\"ONLINE\"})", "refId": "A" }
+      ],
+      "title": "Total Connected Devices",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": {},
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (tenant_id) (pulse_fleet_devices_by_status)",
+          "instant": true,
+          "legendFormat": "{{tenant_id}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices by Tenant",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (msg_type) (rate(pulse_ingest_messages_total[5m]))",
+          "legendFormat": "{{msg_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry Ingestion Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "options": { "legend": { "showLegend": false } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        { "expr": "pulse_ingest_queue_depth", "refId": "A" }
+      ],
+      "title": "Ingest Queue Depth",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["opsconductor", "fleet"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "Device Fleet",
+  "uid": "device-fleet",
+  "version": 1
+}

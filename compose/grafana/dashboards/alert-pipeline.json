@@ -1,0 +1,95 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        { "expr": "rate(pulse_evaluator_rules_evaluated_total[5m])", "refId": "A" }
+      ],
+      "title": "Rules Evaluated / s",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (severity) (rate(pulse_evaluator_alerts_created_total[5m]))",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Alerts Created / s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 3,
+      "options": { "legend": { "showLegend": false } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        { "expr": "rate(pulse_evaluator_evaluation_errors_total[5m])", "refId": "A" }
+      ],
+      "title": "Evaluation Errors / s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 4,
+      "options": {},
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (severity) (pulse_fleet_active_alerts)",
+          "instant": true,
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Alerts by Severity",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "id": 5,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (channel_type) (rate(pulse_delivery_jobs_failed_total[5m]))",
+          "legendFormat": "{{channel_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Delivery Failures / s",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["opsconductor", "alerts"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "Alert Pipeline",
+  "uid": "alert-pipeline",
+  "version": 1
+}
