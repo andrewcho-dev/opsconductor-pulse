@@ -17,10 +17,12 @@ import {
   generateCertificate,
   rotateCertificate,
   revokeCertificate,
+  type DeviceCertificate,
   type GenerateCertResponse,
   type RotateCertResponse,
 } from "@/services/api/certificates";
 import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 
 interface DeviceCertificatesTabProps {
   deviceId: string;
@@ -74,6 +76,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) {
   const queryClient = useQueryClient();
+  const [revokeTarget, setRevokeTarget] = useState<DeviceCertificate | null>(null);
   const [generatedCert, setGeneratedCert] = useState<
     GenerateCertResponse | RotateCertResponse | null
   >(null);
@@ -230,15 +233,7 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={async () => {
-                            if (
-                              !window.confirm(
-                                "Revoke this certificate? The device will no longer be able to authenticate with it."
-                              )
-                            )
-                              return;
-                            await revokeMutation.mutateAsync(cert.id);
-                          }}
+                          onClick={() => setRevokeTarget(cert)}
                         >
                           Revoke
                         </Button>
@@ -302,6 +297,24 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title="Revoke Certificate"
+        description="Are you sure you want to revoke this certificate? The device will no longer be able to authenticate with it. This action cannot be undone."
+        confirmText="Revoke Certificate"
+        variant="destructive"
+        onConfirm={() => {
+          if (revokeTarget) {
+            void revokeMutation.mutateAsync(revokeTarget.id);
+            setRevokeTarget(null);
+          }
+        }}
+        isPending={revokeMutation.isPending}
+      />
     </div>
   );
 }

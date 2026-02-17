@@ -28,8 +28,6 @@ KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
 
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
 EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
-DISPATCHER_URL = os.getenv("DISPATCHER_HEALTH_URL", "http://iot-dispatcher:8080")
-DELIVERY_URL = os.getenv("DELIVERY_HEALTH_URL", "http://iot-delivery-worker:8080")
 
 router = APIRouter(
     prefix="/api/v1/operator/system",
@@ -202,8 +200,6 @@ async def get_system_health(request: Request):
         check_keycloak(),
         check_service("ingest", INGEST_URL),
         check_service("evaluator", EVALUATOR_URL),
-        check_service("dispatcher", DISPATCHER_URL),
-        check_service("delivery", DELIVERY_URL),
         return_exceptions=True,
     )
 
@@ -213,8 +209,6 @@ async def get_system_health(request: Request):
         "keycloak",
         "ingest",
         "evaluator",
-        "dispatcher",
-        "delivery",
     ]
 
     components = {}
@@ -224,10 +218,17 @@ async def get_system_health(request: Request):
         else:
             components[name] = result
 
-    statuses = [c.get("status", "unknown") for c in components.values()]
-    if all(s == "healthy" for s in statuses):
+    # Deprecated services removed in phase 138; keep keys for UI compatibility.
+    components["dispatcher"] = {"status": "unknown", "error": "deprecated"}
+    components["delivery"] = {"status": "unknown", "error": "deprecated"}
+
+    core_statuses = [
+        components[c].get("status", "unknown")
+        for c in ("postgres", "mqtt", "keycloak", "ingest", "evaluator")
+    ]
+    if all(s == "healthy" for s in core_statuses):
         overall = "healthy"
-    elif any(s == "down" for s in statuses):
+    elif any(s == "down" for s in core_statuses):
         overall = "degraded"
     else:
         overall = "degraded"
@@ -250,15 +251,13 @@ async def get_system_metrics(request: Request):
     service_metrics = await asyncio.gather(
         fetch_service_counters(INGEST_URL),
         fetch_service_counters(EVALUATOR_URL),
-        fetch_service_counters(DISPATCHER_URL),
-        fetch_service_counters(DELIVERY_URL),
         return_exceptions=True,
     )
 
     ingest_counters = service_metrics[0] if not isinstance(service_metrics[0], Exception) else {}
     evaluator_counters = service_metrics[1] if not isinstance(service_metrics[1], Exception) else {}
-    dispatcher_counters = service_metrics[2] if not isinstance(service_metrics[2], Exception) else {}
-    delivery_counters = service_metrics[3] if not isinstance(service_metrics[3], Exception) else {}
+    dispatcher_counters = {}
+    delivery_counters = {}
 
     pool = await get_pool()
     ingest_rate = await calculate_ingest_rate(pool)

@@ -9,8 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { CreateCampaignDialog } from "./CreateCampaignDialog";
-import type { CampaignStatus } from "@/services/api/ota";
+import type { CampaignStatus, OtaCampaign } from "@/services/api/ota";
 
 const STATUS_VARIANT: Record<
   CampaignStatus,
@@ -25,6 +26,7 @@ const STATUS_VARIANT: Record<
 
 export default function OtaCampaignsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [abortTarget, setAbortTarget] = useState<OtaCampaign | null>(null);
   const { data, isLoading } = useOtaCampaigns();
   const startMut = useStartCampaign();
   const pauseMut = usePauseCampaign();
@@ -134,11 +136,7 @@ export default function OtaCampaignsPage() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => {
-                          if (window.confirm(`Abort campaign "${c.name}"?`)) {
-                            abortMut.mutate(c.id);
-                          }
-                        }}
+                        onClick={() => setAbortTarget(c)}
                         disabled={abortMut.isPending}
                       >
                         Abort
@@ -168,6 +166,24 @@ export default function OtaCampaignsPage() {
           onCreated={() => setShowCreate(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!abortTarget}
+        onOpenChange={(open) => {
+          if (!open) setAbortTarget(null);
+        }}
+        title="Abort Campaign"
+        description={`Are you sure you want to abort the campaign "${abortTarget?.name}"? This action cannot be undone. Devices that have already updated will not be rolled back.`}
+        confirmText="Abort Campaign"
+        variant="destructive"
+        onConfirm={() => {
+          if (abortTarget) {
+            abortMut.mutate(abortTarget.id);
+            setAbortTarget(null);
+          }
+        }}
+        isPending={abortMut.isPending}
+      />
     </div>
   );
 }

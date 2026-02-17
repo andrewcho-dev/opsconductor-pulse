@@ -31,8 +31,6 @@ sys.path.insert(0, repo_root)
 sys.path.insert(0, ui_root)
 services_path = Path(repo_root) / "services"
 sys.path.insert(0, str(services_path))
-sys.path.insert(0, str(services_path / "dispatcher"))
-sys.path.insert(0, str(services_path / "delivery_worker"))
 
 from routes import customer as customer_routes
 from routes import operator as operator_routes

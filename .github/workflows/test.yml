@@ -155,7 +155,7 @@ jobs:
         run: |
           mkdir -p test-results
           pytest -m integration -v --tb=short \
-            --cov=services/ui_iot --cov=services/dispatcher --cov=services/delivery_worker \
+            --cov=services/ui_iot \
             --cov-report=xml --cov-report=term-missing --cov-fail-under=55 \
             --junitxml=test-results/integration.xml
 

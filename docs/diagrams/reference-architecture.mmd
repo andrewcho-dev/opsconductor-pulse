@@ -39,7 +39,6 @@ flowchart TD
         ESC["🪜 Escalation Engine\nescalation_worker\n60s tick\nMulti-level policies\nOn-call resolution"]
         ONCALL["📅 On-Call Resolver\nRotation layers\nOverride windows\nTimezone-aware"]
         NOTIF["📨 Notification Router\nSlack · PagerDuty\nTeams · HTTP\nSeverity filter\nThrottle"]
-        LEGACY["📦 Legacy Pipeline\ndispatcher\ndelivery_worker\nWebhook · SNMP\nEmail · MQTT\n5-retry backoff"]
     end
 
     %% ── Platform API ─────────────────────────────────────────────────
@@ -103,11 +102,9 @@ flowchart TD
     PG -- "OPEN alerts" --> ESC
     ESC --> ONCALL
     ESC --> NOTIF
-    PG --> LEGACY
 
     %% Notifications out
     NOTIF --> EXTNOTIFY
-    LEGACY --> EXTNOTIFY
 
     %% API layer ↔ data
     APIV2 --> PGB

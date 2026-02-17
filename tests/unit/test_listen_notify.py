@@ -24,22 +24,6 @@ async def test_evaluator_notify_event_clears_after_processing():
     assert not evaluator._notify_event.is_set()
 
 
-async def test_dispatcher_notify_event_set_on_callback():
-    from services.dispatcher import dispatcher
-
-    dispatcher._notify_event.clear()
-    dispatcher.on_fleet_alert_notify(None, None, "new_fleet_alert", "tenant-a")
-    assert dispatcher._notify_event.is_set()
-
-
-async def test_delivery_worker_notify_event_set_on_callback():
-    from services.delivery_worker import worker
-
-    worker._notify_event.clear()
-    worker.on_delivery_job_notify(None, None, "new_delivery_job", "")
-    assert worker._notify_event.is_set()
-
-
 async def test_create_listener_conn_called_with_correct_args(monkeypatch):
     import asyncpg
     from services.evaluator_iot import evaluator

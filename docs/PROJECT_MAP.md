@@ -41,11 +41,7 @@ Device → ingest (MQTT/HTTP)
            ▼
       New alert created
            │
-           ├──► dispatcher (legacy) ──► delivery_jobs ──► delivery_worker
-           │                                                │  │  │  │
-           │                                             Webhook SNMP Email MQTT
-           │
-           └──► notifications dispatcher (phase 91+)
+           └──► notification routing engine (ui)
                     │
                     ├── escalation_worker (every 60s, level-based)
                     │       └── resolves on-call schedule if configured
@@ -67,8 +63,6 @@ Device → ingest (MQTT/HTTP)
 | `api` | Device provisioning admin API | 8081 |
 | `ingest` | MQTT + HTTP telemetry ingestion | 8080 (internal) |
 | `evaluator` | Alert rule evaluation + state tracking | 8080 (internal) |
-| `dispatcher` | Alert → delivery job router (legacy) | 8080 (internal) |
-| `delivery_worker` | Webhook/SNMP/email/MQTT delivery | 8080 (internal) |
 | `ops_worker` | Platform health + metrics collection | — |
 | `subscription-worker` | Subscription lifecycle | — |
 | `keycloak` | OIDC identity provider | 8080 (internal) |

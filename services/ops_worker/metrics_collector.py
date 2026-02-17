@@ -22,8 +22,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
 EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
-DISPATCHER_URL = os.getenv("DISPATCHER_HEALTH_URL", "http://iot-dispatcher:8080")
-DELIVERY_URL = os.getenv("DELIVERY_HEALTH_URL", "http://iot-delivery-worker:8080")
 
 
 class MetricsCollector:
@@ -106,33 +104,6 @@ class MetricsCollector:
                 )
             else:
                 metrics.append((now, "healthy", "evaluator", {}, 0))
-
-            dispatcher_data = await self._fetch_service_health(client, "dispatcher", DISPATCHER_URL)
-            if dispatcher_data:
-                counters = dispatcher_data.get("counters", {})
-                metrics.extend(
-                    [
-                        (now, "alerts_processed", "dispatcher", {}, counters.get("alerts_processed", 0)),
-                        (now, "routes_matched", "dispatcher", {}, counters.get("routes_matched", 0)),
-                        (now, "healthy", "dispatcher", {}, 1),
-                    ]
-                )
-            else:
-                metrics.append((now, "healthy", "dispatcher", {}, 0))
-
-            delivery_data = await self._fetch_service_health(client, "delivery", DELIVERY_URL)
-            if delivery_data:
-                counters = delivery_data.get("counters", {})
-                metrics.extend(
-                    [
-                        (now, "jobs_succeeded", "delivery", {}, counters.get("jobs_succeeded", 0)),
-                        (now, "jobs_failed", "delivery", {}, counters.get("jobs_failed", 0)),
-                        (now, "jobs_pending", "delivery", {}, counters.get("jobs_pending", 0)),
-                        (now, "healthy", "delivery", {}, 1),
-                    ]
-                )
-            else:
-                metrics.append((now, "healthy", "delivery", {}, 0))
 
         try:
             async with self._pool.acquire() as conn:

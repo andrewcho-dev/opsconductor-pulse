@@ -152,12 +152,9 @@ This document describes the end-to-end reference architecture for OpsConductor-P
 ║  │  └──────────────────────────────────────────────────────────────────────────┘     │   ║
 ║  │                                                                                   │   ║
 ║  │  ┌──────────────────────────────────────────────────────────────────────────┐     │   ║
-║  │  │  LEGACY DELIVERY PIPELINE                                                │     │   ║
+║  │  │  DELIVERY (Phase 129+)                                                   │     │   ║
 ║  │  │                                                                          │     │   ║
-║  │  │  dispatcher → delivery_jobs → delivery_worker                           │     │   ║
-║  │  │  (5 retries, exponential backoff 30s–7200s)                             │     │   ║
-║  │  │                                                                          │     │   ║
-║  │  │  Webhook (HTTP POST) │ SNMP v2c/v3 │ Email (SMTP) │ MQTT publish       │     │   ║
+║  │  │  Unified routing engine in `ui` handles matching + delivery + retries.  │     │   ║
 ║  │  └──────────────────────────────────────────────────────────────────────────┘     │   ║
 ║  └───────────────────────────────────────────────────────────────────────────────────┘   ║
 ║                                                                                          ║
@@ -245,10 +242,7 @@ TimescaleDB (telemetry)
 ```
 Alert created
   │
-  ├── Legacy:  dispatcher → delivery_jobs → delivery_worker
-  │            (webhook / SNMP / email / MQTT, 5 retries)
-  │
-  └── Modern:  escalation_worker (60s tick)
+  └── escalation_worker (60s tick)
                │  check next_escalation_at ≤ NOW()
                │  increment level
                │  resolve on-call schedule
