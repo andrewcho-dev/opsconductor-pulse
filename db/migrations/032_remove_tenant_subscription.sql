@@ -57,7 +57,3 @@ SELECT DISTINCT tenant_id, 'SCHEMA_MIGRATION', 'system', 'migration-032',
        '{"action": "removed_tenant_subscription_table", "archived": true}'::jsonb
 FROM subscriptions
 LIMIT 1;
-
--- Step 8: Vacuum to reclaim space
-VACUUM ANALYZE subscriptions;
-VACUUM ANALYZE device_registry;

@@ -29,7 +29,7 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS mqtt_config JSONB;
 
 -- Add index for MQTT integrations
 CREATE INDEX IF NOT EXISTS idx_integrations_mqtt
-    ON integrations(tenant_id) WHERE type = 'mqtt';
+    ON integrations(tenant_id, type);
 
 -- Update config constraint to include MQTT requirements
 DO $$

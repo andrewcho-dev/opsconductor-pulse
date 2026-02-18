@@ -47,8 +47,8 @@ CREATE INDEX idx_audit_severity_time ON audit_log(severity, timestamp DESC) WHER
 CREATE INDEX idx_audit_entity ON audit_log(entity_type, entity_id, timestamp DESC);
 CREATE INDEX idx_audit_source ON audit_log(source_service, timestamp DESC);
 
--- Compression policy - compress chunks older than 7 days
-SELECT add_compression_policy('audit_log', INTERVAL '7 days', if_not_exists => TRUE);
+-- Note: Audit log compression is intentionally omitted because columnstore
+-- compression is incompatible with the RLS configuration used on this table.
 
 -- Retention policy - drop chunks older than 90 days
 SELECT add_retention_policy('audit_log', INTERVAL '90 days', if_not_exists => TRUE);
