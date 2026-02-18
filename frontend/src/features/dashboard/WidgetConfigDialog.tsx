@@ -24,6 +24,7 @@ import type { DashboardWidget } from "@/services/api/dashboards";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 import { Plus, X } from "lucide-react";
+import { useDevices } from "@/hooks/use-devices";
 
 interface WidgetConfigDialogProps {
   open: boolean;
@@ -63,6 +64,8 @@ export function WidgetConfigDialog({
   const [config, setConfig] = useState<Record<string, unknown>>(widget.config);
   const queryClient = useQueryClient();
   const definition = getWidgetDefinition(widget.widget_type);
+  const { data: devicesData, isLoading: devicesLoading } = useDevices({ limit: 200, offset: 0 });
+  const devices = devicesData?.devices ?? [];
 
   useEffect(() => {
     setTitle(widget.title);
@@ -87,6 +90,13 @@ export function WidgetConfigDialog({
 
   function renderConfigFields() {
     const widgetType = widget.widget_type;
+
+    const statusDotClass = (status: string | undefined) => {
+      if (status === "ONLINE") return "bg-status-online";
+      if (status === "STALE") return "bg-status-warning";
+      if (status === "OFFLINE") return "bg-status-critical";
+      return "bg-muted-foreground";
+    };
 
     if (
       widgetType === "fleet_overview" ||
@@ -120,8 +130,48 @@ export function WidgetConfigDialog({
       widgetType === "bar_chart" ||
       widgetType === "area_chart"
     ) {
+      const selectedDeviceId = Array.isArray(config.devices)
+        ? ((config.devices as unknown[]).find((d) => typeof d === "string") as string | undefined)
+        : undefined;
+
       return (
         <>
+          {["line_chart", "bar_chart", "area_chart"].includes(widgetType) && (
+            <div className="space-y-2">
+              <Label>Device</Label>
+              <Select
+                value={selectedDeviceId ?? ""}
+                onValueChange={(v) => updateConfig("devices", v ? [v] : [])}
+                disabled={devicesLoading || devices.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      devicesLoading
+                        ? "Loading devices..."
+                        : devices.length === 0
+                          ? "No devices available"
+                          : "Select device"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {devices.map((d) => (
+                    <SelectItem key={d.device_id} value={d.device_id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 rounded-full ${statusDotClass(d.status)}`}
+                          aria-hidden="true"
+                        />
+                        <span>{d.device_id}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Metric</Label>
             <Select
@@ -223,6 +273,8 @@ export function WidgetConfigDialog({
     }
 
     if (widgetType === "stat_card") {
+      const sparklineDevice =
+        typeof config.sparkline_device === "string" ? (config.sparkline_device as string) : "none";
       return (
         <>
           <div className="space-y-2">
@@ -238,6 +290,43 @@ export function WidgetConfigDialog({
                 {METRICS.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Sparkline Device (optional)</Label>
+            <Select
+              value={sparklineDevice}
+              onValueChange={(v) =>
+                updateConfig("sparkline_device", v === "none" ? undefined : v)
+              }
+              disabled={devicesLoading || devices.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    devicesLoading
+                      ? "Loading devices..."
+                      : devices.length === 0
+                        ? "No devices available"
+                        : "Select device"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {devices.map((d) => (
+                  <SelectItem key={d.device_id} value={d.device_id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`h-2 w-2 rounded-full ${statusDotClass(d.status)}`}
+                        aria-hidden="true"
+                      />
+                      <span>{d.device_id}</span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
