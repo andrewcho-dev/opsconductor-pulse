@@ -49,38 +49,40 @@ function TableRendererInner({ config }: WidgetRendererProps) {
   }
 
   return (
-    <div className="rounded-md border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Device</TableHead>
-            <TableHead>Site</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Battery</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {devices.map((d) => (
-            <TableRow key={d.device_id}>
-              <TableCell>
-                <Link
-                  to={`/devices/${d.device_id}`}
-                  className="font-mono text-xs text-primary hover:underline"
-                >
-                  {d.device_id}
-                </Link>
-              </TableCell>
-              <TableCell className="text-sm">{d.site_id}</TableCell>
-              <TableCell>
-                <StatusBadge status={d.status} />
-              </TableCell>
-              <TableCell className="text-right text-sm">
-                {d.state?.battery_pct != null ? `${d.state.battery_pct}%` : "—"}
-              </TableCell>
+    <div className="h-full flex flex-col overflow-hidden rounded-md border border-border">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Device</TableHead>
+              <TableHead>Site</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Battery</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {devices.map((d) => (
+              <TableRow key={d.device_id}>
+                <TableCell>
+                  <Link
+                    to={`/devices/${d.device_id}`}
+                    className="font-mono text-xs text-primary hover:underline"
+                  >
+                    {d.device_id}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-sm">{d.site_id}</TableCell>
+                <TableCell>
+                  <StatusBadge status={d.status} />
+                </TableCell>
+                <TableCell className="text-right text-sm">
+                  {d.state?.battery_pct != null ? `${d.state.battery_pct}%` : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

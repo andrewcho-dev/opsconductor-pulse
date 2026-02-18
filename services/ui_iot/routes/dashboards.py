@@ -29,12 +29,18 @@ WIDGET_TYPES = {
     "kpi_tile",
     "line_chart",
     "bar_chart",
+    "area_chart",
     "gauge",
     "table",
     "alert_feed",
     "fleet_status",
+    "fleet_overview",
     "device_count",
     "health_score",
+    "stat_card",
+    "pie_chart",
+    "scatter",
+    "radar",
 }
 
 # Default dashboard template widgets

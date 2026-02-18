@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { WidgetContainer } from "./widgets/WidgetContainer";
 import { AddWidgetDrawer } from "./AddWidgetDrawer";
 import { WidgetConfigDialog } from "./WidgetConfigDialog";
+import { getWidgetDefinition } from "./widgets/widget-registry";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,12 +55,17 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
     () =>
       dashboard.widgets.map((w) => {
         const local = localLayoutRef.current?.find((l) => l.i === String(w.id));
+        const def = getWidgetDefinition(w.widget_type);
         return {
           i: String(w.id),
           x: local?.x ?? w.position?.x ?? 0,
           y: local?.y ?? w.position?.y ?? 0,
-          w: local?.w ?? w.position?.w ?? 2,
-          h: local?.h ?? w.position?.h ?? 2,
+          w: local?.w ?? w.position?.w ?? def?.defaultSize.w ?? 2,
+          h: local?.h ?? w.position?.h ?? def?.defaultSize.h ?? 2,
+          minW: def?.minSize.w ?? 1,
+          minH: def?.minSize.h ?? 1,
+          maxW: def?.maxSize.w,
+          maxH: def?.maxSize.h,
           static: !isEditing,
         };
       }),

@@ -127,20 +127,10 @@ export function WidgetConfigDialog({
     ) {
       return (
         <div className="space-y-2">
-          <Label htmlFor="display_mode">Display Mode</Label>
-          <Select
-            value={(config.display_mode as string) ?? "count"}
-            onValueChange={(v) => updateConfig("display_mode", v)}
-          >
-            <SelectTrigger id="display_mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="count">Device Count</SelectItem>
-              <SelectItem value="donut">Status Donut</SelectItem>
-              <SelectItem value="health">Health Score</SelectItem>
-            </SelectContent>
-          </Select>
+          <p className="text-sm text-muted-foreground">
+            Fleet Overview is a composite widget. Configure thresholds below to control health coloring.
+          </p>
+          {renderThresholdsTab()}
         </div>
       );
     }

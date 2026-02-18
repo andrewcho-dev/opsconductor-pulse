@@ -126,14 +126,14 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     type: "fleet_overview",
     label: "Fleet Overview",
     description:
-      "Configurable fleet status display. Show device counts, status donut, or health score.",
+      "Composite fleet dashboard — health score, device status, uptime, alerts, and battery at a glance.",
     category: "fleet",
     icon: "Activity",
     defaultTitle: "Fleet Overview",
-    defaultSize: { w: 3, h: 2 },
-    minSize: { w: 2, h: 1 },
+    defaultSize: { w: 6, h: 3 },
+    minSize: { w: 4, h: 2 },
     maxSize: { w: 6, h: 6 },
-    defaultConfig: { display_mode: "count" },
+    defaultConfig: {},
     component: () => import("./renderers/FleetOverviewRenderer"),
   },
   area_chart: {

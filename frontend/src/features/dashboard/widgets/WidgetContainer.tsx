@@ -65,12 +65,12 @@ function WidgetContainerInner({
   }, [widget.widget_type, effectiveConfig]);
 
   return (
-    <Card className="relative h-full flex flex-col overflow-hidden">
+    <Card className="relative h-full flex flex-col overflow-hidden py-0 gap-0">
       {showTitle && (
-        <CardHeader className="flex flex-row items-center justify-between py-1.5 px-2 shrink-0">
+        <CardHeader className="flex flex-row items-center justify-between py-1 px-2 shrink-0">
           <CardTitle className="text-sm font-medium truncate">{displayTitle}</CardTitle>
           {isEditing && (
-            <div className="flex gap-1 shrink-0">
+            <div className="flex gap-1 shrink-0 relative z-20">
               {onConfigure && (
                 <button
                   onClick={() => onConfigure(widget.id)}
@@ -95,7 +95,7 @@ function WidgetContainerInner({
       )}
 
       {!showTitle && isEditing && (
-        <div className="absolute top-1 right-1 z-10 flex gap-1">
+        <div className="absolute top-1 right-1 z-20 flex gap-1">
           {onConfigure && (
             <button
               onClick={() => onConfigure(widget.id)}
@@ -116,7 +116,7 @@ function WidgetContainerInner({
           )}
         </div>
       )}
-      <CardContent className="flex-1 overflow-hidden min-h-0 p-1.5">
+      <CardContent className="flex-1 overflow-hidden min-h-0 px-1.5 pt-0 pb-1">
         {needsConfiguration && onConfigure ? (
           <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm text-muted-foreground">
