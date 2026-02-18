@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148]
 ---
 
 # Frontend
@@ -195,8 +195,8 @@ Phase 147 overhauls the widget system to support responsive sizing, formatting c
 
 ### Widget Categories
 
-- Charts - time-series visualizations (line chart, bar chart).
-- Metrics - single-value displays (KPI tile, gauge).
+- Charts - time-series and comparison visualizations (line chart, area chart, bar chart, pie/donut, scatter plot, radar).
+- Metrics - single-value displays (KPI tile, stat card with sparkline, gauge with 4 styles).
 - Data - tabular/list views (device table, alert feed).
 - Fleet Overview - consolidated fleet status (count, donut, health score).
 
@@ -206,6 +206,22 @@ Phase 147 overhauls the widget system to support responsive sizing, formatting c
 - Display: `display_as` (overrides visualization type), `display_mode` (fleet widget mode).
 - Formatting: `decimal_precision`, `show_title`, `show_legend`, `show_x_axis`, `show_y_axis`, `y_axis_min`, `y_axis_max`.
 - Thresholds: `thresholds: [{ value, color, label? }]` - rendered as markLines on charts, color zones on gauges, value coloring on KPI tiles.
+- Display sub-types:
+  - `gauge_style`: `"arc" | "speedometer" | "ring" | "grade"` - selects gauge visual style
+  - `smooth`: boolean - smooth curve interpolation for line/area charts
+  - `step`: boolean - step-line interpolation (overrides smooth)
+  - `area_fill`: boolean - area fill under line chart
+  - `stacked`: boolean - stacked series for bar/area charts
+  - `horizontal`: boolean - horizontal bar orientation
+- Pie chart fields:
+  - `pie_data_source`: `"fleet_status" | "alert_severity"` - data source for pie chart
+  - `doughnut`: boolean - donut vs filled pie style
+  - `show_labels`: boolean - show percentage labels on slices
+- Scatter chart fields:
+  - `x_metric`: string - metric for X axis
+  - `y_metric`: string - metric for Y axis
+- Radar chart fields:
+  - `radar_metrics`: string[] - 3-6 metrics for radar axes
 
 ### Renderer Rules
 
@@ -214,6 +230,11 @@ Phase 147 overhauls the widget system to support responsive sizing, formatting c
 - All numeric displays MUST respect `decimal_precision` from config.
 - Chart renderers MUST apply `show_legend`, `show_x_axis`, `show_y_axis` and `y_axis_min`/`y_axis_max` to ECharts options.
 - New renderers MUST be wrapped in `min-h-[100px]` or `min-h-[120px]` to prevent collapse in small widgets.
+- Gauge renderers MUST support `gauge_style` config and render all 4 styles via ECharts gauge options.
+- Chart renderers that support sub-types (smooth, step, stacked, horizontal) MUST default to existing behavior when config fields are absent.
+- Stat card renderers MUST show sparkline only when historical data is available.
+- New visualization types for existing data shapes should use `display_as` switching, not new widget types.
+- New visualization types with unique data needs (multi-metric, two-axis) should be standalone widget types.
 
 ### Prohibited Patterns
 
@@ -221,6 +242,9 @@ Phase 147 overhauls the widget system to support responsive sizing, formatting c
 - Hardcoded decimal places (use `config.decimal_precision`).
 - Creating new widget types for variations of existing data (use `display_as` or `display_mode`).
 - Skipping threshold support in new numeric renderers.
+- Creating separate widget types for chart sub-types (use config toggles: smooth, step, stacked, horizontal).
+- Hardcoding gauge style (use `config.gauge_style` to determine rendering).
+- Separate renderers for pie vs donut (use `config.doughnut` toggle).
 
 ## State Management
 

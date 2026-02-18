@@ -16,6 +16,8 @@ export default function BarChartRenderer({ config }: WidgetRendererProps) {
   const yAxisMax = config.y_axis_max as number | undefined;
   const thresholds =
     (config.thresholds as Array<{ value: number; color: string; label?: string }>) ?? [];
+  const isStacked = (config.stacked as boolean | undefined) ?? false;
+  const isHorizontal = (config.horizontal as boolean | undefined) ?? false;
 
   const { data, isLoading } = useQuery({
     queryKey: ["widget-bar-chart", metric],
@@ -29,42 +31,48 @@ export default function BarChartRenderer({ config }: WidgetRendererProps) {
     const offline = data?.offline ?? data?.OFFLINE ?? 0;
     const categories = ["Online", "Stale", "Offline"];
     const values = [online, stale, offline];
+
+    const categoryAxis = {
+      type: "category" as const,
+      data: categories,
+      axisLabel: { show: isHorizontal ? showYAxis : showXAxis },
+      axisTick: { show: isHorizontal ? showYAxis : showXAxis },
+      axisLine: { show: isHorizontal ? showYAxis : showXAxis },
+    };
+
+    const valueAxis = {
+      type: "value" as const,
+      min: yAxisMin,
+      max: yAxisMax,
+      axisLabel: { show: isHorizontal ? showXAxis : showYAxis },
+      axisTick: { show: isHorizontal ? showXAxis : showYAxis },
+      axisLine: { show: isHorizontal ? showXAxis : showYAxis },
+      splitLine: { show: isHorizontal ? showXAxis : showYAxis },
+    };
+
     return {
       tooltip: { trigger: "axis" },
       legend: showLegend ? {} : { show: false },
       grid: {
-        left: showYAxis ? 30 : 10,
+        left: isHorizontal ? (showXAxis ? 30 : 10) : showYAxis ? 30 : 10,
         right: 10,
         top: 10,
-        bottom: showXAxis ? 30 : 10,
+        bottom: isHorizontal ? (showYAxis ? 30 : 10) : showXAxis ? 30 : 10,
       },
-      xAxis: {
-        type: "category",
-        data: categories,
-        axisLabel: { show: showXAxis },
-        axisTick: { show: showXAxis },
-        axisLine: { show: showXAxis },
-      },
-      yAxis: {
-        type: "value",
-        min: yAxisMin,
-        max: yAxisMax,
-        axisLabel: { show: showYAxis },
-        axisTick: { show: showYAxis },
-        axisLine: { show: showYAxis },
-        splitLine: { show: showYAxis },
-      },
+      xAxis: isHorizontal ? valueAxis : categoryAxis,
+      yAxis: isHorizontal ? categoryAxis : valueAxis,
       series: [
         {
           type: "bar",
           data: values,
+          ...(isStacked ? { stack: "total" } : {}),
           markLine:
             thresholds.length > 0
               ? {
                   silent: true,
                   symbol: "none",
                   data: thresholds.map((t) => ({
-                    yAxis: t.value,
+                    ...(isHorizontal ? { xAxis: t.value } : { yAxis: t.value }),
                     lineStyle: { color: t.color, type: "dashed", width: 1 },
                     label: {
                       show: !!t.label,
@@ -79,7 +87,7 @@ export default function BarChartRenderer({ config }: WidgetRendererProps) {
         },
       ],
     };
-  }, [data, showLegend, showXAxis, showYAxis, thresholds, yAxisMin, yAxisMax]);
+  }, [data, showLegend, showXAxis, showYAxis, thresholds, yAxisMin, yAxisMax, isStacked, isHorizontal]);
 
   if (isLoading) return <Skeleton className="h-full w-full min-h-[120px]" />;
   return (

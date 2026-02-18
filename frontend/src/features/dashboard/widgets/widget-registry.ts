@@ -136,6 +136,76 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultConfig: { display_mode: "count" },
     component: () => import("./renderers/FleetOverviewRenderer"),
   },
+  area_chart: {
+    type: "area_chart",
+    label: "Area Chart",
+    description:
+      "Filled area chart with gradient. Ideal for showing volume and trends over time. Supports stacking.",
+    category: "charts",
+    icon: "AreaChart",
+    defaultTitle: "Area Trend",
+    defaultSize: { w: 4, h: 3 },
+    minSize: { w: 2, h: 2 },
+    maxSize: { w: 12, h: 6 },
+    defaultConfig: { metric: "temperature", time_range: "24h", devices: [] },
+    component: () => import("./renderers/AreaChartRenderer"),
+  },
+  stat_card: {
+    type: "stat_card",
+    label: "Stat Card",
+    description:
+      "Metric value with sparkline trend and directional arrow. At-a-glance monitoring with context.",
+    category: "metrics",
+    icon: "Activity",
+    defaultTitle: "Metric",
+    defaultSize: { w: 2, h: 1 },
+    minSize: { w: 2, h: 1 },
+    maxSize: { w: 4, h: 2 },
+    defaultConfig: { metric: "device_count" },
+    component: () => import("./renderers/StatCardRenderer"),
+  },
+  pie_chart: {
+    type: "pie_chart",
+    label: "Pie / Donut",
+    description:
+      "Proportional breakdown of fleet status, alert severity, or grouped metric data.",
+    category: "charts",
+    icon: "PieChart",
+    defaultTitle: "Distribution",
+    defaultSize: { w: 3, h: 3 },
+    minSize: { w: 2, h: 2 },
+    maxSize: { w: 6, h: 6 },
+    defaultConfig: { pie_data_source: "fleet_status", doughnut: true },
+    component: () => import("./renderers/PieChartRenderer"),
+  },
+  scatter: {
+    type: "scatter",
+    label: "Scatter Plot",
+    description:
+      "Two-metric correlation chart. Each dot is a device, showing relationship between metrics.",
+    category: "charts",
+    icon: "ScatterChart",
+    defaultTitle: "Correlation",
+    defaultSize: { w: 4, h: 3 },
+    minSize: { w: 3, h: 2 },
+    maxSize: { w: 12, h: 6 },
+    defaultConfig: { x_metric: "temperature", y_metric: "humidity", time_range: "24h" },
+    component: () => import("./renderers/ScatterRenderer"),
+  },
+  radar: {
+    type: "radar",
+    label: "Radar Chart",
+    description:
+      "Spider chart for multi-metric comparison. See 3-6 metrics at once for fleet health overview.",
+    category: "charts",
+    icon: "Radar",
+    defaultTitle: "Multi-Metric",
+    defaultSize: { w: 3, h: 3 },
+    minSize: { w: 2, h: 2 },
+    maxSize: { w: 6, h: 6 },
+    defaultConfig: { radar_metrics: ["temperature", "humidity", "pressure"], time_range: "24h" },
+    component: () => import("./renderers/RadarRenderer"),
+  },
 };
 
 export function getWidgetDefinition(type: string): WidgetDefinition | undefined {
@@ -174,19 +244,33 @@ export function getWidgetsByCategory(): Array<{
 export const DISPLAY_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
   line_chart: [
     { value: "line", label: "Line Chart" },
+    { value: "area", label: "Area Chart" },
+    { value: "bar", label: "Bar Chart" },
+  ],
+  area_chart: [
+    { value: "area", label: "Area Chart" },
+    { value: "line", label: "Line Chart" },
     { value: "bar", label: "Bar Chart" },
   ],
   bar_chart: [
     { value: "bar", label: "Bar Chart" },
     { value: "line", label: "Line Chart" },
+    { value: "area", label: "Area Chart" },
   ],
   kpi_tile: [
+    { value: "kpi", label: "KPI Tile" },
+    { value: "stat_card", label: "Stat Card" },
+    { value: "gauge", label: "Gauge" },
+  ],
+  stat_card: [
+    { value: "stat_card", label: "Stat Card" },
     { value: "kpi", label: "KPI Tile" },
     { value: "gauge", label: "Gauge" },
   ],
   gauge: [
     { value: "gauge", label: "Gauge" },
     { value: "kpi", label: "KPI Tile" },
+    { value: "stat_card", label: "Stat Card" },
   ],
 };
 
@@ -197,8 +281,10 @@ const DISPLAY_RENDERERS: Record<
 > = {
   line: () => import("./renderers/LineChartRenderer"),
   bar: () => import("./renderers/BarChartRenderer"),
+  area: () => import("./renderers/AreaChartRenderer"),
   kpi: () => import("./renderers/KpiTileRenderer"),
   gauge: () => import("./renderers/GaugeRenderer"),
+  stat_card: () => import("./renderers/StatCardRenderer"),
 };
 
 /**

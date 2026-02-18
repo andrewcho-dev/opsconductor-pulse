@@ -29,7 +29,13 @@ export type WidgetType =
   | "fleet_overview"
   | "fleet_status"
   | "device_count"
-  | "health_score";
+  | "health_score"
+  // Phase 148 additions:
+  | "area_chart"
+  | "stat_card"
+  | "pie_chart"
+  | "scatter"
+  | "radar";
 
 export interface DashboardWidget {
   id: number;

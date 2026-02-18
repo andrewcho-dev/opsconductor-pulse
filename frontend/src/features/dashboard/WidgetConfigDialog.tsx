@@ -114,7 +114,12 @@ export function WidgetConfigDialog({
       );
     }
 
-    if (widgetType === "kpi_tile" || widgetType === "line_chart" || widgetType === "bar_chart") {
+    if (
+      widgetType === "kpi_tile" ||
+      widgetType === "line_chart" ||
+      widgetType === "bar_chart" ||
+      widgetType === "area_chart"
+    ) {
       return (
         <>
           <div className="space-y-2">
@@ -178,6 +183,23 @@ export function WidgetConfigDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label>Gauge Style</Label>
+            <Select
+              value={(config.gauge_style as string) ?? "arc"}
+              onValueChange={(v) => updateConfig("gauge_style", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="arc">Progress Arc</SelectItem>
+                <SelectItem value="speedometer">Speedometer</SelectItem>
+                <SelectItem value="ring">Ring</SelectItem>
+                <SelectItem value="grade">Grade Bands</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Min</Label>
@@ -195,6 +217,193 @@ export function WidgetConfigDialog({
                 onChange={(e) => updateConfig("max", Number(e.target.value))}
               />
             </div>
+          </div>
+        </>
+      );
+    }
+
+    if (widgetType === "stat_card") {
+      return (
+        <>
+          <div className="space-y-2">
+            <Label>Metric</Label>
+            <Select
+              value={(config.metric as string) || "device_count"}
+              onValueChange={(v) => updateConfig("metric", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select metric" />
+              </SelectTrigger>
+              <SelectContent>
+                {METRICS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </>
+      );
+    }
+
+    if (widgetType === "pie_chart") {
+      return (
+        <>
+          <div className="space-y-2">
+            <Label>Data Source</Label>
+            <Select
+              value={(config.pie_data_source as string) ?? "fleet_status"}
+              onValueChange={(v) => updateConfig("pie_data_source", v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fleet_status">Fleet Status</SelectItem>
+                <SelectItem value="alert_severity">Alert Severity</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="doughnut">Donut Style</Label>
+            <Switch
+              id="doughnut"
+              checked={(config.doughnut as boolean | undefined) ?? true}
+              onCheckedChange={(checked) => updateConfig("doughnut", checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="show_labels">Show Labels</Label>
+            <Switch
+              id="show_labels"
+              checked={(config.show_labels as boolean | undefined) ?? true}
+              onCheckedChange={(checked) => updateConfig("show_labels", checked)}
+            />
+          </div>
+        </>
+      );
+    }
+
+    if (widgetType === "scatter") {
+      return (
+        <>
+          <div className="space-y-2">
+            <Label>X Axis Metric</Label>
+            <Select
+              value={(config.x_metric as string) || "temperature"}
+              onValueChange={(v) => updateConfig("x_metric", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select X metric" />
+              </SelectTrigger>
+              <SelectContent>
+                {METRICS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Y Axis Metric</Label>
+            <Select
+              value={(config.y_metric as string) || "humidity"}
+              onValueChange={(v) => updateConfig("y_metric", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Y metric" />
+              </SelectTrigger>
+              <SelectContent>
+                {METRICS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Time Range</Label>
+            <Select
+              value={(config.time_range as string) || "24h"}
+              onValueChange={(v) => updateConfig("time_range", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select range" />
+              </SelectTrigger>
+              <SelectContent>
+                {TIME_RANGES.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </>
+      );
+    }
+
+    if (widgetType === "radar") {
+      const selectedMetrics = Array.isArray(config.radar_metrics)
+        ? (config.radar_metrics as string[])
+        : ["temperature", "humidity", "pressure"];
+
+      return (
+        <>
+          <div className="space-y-2">
+            <Label>Metrics (select 3-6)</Label>
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+              {METRICS.map((m) => {
+                const isSelected = selectedMetrics.includes(m.value);
+                const atLimit = selectedMetrics.length >= 6 && !isSelected;
+                return (
+                  <label
+                    key={m.value}
+                    className={`flex items-center gap-2 text-sm rounded px-2 py-1 cursor-pointer hover:bg-accent ${atLimit ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={atLimit}
+                      onChange={(e) => {
+                        const newMetrics = e.target.checked
+                          ? [...selectedMetrics, m.value]
+                          : selectedMetrics.filter((x) => x !== m.value);
+                        if (newMetrics.length >= 3) {
+                          updateConfig("radar_metrics", newMetrics);
+                        }
+                      }}
+                      className="rounded"
+                    />
+                    {m.label}
+                  </label>
+                );
+              })}
+            </div>
+            {selectedMetrics.length < 3 && (
+              <p className="text-xs text-destructive">Select at least 3 metrics</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Time Range</Label>
+            <Select
+              value={(config.time_range as string) || "24h"}
+              onValueChange={(v) => updateConfig("time_range", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select range" />
+              </SelectTrigger>
+              <SelectContent>
+                {TIME_RANGES.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </>
       );
@@ -284,9 +493,16 @@ export function WidgetConfigDialog({
           <div className="border-t pt-4 space-y-3">
             <h4 className="text-sm font-medium">Formatting</h4>
 
-            {["kpi_tile", "gauge", "health_score", "device_count", "line_chart", "bar_chart"].includes(
-              widget.widget_type
-            ) && (
+            {[
+              "kpi_tile",
+              "gauge",
+              "stat_card",
+              "health_score",
+              "device_count",
+              "line_chart",
+              "bar_chart",
+              "area_chart",
+            ].includes(widget.widget_type) && (
               <div className="space-y-1">
                 <Label htmlFor="decimal_precision">Decimal Places</Label>
                 <Input
@@ -309,7 +525,9 @@ export function WidgetConfigDialog({
               />
             </div>
 
-            {["line_chart", "bar_chart", "fleet_status"].includes(widget.widget_type) && (
+            {["line_chart", "bar_chart", "area_chart", "scatter", "radar", "pie_chart", "fleet_status"].includes(
+              widget.widget_type
+            ) && (
               <>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="show_legend">Show Legend</Label>
@@ -340,7 +558,7 @@ export function WidgetConfigDialog({
               </>
             )}
 
-            {["line_chart", "bar_chart"].includes(widget.widget_type) && (
+            {["line_chart", "bar_chart", "area_chart", "scatter"].includes(widget.widget_type) && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label htmlFor="y_axis_min">Y Axis Min</Label>
@@ -374,12 +592,83 @@ export function WidgetConfigDialog({
                 </div>
               </div>
             )}
+
+            {/* Chart sub-type toggles */}
+            {["line_chart", "area_chart"].includes(widget.widget_type) && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="smooth">Smooth Curves</Label>
+                  <Switch
+                    id="smooth"
+                    checked={(config.smooth as boolean | undefined) ?? true}
+                    onCheckedChange={(checked) => updateConfig("smooth", checked)}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="step">Step Line</Label>
+                  <Switch
+                    id="step"
+                    checked={(config.step as boolean | undefined) ?? false}
+                    onCheckedChange={(checked) => updateConfig("step", checked)}
+                  />
+                </div>
+                {widget.widget_type === "line_chart" && (
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="area_fill">Area Fill</Label>
+                    <Switch
+                      id="area_fill"
+                      checked={(config.area_fill as boolean | undefined) ?? false}
+                      onCheckedChange={(checked) => updateConfig("area_fill", checked)}
+                    />
+                  </div>
+                )}
+                {widget.widget_type === "area_chart" && (
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="stacked">Stacked</Label>
+                    <Switch
+                      id="stacked"
+                      checked={(config.stacked as boolean | undefined) ?? false}
+                      onCheckedChange={(checked) => updateConfig("stacked", checked)}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {widget.widget_type === "bar_chart" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="stacked">Stacked</Label>
+                  <Switch
+                    id="stacked"
+                    checked={(config.stacked as boolean | undefined) ?? false}
+                    onCheckedChange={(checked) => updateConfig("stacked", checked)}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="horizontal">Horizontal</Label>
+                  <Switch
+                    id="horizontal"
+                    checked={(config.horizontal as boolean | undefined) ?? false}
+                    onCheckedChange={(checked) => updateConfig("horizontal", checked)}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* === Thresholds Section === */}
-          {["kpi_tile", "line_chart", "bar_chart", "gauge", "health_score", "device_count"].includes(
-            widget.widget_type
-          ) && (
+          {[
+            "kpi_tile",
+            "line_chart",
+            "bar_chart",
+            "area_chart",
+            "scatter",
+            "gauge",
+            "stat_card",
+            "health_score",
+            "device_count",
+          ].includes(widget.widget_type) && (
             <div className="border-t pt-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium">Thresholds</h4>

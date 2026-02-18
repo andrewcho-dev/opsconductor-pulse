@@ -18,6 +18,8 @@ import {
   PieChart,
   Cpu,
   Activity,
+  Target,
+  Crosshair,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
@@ -32,6 +34,10 @@ const ICON_MAP: Record<string, LucideIcon> = {
   PieChart,
   Cpu,
   Activity,
+  // Phase 148 icon keys with safe fallbacks:
+  AreaChart: TrendingUp,
+  ScatterChart: Target,
+  Radar: Crosshair,
 };
 
 interface AddWidgetDrawerProps {
