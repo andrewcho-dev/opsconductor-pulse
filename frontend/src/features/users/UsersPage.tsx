@@ -188,8 +188,8 @@ export default function UsersPage() {
         description="Manage users in your organization"
         action={
           <Button onClick={() => setInviteDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Invite User
+            <Plus className="mr-1 h-4 w-4" />
+            Add User
           </Button>
         }
       />

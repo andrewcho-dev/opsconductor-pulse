@@ -10,13 +10,7 @@ import { PageHeader } from "@/components/shared";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { Plus, XCircle } from "lucide-react";
 import { CreateCampaignDialog } from "./CreateCampaignDialog";
 import type { CampaignStatus, OtaCampaign } from "@/services/api/ota";
 
@@ -120,24 +114,17 @@ export default function OtaCampaignsPage() {
       cell: ({ row }) => {
         const c = row.original;
         const canAbort = c.status === "RUNNING" || c.status === "CREATED";
+        if (!canAbort) return null;
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Open campaign actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/ota/campaigns/${c.id}`}>View Details</Link>
-              </DropdownMenuItem>
-              {canAbort && (
-                <DropdownMenuItem variant="destructive" onClick={() => setAbortTarget(c)}>
-                  Abort
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={() => setAbortTarget(c)}
+          >
+            <XCircle className="mr-1 h-3.5 w-3.5" />
+            Abort
+          </Button>
         );
       },
     },
@@ -148,7 +135,12 @@ export default function OtaCampaignsPage() {
       <PageHeader
         title="OTA Campaigns"
         description="Manage firmware rollouts to your device fleet."
-        action={<Button onClick={() => setShowCreate(true)}>+ New Campaign</Button>}
+        action={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Campaign
+          </Button>
+        }
       />
 
       <DataTable
@@ -163,12 +155,11 @@ export default function OtaCampaignsPage() {
         manualPagination={false}
       />
 
-      {showCreate && (
-        <CreateCampaignDialog
-          onClose={() => setShowCreate(false)}
-          onCreated={() => setShowCreate(false)}
-        />
-      )}
+      <CreateCampaignDialog
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        onCreated={() => setShowCreate(false)}
+      />
 
       <ConfirmDialog
         open={!!abortTarget}

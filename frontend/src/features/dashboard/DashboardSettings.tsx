@@ -18,15 +18,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Pencil, Share2, Star } from "lucide-react";
+import { Settings, Pencil, Share2, Star, Lock, Plus } from "lucide-react";
 import { toggleDashboardShare, updateDashboard } from "@/services/api/dashboards";
 import type { Dashboard } from "@/services/api/dashboards";
 
 interface DashboardSettingsProps {
   dashboard: Dashboard;
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onAddWidget: () => void;
 }
 
-export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
+export function DashboardSettings({
+  dashboard,
+  isEditing,
+  onToggleEdit,
+  onAddWidget,
+}: DashboardSettingsProps) {
   const [showRename, setShowRename] = useState(false);
   const [newName, setNewName] = useState(dashboard.name);
   const [newDescription, setNewDescription] = useState(dashboard.description);
@@ -72,6 +80,29 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onToggleEdit}>
+            {isEditing ? (
+              <>
+                <Lock className="h-4 w-4 mr-2" />
+                Lock Layout
+              </>
+            ) : (
+              <>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Layout
+              </>
+            )}
+          </DropdownMenuItem>
+
+          {isEditing && (
+            <DropdownMenuItem onClick={onAddWidget}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Widget
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
           <DropdownMenuItem
             onClick={() => {
               setNewName(dashboard.name);

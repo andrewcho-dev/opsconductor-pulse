@@ -23,7 +23,6 @@ import {
 import {
   Plus,
   Trash2,
-  Eye,
   Building2,
   Wifi,
   AlertTriangle,
@@ -32,6 +31,16 @@ import {
 import { Link } from "react-router-dom";
 import { CreateTenantDialog } from "./CreateTenantDialog";
 import { EditTenantDialog } from "./EditTenantDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function formatRelativeTime(value: string): string {
   const date = new Date(value);
@@ -49,6 +58,7 @@ function formatRelativeTime(value: string): string {
 export default function OperatorTenantsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
+  const [confirmDeleteTenant, setConfirmDeleteTenant] = useState<TenantSummary | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -75,14 +85,13 @@ export default function OperatorTenantsPage() {
       <PageHeader
         title="Tenant Management"
         description="Manage all tenants in the system"
+        action={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Tenant
+          </Button>
+        }
       />
-
-      <div className="flex justify-end">
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Tenant
-        </Button>
-      </div>
 
       <Card>
         <CardHeader>
@@ -115,7 +124,12 @@ export default function OperatorTenantsPage() {
                   <TableRow key={tenant.tenant_id}>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{tenant.name}</div>
+                        <Link
+                          to={`/operator/tenants/${tenant.tenant_id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {tenant.name}
+                        </Link>
                         <div className="text-sm text-muted-foreground">
                           {tenant.tenant_id}
                         </div>
@@ -152,29 +166,23 @@ export default function OperatorTenantsPage() {
                         : "Never"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" asChild>
-                          <Link to={`/operator/tenants/${tenant.tenant_id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                        </Button>
+                      <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
-                          size="icon"
+                          size="sm"
                           onClick={() => handleEdit(tenant.tenant_id)}
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          Edit
                         </Button>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm(`Delete tenant ${tenant.name}?`)) {
-                              deleteMutation.mutate(tenant.tenant_id);
-                            }
-                          }}
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => setConfirmDeleteTenant(tenant)}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                          Delete
                         </Button>
                       </div>
                     </TableCell>
@@ -192,6 +200,35 @@ export default function OperatorTenantsPage() {
         open={!!editTenant}
         onOpenChange={(open) => !open && setEditTenant(null)}
       />
+
+      <AlertDialog
+        open={confirmDeleteTenant !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteTenant(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Tenant</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete tenant {confirmDeleteTenant?.name}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!confirmDeleteTenant) return;
+                deleteMutation.mutate(confirmDeleteTenant.tenant_id);
+                setConfirmDeleteTenant(null);
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

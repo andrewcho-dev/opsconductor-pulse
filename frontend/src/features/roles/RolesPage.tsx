@@ -98,8 +98,8 @@ export default function RolesPage() {
         description="Manage role bundles for your organization"
         action={
           <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Role
+            <Plus className="mr-1 h-4 w-4" />
+            Add Role
           </Button>
         }
       />

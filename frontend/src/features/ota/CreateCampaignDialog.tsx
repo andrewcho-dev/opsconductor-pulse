@@ -3,9 +3,17 @@ import { useQuery } from "@tanstack/react-query";
 import { useCreateCampaign, useFirmwareVersions } from "@/hooks/use-ota";
 import { Button } from "@/components/ui/button";
 import { apiGet } from "@/services/api/client";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-interface Props {
-  onClose: () => void;
+interface CreateCampaignDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }
 
@@ -16,7 +24,7 @@ interface DeviceGroup {
   group_type?: string;
 }
 
-export function CreateCampaignDialog({ onClose, onCreated }: Props) {
+export function CreateCampaignDialog({ open, onOpenChange, onCreated }: CreateCampaignDialogProps) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [firmwareId, setFirmwareId] = useState<number | null>(null);
@@ -64,14 +72,11 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-lg rounded-lg border border-border bg-background p-4 shadow-lg space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create OTA Campaign</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            X
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create OTA Campaign</DialogTitle>
+        </DialogHeader>
 
         <div className="flex gap-2">
           {[1, 2, 3, 4].map((s) => (
@@ -103,10 +108,11 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
             ) : (
               <div className="space-y-1 max-h-48 overflow-auto">
                 {firmwareVersions.map((fw) => (
-                  <button
+                  <Button
                     key={fw.id}
                     onClick={() => setFirmwareId(fw.id)}
-                    className={`w-full text-left rounded border px-3 py-2 text-sm transition-colors ${
+                    variant="outline"
+                    className={`w-full justify-start h-auto px-3 py-2 text-sm transition-colors ${
                       firmwareId === fw.id
                         ? "border-primary bg-primary/10"
                         : "border-border hover:bg-muted"
@@ -119,7 +125,7 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
                         ? ` | ${(fw.file_size_bytes / 1024 / 1024).toFixed(1)} MB`
                         : ""}
                     </div>
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -136,10 +142,11 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
             ) : (
               <div className="space-y-1 max-h-48 overflow-auto">
                 {groups.map((g) => (
-                  <button
+                  <Button
                     key={g.group_id}
                     onClick={() => setGroupId(g.group_id)}
-                    className={`w-full text-left rounded border px-3 py-2 text-sm transition-colors ${
+                    variant="outline"
+                    className={`w-full justify-start h-auto px-3 py-2 text-sm transition-colors ${
                       groupId === g.group_id
                         ? "border-primary bg-primary/10"
                         : "border-border hover:bg-muted"
@@ -150,7 +157,7 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
                       {(g.member_count ?? 0).toString()} device
                       {g.member_count !== 1 ? "s" : ""}
                     </div>
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -173,17 +180,19 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
               <label className="text-sm font-medium">Rollout Strategy</label>
               <div className="mt-1 flex gap-2">
                 {(["linear", "canary"] as const).map((s) => (
-                  <button
+                  <Button
                     key={s}
                     onClick={() => setStrategy(s)}
-                    className={`rounded border px-3 py-1.5 text-sm capitalize transition-colors ${
+                    type="button"
+                    variant="outline"
+                    className={`px-3 py-1.5 text-sm capitalize transition-colors ${
                       strategy === s
                         ? "border-primary bg-primary/10"
                         : "border-border hover:bg-muted"
                     }`}
                   >
                     {s}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -254,32 +263,34 @@ export function CreateCampaignDialog({ onClose, onCreated }: Props) {
           </div>
         )}
 
-        <div className="flex justify-between pt-2">
-          <Button
-            variant="outline"
-            onClick={() => (step > 1 ? setStep(step - 1) : onClose())}
-          >
-            {step > 1 ? "Back" : "Cancel"}
-          </Button>
-          {step < 4 ? (
+        <DialogFooter>
+          <div className="flex w-full items-center justify-between">
             <Button
-              onClick={() => setStep(step + 1)}
-              disabled={
-                (step === 1 && !canProceedStep1) ||
-                (step === 2 && !canProceedStep2) ||
-                (step === 3 && !canProceedStep3)
-              }
+              variant="outline"
+              onClick={() => (step > 1 ? setStep(step - 1) : onOpenChange(false))}
             >
-              Next
+              {step > 1 ? "Back" : "Cancel"}
             </Button>
-          ) : (
-            <Button onClick={() => void handleCreate()} disabled={createMut.isPending}>
-              {createMut.isPending ? "Creating..." : "Create Campaign"}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+            {step < 4 ? (
+              <Button
+                onClick={() => setStep(step + 1)}
+                disabled={
+                  (step === 1 && !canProceedStep1) ||
+                  (step === 2 && !canProceedStep2) ||
+                  (step === 3 && !canProceedStep3)
+                }
+              >
+                Next
+              </Button>
+            ) : (
+              <Button onClick={() => void handleCreate()} disabled={createMut.isPending}>
+                {createMut.isPending ? "Creating..." : "Create Campaign"}
+              </Button>
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

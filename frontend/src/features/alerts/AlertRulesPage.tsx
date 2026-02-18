@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader, SeverityBadge, EmptyState } from "@/components/shared";
-import { ShieldAlert } from "lucide-react";
+import { Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
 import {
   useAlertRules,
@@ -77,11 +77,18 @@ function makeColumns(
             header: () => <span className="text-right">Actions</span>,
             enableSorting: false,
             cell: ({ row }: { row: { original: AlertRule } }) => (
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => onEdit(row.original)}>
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="sm" onClick={() => onEdit(row.original)}>
+                  <Pencil className="mr-1 h-3.5 w-3.5" />
                   Edit
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => onDelete(row.original)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  onClick={() => onDelete(row.original)}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
                   Delete
                 </Button>
               </div>
@@ -115,6 +122,7 @@ export default function AlertRulesPage() {
       setEditingRule(null);
       setDialogOpen(true);
     }}>
+      <Plus className="mr-1 h-4 w-4" />
       Add Rule
     </Button>
   ) : undefined;
@@ -212,6 +220,7 @@ export default function AlertRulesPage() {
                   setDialogOpen(true);
                 }}
               >
+                <Plus className="mr-1 h-4 w-4" />
                 Add Rule
               </Button>
             </div>

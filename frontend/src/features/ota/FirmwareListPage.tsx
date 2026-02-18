@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { FirmwareVersion } from "@/services/api/ota";
+import { Plus } from "lucide-react";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -105,7 +106,12 @@ export default function FirmwareListPage() {
       <PageHeader
         title="Firmware Versions"
         description="Registered firmware binaries available for OTA deployment."
-        action={<Button onClick={() => setShowUpload(true)}>+ Register Firmware</Button>}
+        action={
+          <Button onClick={() => setShowUpload(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Firmware
+          </Button>
+        }
       />
 
       <DataTable

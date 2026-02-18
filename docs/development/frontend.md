@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145]
 ---
 
 # Frontend
@@ -104,6 +104,48 @@ Phases 143–144 establish a baseline visual system to keep the UI consistent an
 - Empty states: cap empty/loading padding at `py-8`; prefer the shared `EmptyState` component.
 - Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
 - Cards/backgrounds/status colors: border-based containment (no shadow); light mode uses a light gray page background with white cards (tokens in `src/index.css`); use semantic status token utilities (e.g. `text-status-online`, `bg-status-critical`), not Tailwind color literals.
+
+## UI Pattern Conventions
+
+Phase 145 standardizes UI usage patterns across the app. These are conventions (how components are used), not a restyling.
+
+### Page Header Actions
+
+- All pages MUST use the shared `<PageHeader>` component.
+- Primary create action: `<Button>` with `Plus` icon + `"Add {Noun}"` label, placed in `PageHeader` `action`.
+- Secondary page actions: `<Button variant="outline">` grouped next to the primary action.
+- Settings/config actions: gear icon `DropdownMenu` (never a standalone page button).
+
+### Table Row Actions
+
+- 1–2 actions: `<Button variant="ghost" size="sm">` with icon + short label.
+- 3+ actions: `MoreHorizontal` `DropdownMenu`, with destructive items after a separator.
+- Navigation to detail: put a `<Link>` on the name/ID column text; do not add a separate View button.
+
+### Breadcrumbs
+
+- ALL detail pages MUST provide breadcrumbs via the `PageHeader` `breadcrumbs` prop.
+- Format: `[{ label: "Parent", href: "/parent" }, { label: itemName }]`.
+- No standalone "Back" buttons; breadcrumbs replace that navigation pattern.
+
+### Modals & Dialogs
+
+- All modals use Shadcn `<Dialog>`; no custom `<div className="fixed inset-0">` overlays.
+- Dialog props: `open` + `onOpenChange` (avoid `onClose`, `isOpen`, etc).
+- State naming:
+  - `const [open, setOpen] = useState(false)` for simple boolean open state
+  - `const [editing, setEditing] = useState<T | null>(null)` for compound edit state
+- All form modals should use `useFormDirtyGuard` to protect against losing unsaved changes.
+- Destructive confirms: use `<AlertDialog>`; never `window.confirm()`.
+
+### Prohibited Patterns
+
+- Raw `<button>` elements (use `<Button>`).
+- Custom div overlays for modals (use `<Dialog>`).
+- `window.confirm()` / `confirm()` (use `<AlertDialog>`).
+- Custom page header layouts (use `<PageHeader>`).
+- Standalone "Back" buttons (use breadcrumbs).
+- "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
 
 ## State Management
 

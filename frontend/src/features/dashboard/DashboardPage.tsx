@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,8 @@ export default function DashboardPage() {
   const subtitle = user?.tenantId ? `Tenant: ${user.tenantId}` : "Real-time operational view";
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showAddWidget, setShowAddWidget] = useState(false);
 
   const bootstrapMutation = useMutation({
     mutationFn: () =>
@@ -49,6 +51,21 @@ export default function DashboardPage() {
     enabled: activeDashboardId !== null,
   });
 
+  useEffect(() => {
+    // Preserve old behavior: switching dashboards exits edit mode and closes drawers.
+    setIsEditing(false);
+    setShowAddWidget(false);
+  }, [activeDashboardId]);
+
+  const handleToggleEdit = useCallback(() => {
+    setIsEditing((prev) => !prev);
+  }, []);
+
+  const handleAddWidget = useCallback(() => {
+    setIsEditing(true);
+    setShowAddWidget(true);
+  }, []);
+
   if (listLoading || bootstrapMutation.isPending) {
     return (
       <div className="space-y-4">
@@ -73,7 +90,14 @@ export default function DashboardPage() {
               activeDashboardId={activeDashboardId}
               onSelect={setSelectedId}
             />
-            {dashboard && <DashboardSettings dashboard={dashboard} />}
+            {dashboard && (
+              <DashboardSettings
+                dashboard={dashboard}
+                isEditing={isEditing}
+                onToggleEdit={handleToggleEdit}
+                onAddWidget={handleAddWidget}
+              />
+            )}
           </div>
         }
       />
@@ -85,7 +109,15 @@ export default function DashboardPage() {
           <Skeleton className="h-[200px]" />
         </div>
       ) : dashboard ? (
-        <DashboardBuilder dashboard={dashboard} canEdit={dashboard.is_owner} />
+        <DashboardBuilder
+          dashboard={dashboard}
+          canEdit={dashboard.is_owner}
+          isEditing={isEditing}
+          onToggleEdit={handleToggleEdit}
+          onAddWidget={handleAddWidget}
+          showAddWidget={showAddWidget}
+          onShowAddWidgetChange={setShowAddWidget}
+        />
       ) : (
         <div className="text-center py-8 text-muted-foreground">
           No dashboards available. Create one to get started.

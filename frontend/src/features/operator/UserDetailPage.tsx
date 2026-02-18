@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,8 +72,23 @@ export default function UserDetailPage() {
     setEmailVerified(!!user.emailVerified);
   }, [user]);
 
+  const displayName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+    user?.username ||
+    user?.email ||
+    "User";
+
   return (
     <div className="space-y-4">
+      <PageHeader
+        title={displayName}
+        description={user?.email || undefined}
+        breadcrumbs={[
+          { label: "Users", href: "/operator/users" },
+          { label: displayName || "..." },
+        ]}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>User Profile</CardTitle>

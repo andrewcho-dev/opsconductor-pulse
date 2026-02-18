@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatTimestamp } from "@/lib/format";
 import type { Device } from "@/services/api/types";
+import { Button } from "@/components/ui/button";
+import { Pencil, Trash2 } from "lucide-react";
 
 function StatusText({ status }: { status: string }) {
   const color =
@@ -82,12 +84,19 @@ export function DeviceTable({
               </TableCell>
               <TableCell className="py-1 px-2">
                 <div className="flex items-center gap-2">
-                  <button type="button" className="text-sm text-primary hover:underline" onClick={() => onEdit?.(d)}>
+                  <Button variant="ghost" size="sm" onClick={() => onEdit?.(d)}>
+                    <Pencil className="mr-1 h-3.5 w-3.5" />
                     Edit
-                  </button>
-                  <button type="button" className="text-sm text-destructive hover:underline" onClick={() => onDecommission?.(d)}>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => onDecommission?.(d)}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
                     Decommission
-                  </button>
+                  </Button>
                 </div>
               </TableCell>
             </TableRow>

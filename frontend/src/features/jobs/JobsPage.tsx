@@ -4,7 +4,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, EmptyState } from "@/components/shared";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus } from "lucide-react";
 import { useJobs, useJob, useCancelJob } from "@/hooks/use-jobs";
 import type { Job } from "@/services/api/jobs";
 import {
@@ -161,7 +161,12 @@ export default function JobsPage() {
       <PageHeader
         title="Jobs"
         description={isLoading ? "Loading..." : `${jobs.length} jobs`}
-        action={<Button onClick={() => setShowCreate(true)}>+ Create Job</Button>}
+        action={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Job
+          </Button>
+        }
       />
 
       {error ? (
@@ -177,7 +182,12 @@ export default function JobsPage() {
               title="No jobs yet"
               description="Jobs will appear here when you create firmware updates, configuration pushes, or other batch operations."
               icon={<ClipboardList className="h-12 w-12" />}
-              action={<Button onClick={() => setShowCreate(true)}>Create Job</Button>}
+              action={
+                <Button onClick={() => setShowCreate(true)}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add Job
+                </Button>
+              }
             />
           }
         />

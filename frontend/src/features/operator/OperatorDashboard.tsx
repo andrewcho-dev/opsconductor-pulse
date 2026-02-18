@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, Building2, Grid3X3, Monitor, Server } from "lucide-react";
 import { fetchOperatorAlerts } from "@/services/api/operator";
 import { fetchSystemAggregates, fetchSystemErrors, fetchSystemHealth } from "@/services/api/system";
+import { PageHeader } from "@/components/shared";
 
 function kpiCard(title: string, value: string, sub: string) {
   return (
@@ -66,19 +67,10 @@ export default function OperatorDashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-lg font-semibold">Operator Console</div>
-          <div className="text-sm text-muted-foreground">
-            <span
-              className={`mr-2 inline-block h-2 w-2 rounded-full ${
-                health?.status === "healthy" ? "bg-status-online" : "bg-status-warning"
-              }`}
-            />
-            {health?.status?.toUpperCase() ?? "UNKNOWN"} | Last: {lastUpdated}
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Operator Console"
+        description={`${health?.status?.toUpperCase() ?? "UNKNOWN"} | Last: ${lastUpdated}`}
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         {kpiCard(

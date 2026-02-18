@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/shared";
 import { type ColumnDef, type PaginationState } from "@tanstack/react-table";
 import {
   Select,
@@ -137,17 +138,15 @@ export default function CertificateOverviewPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Certificate Overview</h1>
-          <p className="text-sm text-muted-foreground">
-            Fleet-wide view of device X.509 certificates across all tenants.
-          </p>
-        </div>
-        <Button variant="outline" onClick={handleDownloadCaBundle}>
-          Download CA Bundle
-        </Button>
-      </div>
+      <PageHeader
+        title="Certificate Overview"
+        description="Fleet-wide view of device X.509 certificates across all tenants."
+        action={
+          <Button variant="outline" onClick={handleDownloadCaBundle}>
+            Download CA Bundle
+          </Button>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">

@@ -25,6 +25,16 @@ import {
   updateDashboard,
 } from "@/services/api/dashboards";
 import type { DashboardSummary } from "@/services/api/dashboards";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DashboardSelectorProps {
   activeDashboardId: number | null;
@@ -35,6 +45,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DashboardSummary | null>(null);
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -80,9 +91,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
 
   function handleDelete(dashboard: DashboardSummary) {
     if (!dashboard.is_owner) return;
-    if (confirm(`Delete dashboard "${dashboard.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(dashboard.id);
-    }
+    setDeleteTarget(dashboard);
   }
 
   return (
@@ -218,6 +227,35 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dashboard</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete dashboard "{deleteTarget?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!deleteTarget) return;
+                deleteMutation.mutate(deleteTarget.id);
+                setDeleteTarget(null);
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

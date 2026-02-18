@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
+import { Plus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -142,7 +143,8 @@ export default function EscalationPoliciesPage() {
               setOpen(true);
             }}
           >
-            New Policy
+            <Plus className="mr-1 h-4 w-4" />
+            Add Policy
           </Button>
         }
       />

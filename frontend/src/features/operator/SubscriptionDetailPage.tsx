@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Edit } from "lucide-react";
+import { Edit } from "lucide-react";
 import { PageHeader, StatusBadge } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,21 +60,16 @@ export default function SubscriptionDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <Link to="/operator/subscriptions">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Subscriptions
-          </Button>
-        </Link>
-      </div>
-
       <PageHeader
         title={sub.subscription_id}
         description={
           sub.description ||
           `${sub.subscription_type} subscription for ${sub.tenant_name}`
         }
+        breadcrumbs={[
+          { label: "Subscriptions", href: "/operator/subscriptions" },
+          { label: sub.subscription_id || "..." },
+        ]}
       />
 
       <div className="flex items-center justify-between">

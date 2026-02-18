@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/shared";
 import {
   fetchSystemHealth,
   fetchSystemCapacity,
@@ -30,6 +31,14 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function StatusDot({ status }: { status: string }) {
   const color =
@@ -228,51 +237,55 @@ export function SystemDashboard() {
   const errCount = (errors?.counts?.delivery_failures || 0) + (errors?.counts?.quarantined || 0);
 
   return (
-    <div className="p-2 space-y-2">
-      {/* Header: Status + Services + Controls */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <StatusDot status={health?.status || "unknown"} />
-            <span className="font-semibold">System</span>
-            {!isOnline && <span className="text-sm text-status-critical font-medium ml-2">OFFLINE</span>}
+    <div className="space-y-4">
+      <PageHeader
+        title="System"
+        description={
+          health?.status
+            ? `${health.status.toUpperCase()}${!isOnline ? " — OFFLINE" : ""}`
+            : "Loading..."
+        }
+        action={
+          <div className="flex items-center gap-2">
+            <Select value={String(refreshInterval)} onValueChange={(v) => setRefreshInterval(Number(v))}>
+              <SelectTrigger className="h-8 w-[84px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5000">5s</SelectItem>
+                <SelectItem value="10000">10s</SelectItem>
+                <SelectItem value="30000">30s</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant={isPaused ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsPaused((p) => !p)}
+              title={isPaused ? "Resume" : "Pause"}
+            >
+              {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              title="Refresh (R)"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            </Button>
           </div>
-          <div className="flex items-center gap-1 flex-wrap">
-            <ServiceChip name="Postgres" icon={Database} health={health?.components.postgres} />
-            <ServiceChip name="MQTT" icon={Wifi} health={health?.components.mqtt} />
-            <ServiceChip name="Keycloak" icon={Shield} health={health?.components.keycloak} />
-            <ServiceChip name="Ingest" icon={Upload} health={health?.components.ingest} />
-            <ServiceChip name="Evaluator" icon={AlertTriangle} health={health?.components.evaluator} />
-            <ServiceChip name="Dispatcher" icon={Send} health={health?.components.dispatcher} />
-            <ServiceChip name="Delivery" icon={Truck} health={health?.components.delivery} />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={refreshInterval}
-            onChange={e => setRefreshInterval(Number(e.target.value))}
-            className="h-8 text-sm border border-border rounded bg-background px-2"
-          >
-            <option value={5000}>5s</option>
-            <option value={10000}>10s</option>
-            <option value={30000}>30s</option>
-          </select>
-          <button
-            onClick={() => setIsPaused(p => !p)}
-            className={`p-1.5 rounded border ${isPaused ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
-            title={isPaused ? "Resume" : "Pause"}
-          >
-            {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={handleRefresh}
-            disabled={isFetching}
-            className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-50"
-            title="Refresh (R)"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-          </button>
-        </div>
+        }
+      />
+
+      <div className="flex items-center gap-1 flex-wrap">
+        <ServiceChip name="Postgres" icon={Database} health={health?.components.postgres} />
+        <ServiceChip name="MQTT" icon={Wifi} health={health?.components.mqtt} />
+        <ServiceChip name="Keycloak" icon={Shield} health={health?.components.keycloak} />
+        <ServiceChip name="Ingest" icon={Upload} health={health?.components.ingest} />
+        <ServiceChip name="Evaluator" icon={AlertTriangle} health={health?.components.evaluator} />
+        <ServiceChip name="Dispatcher" icon={Send} health={health?.components.dispatcher} />
+        <ServiceChip name="Delivery" icon={Truck} health={health?.components.delivery} />
       </div>
 
       {/* Metrics Grid */}

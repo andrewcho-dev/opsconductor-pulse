@@ -26,6 +26,16 @@ import {
   replayDeadLetter,
   replayDeadLetterBatch,
 } from "@/services/api/deadLetter";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const LIMIT = 50;
 
@@ -40,6 +50,7 @@ export default function DeadLetterPage() {
   const [statusFilter, setStatusFilter] = useState<string>("FAILED");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmPurge, setConfirmPurge] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["dead-letter", statusFilter, offset],
@@ -142,11 +153,7 @@ export default function DeadLetterPage() {
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => {
-              if (confirm("Purge all FAILED messages older than 30 days?")) {
-                purgeMutation.mutate();
-              }
-            }}
+            onClick={() => setConfirmPurge(true)}
             disabled={purgeMutation.isPending}
           >
             Purge Old
@@ -276,6 +283,26 @@ export default function DeadLetterPage() {
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={confirmPurge} onOpenChange={setConfirmPurge}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Purge Old Messages</AlertDialogTitle>
+            <AlertDialogDescription>
+              Purge all FAILED messages older than 30 days? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => purgeMutation.mutate()}
+              disabled={purgeMutation.isPending}
+            >
+              Purge
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -133,17 +133,22 @@ export default function OperatorTenantDetailPage() {
       <PageHeader
         title={data.name}
         description={`Tenant ID: ${data.tenant_id}`}
+        breadcrumbs={[
+          { label: "Tenants", href: "/operator/tenants" },
+          { label: data.name || "..." },
+        ]}
+        action={
+          <div className="flex items-center gap-2">
+            <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
+              {data.status}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+              <Pencil className="mr-1 h-4 w-4" />
+              Edit
+            </Button>
+          </div>
+        }
       />
-
-      <div className="flex items-center gap-2">
-        <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
-          {data.status}
-        </Badge>
-        <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
-          <Pencil className="mr-2 h-4 w-4" />
-          Edit Tenant
-        </Button>
-      </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Card>
