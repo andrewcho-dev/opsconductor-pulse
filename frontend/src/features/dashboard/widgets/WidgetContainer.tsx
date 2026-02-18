@@ -51,6 +51,19 @@ function WidgetContainerInner({
   const displayTitle = widget.title || definition.defaultTitle;
   const showTitle = effectiveConfig?.show_title !== false;
 
+  const needsConfiguration = useMemo(() => {
+    const type = widget.widget_type;
+    const cfg = effectiveConfig;
+
+    // Chart widgets need a device selected
+    if (["line_chart", "bar_chart", "area_chart"].includes(type)) {
+      const devices = (cfg as Record<string, unknown>).devices;
+      return !Array.isArray(devices) || devices.length === 0;
+    }
+
+    return false;
+  }, [widget.widget_type, effectiveConfig]);
+
   return (
     <Card className="relative h-full flex flex-col overflow-hidden">
       {showTitle && (
@@ -104,15 +117,29 @@ function WidgetContainerInner({
         </div>
       )}
       <CardContent className="flex-1 overflow-hidden min-h-0 p-1.5">
-        <WidgetErrorBoundary widgetName={displayTitle}>
-          <Suspense fallback={<Skeleton className="h-full w-full min-h-[80px]" />}>
-            <LazyComponent
-              config={effectiveConfig}
-              title={displayTitle}
-              widgetId={widget.id}
-            />
-          </Suspense>
-        </WidgetErrorBoundary>
+        {needsConfiguration && onConfigure ? (
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+            <p className="text-sm text-muted-foreground">
+              This widget needs to be configured.
+            </p>
+            <button
+              onClick={() => onConfigure(widget.id)}
+              className="text-sm text-primary underline underline-offset-2 hover:text-primary/80"
+            >
+              Configure widget
+            </button>
+          </div>
+        ) : (
+          <WidgetErrorBoundary widgetName={displayTitle}>
+            <Suspense fallback={<Skeleton className="h-full w-full min-h-[80px]" />}>
+              <LazyComponent
+                config={effectiveConfig}
+                title={displayTitle}
+                widgetId={widget.id}
+              />
+            </Suspense>
+          </WidgetErrorBoundary>
+        )}
       </CardContent>
     </Card>
   );

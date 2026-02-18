@@ -214,6 +214,7 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
         open={showAddWidget}
         onOpenChange={onShowAddWidgetChange}
         dashboardId={dashboard.id}
+        onWidgetAdded={handleConfigureWidget}
       />
 
       {configuringWidget && (

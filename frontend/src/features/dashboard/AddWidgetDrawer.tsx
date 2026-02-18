@@ -44,9 +44,15 @@ interface AddWidgetDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   dashboardId: number;
+  onWidgetAdded?: (widgetId: number) => void;
 }
 
-export function AddWidgetDrawer({ open, onOpenChange, dashboardId }: AddWidgetDrawerProps) {
+export function AddWidgetDrawer({
+  open,
+  onOpenChange,
+  dashboardId,
+  onWidgetAdded,
+}: AddWidgetDrawerProps) {
   const queryClient = useQueryClient();
   const categorizedWidgets = getWidgetsByCategory();
 
@@ -59,10 +65,11 @@ export function AddWidgetDrawer({ open, onOpenChange, dashboardId }: AddWidgetDr
         // Infinity isn't JSON-serializable; large y means "place at bottom".
         position: { x: 0, y: 9999, ...def.defaultSize },
       }),
-    onSuccess: () => {
+    onSuccess: (newWidget) => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboardId] });
       onOpenChange(false);
       toast.success("Widget added");
+      onWidgetAdded?.(newWidget.id);
     },
     onError: (err: Error) => {
       toast.error(getErrorMessage(err) || "Failed to add widget");
