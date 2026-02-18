@@ -2,7 +2,7 @@ import { Suspense, lazy, useMemo, memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
-import { getWidgetDefinition } from "./widget-registry";
+import { getWidgetDefinition, getWidgetRenderer } from "./widget-registry";
 import type { DashboardWidget } from "@/services/api/dashboards";
 import type { WidgetRendererProps } from "./widget-registry";
 import type { ComponentType } from "react";
@@ -22,12 +22,19 @@ function WidgetContainerInner({
 }: WidgetContainerProps) {
   const definition = getWidgetDefinition(widget.widget_type);
 
+  const effectiveConfig = useMemo(() => {
+    const base = widget.config as Record<string, unknown>;
+    if (widget.widget_type === "device_count") return { ...base, display_mode: "count" };
+    if (widget.widget_type === "fleet_status") return { ...base, display_mode: "donut" };
+    if (widget.widget_type === "health_score") return { ...base, display_mode: "health" };
+    return base;
+  }, [widget.widget_type, widget.config]);
+
   const LazyComponent = useMemo(() => {
     if (!definition) return null;
-    return lazy(
-      definition.component as () => Promise<{ default: ComponentType<WidgetRendererProps> }>
-    );
-  }, [definition]);
+    const loader = getWidgetRenderer(widget.widget_type, effectiveConfig);
+    return lazy(loader as () => Promise<{ default: ComponentType<WidgetRendererProps> }>);
+  }, [definition, widget.widget_type, effectiveConfig]);
 
   if (!definition || !LazyComponent) {
     return (
@@ -42,39 +49,65 @@ function WidgetContainerInner({
   }
 
   const displayTitle = widget.title || definition.defaultTitle;
+  const showTitle = effectiveConfig?.show_title !== false;
 
   return (
-    <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between py-1.5 px-2 shrink-0">
-        <CardTitle className="text-sm font-medium truncate">{displayTitle}</CardTitle>
-        {isEditing && (
-          <div className="flex gap-1 shrink-0">
-            {onConfigure && (
-              <button
-                onClick={() => onConfigure(widget.id)}
-                className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
-                title="Configure"
-              >
-                &#9881;
-              </button>
-            )}
-            {onRemove && (
-              <button
-                onClick={() => onRemove(widget.id)}
-                className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
-                title="Remove"
-              >
-                &times;
-              </button>
-            )}
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="flex-1 overflow-auto p-1.5">
+    <Card className="relative h-full flex flex-col overflow-hidden">
+      {showTitle && (
+        <CardHeader className="flex flex-row items-center justify-between py-1.5 px-2 shrink-0">
+          <CardTitle className="text-sm font-medium truncate">{displayTitle}</CardTitle>
+          {isEditing && (
+            <div className="flex gap-1 shrink-0">
+              {onConfigure && (
+                <button
+                  onClick={() => onConfigure(widget.id)}
+                  className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
+                  title="Configure"
+                >
+                  &#9881;
+                </button>
+              )}
+              {onRemove && (
+                <button
+                  onClick={() => onRemove(widget.id)}
+                  className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
+                  title="Remove"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          )}
+        </CardHeader>
+      )}
+
+      {!showTitle && isEditing && (
+        <div className="absolute top-1 right-1 z-10 flex gap-1">
+          {onConfigure && (
+            <button
+              onClick={() => onConfigure(widget.id)}
+              className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
+              title="Configure"
+            >
+              &#9881;
+            </button>
+          )}
+          {onRemove && (
+            <button
+              onClick={() => onRemove(widget.id)}
+              className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
+              title="Remove"
+            >
+              &times;
+            </button>
+          )}
+        </div>
+      )}
+      <CardContent className="flex-1 overflow-hidden min-h-0 p-1.5">
         <WidgetErrorBoundary widgetName={displayTitle}>
           <Suspense fallback={<Skeleton className="h-full w-full min-h-[80px]" />}>
             <LazyComponent
-              config={widget.config}
+              config={effectiveConfig}
               title={displayTitle}
               widgetId={widget.id}
             />

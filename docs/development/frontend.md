@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147]
 ---
 
 # Frontend
@@ -181,6 +181,46 @@ Phase 146 standardizes mutation feedback and error formatting. The goal is zero 
 - Duplicated `formatError()` functions - use `getErrorMessage` from `@/lib/errors`.
 - `window.confirm()` - use `<AlertDialog>` (Phase 145).
 - Inconsistent modal state names (`show`, `isOpen`, `visible`).
+
+## Dashboard Widget System
+
+Phase 147 overhauls the widget system to support responsive sizing, formatting controls, thresholds, visualization switching, and a categorized widget catalog.
+
+### Widget Architecture
+
+- Widgets are defined in `frontend/src/features/dashboard/widgets/widget-registry.ts` with type, label, description, category, default size, min/max size, default config, and a lazy-loaded renderer component.
+- Widget config is stored as JSON - new config fields are optional and do not require backend schema migrations.
+- `getWidgetRenderer()` resolves the renderer component loader, respecting `display_as` overrides.
+- `getWidgetsByCategory()` groups widgets for the Add Widget catalog UI.
+
+### Widget Categories
+
+- Charts - time-series visualizations (line chart, bar chart).
+- Metrics - single-value displays (KPI tile, gauge).
+- Data - tabular/list views (device table, alert feed).
+- Fleet Overview - consolidated fleet status (count, donut, health score).
+
+### Widget Config Fields
+
+- Data fields: `metric`, `time_range`, `devices`, `limit`, `max_items`, etc. (widget-type specific).
+- Display: `display_as` (overrides visualization type), `display_mode` (fleet widget mode).
+- Formatting: `decimal_precision`, `show_title`, `show_legend`, `show_x_axis`, `show_y_axis`, `y_axis_min`, `y_axis_max`.
+- Thresholds: `thresholds: [{ value, color, label? }]` - rendered as markLines on charts, color zones on gauges, value coloring on KPI tiles.
+
+### Renderer Rules
+
+- All ECharts renderers MUST use `style={{ width: "100%", height: "100%" }}` (no fixed pixel heights).
+- All renderers MUST handle missing config fields gracefully with defaults.
+- All numeric displays MUST respect `decimal_precision` from config.
+- Chart renderers MUST apply `show_legend`, `show_x_axis`, `show_y_axis` and `y_axis_min`/`y_axis_max` to ECharts options.
+- New renderers MUST be wrapped in `min-h-[100px]` or `min-h-[120px]` to prevent collapse in small widgets.
+
+### Prohibited Patterns
+
+- Fixed pixel heights on ECharts containers (use percentage-based sizing).
+- Hardcoded decimal places (use `config.decimal_precision`).
+- Creating new widget types for variations of existing data (use `display_as` or `display_mode`).
+- Skipping threshold support in new numeric renderers.
 
 ## State Management
 

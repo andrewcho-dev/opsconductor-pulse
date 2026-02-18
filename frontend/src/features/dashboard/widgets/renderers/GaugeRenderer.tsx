@@ -14,6 +14,8 @@ export default function GaugeRenderer({ config }: WidgetRendererProps) {
   const metric = typeof config.metric === "string" ? config.metric : "uptime_pct";
   const min = asNumber(config.min, 0);
   const max = asNumber(config.max, 100);
+  const decimalPrecision = (config.decimal_precision as number | undefined) ?? 1;
+  const thresholds = (config.thresholds as Array<{ value: number; color: string }>) ?? [];
 
   const needsUptime = metric === "uptime_pct";
   const needsHealth = metric === "health_score";
@@ -41,32 +43,56 @@ export default function GaugeRenderer({ config }: WidgetRendererProps) {
   const isLoading = uptimeLoading || healthLoading;
 
   const option = useMemo<EChartsOption>(
-    () => ({
-      series: [
-        {
-          type: "gauge",
-          min,
-          max,
-          progress: { show: true, width: 10 },
-          axisLine: { lineStyle: { width: 10 } },
-          axisTick: { show: false },
-          splitLine: { length: 8 },
-          axisLabel: { distance: 12, fontSize: 10 },
-          pointer: { show: false },
-          detail: {
-            valueAnimation: true,
-            formatter: (v: number) => `${Number(v).toFixed(1)}%`,
-            fontSize: 18,
+    () => {
+      const span = Math.max(1e-9, max - min);
+      const sortedThresholds = [...thresholds].sort((a, b) => a.value - b.value);
+      const axisLineColors: [number, string][] =
+        sortedThresholds.length > 0
+          ? [
+              ...sortedThresholds.map((t) => {
+                const stop = Math.min(1, Math.max(0, (t.value - min) / span));
+                return [stop, t.color] as [number, string];
+              }),
+              [1, "#22c55e"], // remaining segment = healthy/green
+            ]
+          : [];
+
+      return {
+        series: [
+          {
+            type: "gauge",
+            min,
+            max,
+            progress: { show: true, width: 10 },
+            axisLine: {
+              lineStyle: {
+                width: 10,
+                ...(axisLineColors.length > 0 ? { color: axisLineColors } : {}),
+              },
+            },
+            axisTick: { show: false },
+            splitLine: { length: 8 },
+            axisLabel: { distance: 12, fontSize: 10 },
+            pointer: { show: false },
+            detail: {
+              valueAnimation: true,
+              formatter: (v: number) => `${Number(v).toFixed(decimalPrecision)}%`,
+              fontSize: 18,
+            },
+            data: [{ value }],
           },
-          data: [{ value }],
-        },
-      ],
-    }),
-    [min, max, value]
+        ],
+      };
+    },
+    [decimalPrecision, min, max, thresholds, value]
   );
 
-  if (isLoading) return <Skeleton className="h-[220px] w-full" />;
+  if (isLoading) return <Skeleton className="h-full w-full min-h-[100px]" />;
 
-  return <EChartWrapper option={option} style={{ height: 220 }} />;
+  return (
+    <div className="h-full w-full min-h-[100px]">
+      <EChartWrapper option={option} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
 }
 

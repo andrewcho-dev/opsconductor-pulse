@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -18,10 +19,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateWidget } from "@/services/api/dashboards";
-import { getWidgetDefinition } from "./widgets/widget-registry";
+import { DISPLAY_OPTIONS, getWidgetDefinition } from "./widgets/widget-registry";
 import type { DashboardWidget } from "@/services/api/dashboards";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
+import { Plus, X } from "lucide-react";
 
 interface WidgetConfigDialogProps {
   open: boolean;
@@ -85,6 +87,32 @@ export function WidgetConfigDialog({
 
   function renderConfigFields() {
     const widgetType = widget.widget_type;
+
+    if (
+      widgetType === "fleet_overview" ||
+      widgetType === "device_count" ||
+      widgetType === "fleet_status" ||
+      widgetType === "health_score"
+    ) {
+      return (
+        <div className="space-y-2">
+          <Label htmlFor="display_mode">Display Mode</Label>
+          <Select
+            value={(config.display_mode as string) ?? "count"}
+            onValueChange={(v) => updateConfig("display_mode", v)}
+          >
+            <SelectTrigger id="display_mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="count">Device Count</SelectItem>
+              <SelectItem value="donut">Status Donut</SelectItem>
+              <SelectItem value="health">Health Score</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
 
     if (widgetType === "kpi_tile" || widgetType === "line_chart" || widgetType === "bar_chart") {
       return (
@@ -226,7 +254,219 @@ export function WidgetConfigDialog({
               maxLength={100}
             />
           </div>
+
+          {DISPLAY_OPTIONS[widget.widget_type] && (
+            <div className="space-y-2">
+              <Label htmlFor="display_as">Display As</Label>
+              <Select
+                value={
+                  (config.display_as as string) ?? DISPLAY_OPTIONS[widget.widget_type][0].value
+                }
+                onValueChange={(v) => updateConfig("display_as", v)}
+              >
+                <SelectTrigger id="display_as">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DISPLAY_OPTIONS[widget.widget_type].map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {renderConfigFields()}
+
+          {/* === Formatting Section === */}
+          <div className="border-t pt-4 space-y-3">
+            <h4 className="text-sm font-medium">Formatting</h4>
+
+            {["kpi_tile", "gauge", "health_score", "device_count", "line_chart", "bar_chart"].includes(
+              widget.widget_type
+            ) && (
+              <div className="space-y-1">
+                <Label htmlFor="decimal_precision">Decimal Places</Label>
+                <Input
+                  id="decimal_precision"
+                  type="number"
+                  min={0}
+                  max={4}
+                  value={(config.decimal_precision as number) ?? 1}
+                  onChange={(e) => updateConfig("decimal_precision", Number(e.target.value))}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="show_title">Show Title</Label>
+              <Switch
+                id="show_title"
+                checked={(config.show_title as boolean | undefined) !== false}
+                onCheckedChange={(checked) => updateConfig("show_title", checked)}
+              />
+            </div>
+
+            {["line_chart", "bar_chart", "fleet_status"].includes(widget.widget_type) && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="show_legend">Show Legend</Label>
+                  <Switch
+                    id="show_legend"
+                    checked={(config.show_legend as boolean | undefined) !== false}
+                    onCheckedChange={(checked) => updateConfig("show_legend", checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="show_x_axis">Show X Axis</Label>
+                  <Switch
+                    id="show_x_axis"
+                    checked={(config.show_x_axis as boolean | undefined) !== false}
+                    onCheckedChange={(checked) => updateConfig("show_x_axis", checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="show_y_axis">Show Y Axis</Label>
+                  <Switch
+                    id="show_y_axis"
+                    checked={(config.show_y_axis as boolean | undefined) !== false}
+                    onCheckedChange={(checked) => updateConfig("show_y_axis", checked)}
+                  />
+                </div>
+              </>
+            )}
+
+            {["line_chart", "bar_chart"].includes(widget.widget_type) && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="y_axis_min">Y Axis Min</Label>
+                  <Input
+                    id="y_axis_min"
+                    type="number"
+                    placeholder="Auto"
+                    value={(config.y_axis_min as number | undefined) ?? ""}
+                    onChange={(e) =>
+                      updateConfig(
+                        "y_axis_min",
+                        e.target.value === "" ? undefined : Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="y_axis_max">Y Axis Max</Label>
+                  <Input
+                    id="y_axis_max"
+                    type="number"
+                    placeholder="Auto"
+                    value={(config.y_axis_max as number | undefined) ?? ""}
+                    onChange={(e) =>
+                      updateConfig(
+                        "y_axis_max",
+                        e.target.value === "" ? undefined : Number(e.target.value)
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* === Thresholds Section === */}
+          {["kpi_tile", "line_chart", "bar_chart", "gauge", "health_score", "device_count"].includes(
+            widget.widget_type
+          ) && (
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">Thresholds</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const thresholds =
+                      (config.thresholds as Array<{ value: number; color: string; label?: string }>) ??
+                      [];
+                    updateConfig("thresholds", [
+                      ...thresholds,
+                      { value: 0, color: "#ef4444", label: "" },
+                    ]);
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
+              </div>
+
+              {(
+                (config.thresholds as Array<{ value: number; color: string; label?: string }>) ?? []
+              ).map((t, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Value"
+                    value={t.value}
+                    onChange={(e) => {
+                      const thresholds = [
+                        ...(((config.thresholds as Array<{ value: number; color: string; label?: string }>) ??
+                          []) as Array<{ value: number; color: string; label?: string }>),
+                      ];
+                      thresholds[i] = { ...thresholds[i], value: Number(e.target.value) };
+                      updateConfig("thresholds", thresholds);
+                    }}
+                    className="w-24"
+                  />
+                  <input
+                    type="color"
+                    value={t.color}
+                    onChange={(e) => {
+                      const thresholds = [
+                        ...(((config.thresholds as Array<{ value: number; color: string; label?: string }>) ??
+                          []) as Array<{ value: number; color: string; label?: string }>),
+                      ];
+                      thresholds[i] = { ...thresholds[i], color: e.target.value };
+                      updateConfig("thresholds", thresholds);
+                    }}
+                    className="h-8 w-8 cursor-pointer rounded border border-border"
+                  />
+                  <Input
+                    placeholder="Label (optional)"
+                    value={t.label ?? ""}
+                    onChange={(e) => {
+                      const thresholds = [
+                        ...(((config.thresholds as Array<{ value: number; color: string; label?: string }>) ??
+                          []) as Array<{ value: number; color: string; label?: string }>),
+                      ];
+                      thresholds[i] = { ...thresholds[i], label: e.target.value };
+                      updateConfig("thresholds", thresholds);
+                    }}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const thresholds = (
+                        (config.thresholds as Array<{ value: number; color: string; label?: string }>) ??
+                        []
+                      ).filter((_, j) => j !== i);
+                      updateConfig("thresholds", thresholds);
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+
+              {(((config.thresholds as unknown[]) ?? []) as unknown[]).length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No thresholds configured. Add one to color-code values.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter>

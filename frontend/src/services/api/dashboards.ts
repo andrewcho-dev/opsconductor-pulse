@@ -26,6 +26,7 @@ export type WidgetType =
   | "gauge"
   | "table"
   | "alert_feed"
+  | "fleet_overview"
   | "fleet_status"
   | "device_count"
   | "health_score";
