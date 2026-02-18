@@ -20,6 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/shared";
 import { apiPatch } from "@/services/api/client";
 import type { SubscriptionDetail } from "@/services/api/types";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface StatusChangeDialogProps {
   open: boolean;
@@ -43,7 +45,13 @@ export function StatusChangeDialog({
         status: newStatus,
         notes,
       }),
-    onSuccess: onUpdated,
+    onSuccess: () => {
+      onUpdated();
+      toast.success("Status updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update status");
+    },
   });
 
   const statusOptions = ["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"];

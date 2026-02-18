@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateTenant, type Tenant, type TenantUpdate } from "@/services/api/tenants";
+import { toast } from "sonner";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,6 +39,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Props {
   tenant: Tenant | null;
@@ -157,6 +159,10 @@ export function EditTenantDialog({ tenant, open, onOpenChange }: Props) {
       queryClient.invalidateQueries({ queryKey: ["tenant-stats", tenant?.tenant_id] });
       queryClient.invalidateQueries({ queryKey: ["tenant-detail", tenant?.tenant_id] });
       onOpenChange(false);
+      toast.success("Tenant updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update tenant");
     },
   });
 
@@ -191,8 +197,8 @@ export function EditTenantDialog({ tenant, open, onOpenChange }: Props) {
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

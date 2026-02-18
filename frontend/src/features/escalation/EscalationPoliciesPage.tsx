@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +25,7 @@ import {
   type EscalationPolicy,
 } from "@/services/api/escalation";
 import { EscalationPolicyModal } from "./EscalationPolicyModal";
+import { getErrorMessage } from "@/lib/errors";
 
 function relativeTime(ts: string): string {
   const date = new Date(ts);
@@ -52,6 +54,10 @@ export default function EscalationPoliciesPage() {
     mutationFn: createEscalationPolicy,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["escalation-policies"] });
+      toast.success("Escalation policy created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create escalation policy");
     },
   });
   const updateMutation = useMutation({
@@ -59,12 +65,20 @@ export default function EscalationPoliciesPage() {
       updateEscalationPolicy(id, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["escalation-policies"] });
+      toast.success("Escalation policy updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update escalation policy");
     },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteEscalationPolicy,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["escalation-policies"] });
+      toast.success("Escalation policy deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete escalation policy");
     },
   });
 

@@ -17,6 +17,8 @@ import {
   downloadOperatorCaBundle,
 } from "@/services/api/certificates";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 function statusVariant(status: string): "default" | "destructive" | "secondary" {
   switch (status) {
@@ -69,8 +71,9 @@ export default function CertificateOverviewPage() {
       a.download = "device-ca-bundle.pem";
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("CA bundle downloaded");
     } catch (err) {
-      console.error("Failed to download CA bundle:", err);
+      toast.error(getErrorMessage(err) || "Failed to download CA bundle");
     }
   }
 

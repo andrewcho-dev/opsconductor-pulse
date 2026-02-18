@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@/services/auth/AuthProvider";
 import keycloak from "@/services/auth/keycloak";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 type ModeValue = "PROD" | "DEV";
 
@@ -31,7 +33,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     try {
       await keycloak.updateToken(30);
     } catch (error) {
-      console.error("Settings token refresh failed:", error);
+      toast.error(getErrorMessage(error) || "Session expired");
       keycloak.login();
       throw new Error("Token expired");
     }

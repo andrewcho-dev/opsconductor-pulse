@@ -41,6 +41,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 function formatRelativeTime(value: string): string {
   const date = new Date(value);
@@ -56,7 +58,7 @@ function formatRelativeTime(value: string): string {
 }
 
 export default function OperatorTenantsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
   const [confirmDeleteTenant, setConfirmDeleteTenant] = useState<TenantSummary | null>(null);
   const queryClient = useQueryClient();
@@ -69,8 +71,13 @@ export default function OperatorTenantsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteTenant,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["tenants-summary"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants-summary"] });
+      toast.success("Tenant deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete tenant");
+    },
   });
 
   const tenants = data?.tenants || [];
@@ -86,7 +93,7 @@ export default function OperatorTenantsPage() {
         title="Tenant Management"
         description="Manage all tenants in the system"
         action={
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Add Tenant
           </Button>
@@ -194,7 +201,7 @@ export default function OperatorTenantsPage() {
         </CardContent>
       </Card>
 
-      <CreateTenantDialog open={showCreate} onOpenChange={setShowCreate} />
+      <CreateTenantDialog open={createOpen} onOpenChange={setCreateOpen} />
       <EditTenantDialog
         tenant={editTenant}
         open={!!editTenant}

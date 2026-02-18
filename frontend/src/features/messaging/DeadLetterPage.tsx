@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getErrorMessage } from "@/lib/errors";
 
 const LIMIT = 50;
 
@@ -64,7 +66,13 @@ export default function DeadLetterPage() {
 
   const replayMutation = useMutation({
     mutationFn: replayDeadLetter,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Message replayed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to replay message");
+    },
   });
 
   const batchReplayMutation = useMutation({
@@ -72,17 +80,33 @@ export default function DeadLetterPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
       setSelected(new Set());
+      toast.success("Messages replayed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to replay messages");
     },
   });
 
   const discardMutation = useMutation({
     mutationFn: discardDeadLetter,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Message discarded");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to discard message");
+    },
   });
 
   const purgeMutation = useMutation({
     mutationFn: () => purgeDeadLetter(30),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Old messages purged");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to purge messages");
+    },
   });
 
   const messages = data?.messages ?? [];

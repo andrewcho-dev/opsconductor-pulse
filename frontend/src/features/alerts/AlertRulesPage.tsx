@@ -19,6 +19,7 @@ import {
   fetchAlertRuleTemplates,
 } from "@/services/api/alert-rules";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 const OPERATOR_LABELS: Record<string, string> = {
   GT: ">",
@@ -137,7 +138,17 @@ export default function AlertRulesPage() {
         formatDuration,
         (rule, checked) => {
           if (!isAdmin) return;
-          updateRule.mutate({ ruleId: String(rule.rule_id), data: { enabled: checked } });
+          updateRule.mutate(
+            { ruleId: String(rule.rule_id), data: { enabled: checked } },
+            {
+              onSuccess: () => {
+                toast.success("Alert rule updated");
+              },
+              onError: (err: Error) => {
+                toast.error(getErrorMessage(err) || "Failed to update rule");
+              },
+            }
+          );
         },
         (rule) => {
           setEditingRule(rule);
@@ -157,6 +168,8 @@ export default function AlertRulesPage() {
       );
       toast.success(`Created ${result.created.length} rules, skipped ${result.skipped.length} (already exist)`);
       await queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+    } catch (err) {
+      toast.error(getErrorMessage(err) || "Failed to apply rule templates");
     } finally {
       setApplyingDefaults(false);
     }

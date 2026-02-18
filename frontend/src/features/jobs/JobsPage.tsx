@@ -133,7 +133,7 @@ function makeJobColumns(
 }
 
 export default function JobsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [confirmCancelJobId, setConfirmCancelJobId] = useState<string | null>(null);
 
@@ -162,7 +162,7 @@ export default function JobsPage() {
         title="Jobs"
         description={isLoading ? "Loading..." : `${jobs.length} jobs`}
         action={
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Add Job
           </Button>
@@ -183,7 +183,7 @@ export default function JobsPage() {
               description="Jobs will appear here when you create firmware updates, configuration pushes, or other batch operations."
               icon={<ClipboardList className="h-12 w-12" />}
               action={
-                <Button onClick={() => setShowCreate(true)}>
+                <Button onClick={() => setCreateOpen(true)}>
                   <Plus className="mr-1 h-4 w-4" />
                   Add Job
                 </Button>
@@ -245,8 +245,8 @@ export default function JobsPage() {
         </div>
       )}
 
-      {showCreate && (
-        <CreateJobModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />
+      {createOpen && (
+        <CreateJobModal onClose={() => setCreateOpen(false)} onCreated={() => setCreateOpen(false)} />
       )}
 
       <AlertDialog

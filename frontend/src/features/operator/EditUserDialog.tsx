@@ -99,8 +99,8 @@ export function EditUserDialog({ userId, open, onOpenChange, onSaved }: EditUser
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

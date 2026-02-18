@@ -5,6 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { fetchDashboards, fetchDashboard } from "@/services/api/dashboards";
 import { apiPost } from "@/services/api/client";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 import { DashboardBuilder } from "./DashboardBuilder";
 import { DashboardSelector } from "./DashboardSelector";
 import { DashboardSettings } from "./DashboardSettings";
@@ -16,7 +18,7 @@ export default function DashboardPage() {
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showAddWidget, setShowAddWidget] = useState(false);
+  const [addWidgetOpen, setAddWidgetOpen] = useState(false);
 
   const bootstrapMutation = useMutation({
     mutationFn: () =>
@@ -26,6 +28,9 @@ export default function DashboardPage() {
       if (result.created && !selectedId) {
         setSelectedId(result.id);
       }
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to initialize dashboard");
     },
   });
 
@@ -54,7 +59,7 @@ export default function DashboardPage() {
   useEffect(() => {
     // Preserve old behavior: switching dashboards exits edit mode and closes drawers.
     setIsEditing(false);
-    setShowAddWidget(false);
+    setAddWidgetOpen(false);
   }, [activeDashboardId]);
 
   const handleToggleEdit = useCallback(() => {
@@ -63,7 +68,7 @@ export default function DashboardPage() {
 
   const handleAddWidget = useCallback(() => {
     setIsEditing(true);
-    setShowAddWidget(true);
+    setAddWidgetOpen(true);
   }, []);
 
   if (listLoading || bootstrapMutation.isPending) {
@@ -115,8 +120,8 @@ export default function DashboardPage() {
           isEditing={isEditing}
           onToggleEdit={handleToggleEdit}
           onAddWidget={handleAddWidget}
-          showAddWidget={showAddWidget}
-          onShowAddWidgetChange={setShowAddWidget}
+          showAddWidget={addWidgetOpen}
+          onShowAddWidgetChange={setAddWidgetOpen}
         />
       ) : (
         <div className="text-center py-8 text-muted-foreground">

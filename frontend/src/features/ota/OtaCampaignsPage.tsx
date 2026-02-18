@@ -26,7 +26,7 @@ const STATUS_VARIANT: Record<
 };
 
 export default function OtaCampaignsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [abortTarget, setAbortTarget] = useState<OtaCampaign | null>(null);
   const { data, isLoading } = useOtaCampaigns();
   const abortMut = useAbortCampaign();
@@ -136,7 +136,7 @@ export default function OtaCampaignsPage() {
         title="OTA Campaigns"
         description="Manage firmware rollouts to your device fleet."
         action={
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Add Campaign
           </Button>
@@ -156,9 +156,9 @@ export default function OtaCampaignsPage() {
       />
 
       <CreateCampaignDialog
-        open={showCreate}
-        onOpenChange={setShowCreate}
-        onCreated={() => setShowCreate(false)}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={() => setCreateOpen(false)}
       />
 
       <ConfirmDialog

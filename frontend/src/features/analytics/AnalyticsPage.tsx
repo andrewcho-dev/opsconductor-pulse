@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   fetchAvailableMetrics,
   runAnalyticsQuery,
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BarChart3, Download, Play, Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 const AGGREGATION_OPTIONS: { value: Aggregation; label: string }[] = [
   { value: "avg", label: "Average" },
@@ -78,7 +80,13 @@ export default function AnalyticsPage() {
 
   const queryMutation = useMutation({
     mutationFn: runAnalyticsQuery,
-    onSuccess: (data) => setResults(data),
+    onSuccess: (data) => {
+      setResults(data);
+      toast.success("Query completed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to run query");
+    },
   });
 
   const handleRunQuery = () => {

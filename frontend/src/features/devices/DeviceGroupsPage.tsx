@@ -29,6 +29,8 @@ import {
 } from "@/services/api/devices";
 import { fetchDevices } from "@/services/api/devices";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 export default function DeviceGroupsPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -96,6 +98,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setCreateOpen(false);
       resetForm();
+      toast.success("Device group created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create device group");
     },
   });
 
@@ -105,6 +111,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setCreateOpen(false);
       resetForm();
+      toast.success("Dynamic group created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create dynamic group");
     },
   });
 
@@ -126,6 +136,10 @@ export default function DeviceGroupsPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
+      toast.success("Device group updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update device group");
     },
   });
 
@@ -138,6 +152,10 @@ export default function DeviceGroupsPage() {
         navigate("/device-groups");
         setSelectedGroupId("");
       }
+      toast.success("Device group deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete device group");
     },
   });
 
@@ -147,6 +165,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-group-members", selectedGroupId] });
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setSelectedDeviceId("");
+      toast.success("Device added to group");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to add device to group");
     },
   });
 
@@ -155,6 +177,10 @@ export default function DeviceGroupsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-group-members", selectedGroupId] });
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
+      toast.success("Device removed from group");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to remove device from group");
     },
   });
 

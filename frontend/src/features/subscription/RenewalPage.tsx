@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { format, addDays } from "date-fns";
 import { Check, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/shared";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -18,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { apiGet, apiPost } from "@/services/api/client";
 import { DeviceSelectionModal } from "./DeviceSelectionModal";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Subscription {
   subscription_id: string;
@@ -111,7 +113,11 @@ export default function RenewalPage() {
       });
     },
     onSuccess: () => {
+      toast.success("Subscription renewed");
       navigate("/app/subscription?renewed=true");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to renew subscription");
     },
   });
 

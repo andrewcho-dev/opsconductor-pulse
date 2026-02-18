@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ import {
 } from "@/services/api/certificates";
 import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceCertificatesTabProps {
   deviceId: string;
@@ -73,6 +75,10 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
     onSuccess: async (result) => {
       setGeneratedCert(result);
       await queryClient.invalidateQueries({ queryKey: ["device-certificates", deviceId] });
+      toast.success("Certificate generated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to generate certificate");
     },
   });
 
@@ -81,6 +87,10 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
     onSuccess: async (result) => {
       setGeneratedCert(result);
       await queryClient.invalidateQueries({ queryKey: ["device-certificates", deviceId] });
+      toast.success("Certificate rotated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to rotate certificate");
     },
   });
 
@@ -88,6 +98,10 @@ export function DeviceCertificatesTab({ deviceId }: DeviceCertificatesTabProps) 
     mutationFn: (certId: number) => revokeCertificate(certId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-certificates", deviceId] });
+      toast.success("Certificate revoked");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to revoke certificate");
     },
   });
 

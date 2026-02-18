@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface CreateCampaignDialogProps {
   open: boolean;
@@ -65,9 +67,10 @@ export function CreateCampaignDialog({ open, onOpenChange, onCreated }: CreateCa
         rollout_rate: rolloutRate,
         abort_threshold: abortThreshold / 100,
       });
+      toast.success("Campaign created");
       onCreated();
     } catch (err) {
-      console.error("Failed to create campaign:", err);
+      toast.error(getErrorMessage(err) || "Failed to create campaign");
     }
   }
 

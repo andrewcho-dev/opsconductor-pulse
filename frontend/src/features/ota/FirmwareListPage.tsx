@@ -6,6 +6,8 @@ import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { FirmwareVersion } from "@/services/api/ota";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -96,8 +98,9 @@ export default function FirmwareListPage() {
       setDeviceType("");
       setFileSize("");
       setChecksum("");
+      toast.success("Firmware created");
     } catch (err) {
-      console.error("Failed to create firmware:", err);
+      toast.error(getErrorMessage(err) || "Failed to create firmware");
     }
   }
 

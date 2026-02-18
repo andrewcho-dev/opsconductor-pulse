@@ -3,6 +3,7 @@ import { Responsive, WidthProvider, type Layout, type LayoutItem as RglLayoutIte
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { WidgetContainer } from "./widgets/WidgetContainer";
 import { AddWidgetDrawer } from "./AddWidgetDrawer";
 import { WidgetConfigDialog } from "./WidgetConfigDialog";
@@ -16,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getErrorMessage } from "@/lib/errors";
 import { batchUpdateLayout, removeWidget } from "@/services/api/dashboards";
 import type { Dashboard, LayoutItem } from "@/services/api/dashboards";
 
@@ -46,6 +48,7 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localLayoutRef = useRef<Layout | null>(null);
   const prevEditingRef = useRef(isEditing);
+  const toastOnNextLayoutSaveRef = useRef(false);
 
   const layoutItems: RglLayoutItem[] = useMemo(
     () =>
@@ -67,6 +70,16 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
     mutationFn: (layout: LayoutItem[]) => batchUpdateLayout(dashboard.id, layout),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
+      if (toastOnNextLayoutSaveRef.current) {
+        toast.success("Layout saved");
+        toastOnNextLayoutSaveRef.current = false;
+      }
+    },
+    onError: (err: Error) => {
+      if (toastOnNextLayoutSaveRef.current) {
+        toast.error(getErrorMessage(err) || "Failed to save layout");
+        toastOnNextLayoutSaveRef.current = false;
+      }
     },
   });
 
@@ -74,6 +87,10 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
     mutationFn: (widgetId: number) => removeWidget(dashboard.id, widgetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
+      toast.success("Widget removed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to remove widget");
     },
   });
 
@@ -111,6 +128,7 @@ export function DashboardBuilder(props: DashboardBuilderProps) {
         debounceRef.current = null;
       }
       if (localLayoutRef.current) {
+        toastOnNextLayoutSaveRef.current = true;
         const layoutData: LayoutItem[] = localLayoutRef.current.map((item) => ({
           widget_id: Number(item.i),
           x: item.x,

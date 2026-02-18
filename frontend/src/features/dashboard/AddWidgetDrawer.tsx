@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sheet";
 import { getAllWidgetTypes, type WidgetDefinition } from "./widgets/widget-registry";
 import { addWidget } from "@/services/api/dashboards";
+import { toast } from "sonner";
 import {
   Hash,
   TrendingUp,
@@ -20,6 +21,7 @@ import {
   Activity,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Hash,
@@ -55,6 +57,10 @@ export function AddWidgetDrawer({ open, onOpenChange, dashboardId }: AddWidgetDr
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboardId] });
       onOpenChange(false);
+      toast.success("Widget added");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to add widget");
     },
   });
 

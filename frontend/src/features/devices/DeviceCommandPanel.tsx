@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
   listDeviceCommands,
   sendCommand,
   type DeviceCommand,
   type SendCommandPayload,
 } from "@/services/api/devices";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceCommandPanelProps {
   deviceId: string;
@@ -31,7 +33,7 @@ function statusBadge(status: string) {
 }
 
 export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
-  const [showForm, setShowForm] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const [cmdType, setCmdType] = useState("");
   const [cmdParams, setCmdParams] = useState("{}");
   const [expiresMin, setExpiresMin] = useState(60);
@@ -53,10 +55,14 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           result.mqtt_published ? "published" : "broker unavailable"
         }`
       );
-      setShowForm(false);
+      setFormOpen(false);
       setCmdType("");
       setCmdParams("{}");
       await commandsQuery.refetch();
+      toast.success("Command sent");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to send command");
     },
   });
 
@@ -124,13 +130,13 @@ export function DeviceCommandPanel({ deviceId }: DeviceCommandPanelProps) {
           <Button size="sm" variant="outline" onClick={() => void commandsQuery.refetch()}>
             Refresh
           </Button>
-          <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "Cancel" : "Send Command"}
+          <Button size="sm" onClick={() => setFormOpen((v) => !v)}>
+            {formOpen ? "Cancel" : "Send Command"}
           </Button>
         </div>
       </div>
 
-      {showForm && (
+      {formOpen && (
         <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
           <div className="space-y-1">
             <div className="text-sm text-muted-foreground">Quick commands</div>

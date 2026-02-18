@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,7 @@ import {
 } from "@/services/api/oncall";
 import ScheduleModal from "./ScheduleModal";
 import TimelineView from "./TimelineView";
+import { getErrorMessage } from "@/lib/errors";
 
 function ScheduleCard({ schedule }: { schedule: OncallSchedule }) {
   const [open, setOpen] = useState(false);
@@ -63,18 +65,30 @@ export default function OncallSchedulesPage() {
     mutationFn: createSchedule,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+      toast.success("On-call schedule created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create schedule");
     },
   });
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Partial<OncallSchedule> }) => updateSchedule(id, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+      toast.success("On-call schedule updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update schedule");
     },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteSchedule,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["oncall-schedules"] });
+      toast.success("On-call schedule deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete schedule");
     },
   });
 

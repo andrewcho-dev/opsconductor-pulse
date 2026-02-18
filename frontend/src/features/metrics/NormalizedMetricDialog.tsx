@@ -22,7 +22,8 @@ import {
   useDeleteNormalizedMetric,
   useUpdateNormalizedMetric,
 } from "@/hooks/use-metrics";
-import { ApiError } from "@/services/api/client";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 // DataTable not used: Small configuration table within a dialog.
 // DataTable would add unnecessary complexity for a few-row config display.
@@ -31,20 +32,6 @@ interface NormalizedMetricDialogProps {
   open: boolean;
   metric: NormalizedMetricReference | null;
   onClose: () => void;
-}
-
-function formatError(error: unknown): string {
-  if (!error) return "";
-  if (error instanceof ApiError) {
-    if (typeof error.body === "string") return error.body;
-    if (error.body && typeof error.body === "object") {
-      const detail = (error.body as { detail?: string }).detail;
-      if (detail) return detail;
-    }
-    return error.message;
-  }
-  if (error instanceof Error) return error.message;
-  return "Unknown error";
 }
 
 export default function NormalizedMetricDialog({
@@ -145,10 +132,11 @@ export default function NormalizedMetricDialog({
           expected_max: expectedMax,
         });
       }
+      toast.success(isEditing ? "Normalized metric updated" : "Normalized metric created");
       onClose();
     } catch (err) {
-      console.error("Failed to save normalized metric:", err);
-      setError(formatError(err));
+      toast.error(getErrorMessage(err) || "Failed to save normalized metric");
+      setError(getErrorMessage(err));
     }
   }
 
@@ -157,10 +145,11 @@ export default function NormalizedMetricDialog({
     setError("");
     try {
       await deleteMutation.mutateAsync(metric.name);
+      toast.success("Normalized metric deleted");
       onClose();
     } catch (err) {
-      console.error("Failed to delete normalized metric:", err);
-      setError(formatError(err));
+      toast.error(getErrorMessage(err) || "Failed to delete normalized metric");
+      setError(getErrorMessage(err));
     }
   }
 

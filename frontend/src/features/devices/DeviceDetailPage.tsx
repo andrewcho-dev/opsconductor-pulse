@@ -33,6 +33,7 @@ import {
 } from "@/services/api/devices";
 import { getLatestValue } from "@/lib/charts/transforms";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 import {
   getDeviceTiers,
   assignDeviceTier,
@@ -73,7 +74,7 @@ export default function DeviceDetailPage() {
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
-  const [showCreateJob, setShowCreateJob] = useState(false);
+  const [createJobOpen, setCreateJobOpen] = useState(false);
 
   useEffect(() => {
     if (!device) return;
@@ -92,7 +93,7 @@ export default function DeviceDetailPage() {
           setDeviceTagsState(response.tags);
         }
       } catch (error) {
-        console.error("Failed to load device tags:", error);
+        toast.error(getErrorMessage(error) || "Failed to load device tags");
         if (isMounted) {
           setDeviceTagsState([]);
         }
@@ -268,7 +269,7 @@ export default function DeviceDetailPage() {
       {deviceId && <DeviceConnectivityPanel deviceId={deviceId} />}
       {deviceId && <DeviceCommandPanel deviceId={deviceId} />}
       <div>
-        <Button size="sm" variant="outline" onClick={() => setShowCreateJob(true)}>
+        <Button size="sm" variant="outline" onClick={() => setCreateJobOpen(true)}>
           Create Job
         </Button>
       </div>
@@ -322,11 +323,11 @@ export default function DeviceDetailPage() {
           onClose={() => setEditModalOpen(false)}
         />
       )}
-      {showCreateJob && device && (
+      {createJobOpen && device && (
         <CreateJobModal
           prefilledDeviceId={device.device_id}
-          onClose={() => setShowCreateJob(false)}
-          onCreated={() => setShowCreateJob(false)}
+          onClose={() => setCreateJobOpen(false)}
+          onCreated={() => setCreateJobOpen(false)}
         />
       )}
     </div>

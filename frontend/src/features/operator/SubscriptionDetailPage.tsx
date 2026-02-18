@@ -36,8 +36,8 @@ function TypeBadge({ type }: { type: string }) {
 export default function SubscriptionDetailPage() {
   const { subscriptionId } = useParams<{ subscriptionId: string }>();
   const queryClient = useQueryClient();
-  const [showEdit, setShowEdit] = useState(false);
-  const [showStatusChange, setShowStatusChange] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [statusChangeOpen, setStatusChangeOpen] = useState(false);
 
   const { data, isLoading } = useQuery<SubscriptionDetail>({
     queryKey: ["subscription-detail", subscriptionId],
@@ -89,14 +89,14 @@ export default function SubscriptionDetailPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowStatusChange(true)}
+            onClick={() => setStatusChangeOpen(true)}
           >
             Change Status
           </Button>
@@ -150,26 +150,26 @@ export default function SubscriptionDetailPage() {
 
       <EditSubscriptionDialog
         tenantId={sub.tenant_id}
-        open={showEdit}
-        onOpenChange={setShowEdit}
+        open={editOpen}
+        onOpenChange={setEditOpen}
         subscription={sub}
         onSaved={() => {
           queryClient.invalidateQueries({
             queryKey: ["subscription-detail", subscriptionId],
           });
-          setShowEdit(false);
+          setEditOpen(false);
         }}
       />
 
       <StatusChangeDialog
-        open={showStatusChange}
-        onOpenChange={setShowStatusChange}
+        open={statusChangeOpen}
+        onOpenChange={setStatusChangeOpen}
         subscription={sub}
         onUpdated={() => {
           queryClient.invalidateQueries({
             queryKey: ["subscription-detail", subscriptionId],
           });
-          setShowStatusChange(false);
+          setStatusChangeOpen(false);
         }}
       />
     </div>

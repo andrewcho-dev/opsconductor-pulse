@@ -66,7 +66,7 @@ import type {
   RuleCondition,
   RuleOperator,
 } from "@/services/api/types";
-import { ApiError } from "@/services/api/client";
+import { getErrorMessage } from "@/lib/errors";
 import { fetchMetricReference } from "@/services/api/metrics";
 import {
   fetchAlertRuleTemplates,
@@ -78,20 +78,6 @@ interface AlertRuleDialogProps {
   open: boolean;
   onClose: () => void;
   rule?: AlertRule | null;
-}
-
-function formatError(error: unknown): string {
-  if (!error) return "";
-  if (error instanceof ApiError) {
-    if (typeof error.body === "string") return error.body;
-    if (error.body && typeof error.body === "object") {
-      const detail = (error.body as { detail?: string }).detail;
-      if (detail) return detail;
-    }
-    return error.message;
-  }
-  if (error instanceof Error) return error.message;
-  return "Unknown error";
 }
 
 const ruleOperators = ["GT", "GTE", "LT", "LTE"] as const;
@@ -349,7 +335,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   }, [open, rule]);
 
   const errorMessage = useMemo(() => {
-    return formatError(createMutation.error || updateMutation.error);
+    return getErrorMessage(createMutation.error || updateMutation.error);
   }, [createMutation.error, updateMutation.error]);
 
   const normalizedMetrics = useMemo<NormalizedMetricReference[]>(

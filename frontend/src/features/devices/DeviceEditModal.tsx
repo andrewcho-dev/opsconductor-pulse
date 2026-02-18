@@ -27,6 +27,8 @@ import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceEditModalProps {
   device: Device;
@@ -182,7 +184,7 @@ export function DeviceEditModal({
         setGeocodeError("Address not found");
       }
     } catch (err) {
-      console.error("Geocoding failed:", err);
+      toast.error(getErrorMessage(err) || "Geocoding failed");
       setGeocodeError("Lookup failed");
     }
 
@@ -193,8 +195,8 @@ export function DeviceEditModal({
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
         }}
       >
         <DialogContent>

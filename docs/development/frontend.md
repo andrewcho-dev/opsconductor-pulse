@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-18
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146]
 ---
 
 # Frontend
@@ -146,6 +146,41 @@ Phase 145 standardizes UI usage patterns across the app. These are conventions (
 - Custom page header layouts (use `<PageHeader>`).
 - Standalone "Back" buttons (use breadcrumbs).
 - "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
+
+## Mutation Feedback Conventions
+
+Phase 146 standardizes mutation feedback and error formatting. The goal is zero silent operations: users should always see confirmation on success and a meaningful message on failure.
+
+### Toast Feedback Rules
+
+- Every `useMutation` MUST have both `onSuccess` and `onError` callbacks with toast feedback.
+- Import: `import { toast } from "sonner";`
+- Success: `toast.success("Noun verbed")` (past tense, concise).
+- Error: `toast.error(getErrorMessage(err) || "Failed to verb noun")` (prefer API detail, with generic fallback).
+- Import error utility: `import { getErrorMessage } from "@/lib/errors";`
+- Keep existing `onSuccess` logic (invalidateQueries, dialog close, state reset) - toast is in addition, not replacement.
+- No `console.error()` in feature files - use `toast.error()` instead.
+
+### Error Formatting
+
+- One centralized function: `getErrorMessage()` in `@/lib/errors`.
+- Handles: `ApiError` (extracts `body.detail`), standard `Error`, plain objects, unknown.
+- Never duplicate error formatting logic in components (no local `formatError()` helpers).
+
+### Modal State Naming
+
+- Simple boolean: `const [open, setOpen] = useState(false)`
+- Multiple dialogs: `const [createOpen, setCreateOpen] = useState(false)`
+- Compound edit state: `const [editing, setEditing] = useState<T | null>(null)`
+- Avoid state names like `show*`, `isOpen`, `visible`, `openCreate`.
+
+### Prohibited Patterns
+
+- Silent mutations (no toast on success or error).
+- `console.error()` in feature/page components.
+- Duplicated `formatError()` functions - use `getErrorMessage` from `@/lib/errors`.
+- `window.confirm()` - use `<AlertDialog>` (Phase 145).
+- Inconsistent modal state names (`show`, `isOpen`, `visible`).
 
 ## State Management
 

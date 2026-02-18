@@ -20,6 +20,8 @@ import {
 import { updateWidget } from "@/services/api/dashboards";
 import { getWidgetDefinition } from "./widgets/widget-registry";
 import type { DashboardWidget } from "@/services/api/dashboards";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface WidgetConfigDialogProps {
   open: boolean;
@@ -70,6 +72,10 @@ export function WidgetConfigDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboardId] });
       onOpenChange(false);
+      toast.success("Widget updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update widget");
     },
   });
 

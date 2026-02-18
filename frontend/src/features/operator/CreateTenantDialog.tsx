@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getErrorMessage } from "@/lib/errors";
+import { toast } from "sonner";
 import { createTenant } from "@/services/api/tenants";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -95,9 +96,10 @@ export function CreateTenantDialog({ open, onOpenChange }: Props) {
       queryClient.invalidateQueries({ queryKey: ["tenants-summary"] });
       onOpenChange(false);
       form.reset();
+      toast.success("Tenant created");
     },
-    onError: (error: Error) => {
-      console.error("Create tenant error:", getErrorMessage(error));
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create tenant");
     },
   });
 
@@ -113,8 +115,8 @@ export function CreateTenantDialog({ open, onOpenChange }: Props) {
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

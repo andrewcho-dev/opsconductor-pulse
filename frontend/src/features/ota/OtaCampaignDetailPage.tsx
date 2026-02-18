@@ -36,7 +36,7 @@ export default function OtaCampaignDetailPage() {
   const id = Number(campaignId) || 0;
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [showAbortConfirm, setShowAbortConfirm] = useState(false);
+  const [abortOpen, setAbortOpen] = useState(false);
   const PAGE_SIZE = 50;
 
   const { data: campaign, isLoading } = useOtaCampaign(id);
@@ -151,7 +151,7 @@ export default function OtaCampaignDetailPage() {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => setShowAbortConfirm(true)}
+                  onClick={() => setAbortOpen(true)}
                   disabled={abortMut.isPending}
                 >
                   Abort
@@ -163,15 +163,15 @@ export default function OtaCampaignDetailPage() {
       />
 
       <ConfirmDialog
-        open={showAbortConfirm}
-        onOpenChange={setShowAbortConfirm}
+        open={abortOpen}
+        onOpenChange={setAbortOpen}
         title="Abort Campaign"
         description="Are you sure you want to abort this campaign? Devices that have already updated will not be rolled back."
         confirmText="Abort Campaign"
         variant="destructive"
         onConfirm={() => {
           abortMut.mutate(campaign.id);
-          setShowAbortConfirm(false);
+          setAbortOpen(false);
         }}
         isPending={abortMut.isPending}
       />

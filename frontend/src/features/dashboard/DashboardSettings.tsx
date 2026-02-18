@@ -19,8 +19,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Settings, Pencil, Share2, Star, Lock, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { toggleDashboardShare, updateDashboard } from "@/services/api/dashboards";
 import type { Dashboard } from "@/services/api/dashboards";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DashboardSettingsProps {
   dashboard: Dashboard;
@@ -35,7 +37,7 @@ export function DashboardSettings({
   onToggleEdit,
   onAddWidget,
 }: DashboardSettingsProps) {
-  const [showRename, setShowRename] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [newName, setNewName] = useState(dashboard.name);
   const [newDescription, setNewDescription] = useState(dashboard.description);
   const queryClient = useQueryClient();
@@ -49,7 +51,11 @@ export function DashboardSettings({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
-      setShowRename(false);
+      setRenameOpen(false);
+      toast.success("Dashboard renamed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to rename dashboard");
     },
   });
 
@@ -58,6 +64,10 @@ export function DashboardSettings({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Sharing updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update sharing");
     },
   });
 
@@ -66,6 +76,10 @@ export function DashboardSettings({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Default dashboard updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to set default");
     },
   });
 
@@ -107,7 +121,7 @@ export function DashboardSettings({
             onClick={() => {
               setNewName(dashboard.name);
               setNewDescription(dashboard.description);
-              setShowRename(true);
+              setRenameOpen(true);
             }}
           >
             <Pencil className="h-4 w-4 mr-2" />
@@ -144,7 +158,7 @@ export function DashboardSettings({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={showRename} onOpenChange={setShowRename}>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Rename Dashboard</DialogTitle>
@@ -168,7 +182,7 @@ export function DashboardSettings({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRename(false)}>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
             <Button

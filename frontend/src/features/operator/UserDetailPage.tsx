@@ -16,6 +16,8 @@ import {
   sendPasswordReset,
   updateUser,
 } from "@/services/api/operator";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 const KNOWN_ROLES = ["customer", "operator", "admin"];
 
@@ -43,20 +45,53 @@ export default function UserDetailPage() {
       enabled: boolean;
       email_verified: boolean;
     }) => updateUser(userId, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-user", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-user", userId] });
+      toast.success("User updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update user");
+    },
   });
   const addRoleMut = useMutation({
     mutationFn: (role: string) => assignRole(userId, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-user", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-user", userId] });
+      toast.success("Role assigned");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to assign role");
+    },
   });
   const removeRoleMut = useMutation({
     mutationFn: (role: string) => removeRole(userId, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-user", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-user", userId] });
+      toast.success("Role removed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to remove role");
+    },
   });
   const setPasswordMut = useMutation({
     mutationFn: () => resetUserPassword(userId, password, temporary),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-user", userId] });
+      toast.success("Password updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update password");
+    },
   });
-  const sendResetMut = useMutation({ mutationFn: () => sendPasswordReset(userId) });
+  const sendResetMut = useMutation({
+    mutationFn: () => sendPasswordReset(userId),
+    onSuccess: () => {
+      toast.success("Password reset email sent");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to send password reset");
+    },
+  });
 
   const user = userQ.data;
   const roles: string[] = useMemo(() => {

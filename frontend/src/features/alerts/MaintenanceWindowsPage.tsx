@@ -22,6 +22,8 @@ import {
   type MaintenanceWindow,
   updateMaintenanceWindow,
 } from "@/services/api/alerts";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 const DOW_OPTIONS = [
   { label: "Sun", value: 0 },
@@ -91,6 +93,10 @@ export default function MaintenanceWindowsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
       setOpen(false);
+      toast.success("Maintenance window created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create maintenance window");
     },
   });
   const updateMutation = useMutation({
@@ -99,24 +105,32 @@ export default function MaintenanceWindowsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
       setOpen(false);
+      toast.success("Maintenance window updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update maintenance window");
     },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteMaintenanceWindow,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
+      toast.success("Maintenance window deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete maintenance window");
     },
   });
 
   const rows = useMemo(() => data?.windows ?? [], [data?.windows]);
 
-  function openCreate() {
+  function handleOpenCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setOpen(true);
   }
 
-  function openEdit(window: MaintenanceWindow) {
+  function handleOpenEdit(window: MaintenanceWindow) {
     setEditing(window);
     setForm(toFormState(window));
     setOpen(true);
@@ -164,7 +178,7 @@ export default function MaintenanceWindowsPage() {
       <PageHeader
         title="Maintenance Windows"
         description="Suppress alerts during planned maintenance."
-        action={<Button onClick={openCreate}>Add Window</Button>}
+        action={<Button onClick={handleOpenCreate}>Add Window</Button>}
       />
 
       <Card>
@@ -203,7 +217,7 @@ export default function MaintenanceWindowsPage() {
                   </Badge>
                 </div>
                 <div className="flex items-start gap-2">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(window)}>
+                  <Button variant="outline" size="sm" onClick={() => handleOpenEdit(window)}>
                     Edit
                   </Button>
                   <Button

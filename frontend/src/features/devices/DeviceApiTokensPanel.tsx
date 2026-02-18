@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +21,7 @@ import {
   type ProvisionDeviceResponse,
 } from "@/services/api/devices";
 import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceApiTokensPanelProps {
   deviceId: string;
@@ -41,6 +43,10 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     mutationFn: (tokenId: string) => revokeDeviceToken(deviceId, tokenId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-tokens", deviceId] });
+      toast.success("API token revoked");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to revoke token");
     },
   });
 
@@ -49,6 +55,10 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     onSuccess: async (result) => {
       setCredentials(result);
       await queryClient.invalidateQueries({ queryKey: ["device-tokens", deviceId] });
+      toast.success("API token rotated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to rotate token");
     },
   });
 

@@ -55,9 +55,9 @@ interface Subscription {
 
 export default function OperatorTenantDetailPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
-  const [showEdit, setShowEdit] = useState(false);
-  const [showSubscriptionCreate, setShowSubscriptionCreate] = useState(false);
-  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [subscriptionCreateOpen, setSubscriptionCreateOpen] = useState(false);
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tenant-stats", tenantId],
@@ -142,7 +142,7 @@ export default function OperatorTenantDetailPage() {
             <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
               {data.status}
             </Badge>
-            <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1 h-4 w-4" />
               Edit
             </Button>
@@ -265,7 +265,7 @@ export default function OperatorTenantDetailPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Company Profile</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit
           </Button>
@@ -334,10 +334,10 @@ export default function OperatorTenantDetailPage() {
             Subscriptions
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowBulkAssign(true)}>
+            <Button variant="outline" size="sm" onClick={() => setBulkAssignOpen(true)}>
               Bulk Assign Devices
             </Button>
-            <Button size="sm" onClick={() => setShowSubscriptionCreate(true)}>
+            <Button size="sm" onClick={() => setSubscriptionCreateOpen(true)}>
               Add Subscription
             </Button>
           </div>
@@ -462,26 +462,26 @@ export default function OperatorTenantDetailPage() {
       </Card>
       <EditTenantDialog
         tenant={fullTenant || null}
-        open={showEdit}
-        onOpenChange={setShowEdit}
+        open={editOpen}
+        onOpenChange={setEditOpen}
       />
       <CreateSubscriptionDialog
-        open={showSubscriptionCreate}
-        onOpenChange={setShowSubscriptionCreate}
+        open={subscriptionCreateOpen}
+        onOpenChange={setSubscriptionCreateOpen}
         preselectedTenantId={tenantId}
         onCreated={() => {
           refetchSubscriptions();
-          setShowSubscriptionCreate(false);
+          setSubscriptionCreateOpen(false);
         }}
       />
       {tenantId && (
         <BulkAssignDialog
-          open={showBulkAssign}
-          onOpenChange={setShowBulkAssign}
+          open={bulkAssignOpen}
+          onOpenChange={setBulkAssignOpen}
           tenantId={tenantId}
           onComplete={() => {
             refetchSubscriptions();
-            setShowBulkAssign(false);
+            setBulkAssignOpen(false);
           }}
         />
       )}

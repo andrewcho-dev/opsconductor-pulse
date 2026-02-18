@@ -95,8 +95,8 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
     <>
       <Dialog
         open={open && !credentials}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
         }}
       >
         <DialogContent>

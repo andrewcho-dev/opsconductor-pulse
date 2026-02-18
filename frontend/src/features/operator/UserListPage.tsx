@@ -33,14 +33,16 @@ import {
   sendOperatorPasswordReset,
   type User,
 } from "@/services/api/users";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 export default function UserListPage() {
   const qc = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [openCreate, setOpenCreate] = useState(false);
-  const [openAssignRole, setOpenAssignRole] = useState(false);
-  const [openAssignTenant, setOpenAssignTenant] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [assignRoleOpen, setAssignRoleOpen] = useState(false);
+  const [assignTenantOpen, setAssignTenantOpen] = useState(false);
   const [targetUser, setTargetUser] = useState<User | null>(null);
   const [roleInput, setRoleInput] = useState("");
   const [tenantInput, setTenantInput] = useState("");
@@ -73,7 +75,7 @@ export default function UserListPage() {
     mutationFn: createOperatorUser,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["operator-users"] });
-      setOpenCreate(false);
+      setCreateOpen(false);
       setForm({
         username: "",
         email: "",
@@ -81,30 +83,72 @@ export default function UserListPage() {
         last_name: "",
         temporary_password: "",
       });
+      toast.success("User created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create user");
     },
   });
   const deleteMut = useMutation({
     mutationFn: deleteOperatorUser,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-users"] });
+      toast.success("User deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete user");
+    },
   });
-  const resetMut = useMutation({ mutationFn: sendOperatorPasswordReset });
+  const resetMut = useMutation({
+    mutationFn: sendOperatorPasswordReset,
+    onSuccess: () => {
+      toast.success("Password reset email sent");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to send password reset");
+    },
+  });
   const roleMut = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
       assignOperatorUserRole(userId, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-users"] });
+      toast.success("Role assigned");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to assign role");
+    },
   });
   const tenantMut = useMutation({
     mutationFn: ({ userId, tenantId }: { userId: string; tenantId: string }) =>
       assignOperatorUserTenant(userId, tenantId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-users"] });
+      toast.success("Tenant assigned");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to assign tenant");
+    },
   });
   const enableMut = useMutation({
     mutationFn: (userId: string) => enableOperatorUser(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-users"] });
+      toast.success("User enabled");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to enable user");
+    },
   });
   const disableMut = useMutation({
     mutationFn: (userId: string) => disableOperatorUser(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["operator-users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["operator-users"] });
+      toast.success("User disabled");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to disable user");
+    },
   });
 
   const users = useMemo(() => usersQ.data?.users || [], [usersQ.data?.users]);
@@ -187,7 +231,7 @@ export default function UserListPage() {
                 onClick={() => {
                   setTargetUser(u);
                   setRoleInput("");
-                  setOpenAssignRole(true);
+                  setAssignRoleOpen(true);
                 }}
               >
                 Assign Role
@@ -196,7 +240,7 @@ export default function UserListPage() {
                 onClick={() => {
                   setTargetUser(u);
                   setTenantInput(u.tenant_id ?? "");
-                  setOpenAssignTenant(true);
+                  setAssignTenantOpen(true);
                 }}
               >
                 Assign Tenant
@@ -226,7 +270,7 @@ export default function UserListPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Users</CardTitle>
-          <Button onClick={() => setOpenCreate(true)}>Create User</Button>
+          <Button onClick={() => setCreateOpen(true)}>Create User</Button>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input
@@ -259,7 +303,7 @@ export default function UserListPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={openAssignRole} onOpenChange={setOpenAssignRole}>
+      <Dialog open={assignRoleOpen} onOpenChange={setAssignRoleOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign Role</DialogTitle>
@@ -276,7 +320,7 @@ export default function UserListPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenAssignRole(false)}>
+            <Button variant="outline" onClick={() => setAssignRoleOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -284,7 +328,7 @@ export default function UserListPage() {
               onClick={() => {
                 if (!targetUser) return;
                 roleMut.mutate({ userId: targetUser.id, role: roleInput.trim() });
-                setOpenAssignRole(false);
+                setAssignRoleOpen(false);
               }}
             >
               Assign
@@ -293,7 +337,7 @@ export default function UserListPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openAssignTenant} onOpenChange={setOpenAssignTenant}>
+      <Dialog open={assignTenantOpen} onOpenChange={setAssignTenantOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign Tenant</DialogTitle>
@@ -310,7 +354,7 @@ export default function UserListPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenAssignTenant(false)}>
+            <Button variant="outline" onClick={() => setAssignTenantOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -318,7 +362,7 @@ export default function UserListPage() {
               onClick={() => {
                 if (!targetUser) return;
                 tenantMut.mutate({ userId: targetUser.id, tenantId: tenantInput.trim() });
-                setOpenAssignTenant(false);
+                setAssignTenantOpen(false);
               }}
             >
               Assign
@@ -327,7 +371,7 @@ export default function UserListPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create User</DialogTitle>
@@ -376,7 +420,7 @@ export default function UserListPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button

@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiPost } from "@/services/api/client";
 import { CalendarPlus, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Subscription {
   tenant_id: string;
@@ -81,8 +83,8 @@ export function EditSubscriptionDialog({
     data: Record<string, unknown>;
   } | null>(null);
 
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && subscription) {
+  const handleOpenChange = (openState: boolean) => {
+    if (openState && subscription) {
       setDeviceLimit(subscription.device_limit?.toString() || "100");
       setTermEnd(
         subscription.term_end
@@ -93,7 +95,7 @@ export function EditSubscriptionDialog({
       setNotes("");
       setTransactionRef("");
     }
-    onOpenChange(isOpen);
+    onOpenChange(openState);
   };
 
   const mutation = useMutation({
@@ -102,6 +104,10 @@ export function EditSubscriptionDialog({
     },
     onSuccess: () => {
       onSaved();
+      toast.success("Subscription updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update subscription");
     },
   });
 

@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown, Plus, Share2, Star, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchDashboards,
   createDashboard,
@@ -25,6 +26,7 @@ import {
   updateDashboard,
 } from "@/services/api/dashboards";
 import type { DashboardSummary } from "@/services/api/dashboards";
+import { getErrorMessage } from "@/lib/errors";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +44,7 @@ interface DashboardSelectorProps {
 }
 
 export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSelectorProps) {
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DashboardSummary | null>(null);
@@ -65,9 +67,13 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
       onSelect(result.id);
-      setShowCreateDialog(false);
+      setCreateOpen(false);
       setNewName("");
       setNewDescription("");
+      toast.success("Dashboard created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create dashboard");
     },
   });
 
@@ -79,6 +85,10 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
       if (remaining.length > 0) {
         onSelect(remaining[0].id);
       }
+      toast.success("Dashboard deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete dashboard");
     },
   });
 
@@ -86,6 +96,10 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
     mutationFn: (id: number) => updateDashboard(id, { is_default: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Default dashboard updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to set default");
     },
   });
 
@@ -182,14 +196,14 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
           )}
 
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setShowCreateDialog(true)}>
+          <DropdownMenuItem onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Dashboard
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Create Dashboard</DialogTitle>
@@ -215,7 +229,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button

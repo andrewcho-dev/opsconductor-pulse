@@ -66,7 +66,7 @@ export default function SubscriptionsPage() {
   const [typeFilter, setTypeFilter] = useState<(typeof TYPE_OPTIONS)[number]>("ALL");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]>("ALL");
   const [tenantFilter, setTenantFilter] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -127,7 +127,7 @@ export default function SubscriptionsPage() {
           onChange={(event) => setTenantFilter(event.target.value)}
         />
         <div className="ml-auto">
-          <Button onClick={() => setShowCreate(true)}>New Subscription</Button>
+          <Button onClick={() => setCreateOpen(true)}>New Subscription</Button>
         </div>
       </div>
 
@@ -198,10 +198,10 @@ export default function SubscriptionsPage() {
       </div>
 
       <CreateSubscriptionDialog
-        open={showCreate}
-        onOpenChange={setShowCreate}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
         onCreated={() => {
-          setShowCreate(false);
+          setCreateOpen(false);
           refetch();
         }}
       />

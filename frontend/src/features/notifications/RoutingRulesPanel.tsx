@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import {
   createRoutingRule,
   deleteRoutingRule,
@@ -12,6 +13,7 @@ import {
   type NotificationChannel,
   type RoutingRule,
 } from "@/services/api/notifications";
+import { getErrorMessage } from "@/lib/errors";
 
 interface RoutingRulesPanelProps {
   channels: NotificationChannel[];
@@ -39,6 +41,10 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
     mutationFn: createRoutingRule,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
+      toast.success("Routing rule created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create routing rule");
     },
   });
   const updateMutation = useMutation({
@@ -46,12 +52,20 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
       updateRoutingRule(id, body),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
+      toast.success("Routing rule updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update routing rule");
     },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteRoutingRule,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["notification-routing-rules"] });
+      toast.success("Routing rule deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete routing rule");
     },
   });
 
