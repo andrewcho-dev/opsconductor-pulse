@@ -33,9 +33,9 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 function usageColor(pct: number) {
-  if (pct > 90) return "bg-red-500";
-  if (pct >= 75) return "bg-yellow-500";
-  return "bg-green-500";
+  if (pct > 90) return "bg-status-critical";
+  if (pct >= 75) return "bg-status-warning";
+  return "bg-status-online";
 }
 
 function ProgressBar({ percent }: { percent: number }) {
@@ -137,7 +137,7 @@ export default function BillingPage() {
 
   if (statusLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -147,7 +147,7 @@ export default function BillingPage() {
   const canSubscribe = !status?.has_billing_account && config?.stripe_configured;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Billing"
         description="Manage subscriptions, tier allocations, and plan limits."
@@ -155,7 +155,7 @@ export default function BillingPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             Subscriptions
           </CardTitle>
@@ -218,12 +218,12 @@ export default function BillingPage() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <TypeBadge type={s.subscription_type} />
-                        <span className="text-xs font-mono text-muted-foreground">
+                        <span className="text-sm font-mono text-muted-foreground">
                           {s.subscription_id}
                         </span>
                       </div>
                       {s.parent_subscription_id && (
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           Parent: {s.parent_subscription_id}
                         </div>
                       )}
@@ -268,7 +268,7 @@ export default function BillingPage() {
       {tierRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Device Tier Allocations</CardTitle>
+            <CardTitle>Device Tier Allocations</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -285,7 +285,7 @@ export default function BillingPage() {
                     <TableCell>{a.tier_display_name}</TableCell>
                     <TableCell>
                       {a.slots_used} / {a.slot_limit}{" "}
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm text-muted-foreground">
                         ({a.percent_used}%)
                       </span>
                     </TableCell>
@@ -302,7 +302,7 @@ export default function BillingPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Usage & Limits</CardTitle>
+          <CardTitle>Usage & Limits</CardTitle>
         </CardHeader>
         <CardContent>
           {usageRows.length === 0 ? (
@@ -330,7 +330,7 @@ export default function BillingPage() {
                         <div className="flex-1">
                           <ProgressBar percent={r.percent_used} />
                         </div>
-                        <div className="w-12 text-right text-xs text-muted-foreground">
+                        <div className="w-12 text-right text-sm text-muted-foreground">
                           {r.percent_used}%
                         </div>
                       </div>

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import packageJson from "../../../package.json";
 import {
   LayoutDashboard,
   Cpu,
@@ -199,7 +198,7 @@ export function AppSidebar() {
                   <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
                 </div>
-                <Badge variant="destructive" className="h-5 min-w-5 px-1 text-xs">
+                <Badge variant="destructive" className="h-5 min-w-5 px-1">
                   {openAlertCount > 99 ? "99+" : openAlertCount}
                 </Badge>
               </div>
@@ -246,8 +245,8 @@ export function AppSidebar() {
             className="h-8 w-8"
           />
           <div>
-            <div className="text-sm font-bold text-sidebar-foreground">OpsConductor</div>
-            <div className="text-xs text-muted-foreground">Pulse</div>
+            <div className="text-sm font-semibold text-sidebar-foreground">OpsConductor</div>
+            <div className="text-sm text-muted-foreground">Pulse</div>
           </div>
         </Link>
       </SidebarHeader>
@@ -478,11 +477,7 @@ export function AppSidebar() {
 
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
-        <div className="text-xs text-muted-foreground">
-          OpsConductor Pulse v{packageJson.version}
-        </div>
-      </SidebarFooter>
+      <SidebarFooter className="p-2" />
     </Sidebar>
   );
 }

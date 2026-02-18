@@ -6,9 +6,10 @@ import type { EChartsOption } from "echarts";
 import { useUIStore } from "@/stores/ui-store";
 import type { WidgetRendererProps } from "../widget-registry";
 
-export default function FleetStatusRenderer(_props: WidgetRendererProps) {
+export default function FleetStatusRenderer({ config }: WidgetRendererProps) {
   const { data, isLoading } = useDevices({ limit: 500, offset: 0 });
   const devices = data?.devices || [];
+  const showLegend = (config.show_legend as boolean | undefined) ?? true;
   const resolvedTheme = useUIStore((s) => s.resolvedTheme);
   const isDark = resolvedTheme === "dark";
   const legendColor = isDark ? "#a1a1aa" : "#52525b";
@@ -33,10 +34,12 @@ export default function FleetStatusRenderer(_props: WidgetRendererProps) {
         trigger: "item",
         formatter: "{b}: {c} ({d}%)",
       },
-      legend: {
-        bottom: 0,
-        textStyle: { color: legendColor },
-      },
+      legend: showLegend
+        ? {
+            bottom: 0,
+            textStyle: { color: legendColor },
+          }
+        : { show: false },
       series: [
         {
           type: "pie",
@@ -69,6 +72,7 @@ export default function FleetStatusRenderer(_props: WidgetRendererProps) {
       devices.length,
       statusCounts,
       legendColor,
+      showLegend,
       borderColor,
       labelColor,
       onlineColor,
@@ -76,16 +80,20 @@ export default function FleetStatusRenderer(_props: WidgetRendererProps) {
     ]
   );
 
-  if (isLoading) return <Skeleton className="h-[220px]" />;
+  if (isLoading) return <Skeleton className="h-full w-full min-h-[100px]" />;
 
   if (devices.length === 0) {
     return (
-      <div className="h-[220px] flex items-center justify-center text-muted-foreground">
+      <div className="h-full w-full min-h-[100px] flex items-center justify-center text-muted-foreground">
         No devices
       </div>
     );
   }
 
-  return <EChartWrapper option={option} style={{ height: 220 }} />;
+  return (
+    <div className="h-full w-full min-h-[100px]">
+      <EChartWrapper option={option} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
 }
 

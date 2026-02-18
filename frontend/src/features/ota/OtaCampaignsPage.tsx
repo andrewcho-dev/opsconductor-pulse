@@ -10,13 +10,7 @@ import { PageHeader } from "@/components/shared";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { Plus, XCircle } from "lucide-react";
 import { CreateCampaignDialog } from "./CreateCampaignDialog";
 import type { CampaignStatus, OtaCampaign } from "@/services/api/ota";
 
@@ -32,7 +26,7 @@ const STATUS_VARIANT: Record<
 };
 
 export default function OtaCampaignsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [abortTarget, setAbortTarget] = useState<OtaCampaign | null>(null);
   const { data, isLoading } = useOtaCampaigns();
   const abortMut = useAbortCampaign();
@@ -45,7 +39,7 @@ export default function OtaCampaignsPage() {
   }
 
   const statusClass = (status: CampaignStatus) => {
-    if (status === "COMPLETED") return "text-green-600";
+    if (status === "COMPLETED") return "text-status-online";
     return "";
   };
 
@@ -77,7 +71,7 @@ export default function OtaCampaignsPage() {
     {
       accessorKey: "firmware_version",
       header: "Firmware",
-      cell: ({ row }) => <span className="text-xs font-mono">{row.original.firmware_version}</span>,
+      cell: ({ row }) => <span className="text-sm font-mono">{row.original.firmware_version}</span>,
     },
     {
       accessorKey: "total_devices",
@@ -96,7 +90,7 @@ export default function OtaCampaignsPage() {
             <div className="h-2 w-24 rounded-full bg-muted overflow-hidden">
               <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {c.succeeded}/{c.total_devices}
               {c.failed > 0 && <span className="text-destructive"> ({c.failed} failed)</span>}
             </span>
@@ -120,35 +114,33 @@ export default function OtaCampaignsPage() {
       cell: ({ row }) => {
         const c = row.original;
         const canAbort = c.status === "RUNNING" || c.status === "CREATED";
+        if (!canAbort) return null;
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Open campaign actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/ota/campaigns/${c.id}`}>View Details</Link>
-              </DropdownMenuItem>
-              {canAbort && (
-                <DropdownMenuItem variant="destructive" onClick={() => setAbortTarget(c)}>
-                  Abort
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={() => setAbortTarget(c)}
+          >
+            <XCircle className="mr-1 h-3.5 w-3.5" />
+            Abort
+          </Button>
         );
       },
     },
   ];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="OTA Campaigns"
         description="Manage firmware rollouts to your device fleet."
-        action={<Button onClick={() => setShowCreate(true)}>+ New Campaign</Button>}
+        action={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Campaign
+          </Button>
+        }
       />
 
       <DataTable
@@ -156,19 +148,18 @@ export default function OtaCampaignsPage() {
         data={campaigns}
         isLoading={isLoading}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No OTA campaigns created yet.
           </div>
         }
         manualPagination={false}
       />
 
-      {showCreate && (
-        <CreateCampaignDialog
-          onClose={() => setShowCreate(false)}
-          onCreated={() => setShowCreate(false)}
-        />
-      )}
+      <CreateCampaignDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={() => setCreateOpen(false)}
+      />
 
       <ConfirmDialog
         open={!!abortTarget}

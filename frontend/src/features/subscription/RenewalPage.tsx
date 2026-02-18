@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { format, addDays } from "date-fns";
 import { Check, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/shared";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -18,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { apiGet, apiPost } from "@/services/api/client";
 import { DeviceSelectionModal } from "./DeviceSelectionModal";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Subscription {
   subscription_id: string;
@@ -111,7 +113,11 @@ export default function RenewalPage() {
       });
     },
     onSuccess: () => {
+      toast.success("Subscription renewed");
       navigate("/app/subscription?renewed=true");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to renew subscription");
     },
   });
 
@@ -122,7 +128,7 @@ export default function RenewalPage() {
 
   if (!targetSub) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader
           title="Renew Subscription"
           description="No subscription found to renew"
@@ -142,7 +148,7 @@ export default function RenewalPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Renew Subscription"
         description="Choose a plan and extend your subscription term"
@@ -175,7 +181,7 @@ export default function RenewalPage() {
         </CardHeader>
         <CardContent>
           <RadioGroup value={selectedPlan} onValueChange={setSelectedPlan}>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               {RENEWAL_OPTIONS.map((option) => (
                 <Label
                   key={option.id}

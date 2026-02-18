@@ -95,8 +95,8 @@ export function EditDeviceModal({ open, device, onClose, onSaved }: EditDeviceMo
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
         }}
       >
         <DialogContent>

@@ -93,8 +93,8 @@ export function AssignRoleDialog({ userId, open, onOpenChange, onAssigned }: Ass
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

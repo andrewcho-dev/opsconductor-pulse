@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   fetchAvailableMetrics,
   runAnalyticsQuery,
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BarChart3, Download, Play, Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 const AGGREGATION_OPTIONS: { value: Aggregation; label: string }[] = [
   { value: "avg", label: "Average" },
@@ -78,7 +80,13 @@ export default function AnalyticsPage() {
 
   const queryMutation = useMutation({
     mutationFn: runAnalyticsQuery,
-    onSuccess: (data) => setResults(data),
+    onSuccess: (data) => {
+      setResults(data);
+      toast.success("Query completed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to run query");
+    },
   });
 
   const handleRunQuery = () => {
@@ -171,13 +179,13 @@ export default function AnalyticsPage() {
       cell: ({ row }) => {
         const val = row.original[col] ?? "";
         const mono = col === "time" || col === "value";
-        return <span className={mono ? "font-mono text-xs" : ""}>{val}</span>;
+        return <span className={mono ? "font-mono text-sm" : ""}>{val}</span>;
       },
     }));
   }, [queryResult?.columns]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5" />
@@ -304,7 +312,7 @@ export default function AnalyticsPage() {
                     {devices.map((d) => (
                       <label
                         key={d.device_id}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
+                        className="flex items-center gap-2 text-sm cursor-pointer"
                       >
                         <input
                           type="checkbox"
@@ -323,14 +331,14 @@ export default function AnalyticsPage() {
                       </label>
                     ))}
                     {devices.length === 0 && (
-                      <div className="text-xs text-muted-foreground">No devices found</div>
+                      <div className="text-sm text-muted-foreground">No devices found</div>
                     )}
                   </div>
                   {selectedDeviceIds.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-xs h-6"
+                      className="h-8 text-sm"
                       onClick={() => setSelectedDeviceIds([])}
                     >
                       Clear selection ({selectedDeviceIds.length})
@@ -358,7 +366,7 @@ export default function AnalyticsPage() {
               </Button>
 
               {queryMutation.isError && (
-                <div className="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                <div className="rounded border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
                   Query failed. Adjust filters and try again.
                 </div>
               )}
@@ -369,7 +377,7 @@ export default function AnalyticsPage() {
         {/* Results */}
         <div className="flex-1 space-y-4 min-w-0">
           {!results ? (
-            <div className="text-center py-20 text-muted-foreground">
+            <div className="text-center py-8 text-muted-foreground">
               Select a metric and run a query to see results.
             </div>
           ) : (
@@ -379,7 +387,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Min</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.min?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -387,7 +395,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Max</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.max?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -395,7 +403,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Avg</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.avg?.toFixed(2) ?? "--"}
                       </div>
                     </CardContent>
@@ -403,7 +411,7 @@ export default function AnalyticsPage() {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">Data Points</div>
-                      <div className="text-2xl font-bold">
+                      <div className="text-2xl font-semibold">
                         {results.summary.total_points.toLocaleString()}
                       </div>
                     </CardContent>
@@ -437,7 +445,7 @@ export default function AnalyticsPage() {
                       data={queryResult?.rows ?? []}
                       isLoading={queryMutation.isPending}
                       emptyState={
-                        <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+                        <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                           Run a query to see results.
                         </div>
                       }

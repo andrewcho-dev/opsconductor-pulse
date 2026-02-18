@@ -179,7 +179,7 @@ export default function BulkImportPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Import Devices"
         description="Upload CSV with columns: device_id, name, model, site_id, tags."
@@ -205,16 +205,16 @@ export default function BulkImportPage() {
               }
             }}
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Required format: <code>device_id,name,model,site_id,tags</code>
           </p>
           {previewRows.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">
+              <div className="text-sm text-muted-foreground">
                 {previewRows.length} rows total, {validCount} valid, {invalidCount} invalid
               </div>
               <div className="overflow-x-auto rounded border border-border">
-                <table className="w-full text-xs">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
                       <th className="px-2 py-1 text-left">device_id</th>
@@ -252,7 +252,7 @@ export default function BulkImportPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-sm">
+          <div className="rounded-md border border-status-online/30 bg-status-online/10 p-3 text-sm">
             Imported {result.imported} of {result.total} devices
           </div>
           <DataTable
@@ -260,14 +260,14 @@ export default function BulkImportPage() {
             data={result.results}
             isLoading={isUploading}
             emptyState={
-              <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+              <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
                 Upload a CSV file to see import results.
               </div>
             }
             manualPagination={false}
           />
           {errorRows.length > 0 && (
-            <div className="space-y-2 rounded-md border border-red-500/30 bg-red-500/10 p-3">
+            <div className="space-y-2 rounded-md border border-status-critical/30 bg-status-critical/10 p-3">
               <div className="text-sm text-red-700 dark:text-red-300">
                 {errorRows.length} rows failed to import
               </div>
@@ -275,9 +275,9 @@ export default function BulkImportPage() {
                 Download Error Report
               </Button>
               <details open={expandedErrors} onToggle={(e) => setExpandedErrors(e.currentTarget.open)}>
-                <summary className="cursor-pointer text-xs text-muted-foreground">Show error rows</summary>
+                <summary className="cursor-pointer text-sm text-muted-foreground">Show error rows</summary>
                 <div className="mt-2 overflow-x-auto rounded border border-red-300/40">
-                  <table className="w-full text-xs">
+                  <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-red-300/40">
                         <th className="px-2 py-1 text-left">Row</th>

@@ -119,8 +119,8 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDi
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

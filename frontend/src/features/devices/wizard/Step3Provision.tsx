@@ -3,6 +3,8 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { addGroupMember, provisionDevice } from "@/services/api/devices";
 import type { CombinedWizardData, ProvisionResult } from "./types";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Step3ProvisionProps {
   deviceData: CombinedWizardData;
@@ -30,9 +32,11 @@ export function Step3Provision({ deviceData, onSuccess, onBack }: Step3Provision
           deviceData.group_ids.map((groupId) => addGroupMember(groupId, creds.device_id))
         );
       }
+      toast.success("Device provisioned");
       onSuccess(creds);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Provision failed");
+      toast.error(getErrorMessage(err) || "Failed to provision device");
+      setError(getErrorMessage(err) || "Provision failed");
       setIsLoading(false);
     }
   }

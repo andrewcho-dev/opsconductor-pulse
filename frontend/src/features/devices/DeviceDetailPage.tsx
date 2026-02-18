@@ -33,6 +33,7 @@ import {
 } from "@/services/api/devices";
 import { getLatestValue } from "@/lib/charts/transforms";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 import {
   getDeviceTiers,
   assignDeviceTier,
@@ -73,7 +74,7 @@ export default function DeviceDetailPage() {
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
-  const [showCreateJob, setShowCreateJob] = useState(false);
+  const [createJobOpen, setCreateJobOpen] = useState(false);
 
   useEffect(() => {
     if (!device) return;
@@ -92,7 +93,7 @@ export default function DeviceDetailPage() {
           setDeviceTagsState(response.tags);
         }
       } catch (error) {
-        console.error("Failed to load device tags:", error);
+        toast.error(getErrorMessage(error) || "Failed to load device tags");
         if (isMounted) {
           setDeviceTagsState([]);
         }
@@ -167,7 +168,7 @@ export default function DeviceDetailPage() {
   };
 
   return (
-    <div className="p-3 space-y-3">
+    <div className="space-y-4">
       <PageHeader
         title={device?.device_id ?? "Device"}
         description={device?.model || undefined}
@@ -177,7 +178,7 @@ export default function DeviceDetailPage() {
         ]}
       />
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-4">
         <DeviceInfoCard
           device={device}
           isLoading={deviceLoading}
@@ -201,13 +202,13 @@ export default function DeviceDetailPage() {
           />
           {pendingLocation && (
             <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
-              <Button size="sm" className="h-6 text-xs" onClick={handleSaveLocation}>
+              <Button size="sm" className="h-8" onClick={handleSaveLocation}>
                 Save Location
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 text-xs"
+                className="h-8"
                 onClick={() => setPendingLocation(null)}
               >
                 Cancel
@@ -268,7 +269,7 @@ export default function DeviceDetailPage() {
       {deviceId && <DeviceConnectivityPanel deviceId={deviceId} />}
       {deviceId && <DeviceCommandPanel deviceId={deviceId} />}
       <div>
-        <Button size="sm" variant="outline" onClick={() => setShowCreateJob(true)}>
+        <Button size="sm" variant="outline" onClick={() => setCreateJobOpen(true)}>
           Create Job
         </Button>
       </div>
@@ -276,7 +277,7 @@ export default function DeviceDetailPage() {
       <div className="grid grid-cols-4 gap-2">
         {metrics.slice(0, 8).map((metricName) => (
           <div key={metricName} className="border rounded p-1 text-center">
-            <div className="text-[10px] text-muted-foreground truncate">
+            <div className="text-sm text-muted-foreground truncate">
               {metricName}
             </div>
             <div className="text-sm font-semibold">
@@ -302,14 +303,14 @@ export default function DeviceDetailPage() {
       </WidgetErrorBoundary>
 
       {notesSaving && (
-        <div className="text-[10px] text-muted-foreground">Saving notes...</div>
+        <div className="text-sm text-muted-foreground">Saving notes...</div>
       )}
       {tagsSaving && (
-        <div className="text-[10px] text-muted-foreground">Saving tags...</div>
+        <div className="text-sm text-muted-foreground">Saving tags...</div>
       )}
 
       {openAlertCount > 0 && (
-        <Link to="/alerts" className="text-xs text-primary hover:underline">
+        <Link to="/alerts" className="text-sm text-primary hover:underline">
           View {openAlertCount} alerts
         </Link>
       )}
@@ -322,11 +323,11 @@ export default function DeviceDetailPage() {
           onClose={() => setEditModalOpen(false)}
         />
       )}
-      {showCreateJob && device && (
+      {createJobOpen && device && (
         <CreateJobModal
           prefilledDeviceId={device.device_id}
-          onClose={() => setShowCreateJob(false)}
-          onCreated={() => setShowCreateJob(false)}
+          onClose={() => setCreateJobOpen(false)}
+          onCreated={() => setCreateJobOpen(false)}
         />
       )}
     </div>

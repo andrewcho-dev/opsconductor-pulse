@@ -207,7 +207,7 @@ export default function DeviceTiersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Device Tiers"
         description="Manage tier definitions and feature access for tenant devices."
@@ -215,7 +215,7 @@ export default function DeviceTiersPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Tiers</CardTitle>
+          <CardTitle>Tiers</CardTitle>
           <Button size="sm" onClick={() => setDialog({ mode: "create" })}>
             <Plus className="mr-2 h-4 w-4" />
             Create Tier
@@ -245,7 +245,7 @@ export default function DeviceTiersPage() {
                 )}
                 {sorted.map((t) => (
                   <TableRow key={t.tier_id}>
-                    <TableCell className="font-mono text-xs">{t.name}</TableCell>
+                    <TableCell className="font-mono text-sm">{t.name}</TableCell>
                     <TableCell>{t.display_name}</TableCell>
                     <TableCell className="max-w-[260px] truncate">
                       {t.description || "—"}
@@ -302,7 +302,7 @@ export default function DeviceTiersPage() {
                       <FormControl>
                         <Input id="tier-name" placeholder="basic" {...field} />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                         Lowercase identifier (used in APIs and seed data).
                       </p>
                       <FormMessage />
@@ -344,7 +344,7 @@ export default function DeviceTiersPage() {
                 <div className="grid gap-3 md:grid-cols-2">
                   {KNOWN_FEATURES.map((f) => (
                     <div key={f} className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-xs">{f}</span>
+                      <span className="font-mono text-sm">{f}</span>
                       <Switch
                         checked={Boolean(form.watch(`features.${f}` as any))}
                         onCheckedChange={(v) => setFeature(f, v)}
@@ -354,7 +354,7 @@ export default function DeviceTiersPage() {
                 </div>
               </fieldset>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="sort_order"
@@ -382,7 +382,7 @@ export default function DeviceTiersPage() {
                       <FormItem className="flex items-center justify-between rounded-md border p-3">
                         <div className="space-y-0.5">
                           <div className="text-sm font-medium">Active</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-sm text-muted-foreground">
                             Disable to hide tier from customers.
                           </div>
                         </div>

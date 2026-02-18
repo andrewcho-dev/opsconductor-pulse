@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,17 @@ import {
   replayDeadLetter,
   replayDeadLetterBatch,
 } from "@/services/api/deadLetter";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { getErrorMessage } from "@/lib/errors";
 
 const LIMIT = 50;
 
@@ -40,6 +52,7 @@ export default function DeadLetterPage() {
   const [statusFilter, setStatusFilter] = useState<string>("FAILED");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmPurge, setConfirmPurge] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["dead-letter", statusFilter, offset],
@@ -53,7 +66,13 @@ export default function DeadLetterPage() {
 
   const replayMutation = useMutation({
     mutationFn: replayDeadLetter,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Message replayed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to replay message");
+    },
   });
 
   const batchReplayMutation = useMutation({
@@ -61,17 +80,33 @@ export default function DeadLetterPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
       setSelected(new Set());
+      toast.success("Messages replayed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to replay messages");
     },
   });
 
   const discardMutation = useMutation({
     mutationFn: discardDeadLetter,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Message discarded");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to discard message");
+    },
   });
 
   const purgeMutation = useMutation({
     mutationFn: () => purgeDeadLetter(30),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dead-letter"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dead-letter"] });
+      toast.success("Old messages purged");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to purge messages");
+    },
   });
 
   const messages = data?.messages ?? [];
@@ -93,7 +128,7 @@ export default function DeadLetterPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Dead Letter Queue" description={`${total} messages`} />
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -142,11 +177,7 @@ export default function DeadLetterPage() {
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => {
-              if (confirm("Purge all FAILED messages older than 30 days?")) {
-                purgeMutation.mutate();
-              }
-            }}
+            onClick={() => setConfirmPurge(true)}
             disabled={purgeMutation.isPending}
           >
             Purge Old
@@ -276,6 +307,26 @@ export default function DeadLetterPage() {
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={confirmPurge} onOpenChange={setConfirmPurge}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Purge Old Messages</AlertDialogTitle>
+            <AlertDialogDescription>
+              Purge all FAILED messages older than 30 days? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => purgeMutation.mutate()}
+              disabled={purgeMutation.isPending}
+            >
+              Purge
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

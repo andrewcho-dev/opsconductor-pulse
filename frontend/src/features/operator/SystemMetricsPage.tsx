@@ -121,7 +121,7 @@ export default function SystemMetricsPage() {
   const deliveryFailures = getServiceMetric(latest, "delivery", "jobs_failed");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="System Metrics"
         description={
@@ -134,7 +134,7 @@ export default function SystemMetricsPage() {
 
       {error && <div className="text-sm text-destructive">{error}</div>}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Ingest Rate</CardTitle>
@@ -168,7 +168,7 @@ export default function SystemMetricsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              <div className="text-5xl font-semibold">{deliveryFailures}</div>
+              <div className="text-2xl font-semibold">{deliveryFailures}</div>
               <p className="text-xs text-muted-foreground">Since service start</p>
               {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
             </div>

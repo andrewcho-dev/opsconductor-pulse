@@ -5,6 +5,9 @@ import { PageHeader } from "@/components/shared";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { FirmwareVersion } from "@/services/api/ota";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -40,7 +43,7 @@ export default function FirmwareListPage() {
       accessorKey: "description",
       header: "Description",
       cell: ({ row }) => (
-        <span className="max-w-[200px] truncate text-xs">
+        <span className="max-w-[200px] truncate text-sm">
           {row.original.description ?? "—"}
         </span>
       ),
@@ -48,13 +51,13 @@ export default function FirmwareListPage() {
     {
       accessorKey: "device_type",
       header: "Device Type",
-      cell: ({ row }) => <span className="text-xs">{row.original.device_type ?? "—"}</span>,
+      cell: ({ row }) => <span className="text-sm">{row.original.device_type ?? "—"}</span>,
     },
     {
       accessorKey: "file_size_bytes",
       header: "File Size",
       cell: ({ row }) => (
-        <span className="text-xs">{formatFileSize(row.original.file_size_bytes)}</span>
+        <span className="text-sm">{formatFileSize(row.original.file_size_bytes)}</span>
       ),
     },
     {
@@ -62,7 +65,7 @@ export default function FirmwareListPage() {
       header: "Checksum",
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="max-w-[140px] truncate font-mono text-xs text-muted-foreground">
+        <span className="max-w-[140px] truncate font-mono text-sm text-muted-foreground">
           {row.original.checksum_sha256 ? `${row.original.checksum_sha256.slice(0, 16)}...` : "—"}
         </span>
       ),
@@ -95,17 +98,23 @@ export default function FirmwareListPage() {
       setDeviceType("");
       setFileSize("");
       setChecksum("");
+      toast.success("Firmware created");
     } catch (err) {
-      console.error("Failed to create firmware:", err);
+      toast.error(getErrorMessage(err) || "Failed to create firmware");
     }
   }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4">
       <PageHeader
         title="Firmware Versions"
         description="Registered firmware binaries available for OTA deployment."
-        action={<Button onClick={() => setShowUpload(true)}>+ Register Firmware</Button>}
+        action={
+          <Button onClick={() => setShowUpload(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Firmware
+          </Button>
+        }
       />
 
       <DataTable
@@ -113,7 +122,7 @@ export default function FirmwareListPage() {
         data={firmwareVersions}
         isLoading={isLoading}
         emptyState={
-          <div className="rounded-md border border-border py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-border py-8 text-center text-muted-foreground">
             No firmware versions registered yet. Upload a firmware version to begin OTA updates.
           </div>
         }
@@ -122,7 +131,7 @@ export default function FirmwareListPage() {
 
       {showUpload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg space-y-4">
+          <div className="w-full max-w-md rounded-lg border border-border bg-background p-4 shadow-lg space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Register Firmware Version</h3>
               <Button variant="ghost" size="sm" onClick={() => setShowUpload(false)}>

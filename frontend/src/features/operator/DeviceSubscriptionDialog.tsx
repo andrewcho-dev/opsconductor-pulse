@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost } from "@/services/api/client";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface SubscriptionRow {
   subscription_id: string;
@@ -88,6 +90,10 @@ export function DeviceSubscriptionDialog({
       }),
     onSuccess: () => {
       onAssigned();
+      toast.success("Subscription assigned");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to assign subscription");
     },
   });
 

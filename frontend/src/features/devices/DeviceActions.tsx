@@ -26,7 +26,7 @@ export function DeviceActions({
           <div className="flex items-center gap-2">
             <span>
               <Button disabled={createDisabled} size="sm" onClick={onCreate}>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-4 w-4 mr-1" />
                 Add Device
               </Button>
             </span>

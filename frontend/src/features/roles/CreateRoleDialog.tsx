@@ -113,8 +113,8 @@ export function CreateRoleDialog({ open, onOpenChange, onSaved, editRole }: Crea
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
           else onOpenChange(true);
         }}
       >

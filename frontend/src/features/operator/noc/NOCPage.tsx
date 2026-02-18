@@ -82,7 +82,7 @@ export default function NOCPage() {
   return (
     <div className="min-h-screen space-y-4 p-4 text-gray-100" style={{ backgroundColor: NOC_COLORS.bg.page }}>
       {tvMode && (
-        <div className="fixed right-2 top-2 z-50 rounded bg-gray-800/80 px-2 py-1 text-xs text-gray-400">
+        <div className="fixed right-2 top-2 z-50 rounded bg-gray-800/80 px-2 py-1 text-sm text-gray-400">
           TV MODE - Press F to exit
         </div>
       )}
@@ -93,7 +93,7 @@ export default function NOCPage() {
             <span className={`inline-block h-2 w-2 rounded-full ${statusDotClass(systemStatus)}`} />
             <span className="text-sm text-gray-400">{systemStatus.toUpperCase()}</span>
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-sm text-gray-500">
             Last updated: {lastUpdated} | {aggregates?.tenants.active ?? 0} tenants |{" "}
             {aggregates?.devices.registered ?? 0} devices
           </div>
@@ -103,7 +103,7 @@ export default function NOCPage() {
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}
-            className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300"
+            className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-300"
           >
             <option value={15000}>15s</option>
             <option value={30000}>30s</option>

@@ -66,7 +66,7 @@ import type {
   RuleCondition,
   RuleOperator,
 } from "@/services/api/types";
-import { ApiError } from "@/services/api/client";
+import { getErrorMessage } from "@/lib/errors";
 import { fetchMetricReference } from "@/services/api/metrics";
 import {
   fetchAlertRuleTemplates,
@@ -78,20 +78,6 @@ interface AlertRuleDialogProps {
   open: boolean;
   onClose: () => void;
   rule?: AlertRule | null;
-}
-
-function formatError(error: unknown): string {
-  if (!error) return "";
-  if (error instanceof ApiError) {
-    if (typeof error.body === "string") return error.body;
-    if (error.body && typeof error.body === "object") {
-      const detail = (error.body as { detail?: string }).detail;
-      if (detail) return detail;
-    }
-    return error.message;
-  }
-  if (error instanceof Error) return error.message;
-  return "Unknown error";
 }
 
 const ruleOperators = ["GT", "GTE", "LT", "LTE"] as const;
@@ -349,7 +335,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   }, [open, rule]);
 
   const errorMessage = useMemo(() => {
-    return formatError(createMutation.error || updateMutation.error);
+    return getErrorMessage(createMutation.error || updateMutation.error);
   }, [createMutation.error, updateMutation.error]);
 
   const normalizedMetrics = useMemo<NormalizedMetricReference[]>(
@@ -732,7 +718,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-xs text-muted-foreground">
+                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-sm text-muted-foreground">
                                   i
                                 </span>
                               </TooltipTrigger>
@@ -771,7 +757,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                           </TooltipProvider>
                         )}
                       </div>
-                      <FormDescription className="text-xs">
+                      <FormDescription className="text-sm">
                         {metricsLoading
                           ? "Loading metric reference..."
                           : normalizedMetrics.length === 0 && rawMetrics.length === 0
@@ -862,7 +848,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   </div>
                 )}
 
-                <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-[1fr_210px_120px_160px_auto]">
+                <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-[1fr_210px_120px_160px_auto]">
                   <span>Metric</span>
                   <span>Operator</span>
                   <span>Threshold</span>
@@ -1012,7 +998,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                           onChange={(e) => field.onChange(e.target.value)}
                         />
                       </FormControl>
-                      <FormDescription className="text-xs">
+                      <FormDescription className="text-sm">
                         Alert if no {gapMetricName || "metric"} data for {gapMinutes || "0"} minutes.
                       </FormDescription>
                       <FormMessage />
@@ -1156,7 +1142,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                           <SelectItem value="3600">1 hour</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription className="text-xs">
+                      <FormDescription className="text-sm">
                         Alert fires when {windowAggregation}({metricName || "metric"}) breaches the
                         threshold over a {Number(windowSeconds) / 60}-minute sliding window.
                       </FormDescription>
@@ -1191,7 +1177,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription className="text-xs">
+                  <FormDescription className="text-sm">
                     If set, this rule only evaluates devices in the selected group.
                   </FormDescription>
                   <FormMessage />
@@ -1207,7 +1193,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   <FormLabel>Device Groups</FormLabel>
                   <div className="max-h-40 space-y-2 overflow-auto rounded-md border border-border p-2">
                     {(deviceGroupsResponse?.groups ?? []).length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No device groups yet.</p>
+                      <p className="text-sm text-muted-foreground">No device groups yet.</p>
                     ) : (
                       (deviceGroupsResponse?.groups ?? []).map((group: DeviceGroup) => {
                         const checked = (field.value as string[])?.includes(group.group_id);
@@ -1255,7 +1241,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                       onChange={field.onChange}
                     />
                   </FormControl>
-                  <FormDescription className="text-xs">
+                  <FormDescription className="text-sm">
                     Fire only after condition holds for this many minutes. Leave blank to fire
                     immediately.
                   </FormDescription>
@@ -1310,7 +1296,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                 <div className="flex items-center justify-between rounded-md border border-border p-3">
                   <div>
                     <Label className="text-sm">Enabled</Label>
-                    <p className="text-xs text-muted-foreground">Alerts will trigger when enabled.</p>
+                    <p className="text-sm text-muted-foreground">Alerts will trigger when enabled.</p>
                   </div>
                   <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
                 </div>

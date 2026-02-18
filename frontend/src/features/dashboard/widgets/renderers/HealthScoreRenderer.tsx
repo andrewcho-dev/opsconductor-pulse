@@ -4,30 +4,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { WidgetRendererProps } from "../widget-registry";
 
 function scoreColor(score: number): string {
-  if (score > 80) return "text-green-500";
-  if (score >= 50) return "text-yellow-500";
-  return "text-red-500";
+  if (score > 80) return "text-status-online";
+  if (score >= 50) return "text-status-warning";
+  return "text-status-critical";
 }
 
 function strokeColor(score: number): string {
-  if (score > 80) return "stroke-green-500";
-  if (score >= 50) return "stroke-yellow-500";
-  return "stroke-red-500";
+  if (score > 80) return "stroke-status-online";
+  if (score >= 50) return "stroke-status-warning";
+  return "stroke-status-critical";
 }
 
 function trackColor(score: number): string {
-  if (score > 80) return "stroke-green-500/20";
-  if (score >= 50) return "stroke-yellow-500/20";
-  return "stroke-red-500/20";
+  if (score > 80) return "stroke-status-online/20";
+  if (score >= 50) return "stroke-status-warning/20";
+  return "stroke-status-critical/20";
 }
 
-export default function HealthScoreRenderer(_props: WidgetRendererProps) {
+export default function HealthScoreRenderer({ config }: WidgetRendererProps) {
   const { data, isLoading } = useQuery({
     queryKey: ["widget-fleet-health"],
     queryFn: fetchFleetHealth,
     refetchInterval: 30000,
   });
 
+  const decimalPrecision = (config.decimal_precision as number | undefined) ?? 1;
   const score = data?.score ?? 0;
   const total = data?.total_devices ?? 0;
   const online = data?.online ?? 0;
@@ -44,14 +45,9 @@ export default function HealthScoreRenderer(_props: WidgetRendererProps) {
   if (isLoading) return <Skeleton className="h-[140px] w-full" />;
 
   return (
-    <div className="flex items-center gap-6">
-      <div className="relative flex-shrink-0">
-        <svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          className="-rotate-90"
-        >
+    <div className="h-full flex items-center gap-4 px-2">
+      <div className="relative shrink-0">
+        <svg viewBox="0 0 120 120" className="h-full max-h-[120px] w-auto shrink-0 -rotate-90">
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -73,11 +69,13 @@ export default function HealthScoreRenderer(_props: WidgetRendererProps) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-2xl font-bold ${scoreColor(score)}`}>{score}%</span>
+          <span className={`text-2xl font-semibold ${scoreColor(score)}`}>
+            {score.toFixed(decimalPrecision)}%
+          </span>
         </div>
       </div>
 
-      <div className="space-y-1 text-sm">
+      <div className="flex flex-col gap-1 min-w-0 text-sm">
         <div>
           <span className="font-medium">{healthy}</span>
           <span className="text-muted-foreground">/{total} devices healthy</span>

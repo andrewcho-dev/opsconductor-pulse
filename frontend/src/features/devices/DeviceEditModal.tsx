@@ -27,6 +27,8 @@ import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceEditModalProps {
   device: Device;
@@ -182,7 +184,7 @@ export function DeviceEditModal({
         setGeocodeError("Address not found");
       }
     } catch (err) {
-      console.error("Geocoding failed:", err);
+      toast.error(getErrorMessage(err) || "Geocoding failed");
       setGeocodeError("Lookup failed");
     }
 
@@ -193,8 +195,8 @@ export function DeviceEditModal({
     <>
       <Dialog
         open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) handleClose();
+        onOpenChange={(openState) => {
+          if (!openState) handleClose();
         }}
       >
         <DialogContent>
@@ -202,16 +204,16 @@ export function DeviceEditModal({
             <DialogTitle>Edit Device</DialogTitle>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 text-xs">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2">
               <FormField
                 control={form.control}
                 name="model"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">Model</FormLabel>
+                    <FormLabel className="text-sm">Model</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -222,9 +224,9 @@ export function DeviceEditModal({
                 name="manufacturer"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">Manufacturer</FormLabel>
+                    <FormLabel className="text-sm">Manufacturer</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -235,9 +237,9 @@ export function DeviceEditModal({
                 name="serial_number"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">Serial</FormLabel>
+                    <FormLabel className="text-sm">Serial</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -248,9 +250,9 @@ export function DeviceEditModal({
                 name="mac_address"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">MAC</FormLabel>
+                    <FormLabel className="text-sm">MAC</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" placeholder="AA:BB:CC:DD:EE:FF" />
+                      <Input {...field} className="h-8 text-sm" placeholder="AA:BB:CC:DD:EE:FF" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -261,9 +263,9 @@ export function DeviceEditModal({
                 name="imei"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">IMEI</FormLabel>
+                    <FormLabel className="text-sm">IMEI</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -274,9 +276,9 @@ export function DeviceEditModal({
                 name="iccid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">SIM/ICCID</FormLabel>
+                    <FormLabel className="text-sm">SIM/ICCID</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -287,9 +289,9 @@ export function DeviceEditModal({
                 name="hw_revision"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">HW Rev</FormLabel>
+                    <FormLabel className="text-sm">HW Rev</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -300,9 +302,9 @@ export function DeviceEditModal({
                 name="fw_version"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs">FW Ver</FormLabel>
+                    <FormLabel className="text-sm">FW Ver</FormLabel>
                     <FormControl>
-                      <Input {...field} className="h-7 text-xs" />
+                      <Input {...field} className="h-8 text-sm" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -311,7 +313,7 @@ export function DeviceEditModal({
             </div>
 
             <div className="border-t pt-2 mt-2">
-              <div className="text-xs text-muted-foreground mb-2">
+              <div className="text-sm text-muted-foreground mb-2">
                 Location — GPS coordinates preferred (auto-detected from telemetry).
                 Address is optional fallback.
               </div>
@@ -322,12 +324,12 @@ export function DeviceEditModal({
                   name="latitude"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground">Latitude</FormLabel>
+                      <FormLabel className="text-sm text-muted-foreground">Latitude</FormLabel>
                       <FormControl>
                         <Input
                           type="text"
                           placeholder="e.g. 37.7749"
-                          className="h-7 text-xs"
+                          className="h-8 text-sm"
                           {...field}
                         />
                       </FormControl>
@@ -340,12 +342,12 @@ export function DeviceEditModal({
                   name="longitude"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground">Longitude</FormLabel>
+                      <FormLabel className="text-sm text-muted-foreground">Longitude</FormLabel>
                       <FormControl>
                         <Input
                           type="text"
                           placeholder="e.g. -122.4194"
-                          className="h-7 text-xs"
+                          className="h-8 text-sm"
                           {...field}
                         />
                       </FormControl>
@@ -360,7 +362,7 @@ export function DeviceEditModal({
                 name="address"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs text-muted-foreground">
+                    <FormLabel className="text-sm text-muted-foreground">
                       Street Address (optional, used if no GPS)
                     </FormLabel>
                     <div className="flex gap-1 items-center">
@@ -368,27 +370,27 @@ export function DeviceEditModal({
                         <Input
                           {...field}
                           placeholder="e.g. 123 Main St, City, State"
-                          className="h-7 text-xs flex-1"
+                          className="h-8 text-sm flex-1"
                         />
                       </FormControl>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-7 text-xs px-2"
+                        className="h-8 text-sm px-2"
                         onClick={handleGeocode}
                         disabled={!String(field.value ?? "").trim() || geocoding}
                       >
                         {geocoding ? "..." : "Lookup"}
                       </Button>
                     </div>
-                    {geocodeError && <div className="text-xs text-destructive">{geocodeError}</div>}
+                    {geocodeError && <div className="text-sm text-destructive">{geocodeError}</div>}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="text-[10px] text-muted-foreground mt-1">
+              <div className="text-sm text-muted-foreground mt-1">
                 Note: Manually setting location will prevent auto-updates from telemetry
                 GPS data.
               </div>
@@ -399,9 +401,9 @@ export function DeviceEditModal({
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs">Notes</FormLabel>
+                  <FormLabel className="text-sm">Notes</FormLabel>
                   <FormControl>
-                    <Textarea {...field} className="h-16 text-xs" />
+                    <Textarea {...field} className="h-16 text-sm" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

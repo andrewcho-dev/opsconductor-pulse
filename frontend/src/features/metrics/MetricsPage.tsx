@@ -37,7 +37,7 @@ export default function MetricsPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Metrics"
         description={

@@ -69,7 +69,7 @@ export function SparklineChart({
   if (!data || data.length === 0) {
     return (
       <div
-        className="flex items-center justify-center text-muted-foreground text-xs"
+        className="flex items-center justify-center text-muted-foreground text-sm"
         style={{ width, height }}
       >
         No data
@@ -80,7 +80,7 @@ export function SparklineChart({
   return (
     <div className="flex flex-col">
       {label && (
-        <span className="text-xs text-muted-foreground mb-1">{label}</span>
+        <span className="text-sm text-muted-foreground mb-1">{label}</span>
       )}
       <div className="flex items-end gap-2">
         <svg width={width} height={height} className="overflow-visible">
@@ -112,7 +112,7 @@ export function SparklineChart({
             {typeof lastValue === "number"
               ? lastValue.toLocaleString(undefined, { maximumFractionDigits: 1 })
               : lastValue}
-            {unit && <span className="text-xs text-muted-foreground ml-0.5">{unit}</span>}
+            {unit && <span className="text-sm text-muted-foreground ml-0.5">{unit}</span>}
           </span>
         )}
       </div>

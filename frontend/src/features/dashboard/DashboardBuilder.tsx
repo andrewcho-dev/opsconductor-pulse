@@ -1,11 +1,23 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Responsive, WidthProvider, type Layout, type LayoutItem as RglLayoutItem } from "react-grid-layout/legacy";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Pencil, Lock, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { WidgetContainer } from "./widgets/WidgetContainer";
 import { AddWidgetDrawer } from "./AddWidgetDrawer";
 import { WidgetConfigDialog } from "./WidgetConfigDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { getErrorMessage } from "@/lib/errors";
 import { batchUpdateLayout, removeWidget } from "@/services/api/dashboards";
 import type { Dashboard, LayoutItem } from "@/services/api/dashboards";
 
@@ -14,15 +26,29 @@ const ResponsiveGridLayout = WidthProvider(Responsive);
 interface DashboardBuilderProps {
   dashboard: Dashboard;
   canEdit: boolean; // true if user is owner or has edit permission
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onAddWidget: () => void;
+  showAddWidget: boolean;
+  onShowAddWidgetChange: (open: boolean) => void;
 }
 
-export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [showAddWidget, setShowAddWidget] = useState(false);
+export function DashboardBuilder(props: DashboardBuilderProps) {
+  const {
+    dashboard,
+    canEdit,
+    isEditing,
+    onAddWidget,
+    showAddWidget,
+    onShowAddWidgetChange,
+  } = props;
   const [configuringWidgetId, setConfiguringWidgetId] = useState<number | null>(null);
+  const [removeTargetId, setRemoveTargetId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localLayoutRef = useRef<Layout | null>(null);
+  const prevEditingRef = useRef(isEditing);
+  const toastOnNextLayoutSaveRef = useRef(false);
 
   const layoutItems: RglLayoutItem[] = useMemo(
     () =>
@@ -44,6 +70,16 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
     mutationFn: (layout: LayoutItem[]) => batchUpdateLayout(dashboard.id, layout),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
+      if (toastOnNextLayoutSaveRef.current) {
+        toast.success("Layout saved");
+        toastOnNextLayoutSaveRef.current = false;
+      }
+    },
+    onError: (err: Error) => {
+      if (toastOnNextLayoutSaveRef.current) {
+        toast.error(getErrorMessage(err) || "Failed to save layout");
+        toastOnNextLayoutSaveRef.current = false;
+      }
     },
   });
 
@@ -51,6 +87,10 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
     mutationFn: (widgetId: number) => removeWidget(dashboard.id, widgetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
+      toast.success("Widget removed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to remove widget");
     },
   });
 
@@ -77,14 +117,18 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
     [isEditing, layoutMutation]
   );
 
-  const handleToggleEdit = useCallback(() => {
-    if (isEditing) {
-      // Flush pending debounce immediately before locking.
+  useEffect(() => {
+    const wasEditing = prevEditingRef.current;
+    prevEditingRef.current = isEditing;
+
+    // When transitioning editing -> locked, flush any pending layout save.
+    if (wasEditing && !isEditing) {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
       if (localLayoutRef.current) {
+        toastOnNextLayoutSaveRef.current = true;
         const layoutData: LayoutItem[] = localLayoutRef.current.map((item) => ({
           widget_id: Number(item.i),
           x: item.x,
@@ -94,21 +138,24 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
         }));
         layoutMutation.mutate(layoutData);
       }
-    } else {
-      // Reset local state when entering edit mode.
+    }
+
+    // When entering edit mode, reset local state.
+    if (!wasEditing && isEditing) {
       localLayoutRef.current = null;
     }
-    setIsEditing(!isEditing);
   }, [isEditing, layoutMutation]);
 
-  const handleRemoveWidget = useCallback(
-    (widgetId: number) => {
-      if (confirm("Remove this widget from the dashboard?")) {
-        removeMutation.mutate(widgetId);
-      }
-    },
-    [removeMutation]
-  );
+  const handleRemoveWidget = useCallback((widgetId: number) => {
+    setRemoveTargetId(widgetId);
+  }, []);
+
+  const confirmRemoveWidget = useCallback(() => {
+    if (removeTargetId !== null) {
+      removeMutation.mutate(removeTargetId);
+      setRemoveTargetId(null);
+    }
+  }, [removeTargetId, removeMutation]);
 
   const handleConfigureWidget = useCallback((widgetId: number) => {
     setConfiguringWidgetId(widgetId);
@@ -118,49 +165,13 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
 
   return (
     <div className="space-y-4">
-      {canEdit && (
-        <div className="flex items-center gap-2">
-          <Button
-            variant={isEditing ? "default" : "outline"}
-            size="sm"
-            onClick={handleToggleEdit}
-          >
-            {isEditing ? (
-              <>
-                <Lock className="mr-1 h-4 w-4" />
-                Lock Layout
-              </>
-            ) : (
-              <>
-                <Pencil className="mr-1 h-4 w-4" />
-                Edit Layout
-              </>
-            )}
-          </Button>
-
-          {isEditing && (
-            <Button variant="outline" size="sm" onClick={() => setShowAddWidget(true)}>
-              <Plus className="mr-1 h-4 w-4" />
-              Add Widget
-            </Button>
-          )}
-
-          {layoutMutation.isPending && (
-            <span className="text-xs text-muted-foreground animate-pulse">Saving...</span>
-          )}
-        </div>
-      )}
-
       {dashboard.widgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex flex-col items-center justify-center py-8 text-center">
           <p className="text-muted-foreground mb-4">This dashboard has no widgets yet.</p>
           {canEdit && (
             <Button
               variant="outline"
-              onClick={() => {
-                setIsEditing(true);
-                setShowAddWidget(true);
-              }}
+              onClick={onAddWidget}
             >
               <Plus className="mr-1 h-4 w-4" />
               Add Your First Widget
@@ -199,7 +210,12 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
         </ResponsiveGridLayout>
       )}
 
-      <AddWidgetDrawer open={showAddWidget} onOpenChange={setShowAddWidget} dashboardId={dashboard.id} />
+      <AddWidgetDrawer
+        open={showAddWidget}
+        onOpenChange={onShowAddWidgetChange}
+        dashboardId={dashboard.id}
+        onWidgetAdded={handleConfigureWidget}
+      />
 
       {configuringWidget && (
         <WidgetConfigDialog
@@ -211,6 +227,28 @@ export function DashboardBuilder({ dashboard, canEdit }: DashboardBuilderProps) 
           widget={configuringWidget}
         />
       )}
+
+      <AlertDialog
+        open={removeTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTargetId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Widget</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove this widget from the dashboard? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveWidget} disabled={removeMutation.isPending}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

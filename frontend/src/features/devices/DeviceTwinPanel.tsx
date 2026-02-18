@@ -27,7 +27,7 @@ function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
 
   if (!hasChanges) {
     return (
-      <div className="rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-800">
+      <div className="rounded border border-green-300 bg-green-50 px-2 py-1 text-sm text-green-800">
         Twin is in sync ({delta.unchanged_count} key
         {delta.unchanged_count !== 1 ? "s" : ""} matching)
       </div>
@@ -38,11 +38,11 @@ function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
     <div className="space-y-2">
       {Object.keys(delta.added).length > 0 && (
         <div className="rounded border border-green-300 bg-green-50 p-2">
-          <div className="mb-1 text-xs font-semibold text-green-800">
+          <div className="mb-1 text-sm font-semibold text-green-800">
             Added ({Object.keys(delta.added).length})
           </div>
           {Object.entries(delta.added).map(([key, value]) => (
-            <div key={key} className="flex items-center gap-2 text-xs text-green-900">
+            <div key={key} className="flex items-center gap-2 text-sm text-green-900">
               <span className="font-mono font-medium">{key}</span>
               <span className="text-green-600">{JSON.stringify(value)}</span>
             </div>
@@ -52,11 +52,11 @@ function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
 
       {Object.keys(delta.removed).length > 0 && (
         <div className="rounded border border-red-300 bg-red-50 p-2">
-          <div className="mb-1 text-xs font-semibold text-red-800">
+          <div className="mb-1 text-sm font-semibold text-red-800">
             Removed ({Object.keys(delta.removed).length})
           </div>
           {Object.entries(delta.removed).map(([key, value]) => (
-            <div key={key} className="flex items-center gap-2 text-xs text-red-900">
+            <div key={key} className="flex items-center gap-2 text-sm text-red-900">
               <span className="font-mono font-medium">{key}</span>
               <span className="text-red-600 line-through">{JSON.stringify(value)}</span>
             </div>
@@ -66,13 +66,13 @@ function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
 
       {Object.keys(delta.changed).length > 0 && (
         <div className="rounded border border-amber-300 bg-amber-50 p-2">
-          <div className="mb-1 text-xs font-semibold text-amber-800">
+          <div className="mb-1 text-sm font-semibold text-amber-800">
             Changed ({Object.keys(delta.changed).length})
           </div>
           {Object.entries(delta.changed).map(([key, change]) => {
             const typed = change as { old_value: unknown; new_value: unknown };
             return (
-              <div key={key} className="flex items-center gap-2 text-xs text-amber-900">
+              <div key={key} className="flex items-center gap-2 text-sm text-amber-900">
                 <span className="font-mono font-medium">{key}</span>
                 <span className="text-red-600 line-through">
                   {JSON.stringify(typed.old_value)}
@@ -86,7 +86,7 @@ function DeltaDiffView({ delta }: { delta: StructuredDelta }) {
       )}
 
       {delta.unchanged_count > 0 && (
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           {delta.unchanged_count} key{delta.unchanged_count !== 1 ? "s" : ""} unchanged
         </div>
       )}
@@ -160,7 +160,7 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
         <Badge variant={STATUS_BADGE[twin.sync_status] as "default" | "secondary" | "outline"}>
           {twin.sync_status}
         </Badge>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           Desired v{twin.desired_version} / Reported v{twin.reported_version}
         </span>
         <Button size="sm" variant="outline" className="ml-auto" onClick={() => void loadTwin()}>
@@ -172,7 +172,7 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
         <DeltaDiffView delta={twin.structured_delta} />
       ) : (
         deltaKeys.length > 0 && (
-          <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+          <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-900">
             Out of sync: {deltaKeys.join(", ")}
           </div>
         )
@@ -191,7 +191,7 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
           {editing ? (
             <div className="space-y-2">
               <textarea
-                className="w-full rounded border border-border bg-background p-2 font-mono text-xs"
+                className="w-full rounded border border-border bg-background p-2 font-mono text-sm"
                 rows={12}
                 value={desiredDraft}
                 onChange={(event) => setDesiredDraft(event.target.value)}
@@ -214,20 +214,20 @@ export function DeviceTwinPanel({ deviceId }: DeviceTwinPanelProps) {
               </div>
             </div>
           ) : (
-            <pre className="max-h-72 overflow-auto rounded bg-muted p-2 text-xs">
+            <pre className="max-h-72 overflow-auto rounded bg-muted p-2 text-sm">
               {JSON.stringify(twin.desired, null, 2)}
             </pre>
           )}
         </div>
         <div className="space-y-2">
           <strong className="text-sm">Reported</strong>
-          <pre className="max-h-72 overflow-auto rounded bg-muted p-2 text-xs">
+          <pre className="max-h-72 overflow-auto rounded bg-muted p-2 text-sm">
             {JSON.stringify(twin.reported, null, 2)}
           </pre>
         </div>
       </div>
 
-      {error && <div className="text-xs text-destructive">{error}</div>}
+      {error && <div className="text-sm text-destructive">{error}</div>}
 
       <div className="text-xs text-muted-foreground">Last updated: {twin.shadow_updated_at ?? "never"}</div>
     </div>

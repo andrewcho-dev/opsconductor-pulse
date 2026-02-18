@@ -40,7 +40,7 @@ export function ConnectionStatus() {
         <TooltipTrigger asChild>
           <div
             className={cn(
-              "flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border",
+              "flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md border",
               isConnected
                 ? "text-green-700 border-green-200 dark:text-green-400 dark:border-green-700/50"
                 : isConnecting

@@ -70,11 +70,11 @@ function TelemetryChartsSectionInner({
     <Card>
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between py-2">
         <div className="flex items-center gap-2">
-          <CardTitle className="text-xs">Telemetry</CardTitle>
+          <CardTitle className="text-sm">Telemetry</CardTitle>
           {isLive && (
             <Badge
               variant="outline"
-              className="text-[10px] text-green-700 border-green-200 dark:text-green-400 dark:border-green-700/50"
+              className="text-xs text-status-online border-status-online"
             >
               LIVE ({liveCount})
             </Badge>
@@ -108,7 +108,7 @@ function TelemetryChartsSectionInner({
 
       <CardContent className="pt-2">
         {downloadError ? (
-          <p className="text-xs text-destructive mb-2">{downloadError}</p>
+          <p className="text-sm text-destructive mb-2">{downloadError}</p>
         ) : null}
         {isLoading ? (
           <div className="grid grid-cols-3 gap-2">
@@ -117,14 +117,14 @@ function TelemetryChartsSectionInner({
             ))}
           </div>
         ) : metricsToShow.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">
+          <p className="text-sm text-muted-foreground text-center py-4">
             No telemetry data in the selected time range.
           </p>
         ) : (
           <div className="grid grid-cols-3 gap-2">
             {metricsToShow.map((metricName, idx) => (
               <div key={metricName} className="border rounded p-2">
-                <div className="text-[10px] text-muted-foreground mb-1">
+                <div className="text-sm text-muted-foreground mb-1">
                   {metricName}
                 </div>
                 {historyQueries[idx]?.data?.points?.length ? (

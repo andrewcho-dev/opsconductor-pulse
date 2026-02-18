@@ -29,6 +29,8 @@ import {
 } from "@/services/api/devices";
 import { fetchDevices } from "@/services/api/devices";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 export default function DeviceGroupsPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -96,6 +98,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setCreateOpen(false);
       resetForm();
+      toast.success("Device group created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create device group");
     },
   });
 
@@ -105,6 +111,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setCreateOpen(false);
       resetForm();
+      toast.success("Dynamic group created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create dynamic group");
     },
   });
 
@@ -126,6 +136,10 @@ export default function DeviceGroupsPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
+      toast.success("Device group updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update device group");
     },
   });
 
@@ -138,6 +152,10 @@ export default function DeviceGroupsPage() {
         navigate("/device-groups");
         setSelectedGroupId("");
       }
+      toast.success("Device group deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete device group");
     },
   });
 
@@ -147,6 +165,10 @@ export default function DeviceGroupsPage() {
       await queryClient.invalidateQueries({ queryKey: ["device-group-members", selectedGroupId] });
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
       setSelectedDeviceId("");
+      toast.success("Device added to group");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to add device to group");
     },
   });
 
@@ -155,14 +177,18 @@ export default function DeviceGroupsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-group-members", selectedGroupId] });
       await queryClient.invalidateQueries({ queryKey: ["device-groups"] });
+      toast.success("Device removed from group");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to remove device from group");
     },
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Device Groups" description="Create and manage reusable device groups." />
 
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Groups</CardTitle>
@@ -188,10 +214,10 @@ export default function DeviceGroupsPage() {
                     <Badge variant="secondary">Dynamic</Badge>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   {group.description || "No description"}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="mt-1 text-sm text-muted-foreground">
                   Members: {group.member_count == null ? "-" : group.member_count}
                 </div>
               </button>
@@ -288,7 +314,7 @@ export default function DeviceGroupsPage() {
                       >
                         <div>
                           <div className="font-medium">{member.device_id}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-sm text-muted-foreground">
                             {member.name} - {member.status}
                           </div>
                         </div>
@@ -342,7 +368,7 @@ export default function DeviceGroupsPage() {
             <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
               <div>
                 <Label>Dynamic Group</Label>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   Membership is resolved automatically from a filter.
                 </div>
               </div>

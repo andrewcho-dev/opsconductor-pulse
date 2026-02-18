@@ -7,7 +7,7 @@
 
 /* Light theme as default */
 :root {
-  --background: 0 0% 100%;
+  --background: 220 14% 96%;
   --foreground: 240 10% 10%;
   --card: 0 0% 100%;
   --card-foreground: 240 10% 10%;
@@ -29,7 +29,7 @@
   --radius: 0.5rem;
 
   /* Sidebar - light */
-  --sidebar-background: 0 0% 98%;
+  --sidebar-background: 220 14% 97%;
   --sidebar-foreground: 240 10% 10%;
   --sidebar-primary: 216 89% 50%;
   --sidebar-primary-foreground: 0 0% 100%;
@@ -45,6 +45,14 @@
   --chart-3: 38 92% 50%;
   --chart-4: 0 84% 60%;
   --chart-5: 262 83% 58%;
+
+  /* Status semantic colors */
+  --status-online: 122 39% 49%;
+  --status-stale: 36 100% 50%;
+  --status-offline: 0 0% 62%;
+  --status-critical: 4 90% 58%;
+  --status-warning: 36 100% 50%;
+  --status-info: 210 79% 68%;
 }
 
 @theme inline {
@@ -80,6 +88,12 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+  --color-status-online: hsl(var(--status-online));
+  --color-status-stale: hsl(var(--status-stale));
+  --color-status-offline: hsl(var(--status-offline));
+  --color-status-critical: hsl(var(--status-critical));
+  --color-status-warning: hsl(var(--status-warning));
+  --color-status-info: hsl(var(--status-info));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -126,23 +140,31 @@
   --chart-3: 38 92% 60%;
   --chart-4: 0 84% 65%;
   --chart-5: 262 83% 68%;
+
+  /* Status semantic colors - dark (slightly desaturated for legibility) */
+  --status-online: 122 39% 55%;
+  --status-stale: 36 80% 55%;
+  --status-offline: 0 0% 50%;
+  --status-critical: 4 80% 62%;
+  --status-warning: 36 80% 55%;
+  --status-info: 210 70% 72%;
 }
 
 /* Status colors as utilities */
 @utility status-online {
-  color: #4caf50;
+  color: hsl(var(--status-online));
 }
 @utility status-stale {
-  color: #ff9800;
+  color: hsl(var(--status-stale));
 }
 @utility severity-critical {
-  color: #f44336;
+  color: hsl(var(--status-critical));
 }
 @utility severity-warning {
-  color: #ff9800;
+  color: hsl(var(--status-warning));
 }
 @utility severity-info {
-  color: #64b5f6;
+  color: hsl(var(--status-info));
 }
 
 /* Base styles */

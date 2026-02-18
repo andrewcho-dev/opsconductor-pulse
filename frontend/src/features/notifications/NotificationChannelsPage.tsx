@@ -11,7 +11,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -183,7 +183,7 @@ export default function NotificationChannelsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Notification Channels"
         description="Configure channels and alert routing rules."
@@ -194,6 +194,7 @@ export default function NotificationChannelsPage() {
               setOpen(true);
             }}
           >
+            <Plus className="mr-1 h-4 w-4" />
             Add Channel
           </Button>
         }

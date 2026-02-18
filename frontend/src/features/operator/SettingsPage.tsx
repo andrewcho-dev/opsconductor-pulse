@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@/services/auth/AuthProvider";
 import keycloak from "@/services/auth/keycloak";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 type ModeValue = "PROD" | "DEV";
 
@@ -31,7 +33,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     try {
       await keycloak.updateToken(30);
     } catch (error) {
-      console.error("Settings token refresh failed:", error);
+      toast.error(getErrorMessage(error) || "Session expired");
       keycloak.login();
       throw new Error("Token expired");
     }
@@ -116,7 +118,7 @@ export default function SettingsPage() {
 
   if (!isAdmin) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader title="System Settings" description="Operator configuration" />
         <div className="rounded-md border border-border p-6 text-sm text-muted-foreground">
           Settings require operator_admin role.
@@ -126,12 +128,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="System Settings" description="Operator configuration" />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">System Mode</CardTitle>
+          <CardTitle>System Mode</CardTitle>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -217,7 +219,7 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Settings Info</CardTitle>
+          <CardTitle>Settings Info</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>

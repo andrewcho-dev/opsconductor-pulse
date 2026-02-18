@@ -5,11 +5,6 @@ import { fetchFleetSummary, getFleetUptimeSummary } from "@/services/api/devices
 import { fetchAlerts, fetchMaintenanceWindows } from "@/services/api/alerts";
 import type { WidgetRendererProps } from "../widget-registry";
 
-function formatNumber(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  return value.toLocaleString();
-}
-
 function maintenanceActiveCount(
   windows: Array<{
     starts_at: string;
@@ -31,6 +26,8 @@ function maintenanceActiveCount(
 
 export default function KpiTileRenderer({ config }: WidgetRendererProps) {
   const metric = typeof config.metric === "string" ? config.metric : "device_count";
+  const decimalPrecision = (config.decimal_precision as number | undefined) ?? 1;
+  const thresholds = (config.thresholds as Array<{ value: number; color: string }>) ?? [];
 
   const needsFleet = ["device_count", "online_count", "offline_count"].includes(metric);
   const needsAlerts = metric === "alert_count";
@@ -67,7 +64,7 @@ export default function KpiTileRenderer({ config }: WidgetRendererProps) {
 
   const isLoading = fleetLoading || alertLoading || uptimeLoading || maintenanceLoading;
 
-  const value = useMemo(() => {
+  const numericValue = useMemo(() => {
     if (metric === "device_count") {
       const total =
         fleetSummary?.total ??
@@ -75,28 +72,41 @@ export default function KpiTileRenderer({ config }: WidgetRendererProps) {
         ((fleetSummary?.ONLINE ?? 0) +
           (fleetSummary?.STALE ?? 0) +
           (fleetSummary?.OFFLINE ?? 0));
-      return formatNumber(total ?? 0);
+      return total ?? 0;
     }
     if (metric === "online_count") {
-      const online = fleetSummary?.online ?? fleetSummary?.ONLINE ?? 0;
-      return formatNumber(online);
+      return fleetSummary?.online ?? fleetSummary?.ONLINE ?? 0;
     }
     if (metric === "offline_count") {
-      const offline = fleetSummary?.offline ?? fleetSummary?.OFFLINE ?? 0;
-      return formatNumber(offline);
+      return fleetSummary?.offline ?? fleetSummary?.OFFLINE ?? 0;
     }
     if (metric === "alert_count") {
-      return formatNumber(alertData?.total ?? 0);
+      return alertData?.total ?? 0;
     }
     if (metric === "uptime_pct") {
-      const pct = uptimeData?.avg_uptime_pct ?? 0;
-      return `${pct.toFixed(1)}%`;
+      return uptimeData?.avg_uptime_pct ?? 0;
     }
     if (metric === "maintenance_active") {
-      return formatNumber(maintenanceActiveCount(maintenanceData?.windows ?? []));
+      return maintenanceActiveCount(maintenanceData?.windows ?? []);
     }
-    return "—";
+    return null;
   }, [metric, fleetSummary, alertData, uptimeData, maintenanceData]);
+
+  const formatted = useMemo(() => {
+    if (numericValue == null) return "—";
+    if (metric === "uptime_pct") return `${numericValue.toFixed(decimalPrecision)}%`;
+    return numericValue.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: decimalPrecision,
+    });
+  }, [decimalPrecision, metric, numericValue]);
+
+  const thresholdColor = useMemo(() => {
+    if (thresholds.length === 0 || numericValue == null) return undefined;
+    const sorted = [...thresholds].sort((a, b) => b.value - a.value); // descending
+    const match = sorted.find((t) => numericValue >= t.value);
+    return match?.color;
+  }, [numericValue, thresholds]);
 
   if (isLoading) {
     return <Skeleton className="h-16 w-full" />;
@@ -105,7 +115,12 @@ export default function KpiTileRenderer({ config }: WidgetRendererProps) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <div className="text-3xl font-bold">{value}</div>
+        <div
+          className="text-2xl font-semibold"
+          style={thresholdColor ? { color: thresholdColor } : undefined}
+        >
+          {formatted}
+        </div>
         <div className="text-xs text-muted-foreground mt-1">{metric}</div>
       </div>
     </div>

@@ -21,7 +21,7 @@ function DeviceTableWidgetInner() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">Devices</CardTitle>
+        <CardTitle>Devices</CardTitle>
         {totalCount > 10 && (
           <Link to="/devices" className="text-xs text-primary hover:underline">
             View all {totalCount}

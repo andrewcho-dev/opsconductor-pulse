@@ -37,9 +37,9 @@ const SILENCE_OPTIONS = [
 ] as const;
 
 function statusDot(status?: string) {
-  if (status === "ONLINE") return "bg-green-500";
-  if (status === "STALE") return "bg-yellow-500";
-  return "bg-red-500";
+  if (status === "ONLINE") return "bg-status-online";
+  if (status === "STALE") return "bg-status-stale";
+  return "bg-status-offline";
 }
 
 function relativeTime(input?: string | null) {
@@ -114,7 +114,7 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
                 </Badge>
               ))}
               {tags.length === 0 && (
-                <span className="text-xs text-muted-foreground">No tags</span>
+                <span className="text-sm text-muted-foreground">No tags</span>
               )}
             </div>
           </div>
@@ -131,13 +131,13 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
                   onClick={async () => {
                     setConfirmDecommission(device.device_id);
                   }}
-                  className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                  className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
                 >
                   Decommission
                 </button>
                 <Link
                   to={`/devices/${device.device_id}`}
-                  className="block rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                  className="block rounded px-2 py-1 text-left text-sm hover:bg-accent"
                 >
                   View Full Page
                 </Link>
@@ -161,17 +161,17 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
           <TabsContent value="overview" className="space-y-4 pt-2">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded border border-border p-3">
-                <div className="text-xs text-muted-foreground">Last Seen</div>
+                <div className="text-sm text-muted-foreground">Last Seen</div>
                 <div className="text-sm font-medium">{relativeTime(device.last_seen_at)}</div>
               </div>
               <div className="rounded border border-border p-3">
-                <div className="text-xs text-muted-foreground">Provision Date</div>
+                <div className="text-sm text-muted-foreground">Provision Date</div>
                 <div className="text-sm font-medium">{device.last_heartbeat_at || "—"}</div>
               </div>
               <div className="rounded border border-border p-3">
-                <div className="text-xs text-muted-foreground">Device ID</div>
+                <div className="text-sm text-muted-foreground">Device ID</div>
                 <div className="flex items-center justify-between gap-2">
-                  <code className="text-xs">{device.device_id}</code>
+                  <code className="text-sm">{device.device_id}</code>
                   <Button
                     size="sm"
                     variant="outline"
@@ -196,7 +196,7 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
                 <div className="grid gap-2 md:grid-cols-4">
                   {latestMetrics.map(([name, value]) => (
                     <div key={name} className="rounded border border-border p-2">
-                      <div className="text-xs text-muted-foreground">{name}</div>
+                      <div className="text-sm text-muted-foreground">{name}</div>
                       <div className="text-sm font-medium">{String(value)}</div>
                     </div>
                   ))}

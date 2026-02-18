@@ -67,7 +67,11 @@ export default function FleetKpiStrip() {
   const openAlerts = alertData?.total ?? 0;
   const activeMaintenance = maintenanceActiveCount(maintenanceData?.windows ?? []);
   const uptimeBorder =
-    uptimePct >= 99 ? "border-l-green-500" : uptimePct >= 95 ? "border-l-yellow-500" : "border-l-red-500";
+    uptimePct >= 99
+      ? "border-l-status-online"
+      : uptimePct >= 95
+        ? "border-l-status-warning"
+        : "border-l-status-critical";
 
   const cards = [
     {
@@ -82,17 +86,17 @@ export default function FleetKpiStrip() {
       key: "online",
       label: "Online",
       value: formatCount(online),
-      border: "border-l-green-500",
+      border: "border-l-status-online",
       icon: Wifi,
-      iconColor: "text-green-500",
+      iconColor: "text-status-online",
     },
     {
       key: "offline",
       label: "Offline",
       value: formatCount(offline),
-      border: offline > 0 ? "border-l-red-500" : "border-l-slate-400",
+      border: offline > 0 ? "border-l-status-critical" : "border-l-status-offline",
       icon: WifiOff,
-      iconColor: offline > 0 ? "text-red-500" : "text-slate-400",
+      iconColor: offline > 0 ? "text-status-critical" : "text-status-offline",
     },
     {
       key: "uptime",
@@ -101,23 +105,27 @@ export default function FleetKpiStrip() {
       border: uptimeBorder,
       icon: Gauge,
       iconColor:
-        uptimePct >= 99 ? "text-green-500" : uptimePct >= 95 ? "text-yellow-500" : "text-red-500",
+        uptimePct >= 99
+          ? "text-status-online"
+          : uptimePct >= 95
+            ? "text-status-warning"
+            : "text-status-critical",
     },
     {
       key: "alerts",
       label: "Open Alerts",
       value: formatCount(openAlerts),
-      border: openAlerts > 0 ? "border-l-red-500" : "border-l-slate-400",
+      border: openAlerts > 0 ? "border-l-status-critical" : "border-l-status-offline",
       icon: Bell,
-      iconColor: openAlerts > 0 ? "text-red-500" : "text-slate-400",
+      iconColor: openAlerts > 0 ? "text-status-critical" : "text-status-offline",
     },
     {
       key: "maintenance",
       label: "Active Maintenance",
       value: formatCount(activeMaintenance),
-      border: "border-l-blue-500",
+      border: "border-l-status-info",
       icon: CalendarOff,
-      iconColor: "text-blue-500",
+      iconColor: "text-status-info",
     },
   ];
 
@@ -132,7 +140,7 @@ export default function FleetKpiStrip() {
             <span className="text-sm text-muted-foreground">{card.label}</span>
             <card.icon className={`h-4 w-4 ${card.iconColor}`} />
           </div>
-          <div className="mt-1 text-3xl font-bold">{card.value}</div>
+          <div className="mt-1 text-2xl font-semibold">{card.value}</div>
         </div>
       ))}
     </div>

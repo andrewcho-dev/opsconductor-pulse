@@ -75,7 +75,7 @@ export default function RolesPage() {
   const customRoles = useMemo(() => data?.roles?.filter((r) => !r.is_system) ?? [], [data]);
 
   if (!hasPermission("users.roles")) {
-    return <div className="p-6 text-muted-foreground">You don't have permission to manage roles.</div>;
+    return <div className="text-muted-foreground">You don't have permission to manage roles.</div>;
   }
 
   const toggleExpanded = (roleId: string) => {
@@ -92,14 +92,14 @@ export default function RolesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Roles & Permissions"
         description="Manage role bundles for your organization"
         action={
           <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Role
+            <Plus className="mr-1 h-4 w-4" />
+            Add Role
           </Button>
         }
       />

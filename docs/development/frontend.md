@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-18
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -9,7 +9,7 @@ sources:
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148]
 ---
 
 # Frontend
@@ -80,6 +80,171 @@ Forms use:
 
 - `react-hook-form` for state and submission
 - `zod` schemas (Phase 136) for validation
+
+## Design System
+
+Phases 143–144 establish a baseline visual system to keep the UI consistent and readable in a data-dense console.
+
+- Spacing: AppShell `<main>` uses `p-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
+- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-8`) frames the bottom and shows version + year.
+- Typography hierarchy:
+
+| Role | Tailwind |
+|------|----------|
+| Page title | `text-lg font-semibold` |
+| Section heading | `text-sm font-semibold uppercase tracking-wide text-muted-foreground` |
+| Card title | `text-sm font-semibold` (default; no size overrides) |
+| KPI number | `text-2xl font-semibold` (universal) |
+| KPI label / caption | `text-xs text-muted-foreground` |
+| Body | `text-sm` |
+| Modal/dialog title | `text-base font-semibold` |
+
+- Weight rule: use `font-semibold` for emphasis; avoid `font-bold` (exceptions: 404 and NOC label).
+- Shapes: cards/modals use `rounded-lg`; buttons/inputs/badges use `rounded-md`; `rounded-full` only for semantically circular elements (status dots, switches, radio items, progress bars, stepper circles, avatars).
+- Empty states: cap empty/loading padding at `py-8`; prefer the shared `EmptyState` component.
+- Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
+- Cards/backgrounds/status colors: border-based containment (no shadow); light mode uses a light gray page background with white cards (tokens in `src/index.css`); use semantic status token utilities (e.g. `text-status-online`, `bg-status-critical`), not Tailwind color literals.
+
+## UI Pattern Conventions
+
+Phase 145 standardizes UI usage patterns across the app. These are conventions (how components are used), not a restyling.
+
+### Page Header Actions
+
+- All pages MUST use the shared `<PageHeader>` component.
+- Primary create action: `<Button>` with `Plus` icon + `"Add {Noun}"` label, placed in `PageHeader` `action`.
+- Secondary page actions: `<Button variant="outline">` grouped next to the primary action.
+- Settings/config actions: gear icon `DropdownMenu` (never a standalone page button).
+
+### Table Row Actions
+
+- 1–2 actions: `<Button variant="ghost" size="sm">` with icon + short label.
+- 3+ actions: `MoreHorizontal` `DropdownMenu`, with destructive items after a separator.
+- Navigation to detail: put a `<Link>` on the name/ID column text; do not add a separate View button.
+
+### Breadcrumbs
+
+- ALL detail pages MUST provide breadcrumbs via the `PageHeader` `breadcrumbs` prop.
+- Format: `[{ label: "Parent", href: "/parent" }, { label: itemName }]`.
+- No standalone "Back" buttons; breadcrumbs replace that navigation pattern.
+
+### Modals & Dialogs
+
+- All modals use Shadcn `<Dialog>`; no custom `<div className="fixed inset-0">` overlays.
+- Dialog props: `open` + `onOpenChange` (avoid `onClose`, `isOpen`, etc).
+- State naming:
+  - `const [open, setOpen] = useState(false)` for simple boolean open state
+  - `const [editing, setEditing] = useState<T | null>(null)` for compound edit state
+- All form modals should use `useFormDirtyGuard` to protect against losing unsaved changes.
+- Destructive confirms: use `<AlertDialog>`; never `window.confirm()`.
+
+### Prohibited Patterns
+
+- Raw `<button>` elements (use `<Button>`).
+- Custom div overlays for modals (use `<Dialog>`).
+- `window.confirm()` / `confirm()` (use `<AlertDialog>`).
+- Custom page header layouts (use `<PageHeader>`).
+- Standalone "Back" buttons (use breadcrumbs).
+- "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
+
+## Mutation Feedback Conventions
+
+Phase 146 standardizes mutation feedback and error formatting. The goal is zero silent operations: users should always see confirmation on success and a meaningful message on failure.
+
+### Toast Feedback Rules
+
+- Every `useMutation` MUST have both `onSuccess` and `onError` callbacks with toast feedback.
+- Import: `import { toast } from "sonner";`
+- Success: `toast.success("Noun verbed")` (past tense, concise).
+- Error: `toast.error(getErrorMessage(err) || "Failed to verb noun")` (prefer API detail, with generic fallback).
+- Import error utility: `import { getErrorMessage } from "@/lib/errors";`
+- Keep existing `onSuccess` logic (invalidateQueries, dialog close, state reset) - toast is in addition, not replacement.
+- No `console.error()` in feature files - use `toast.error()` instead.
+
+### Error Formatting
+
+- One centralized function: `getErrorMessage()` in `@/lib/errors`.
+- Handles: `ApiError` (extracts `body.detail`), standard `Error`, plain objects, unknown.
+- Never duplicate error formatting logic in components (no local `formatError()` helpers).
+
+### Modal State Naming
+
+- Simple boolean: `const [open, setOpen] = useState(false)`
+- Multiple dialogs: `const [createOpen, setCreateOpen] = useState(false)`
+- Compound edit state: `const [editing, setEditing] = useState<T | null>(null)`
+- Avoid state names like `show*`, `isOpen`, `visible`, `openCreate`.
+
+### Prohibited Patterns
+
+- Silent mutations (no toast on success or error).
+- `console.error()` in feature/page components.
+- Duplicated `formatError()` functions - use `getErrorMessage` from `@/lib/errors`.
+- `window.confirm()` - use `<AlertDialog>` (Phase 145).
+- Inconsistent modal state names (`show`, `isOpen`, `visible`).
+
+## Dashboard Widget System
+
+Phase 147 overhauls the widget system to support responsive sizing, formatting controls, thresholds, visualization switching, and a categorized widget catalog.
+
+### Widget Architecture
+
+- Widgets are defined in `frontend/src/features/dashboard/widgets/widget-registry.ts` with type, label, description, category, default size, min/max size, default config, and a lazy-loaded renderer component.
+- Widget config is stored as JSON - new config fields are optional and do not require backend schema migrations.
+- `getWidgetRenderer()` resolves the renderer component loader, respecting `display_as` overrides.
+- `getWidgetsByCategory()` groups widgets for the Add Widget catalog UI.
+
+### Widget Categories
+
+- Charts - time-series and comparison visualizations (line chart, area chart, bar chart, pie/donut, scatter plot, radar).
+- Metrics - single-value displays (KPI tile, stat card with sparkline, gauge with 4 styles).
+- Data - tabular/list views (device table, alert feed).
+- Fleet Overview - consolidated fleet status (count, donut, health score).
+
+### Widget Config Fields
+
+- Data fields: `metric`, `time_range`, `devices`, `limit`, `max_items`, etc. (widget-type specific).
+- Display: `display_as` (overrides visualization type), `display_mode` (fleet widget mode).
+- Formatting: `decimal_precision`, `show_title`, `show_legend`, `show_x_axis`, `show_y_axis`, `y_axis_min`, `y_axis_max`.
+- Thresholds: `thresholds: [{ value, color, label? }]` - rendered as markLines on charts, color zones on gauges, value coloring on KPI tiles.
+- Display sub-types:
+  - `gauge_style`: `"arc" | "speedometer" | "ring" | "grade"` - selects gauge visual style
+  - `smooth`: boolean - smooth curve interpolation for line/area charts
+  - `step`: boolean - step-line interpolation (overrides smooth)
+  - `area_fill`: boolean - area fill under line chart
+  - `stacked`: boolean - stacked series for bar/area charts
+  - `horizontal`: boolean - horizontal bar orientation
+- Pie chart fields:
+  - `pie_data_source`: `"fleet_status" | "alert_severity"` - data source for pie chart
+  - `doughnut`: boolean - donut vs filled pie style
+  - `show_labels`: boolean - show percentage labels on slices
+- Scatter chart fields:
+  - `x_metric`: string - metric for X axis
+  - `y_metric`: string - metric for Y axis
+- Radar chart fields:
+  - `radar_metrics`: string[] - 3-6 metrics for radar axes
+
+### Renderer Rules
+
+- All ECharts renderers MUST use `style={{ width: "100%", height: "100%" }}` (no fixed pixel heights).
+- All renderers MUST handle missing config fields gracefully with defaults.
+- All numeric displays MUST respect `decimal_precision` from config.
+- Chart renderers MUST apply `show_legend`, `show_x_axis`, `show_y_axis` and `y_axis_min`/`y_axis_max` to ECharts options.
+- New renderers MUST be wrapped in `min-h-[100px]` or `min-h-[120px]` to prevent collapse in small widgets.
+- Gauge renderers MUST support `gauge_style` config and render all 4 styles via ECharts gauge options.
+- Chart renderers that support sub-types (smooth, step, stacked, horizontal) MUST default to existing behavior when config fields are absent.
+- Stat card renderers MUST show sparkline only when historical data is available.
+- New visualization types for existing data shapes should use `display_as` switching, not new widget types.
+- New visualization types with unique data needs (multi-metric, two-axis) should be standalone widget types.
+
+### Prohibited Patterns
+
+- Fixed pixel heights on ECharts containers (use percentage-based sizing).
+- Hardcoded decimal places (use `config.decimal_precision`).
+- Creating new widget types for variations of existing data (use `display_as` or `display_mode`).
+- Skipping threshold support in new numeric renderers.
+- Creating separate widget types for chart sub-types (use config toggles: smooth, step, stacked, horizontal).
+- Hardcoding gauge style (use `config.gauge_style` to determine rendering).
+- Separate renderers for pie vs donut (use `config.doughnut` toggle).
 
 ## State Management
 

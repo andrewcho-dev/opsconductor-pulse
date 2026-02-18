@@ -28,7 +28,7 @@ function MetricGaugesSectionInner({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Current Metrics</CardTitle>
+        <CardTitle>Current Metrics</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">

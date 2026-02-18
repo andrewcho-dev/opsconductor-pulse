@@ -112,7 +112,7 @@ export function OnboardingChecklist() {
         <div className="flex items-center gap-2">
           <Rocket className="h-5 w-5 text-primary" />
           <div>
-            <CardTitle className="text-base">Welcome to OpsConductor Pulse</CardTitle>
+            <CardTitle>Welcome to OpsConductor Pulse</CardTitle>
             <p className="text-sm text-muted-foreground mt-0.5">
               Complete these steps to get the most out of your fleet monitoring.
             </p>

@@ -4,7 +4,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, EmptyState } from "@/components/shared";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus } from "lucide-react";
 import { useJobs, useJob, useCancelJob } from "@/hooks/use-jobs";
 import type { Job } from "@/services/api/jobs";
 import {
@@ -38,7 +38,7 @@ function makeJobColumns(
       accessorKey: "job_id",
       header: "Job ID",
       cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.job_id.slice(0, 8)}...</span>
+        <span className="font-mono text-sm">{row.original.job_id.slice(0, 8)}...</span>
       ),
     },
     {
@@ -61,12 +61,12 @@ function makeJobColumns(
       cell: ({ row }) => {
         const job = row.original;
         if (job.target_device_id) {
-          return <span className="text-xs">device: {job.target_device_id}</span>;
+          return <span className="text-sm">device: {job.target_device_id}</span>;
         }
         if (job.target_group_id) {
-          return <span className="text-xs">group: {job.target_group_id}</span>;
+          return <span className="text-sm">group: {job.target_group_id}</span>;
         }
-        return <span className="text-xs">all devices</span>;
+        return <span className="text-sm">all devices</span>;
       },
     },
     {
@@ -76,7 +76,7 @@ function makeJobColumns(
       cell: ({ row }) => {
         const job = row.original;
         return (
-          <span className="text-xs">
+          <span className="text-sm">
             {job.succeeded_count ?? 0}/{job.total_executions ?? 0} succeeded
             {(job.failed_count ?? 0) > 0 ? ` / ${job.failed_count} failed` : ""}
           </span>
@@ -87,7 +87,7 @@ function makeJobColumns(
       accessorKey: "expires_at",
       header: "Expires",
       cell: ({ row }) => (
-        <span className="text-xs">
+        <span className="text-sm">
           {row.original.expires_at ? new Date(row.original.expires_at).toLocaleString() : "-"}
         </span>
       ),
@@ -96,7 +96,7 @@ function makeJobColumns(
       accessorKey: "created_at",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs">{new Date(row.original.created_at).toLocaleString()}</span>
+        <span className="text-sm">{new Date(row.original.created_at).toLocaleString()}</span>
       ),
     },
     {
@@ -133,7 +133,7 @@ function makeJobColumns(
 }
 
 export default function JobsPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [confirmCancelJobId, setConfirmCancelJobId] = useState<string | null>(null);
 
@@ -157,11 +157,16 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Jobs"
         description={isLoading ? "Loading..." : `${jobs.length} jobs`}
-        action={<Button onClick={() => setShowCreate(true)}>+ Create Job</Button>}
+        action={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add Job
+          </Button>
+        }
       />
 
       {error ? (
@@ -177,7 +182,12 @@ export default function JobsPage() {
               title="No jobs yet"
               description="Jobs will appear here when you create firmware updates, configuration pushes, or other batch operations."
               icon={<ClipboardList className="h-12 w-12" />}
-              action={<Button onClick={() => setShowCreate(true)}>Create Job</Button>}
+              action={
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add Job
+                </Button>
+              }
             />
           }
         />
@@ -191,7 +201,7 @@ export default function JobsPage() {
               Close
             </Button>
           </div>
-          <pre className="rounded bg-muted p-2 text-xs overflow-auto">
+          <pre className="rounded bg-muted p-2 text-sm overflow-auto">
             {JSON.stringify(
               {
                 type: selectedJob.document_type,
@@ -204,7 +214,7 @@ export default function JobsPage() {
           </pre>
           {(selectedJob.executions ?? []).length > 0 && (
             <div className="rounded border border-border overflow-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     {["Device", "Status", "Execution #", "Updated", "Details"].map((label) => (
@@ -235,8 +245,8 @@ export default function JobsPage() {
         </div>
       )}
 
-      {showCreate && (
-        <CreateJobModal onClose={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />
+      {createOpen && (
+        <CreateJobModal onClose={() => setCreateOpen(false)} onCreated={() => setCreateOpen(false)} />
       )}
 
       <AlertDialog

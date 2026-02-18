@@ -18,16 +18,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Pencil, Share2, Star } from "lucide-react";
+import { Settings, Pencil, Share2, Star, Lock, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { toggleDashboardShare, updateDashboard } from "@/services/api/dashboards";
 import type { Dashboard } from "@/services/api/dashboards";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DashboardSettingsProps {
   dashboard: Dashboard;
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onAddWidget: () => void;
 }
 
-export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
-  const [showRename, setShowRename] = useState(false);
+export function DashboardSettings({
+  dashboard,
+  isEditing,
+  onToggleEdit,
+  onAddWidget,
+}: DashboardSettingsProps) {
+  const [renameOpen, setRenameOpen] = useState(false);
   const [newName, setNewName] = useState(dashboard.name);
   const [newDescription, setNewDescription] = useState(dashboard.description);
   const queryClient = useQueryClient();
@@ -41,7 +51,11 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
-      setShowRename(false);
+      setRenameOpen(false);
+      toast.success("Dashboard renamed");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to rename dashboard");
     },
   });
 
@@ -50,6 +64,10 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Sharing updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update sharing");
     },
   });
 
@@ -58,6 +76,10 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", dashboard.id] });
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Default dashboard updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to set default");
     },
   });
 
@@ -72,11 +94,34 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onToggleEdit}>
+            {isEditing ? (
+              <>
+                <Lock className="h-4 w-4 mr-2" />
+                Lock Layout
+              </>
+            ) : (
+              <>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Layout
+              </>
+            )}
+          </DropdownMenuItem>
+
+          {isEditing && (
+            <DropdownMenuItem onClick={onAddWidget}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Widget
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
           <DropdownMenuItem
             onClick={() => {
               setNewName(dashboard.name);
               setNewDescription(dashboard.description);
-              setShowRename(true);
+              setRenameOpen(true);
             }}
           >
             <Pencil className="h-4 w-4 mr-2" />
@@ -113,7 +158,7 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={showRename} onOpenChange={setShowRename}>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Rename Dashboard</DialogTitle>
@@ -137,7 +182,7 @@ export function DashboardSettings({ dashboard }: DashboardSettingsProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRename(false)}>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
             <Button

@@ -189,11 +189,11 @@ export function EscalationPolicyModal({
             {form.levels.map((level, idx) => (
               <div key={idx} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-12">
                 <div className="md:col-span-1">
-                  <div className="text-xs text-muted-foreground">Level</div>
+                  <div className="text-sm text-muted-foreground">Level</div>
                   <div className="text-sm font-medium">{idx + 1}</div>
                 </div>
                 <div className="md:col-span-2">
-                  <div className="text-xs text-muted-foreground">Delay (minutes)</div>
+                  <div className="text-sm text-muted-foreground">Delay (minutes)</div>
                   <Input
                     type="number"
                     min={1}
@@ -202,7 +202,7 @@ export function EscalationPolicyModal({
                   />
                 </div>
                 <div className="md:col-span-3">
-                  <div className="text-xs text-muted-foreground">Email</div>
+                  <div className="text-sm text-muted-foreground">Email</div>
                   <Input
                     placeholder="notify@example.com"
                     value={level.notify_email ?? ""}
@@ -210,7 +210,7 @@ export function EscalationPolicyModal({
                   />
                 </div>
                 <div className="md:col-span-3">
-                  <div className="text-xs text-muted-foreground">Webhook</div>
+                  <div className="text-sm text-muted-foreground">Webhook</div>
                   <Input
                     placeholder="https://..."
                     value={level.notify_webhook ?? ""}
@@ -218,7 +218,7 @@ export function EscalationPolicyModal({
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <div className="text-xs text-muted-foreground">On-Call Schedule</div>
+                  <div className="text-sm text-muted-foreground">On-Call Schedule</div>
                   <select
                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                     value={level.oncall_schedule_id ?? ""}

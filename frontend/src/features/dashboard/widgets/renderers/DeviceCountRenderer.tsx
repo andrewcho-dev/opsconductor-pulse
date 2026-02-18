@@ -3,12 +3,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fetchFleetSummary } from "@/services/api/devices";
 import type { WidgetRendererProps } from "../widget-registry";
 
-export default function DeviceCountRenderer(_props: WidgetRendererProps) {
+export default function DeviceCountRenderer({ config }: WidgetRendererProps) {
   const { data, isLoading } = useQuery({
     queryKey: ["widget-device-count"],
     queryFn: fetchFleetSummary,
     refetchInterval: 30000,
   });
+
+  const decimalPrecision = (config.decimal_precision as number | undefined) ?? 1;
 
   const total =
     data?.total ??
@@ -19,10 +21,15 @@ export default function DeviceCountRenderer(_props: WidgetRendererProps) {
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
 
+  const formattedTotal = (total ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimalPrecision,
+  });
+
   return (
     <div className="h-full flex items-center justify-between px-2">
       <div>
-        <div className="text-3xl font-bold">{(total ?? 0).toLocaleString()}</div>
+        <div className="text-2xl font-semibold">{formattedTotal}</div>
         <div className="text-xs text-muted-foreground">Total devices</div>
       </div>
       <div className="text-right text-xs text-muted-foreground">

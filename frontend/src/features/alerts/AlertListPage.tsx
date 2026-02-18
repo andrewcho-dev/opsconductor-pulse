@@ -5,9 +5,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAlerts } from "@/hooks/use-alerts";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
-import { Bell, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Bell, ChevronDown, ChevronRight, MoreHorizontal, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const SILENCE_OPTIONS = [
   { label: "15m", value: 15 },
@@ -51,10 +58,10 @@ function levelFromSeverity(severity: number): SeverityLevel {
 
 function severityDotClass(severity: number) {
   const level = levelFromSeverity(severity);
-  if (level === "CRITICAL") return "bg-red-500";
-  if (level === "HIGH") return "bg-orange-500";
-  if (level === "MEDIUM") return "bg-yellow-500";
-  return "bg-blue-500";
+  if (level === "CRITICAL") return "bg-status-critical";
+  if (level === "HIGH") return "bg-status-warning";
+  if (level === "MEDIUM") return "bg-status-stale";
+  return "bg-status-info";
 }
 
 function formatTimeAgo(input: string) {
@@ -165,50 +172,41 @@ export default function AlertListPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Alerts"
         description="Professional inbox for real-time alert triage"
         action={
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => refetch()}
-              className="inline-flex items-center gap-1 rounded border border-border px-3 py-1.5 text-sm hover:bg-accent"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
-            </button>
-            <Link
-              to="/alert-rules"
-              className="rounded border border-border px-3 py-1.5 text-sm hover:bg-accent"
-            >
-              Rules
-            </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/alert-rules">Rules</Link>
+            </Button>
           </div>
         }
       />
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((item) => (
-          <button
+          <Button
             key={item.key}
+            variant={tab === item.key ? "default" : "outline"}
+            size="sm"
             onClick={() => {
               setTab(item.key);
               setSearch("");
               setSelected(new Set());
               setPageIndex(0);
             }}
-            className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-              tab === item.key
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border text-muted-foreground hover:bg-accent"
-            }`}
           >
             {item.label}
             <span className="ml-2 rounded bg-background/70 px-1.5 py-0.5 text-xs">
               {counts[item.key]}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -216,22 +214,16 @@ export default function AlertListPage() {
         <div className="flex items-center gap-2">
           {selected.size > 0 && (
             <>
-              <button
-                onClick={() => runBulk("ack")}
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
-              >
-                Ack Selected
-              </button>
-              <button
-                onClick={() => runBulk("close")}
-                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
-              >
-                Close Selected
-              </button>
+              <Button variant="outline" size="sm" onClick={() => runBulk("ack")}>
+                Acknowledge Selected ({selected.size})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => runBulk("close")}>
+                Close Selected ({selected.size})
+              </Button>
             </>
           )}
           {selected.size === 0 && (
-            <span className="text-xs text-muted-foreground">Select alerts for bulk actions</span>
+            <span className="text-sm text-muted-foreground">Select alerts for bulk actions</span>
           )}
         </div>
         <input
@@ -260,7 +252,7 @@ export default function AlertListPage() {
         />
       ) : (
         <div className="rounded-md border border-border">
-          <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] border-b border-border bg-muted/30 px-2 py-2 text-xs font-semibold uppercase text-muted-foreground">
+          <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] border-b border-border bg-muted/30 px-2 py-2 text-sm font-semibold uppercase text-muted-foreground">
             <div>
               <input
                 type="checkbox"
@@ -288,7 +280,9 @@ export default function AlertListPage() {
                       onChange={(e) => toggleSelected(alert.alert_id, e.target.checked)}
                     />
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() =>
                       setExpandedAlertId(isExpanded ? null : alert.alert_id)
                     }
@@ -299,28 +293,28 @@ export default function AlertListPage() {
                     ) : (
                       <ChevronRight className="h-4 w-4" />
                     )}
-                  </button>
+                  </Button>
                   <div className="flex items-center gap-2">
                     <span className={`h-2.5 w-2.5 rounded-full ${severityDotClass(alert.severity)}`} />
                     <span>{levelFromSeverity(alert.severity)}</span>
                   </div>
                   <div>
                     <div className="font-medium">{alert.device_id}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-sm text-muted-foreground">
                       {alert.alert_type}
                       {alert.trigger_count && alert.trigger_count > 1 && (
-                        <Badge variant="secondary" className="ml-2 text-[10px]">
+                        <Badge variant="secondary" className="ml-2">
                           {alert.trigger_count}x
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {formatTimeAgo(alert.created_at)}
                     {alert.trigger_count &&
                       alert.trigger_count > 1 &&
                       alert.last_triggered_at && (
-                        <div className="text-[10px] text-muted-foreground/70">
+                        <div className="text-sm text-muted-foreground/70">
                           last: {formatTimeAgo(alert.last_triggered_at)}
                         </div>
                       )}
@@ -328,47 +322,51 @@ export default function AlertListPage() {
                   <div>
                     <Badge variant="outline">{alert.status}</Badge>
                   </div>
-                  <details className="relative">
-                    <summary className="cursor-pointer list-none text-center">···</summary>
-                    <div className="absolute right-0 z-10 mt-1 w-36 rounded border border-border bg-background p-1 shadow-md">
-                      <button
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" aria-label="Open alert actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
                         onClick={async () => {
                           await acknowledgeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                       >
                         Acknowledge
-                      </button>
-                      <button
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         onClick={async () => {
                           await closeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                       >
                         Close
-                      </button>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       {SILENCE_OPTIONS.map((opt) => (
-                        <button
+                        <DropdownMenuItem
+                          key={opt.value}
                           onClick={async () => {
                             await silenceAlert(String(alert.alert_id), opt.value);
                             await refreshAlerts();
                           }}
-                          key={opt.value}
-                          className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                         >
                           Silence {opt.label}
-                        </button>
+                        </DropdownMenuItem>
                       ))}
-                      <Link
-                        to={`/devices/${alert.device_id}`}
-                        className="block rounded px-2 py-1 text-left text-xs hover:bg-accent"
-                      >
-                        View Device
-                      </Link>
-                    </div>
-                  </details>
+                      {alert.device_id && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem asChild>
+                            <Link to={`/devices/${alert.device_id}`}>View Device</Link>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {isExpanded && (
@@ -400,52 +398,52 @@ export default function AlertListPage() {
                       </div>
                     </div>
                     <div className="mt-3">
-                      <div className="mb-1 text-xs text-muted-foreground">Summary</div>
+                      <div className="mb-1 text-sm text-muted-foreground">Summary</div>
                       <p>{alert.summary}</p>
                     </div>
                     <div className="mt-3">
-                      <div className="mb-1 text-xs text-muted-foreground">Details</div>
-                      <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-xs">
+                      <div className="mb-1 text-sm text-muted-foreground">Details</div>
+                      <pre className="max-h-32 overflow-auto rounded bg-muted p-2 text-sm">
                         {JSON.stringify(alert.details ?? {}, null, 2)}
                       </pre>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={async () => {
                           await acknowledgeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
                       >
                         Acknowledge
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={async () => {
                           await closeAlert(String(alert.alert_id));
                           await refreshAlerts();
                         }}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
                       >
                         Close
-                      </button>
+                      </Button>
                       {SILENCE_OPTIONS.map((opt) => (
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
                           key={opt.value}
                           onClick={async () => {
                             await silenceAlert(String(alert.alert_id), opt.value);
                             await refreshAlerts();
                           }}
-                          className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
                         >
                           Silence {opt.label}
-                        </button>
+                        </Button>
                       ))}
-                      <Link
-                        to={`/devices/${alert.device_id}`}
-                        className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
-                      >
-                        View Device →
-                      </Link>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/devices/${alert.device_id}`}>View Device</Link>
+                      </Button>
                     </div>
                   </div>
                 )}

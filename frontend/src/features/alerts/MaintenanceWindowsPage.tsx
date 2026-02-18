@@ -22,6 +22,8 @@ import {
   type MaintenanceWindow,
   updateMaintenanceWindow,
 } from "@/services/api/alerts";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 const DOW_OPTIONS = [
   { label: "Sun", value: 0 },
@@ -91,6 +93,10 @@ export default function MaintenanceWindowsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
       setOpen(false);
+      toast.success("Maintenance window created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create maintenance window");
     },
   });
   const updateMutation = useMutation({
@@ -99,24 +105,32 @@ export default function MaintenanceWindowsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
       setOpen(false);
+      toast.success("Maintenance window updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to update maintenance window");
     },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteMaintenanceWindow,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
+      toast.success("Maintenance window deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete maintenance window");
     },
   });
 
   const rows = useMemo(() => data?.windows ?? [], [data?.windows]);
 
-  function openCreate() {
+  function handleOpenCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setOpen(true);
   }
 
-  function openEdit(window: MaintenanceWindow) {
+  function handleOpenEdit(window: MaintenanceWindow) {
     setEditing(window);
     setForm(toFormState(window));
     setOpen(true);
@@ -160,11 +174,11 @@ export default function MaintenanceWindowsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Maintenance Windows"
         description="Suppress alerts during planned maintenance."
-        action={<Button onClick={openCreate}>Add Window</Button>}
+        action={<Button onClick={handleOpenCreate}>Add Window</Button>}
       />
 
       <Card>
@@ -176,11 +190,11 @@ export default function MaintenanceWindowsPage() {
             {rows.map((window) => (
               <div
                 key={window.window_id}
-                className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]"
+                className="grid gap-4 rounded-md border border-border p-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]"
               >
                 <div>
                   <div className="font-medium">{window.name}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {window.recurring ? "Recurring" : "One-time"} -{" "}
                     {window.enabled ? "Enabled" : "Disabled"}
                   </div>
@@ -195,7 +209,7 @@ export default function MaintenanceWindowsPage() {
                     {window.ends_at ? new Date(window.ends_at).toLocaleString() : "Indefinite"}
                   </div>
                 </div>
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 text-sm text-muted-foreground">
                   <div>Sites: {window.site_ids?.join(", ") || "All"}</div>
                   <div>Device Types: {window.device_types?.join(", ") || "All"}</div>
                   <Badge variant={window.recurring ? "default" : "outline"}>
@@ -203,7 +217,7 @@ export default function MaintenanceWindowsPage() {
                   </Badge>
                 </div>
                 <div className="flex items-start gap-2">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(window)}>
+                  <Button variant="outline" size="sm" onClick={() => handleOpenEdit(window)}>
                     Edit
                   </Button>
                   <Button
@@ -226,7 +240,7 @@ export default function MaintenanceWindowsPage() {
             <DialogTitle>{editing ? "Edit Maintenance Window" : "Add Maintenance Window"}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             <div className="grid gap-2">
               <Label>Name</Label>
               <Input
@@ -253,7 +267,7 @@ export default function MaintenanceWindowsPage() {
             <div className="flex items-center justify-between rounded-md border border-border p-3">
               <div>
                 <Label>Recurring</Label>
-                <p className="text-xs text-muted-foreground">Repeat by day/hour window</p>
+                <p className="text-sm text-muted-foreground">Repeat by day/hour window</p>
               </div>
               <Switch
                 checked={form.recurringEnabled}
@@ -282,7 +296,7 @@ export default function MaintenanceWindowsPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-1">
                     <Label>Start Hour</Label>
                     <Input

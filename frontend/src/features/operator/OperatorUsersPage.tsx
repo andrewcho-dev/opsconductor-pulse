@@ -111,7 +111,7 @@ export default function OperatorUsersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="User Management"
         description="Manage users across all tenants"
@@ -169,7 +169,7 @@ export default function OperatorUsersPage() {
           ))}
         </div>
       ) : users.length === 0 ? (
-        <div className="py-12 text-center text-muted-foreground">No users found.</div>
+        <div className="py-8 text-center text-muted-foreground">No users found.</div>
       ) : (
         <>
           <div className="rounded-md border">
@@ -197,17 +197,17 @@ export default function OperatorUsersPage() {
                     </TableCell>
                     <TableCell>
                       {user.tenant_id ? (
-                        <Badge variant="outline" className="font-mono text-xs">
+                        <Badge variant="outline" className="font-mono">
                           {user.tenant_id}
                         </Badge>
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {user.roles?.map((role) => (
-                          <Badge key={role} variant={getRoleBadgeVariant(role)} className="text-xs">
+                          <Badge key={role} variant={getRoleBadgeVariant(role)}>
                             {role}
                           </Badge>
                         ))}
@@ -273,7 +273,7 @@ export default function OperatorUsersPage() {
                           {isSelf && (
                             <>
                               <DropdownMenuSeparator />
-                              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
                                 This is your account
                               </div>
                             </>

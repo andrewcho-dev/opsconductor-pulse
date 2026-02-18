@@ -10,7 +10,7 @@ export default function SitesPage() {
   const sites = data?.sites ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader title="Sites" description={isLoading ? "Loading..." : `${data?.total ?? 0} sites`} />
 
       {error ? (
@@ -33,11 +33,11 @@ export default function SitesPage() {
               <div className="text-lg font-semibold">{site.name}</div>
               {site.location && <div className="text-sm text-muted-foreground">{site.location}</div>}
               <div className="mt-2 text-sm">
-                <span className="text-green-600">{site.online_count} online</span>
+                <span className="text-status-online">{site.online_count} online</span>
                 {" / "}
-                <span className="text-yellow-600">{site.stale_count} stale</span>
+                <span className="text-status-stale">{site.stale_count} stale</span>
                 {" / "}
-                <span className="text-red-600">{site.offline_count} offline</span>
+                <span className="text-status-offline">{site.offline_count} offline</span>
               </div>
               <div className="mt-2 text-sm text-muted-foreground">{site.device_count} devices</div>
               <div className="mt-2">

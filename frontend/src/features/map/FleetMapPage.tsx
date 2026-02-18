@@ -42,10 +42,9 @@ function createClusterIcon(cluster: any) {
   const color = _worstClusterColor(statuses);
 
   return L.divIcon({
-    html: `<div style="
+    html: `<div class="rounded-full" style="
       background-color: ${color};
       color: white;
-      border-radius: 50%;
       width: 36px;
       height: 36px;
       display: flex;
@@ -65,10 +64,9 @@ function createStatusIcon(status: string): L.DivIcon {
   const color = getStatusColor(status);
   return L.divIcon({
     className: "",
-    html: `<div style="
+    html: `<div class="rounded-full" style="
       width: 14px;
       height: 14px;
-      border-radius: 50%;
       background-color: ${color};
       border: 2px solid white;
       box-shadow: 0 1px 3px rgba(0,0,0,0.4);
@@ -115,10 +113,10 @@ function DevicePopup({ device }: { device: Device }) {
         <Badge variant={statusVariant}>{device.status}</Badge>
       </div>
       {device.address && (
-        <div className="text-xs text-muted-foreground">{device.address}</div>
+        <div className="text-sm text-muted-foreground">{device.address}</div>
       )}
       {device.last_seen_at && (
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           Last seen: {new Date(device.last_seen_at).toLocaleString()}
         </div>
       )}
@@ -167,7 +165,7 @@ export default function FleetMapPage() {
                     className="inline-block h-3 w-3 rounded-full"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="text-xs">{status}</span>
+                  <span className="text-sm">{status}</span>
                 </div>
               ))}
           </div>

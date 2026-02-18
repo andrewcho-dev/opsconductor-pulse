@@ -104,23 +104,23 @@ export default function OrganizationPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Organization"
         description="Manage your company profile, address, and billing contact info."
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Company Profile
             </CardTitle>
@@ -144,7 +144,7 @@ export default function OrganizationPage() {
                 maxLength={200}
               />
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="org-phone">Phone</Label>
                 <Input
@@ -164,7 +164,7 @@ export default function OrganizationPage() {
                 />
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Industry</Label>
                 <Select
@@ -211,7 +211,7 @@ export default function OrganizationPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Address</CardTitle>
+            <CardTitle>Address</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -232,7 +232,7 @@ export default function OrganizationPage() {
                 maxLength={200}
               />
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="city">City</Label>
                 <Input
@@ -252,7 +252,7 @@ export default function OrganizationPage() {
                 />
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="postal">Postal Code</Label>
                 <Input
@@ -277,19 +277,19 @@ export default function OrganizationPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Plan & Support</CardTitle>
+            <CardTitle>Plan & Support</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
+          <CardContent className="grid gap-3 md:grid-cols-3">
             <div>
-              <div className="text-xs text-muted-foreground">Data Residency Region</div>
+              <div className="text-sm text-muted-foreground">Data Residency Region</div>
               <div className="text-sm">{data?.data_residency_region ?? "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Support Tier</div>
+              <div className="text-sm text-muted-foreground">Support Tier</div>
               <div className="text-sm">{data?.support_tier ?? "—"}</div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">SLA Level</div>
+              <div className="text-sm text-muted-foreground">SLA Level</div>
               <div className="text-sm">
                 {data?.sla_level != null ? String(data.sla_level) : "—"}
               </div>

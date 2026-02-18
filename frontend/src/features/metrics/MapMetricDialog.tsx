@@ -18,27 +18,14 @@ import {
 } from "@/components/ui/select";
 import type { NormalizedMetricReference } from "@/services/api/types";
 import { useCreateMetricMapping } from "@/hooks/use-metrics";
-import { ApiError } from "@/services/api/client";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface MapMetricDialogProps {
   open: boolean;
   rawMetric: string | null;
   normalizedMetrics: NormalizedMetricReference[];
   onClose: () => void;
-}
-
-function formatError(error: unknown): string {
-  if (!error) return "";
-  if (error instanceof ApiError) {
-    if (typeof error.body === "string") return error.body;
-    if (error.body && typeof error.body === "object") {
-      const detail = (error.body as { detail?: string }).detail;
-      if (detail) return detail;
-    }
-    return error.message;
-  }
-  if (error instanceof Error) return error.message;
-  return "Unknown error";
 }
 
 function formatPreview(rawValue: number, multiplier: number, offset: number) {
@@ -97,10 +84,11 @@ export default function MapMetricDialog({
         multiplier: mult,
         offset_value: off,
       });
+      toast.success("Metric mapped");
       onClose();
     } catch (err) {
-      console.error("Failed to map metric:", err);
-      setError(formatError(err));
+      toast.error(getErrorMessage(err) || "Failed to map metric");
+      setError(getErrorMessage(err));
     }
   }
 

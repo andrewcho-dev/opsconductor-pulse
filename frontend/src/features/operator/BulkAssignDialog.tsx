@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost } from "@/services/api/client";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceRow {
   device_id: string;
@@ -130,6 +132,10 @@ export function BulkAssignDialog({
     },
     onSuccess: () => {
       onComplete();
+      toast.success("Devices assigned");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to assign devices");
     },
   });
 

@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown, Plus, Share2, Star, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchDashboards,
   createDashboard,
@@ -25,6 +26,17 @@ import {
   updateDashboard,
 } from "@/services/api/dashboards";
 import type { DashboardSummary } from "@/services/api/dashboards";
+import { getErrorMessage } from "@/lib/errors";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DashboardSelectorProps {
   activeDashboardId: number | null;
@@ -32,9 +44,10 @@ interface DashboardSelectorProps {
 }
 
 export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSelectorProps) {
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DashboardSummary | null>(null);
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -54,9 +67,13 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
       onSelect(result.id);
-      setShowCreateDialog(false);
+      setCreateOpen(false);
       setNewName("");
       setNewDescription("");
+      toast.success("Dashboard created");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to create dashboard");
     },
   });
 
@@ -68,6 +85,10 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
       if (remaining.length > 0) {
         onSelect(remaining[0].id);
       }
+      toast.success("Dashboard deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to delete dashboard");
     },
   });
 
@@ -75,14 +96,16 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
     mutationFn: (id: number) => updateDashboard(id, { is_default: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      toast.success("Default dashboard updated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to set default");
     },
   });
 
   function handleDelete(dashboard: DashboardSummary) {
     if (!dashboard.is_owner) return;
-    if (confirm(`Delete dashboard "${dashboard.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(dashboard.id);
-    }
+    setDeleteTarget(dashboard);
   }
 
   return (
@@ -97,7 +120,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
         <DropdownMenuContent align="start" className="w-[280px]">
           {dashboards.filter((d) => !d.is_shared).length > 0 && (
             <>
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
                 My Dashboards
               </div>
               {dashboards
@@ -117,7 +140,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
                       </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground">{d.widget_count}w</span>
+                      <span className="text-sm text-muted-foreground">{d.widget_count}w</span>
                       {d.is_owner && !d.is_default && (
                         <button
                           onClick={(e) => {
@@ -151,7 +174,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
           {dashboards.filter((d) => d.is_shared).length > 0 && (
             <>
               <DropdownMenuSeparator />
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
                 <Share2 className="inline h-3 w-3 mr-1" />
                 Shared Dashboards
               </div>
@@ -166,21 +189,21 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
                     <span className={d.id === activeDashboardId ? "font-medium" : ""}>
                       {d.name}
                     </span>
-                    <span className="text-xs text-muted-foreground">{d.widget_count}w</span>
+                    <span className="text-sm text-muted-foreground">{d.widget_count}w</span>
                   </DropdownMenuItem>
                 ))}
             </>
           )}
 
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setShowCreateDialog(true)}>
+          <DropdownMenuItem onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Dashboard
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Create Dashboard</DialogTitle>
@@ -206,7 +229,7 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -218,6 +241,35 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dashboard</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete dashboard "{deleteTarget?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!deleteTarget) return;
+                deleteMutation.mutate(deleteTarget.id);
+                setDeleteTarget(null);
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

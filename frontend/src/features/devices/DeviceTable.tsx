@@ -2,14 +2,16 @@ import { Link } from "react-router-dom";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatTimestamp } from "@/lib/format";
 import type { Device } from "@/services/api/types";
+import { Button } from "@/components/ui/button";
+import { Pencil, Trash2 } from "lucide-react";
 
 function StatusText({ status }: { status: string }) {
   const color =
     status === "ONLINE"
-      ? "text-green-600"
+      ? "text-status-online"
       : status === "STALE"
-      ? "text-yellow-600"
-      : "text-red-600";
+      ? "text-status-stale"
+      : "text-status-offline";
   return <span className={color}>{status}</span>;
 }
 
@@ -46,7 +48,7 @@ export function DeviceTable({
 }: DeviceTableProps) {
   return (
     <div className="rounded-md border border-border overflow-hidden">
-      <Table className="text-xs" aria-label="Device list">
+      <Table className="text-sm" aria-label="Device list">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="h-7 py-1 px-2">Device ID</TableHead>
@@ -82,12 +84,19 @@ export function DeviceTable({
               </TableCell>
               <TableCell className="py-1 px-2">
                 <div className="flex items-center gap-2">
-                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => onEdit?.(d)}>
+                  <Button variant="ghost" size="sm" onClick={() => onEdit?.(d)}>
+                    <Pencil className="mr-1 h-3.5 w-3.5" />
                     Edit
-                  </button>
-                  <button type="button" className="text-xs text-destructive hover:underline" onClick={() => onDecommission?.(d)}>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => onDecommission?.(d)}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
                     Decommission
-                  </button>
+                  </Button>
                 </div>
               </TableCell>
             </TableRow>

@@ -55,9 +55,9 @@ interface Subscription {
 
 export default function OperatorTenantDetailPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
-  const [showEdit, setShowEdit] = useState(false);
-  const [showSubscriptionCreate, setShowSubscriptionCreate] = useState(false);
-  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [subscriptionCreateOpen, setSubscriptionCreateOpen] = useState(false);
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tenant-stats", tenantId],
@@ -129,31 +129,36 @@ export default function OperatorTenantDetailPage() {
     : "";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title={data.name}
         description={`Tenant ID: ${data.tenant_id}`}
+        breadcrumbs={[
+          { label: "Tenants", href: "/operator/tenants" },
+          { label: data.name || "..." },
+        ]}
+        action={
+          <div className="flex items-center gap-2">
+            <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
+              {data.status}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil className="mr-1 h-4 w-4" />
+              Edit
+            </Button>
+          </div>
+        }
       />
 
-      <div className="flex items-center gap-2">
-        <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
-          {data.status}
-        </Badge>
-        <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
-          <Pencil className="mr-2 h-4 w-4" />
-          Edit Tenant
-        </Button>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Devices</CardTitle>
             <Cpu className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.devices.total}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-semibold">{stats.devices.total}</div>
+            <p className="text-sm text-muted-foreground">
               {stats.devices.active} active
             </p>
           </CardContent>
@@ -162,13 +167,13 @@ export default function OperatorTenantDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Online / Stale</CardTitle>
-            <Wifi className="h-4 w-4 text-green-500" />
+            <Wifi className="h-4 w-4 text-status-online" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              <span className="text-green-500">{stats.devices.online}</span>
+            <div className="text-2xl font-semibold">
+              <span className="text-status-online">{stats.devices.online}</span>
               {" / "}
-              <span className="text-orange-500">{stats.devices.stale}</span>
+              <span className="text-status-stale">{stats.devices.stale}</span>
             </div>
           </CardContent>
         </Card>
@@ -176,11 +181,11 @@ export default function OperatorTenantDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Open Alerts</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            <AlertTriangle className="h-4 w-4 text-status-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.alerts.open}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-semibold">{stats.alerts.open}</div>
+            <p className="text-sm text-muted-foreground">
               {stats.alerts.last_24h} in last 24h
             </p>
           </CardContent>
@@ -192,15 +197,15 @@ export default function OperatorTenantDetailPage() {
             <LinkIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.integrations.active}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-semibold">{stats.integrations.active}</div>
+            <p className="text-sm text-muted-foreground">
               {stats.integrations.total} total
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -259,14 +264,14 @@ export default function OperatorTenantDetailPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Company Profile</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+          <CardTitle>Company Profile</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit
           </Button>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
               <Label>Legal Name</Label>
               <div className="text-sm">{valOrDash(t?.legal_name)}</div>
@@ -299,7 +304,7 @@ export default function OperatorTenantDetailPage() {
             <div className="text-sm">{addressCityLine || "—"}</div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
               <Label>Region</Label>
               <div className="text-sm">{valOrDash(t?.data_residency_region)}</div>
@@ -329,10 +334,10 @@ export default function OperatorTenantDetailPage() {
             Subscriptions
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowBulkAssign(true)}>
+            <Button variant="outline" size="sm" onClick={() => setBulkAssignOpen(true)}>
               Bulk Assign Devices
             </Button>
-            <Button size="sm" onClick={() => setShowSubscriptionCreate(true)}>
+            <Button size="sm" onClick={() => setSubscriptionCreateOpen(true)}>
               Add Subscription
             </Button>
           </div>
@@ -457,26 +462,26 @@ export default function OperatorTenantDetailPage() {
       </Card>
       <EditTenantDialog
         tenant={fullTenant || null}
-        open={showEdit}
-        onOpenChange={setShowEdit}
+        open={editOpen}
+        onOpenChange={setEditOpen}
       />
       <CreateSubscriptionDialog
-        open={showSubscriptionCreate}
-        onOpenChange={setShowSubscriptionCreate}
+        open={subscriptionCreateOpen}
+        onOpenChange={setSubscriptionCreateOpen}
         preselectedTenantId={tenantId}
         onCreated={() => {
           refetchSubscriptions();
-          setShowSubscriptionCreate(false);
+          setSubscriptionCreateOpen(false);
         }}
       />
       {tenantId && (
         <BulkAssignDialog
-          open={showBulkAssign}
-          onOpenChange={setShowBulkAssign}
+          open={bulkAssignOpen}
+          onOpenChange={setBulkAssignOpen}
           tenantId={tenantId}
           onComplete={() => {
             refetchSubscriptions();
-            setShowBulkAssign(false);
+            setBulkAssignOpen(false);
           }}
         />
       )}

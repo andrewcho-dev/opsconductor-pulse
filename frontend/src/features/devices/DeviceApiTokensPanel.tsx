@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +21,7 @@ import {
   type ProvisionDeviceResponse,
 } from "@/services/api/devices";
 import { OneTimeSecretDisplay } from "@/components/shared/OneTimeSecretDisplay";
+import { getErrorMessage } from "@/lib/errors";
 
 interface DeviceApiTokensPanelProps {
   deviceId: string;
@@ -41,6 +43,10 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     mutationFn: (tokenId: string) => revokeDeviceToken(deviceId, tokenId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["device-tokens", deviceId] });
+      toast.success("API token revoked");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to revoke token");
     },
   });
 
@@ -49,6 +55,10 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
     onSuccess: async (result) => {
       setCredentials(result);
       await queryClient.invalidateQueries({ queryKey: ["device-tokens", deviceId] });
+      toast.success("API token rotated");
+    },
+    onError: (err: Error) => {
+      toast.error(getErrorMessage(err) || "Failed to rotate token");
     },
   });
 
@@ -71,7 +81,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
         const raw = row.original.token_prefix ?? row.original.client_id ?? row.original.id;
         const prefix = raw ? `${String(raw).slice(0, 8)}...` : "—";
         return (
-          <span className="font-mono text-xs text-muted-foreground" title={raw}>
+          <span className="font-mono text-sm text-muted-foreground" title={raw}>
             {prefix}
           </span>
         );
@@ -81,7 +91,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
       accessorKey: "created_at",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {row.original.created_at ? new Date(row.original.created_at).toLocaleString() : "—"}
         </span>
       ),
@@ -92,11 +102,11 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
       accessorFn: (t) => t.expires_at ?? "",
       cell: ({ row }) => {
         const expiresAt = row.original.expires_at;
-        if (!expiresAt) return <span className="text-xs text-muted-foreground">—</span>;
+        if (!expiresAt) return <span className="text-sm text-muted-foreground">—</span>;
         const ts = new Date(expiresAt).getTime();
         const expired = Number.isFinite(ts) && ts < Date.now();
         return (
-          <span className={`text-xs ${expired ? "text-red-600" : "text-muted-foreground"}`}>
+          <span className={`text-sm ${expired ? "text-status-critical" : "text-muted-foreground"}`}>
             {new Date(expiresAt).toLocaleString()}
           </span>
         );
@@ -123,7 +133,7 @@ export function DeviceApiTokensPanel({ deviceId }: DeviceApiTokensPanelProps) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">API Tokens</h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Revoking a token will immediately disconnect any device using it.
           </p>
         </div>
