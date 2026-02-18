@@ -20,6 +20,10 @@ import { DeviceMapCard } from "./DeviceMapCard";
 import { DeviceEditModal } from "./DeviceEditModal";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
+import { DeviceSensorsPanel } from "./DeviceSensorsPanel";
+import { DeviceConnectionPanel } from "./DeviceConnectionPanel";
+import { DeviceCarrierPanel } from "./DeviceCarrierPanel";
+import { DeviceHealthPanel } from "./DeviceHealthPanel";
 import { DeviceCertificatesTab } from "./DeviceCertificatesTab";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
@@ -262,6 +266,10 @@ export default function DeviceDetailPage() {
         </Card>
       )}
 
+      {deviceId && <DeviceSensorsPanel deviceId={deviceId} />}
+      {deviceId && <DeviceConnectionPanel deviceId={deviceId} />}
+      {deviceId && <DeviceCarrierPanel deviceId={deviceId} />}
+      {deviceId && <DeviceHealthPanel deviceId={deviceId} />}
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceCertificatesTab deviceId={deviceId} />}
       {deviceId && <DeviceUptimePanel deviceId={deviceId} />}

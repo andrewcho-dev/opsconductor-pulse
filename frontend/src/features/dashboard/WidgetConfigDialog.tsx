@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 import { Plus, X } from "lucide-react";
 import { useDevices } from "@/hooks/use-devices";
+import { listDeviceSensors } from "@/services/api/sensors";
 
 interface WidgetConfigDialogProps {
   open: boolean;
@@ -68,6 +69,16 @@ export function WidgetConfigDialog({
   const definition = getWidgetDefinition(widget.widget_type);
   const { data: devicesData, isLoading: devicesLoading } = useDevices({ limit: 200, offset: 0 });
   const devices = devicesData?.devices ?? [];
+  const selectedDeviceId =
+    Array.isArray(config.devices) && (config.devices as string[]).length > 0
+      ? (config.devices as string[])[0]
+      : undefined;
+
+  const { data: sensorsData } = useQuery({
+    queryKey: ["device-sensors", selectedDeviceId],
+    queryFn: () => listDeviceSensors(selectedDeviceId!),
+    enabled: !!selectedDeviceId,
+  });
 
   const widgetType = widget.widget_type;
 
@@ -234,30 +245,54 @@ export function WidgetConfigDialog({
       </div>
     ) : null;
 
+    const sensorMetrics = sensorsData?.sensors ?? [];
+    const hasSensorMetrics = sensorMetrics.length > 0;
+
+    const metricSelect = (
+      <div className="space-y-2">
+        <Label>Sensor / Metric</Label>
+        <Select value={(config.metric as string) || ""} onValueChange={(v) => updateConfig("metric", v)}>
+          <SelectTrigger>
+            <SelectValue
+              placeholder={
+                !selectedDeviceId
+                  ? "Select a device first"
+                  : hasSensorMetrics
+                    ? "Select a sensor"
+                    : "Select metric"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {hasSensorMetrics
+              ? sensorMetrics.map((s) => (
+                  <SelectItem key={s.sensor_id} value={s.metric_name}>
+                    <span className="flex items-center justify-between gap-2">
+                      <span>{s.label || s.metric_name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({s.sensor_type}
+                        {s.unit ? `, ${s.unit}` : ""})
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))
+              : METRICS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+
     if (["line_chart", "bar_chart", "area_chart"].includes(widgetType)) {
       return (
         <>
           {displayAsSection}
           {deviceSection}
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Metric</Label>
-              <Select
-                value={(config.metric as string) || ""}
-                onValueChange={(v) => updateConfig("metric", v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {METRICS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {metricSelect}
             <div className="space-y-2">
               <Label>Time Range</Label>
               <Select
@@ -466,9 +501,39 @@ export function WidgetConfigDialog({
     if (widgetType === "scatter") {
       return (
         <>
+          <div className="space-y-2">
+            <Label>Device</Label>
+            <Select
+              value={
+                Array.isArray(config.devices) && (config.devices as string[]).length > 0
+                  ? (config.devices as string[])[0]
+                  : ""
+              }
+              onValueChange={(v) => updateConfig("devices", v ? [v] : [])}
+              disabled={devicesLoading || devices.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    devicesLoading ? "Loading..." : devices.length === 0 ? "No devices" : "Select device"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {devices.map((d) => (
+                  <SelectItem key={d.device_id} value={d.device_id}>
+                    <span className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${statusDotClass(d.status)}`} />
+                      <span>{d.device_id}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>X Axis Metric</Label>
+              <Label>X Axis Sensor</Label>
               <Select
                 value={(config.x_metric as string) || "temperature"}
                 onValueChange={(v) => updateConfig("x_metric", v)}
@@ -477,16 +542,22 @@ export function WidgetConfigDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {METRICS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
+                  {hasSensorMetrics
+                    ? sensorMetrics.map((s) => (
+                        <SelectItem key={s.sensor_id} value={s.metric_name}>
+                          {s.label || s.metric_name}
+                        </SelectItem>
+                      ))
+                    : METRICS.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Y Axis Metric</Label>
+              <Label>Y Axis Sensor</Label>
               <Select
                 value={(config.y_metric as string) || "humidity"}
                 onValueChange={(v) => updateConfig("y_metric", v)}
@@ -495,11 +566,17 @@ export function WidgetConfigDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {METRICS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
+                  {hasSensorMetrics
+                    ? sensorMetrics.map((s) => (
+                        <SelectItem key={s.sensor_id} value={s.metric_name}>
+                          {s.label || s.metric_name}
+                        </SelectItem>
+                      ))
+                    : METRICS.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
             </div>
@@ -529,14 +606,54 @@ export function WidgetConfigDialog({
     if (widgetType === "radar") {
       const selectedMetrics = Array.isArray(config.radar_metrics)
         ? (config.radar_metrics as string[])
-        : ["temperature", "humidity", "pressure"];
+        : hasSensorMetrics
+          ? sensorMetrics.slice(0, 3).map((s) => s.metric_name)
+          : ["temperature", "humidity", "pressure"];
+
+      const radarOptions = hasSensorMetrics
+        ? sensorMetrics.map((s) => ({
+            value: s.metric_name,
+            label: s.label || s.metric_name,
+            meta: `${s.sensor_type}${s.unit ? `, ${s.unit}` : ""}`,
+          }))
+        : METRICS.map((m) => ({ value: m.value, label: m.label, meta: "" }));
 
       return (
         <>
           <div className="space-y-2">
+            <Label>Device</Label>
+            <Select
+              value={
+                Array.isArray(config.devices) && (config.devices as string[]).length > 0
+                  ? (config.devices as string[])[0]
+                  : ""
+              }
+              onValueChange={(v) => updateConfig("devices", v ? [v] : [])}
+              disabled={devicesLoading || devices.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    devicesLoading ? "Loading..." : devices.length === 0 ? "No devices" : "Select device"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {devices.map((d) => (
+                  <SelectItem key={d.device_id} value={d.device_id}>
+                    <span className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${statusDotClass(d.status)}`} />
+                      <span>{d.device_id}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label>Metrics (select 3–6)</Label>
             <div className="grid grid-cols-2 gap-1 max-h-[180px] overflow-y-auto">
-              {METRICS.map((m) => {
+              {radarOptions.map((m) => {
                 const isSelected = selectedMetrics.includes(m.value);
                 const atLimit = selectedMetrics.length >= 6 && !isSelected;
                 return (
@@ -556,7 +673,12 @@ export function WidgetConfigDialog({
                       }}
                       className="rounded"
                     />
-                    {m.label}
+                    <span className="truncate">
+                      {m.label}
+                      {m.meta ? (
+                        <span className="text-xs text-muted-foreground ml-1">({m.meta})</span>
+                      ) : null}
+                    </span>
                   </label>
                 );
               })}

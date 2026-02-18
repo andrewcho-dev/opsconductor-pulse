@@ -5,6 +5,7 @@ import DashboardPage from "@/features/dashboard/DashboardPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
+import { SensorListPage } from "@/features/devices/SensorListPage";
 import FleetMapPage from "@/features/map/FleetMapPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
@@ -48,6 +49,7 @@ import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import ProfilePage from "@/features/settings/ProfilePage";
 import OrganizationPage from "@/features/settings/OrganizationPage";
 import BillingPage from "@/features/settings/BillingPage";
+import CarrierIntegrationsPage from "@/features/settings/CarrierIntegrationsPage";
 import AnalyticsPage from "@/features/analytics/AnalyticsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
@@ -100,6 +102,7 @@ export const router = createBrowserRouter(
             { path: "devices/import", element: <BulkImportPage /> },
             { path: "devices/wizard", element: <SetupWizard /> },
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
+            { path: "sensors", element: <SensorListPage /> },
             { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <FleetMapPage /> },
@@ -127,6 +130,7 @@ export const router = createBrowserRouter(
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "settings/profile", element: <ProfilePage /> },
             { path: "settings/organization", element: <OrganizationPage /> },
+            { path: "settings/carrier", element: <CarrierIntegrationsPage /> },
             { path: "billing", element: <BillingPage /> },
           ],
         },

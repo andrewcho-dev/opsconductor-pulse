@@ -5,10 +5,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { TimeSeriesChart, TIME_RANGES, type TimeRange } from "@/lib/charts";
 import type { TelemetryPoint } from "@/services/api/types";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { downloadTelemetryCSV, fetchTelemetryHistory } from "@/services/api/devices";
+import { listDeviceSensors } from "@/services/api/sensors";
 import { Loader2 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 interface TelemetryChartsSectionProps {
   deviceId: string;
@@ -54,6 +55,24 @@ function TelemetryChartsSectionInner({
       enabled: !!deviceId,
     })),
   });
+
+  const { data: sensorsData } = useQuery({
+    queryKey: ["device-sensors", deviceId],
+    queryFn: () => listDeviceSensors(deviceId),
+    enabled: !!deviceId,
+  });
+
+  const sensorMap = useMemo(() => {
+    const map = new Map<string, { label: string; unit: string; type: string }>();
+    for (const s of sensorsData?.sensors ?? []) {
+      map.set(s.metric_name, {
+        label: s.label || s.metric_name,
+        unit: s.unit || "",
+        type: s.sensor_type,
+      });
+    }
+    return map;
+  }, [sensorsData]);
   async function handleDownloadCSV() {
     try {
       setDownloadError(null);
@@ -125,11 +144,16 @@ function TelemetryChartsSectionInner({
             {metricsToShow.map((metricName, idx) => (
               <div key={metricName} className="border rounded p-2">
                 <div className="text-sm text-muted-foreground mb-1">
-                  {metricName}
+                  {sensorMap.get(metricName)?.label ?? metricName}
+                  {sensorMap.get(metricName)?.unit
+                    ? ` (${sensorMap.get(metricName)?.unit})`
+                    : ""}
                 </div>
                 {historyQueries[idx]?.data?.points?.length ? (
                   <TimeSeriesChart
                     metricName={metricName}
+                    displayLabel={sensorMap.get(metricName)?.label ?? metricName}
+                    unit={sensorMap.get(metricName)?.unit ?? ""}
                     points={historyQueries[idx].data.points
                       .filter((p) => p.avg !== null)
                       .map((p) => ({
@@ -142,6 +166,8 @@ function TelemetryChartsSectionInner({
                 ) : (
                 <TimeSeriesChart
                   metricName={metricName}
+                  displayLabel={sensorMap.get(metricName)?.label ?? metricName}
+                  unit={sensorMap.get(metricName)?.unit ?? ""}
                   points={points}
                   colorIndex={idx}
                   height={128}

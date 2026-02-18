@@ -33,6 +33,8 @@ export default function FleetOverviewRenderer({ config }: WidgetRendererProps) {
   const offline = summary?.offline ?? summary?.OFFLINE ?? 0;
   const total = (summary?.total ?? summary?.total_devices ?? online + stale + offline) as number;
   const summaryExtra = (summary as unknown as Record<string, unknown>) ?? {};
+  const totalSensors = (summaryExtra.total_sensors as number | undefined) ?? 0;
+  const devicesWithSensors = (summaryExtra.devices_with_sensors as number | undefined) ?? 0;
 
   return (
     <div className="h-full flex flex-col gap-2 px-2 py-1">
@@ -41,7 +43,14 @@ export default function FleetOverviewRenderer({ config }: WidgetRendererProps) {
           score={health?.score ?? 0}
           thresholds={(config.thresholds as Array<{ value: number; color: string }>) ?? []}
         />
-        <StatusBars online={online} stale={stale} offline={offline} total={total} />
+        <StatusBars
+          online={online}
+          stale={stale}
+          offline={offline}
+          total={total}
+          totalSensors={totalSensors}
+          devicesWithSensors={devicesWithSensors}
+        />
         <UptimeDisplay pct={uptime?.avg_uptime_pct ?? 0} />
       </div>
 
@@ -118,11 +127,15 @@ function StatusBars({
   stale,
   offline,
   total,
+  totalSensors,
+  devicesWithSensors,
 }: {
   online: number;
   stale: number;
   offline: number;
   total: number;
+  totalSensors: number;
+  devicesWithSensors: number;
 }) {
   const safeTotal = Math.max(0, total);
 
@@ -135,6 +148,14 @@ function StatusBars({
   return (
     <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
       <div className="text-xs text-muted-foreground">{safeTotal.toLocaleString()} devices</div>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{Math.max(0, totalSensors).toLocaleString()}</span>
+        sensors across
+        <span className="font-medium text-foreground">
+          {Math.max(0, devicesWithSensors).toLocaleString()}
+        </span>
+        devices
+      </div>
       <div className="space-y-2">
         {rows.map((r) => {
           const pct = safeTotal > 0 ? (r.value / safeTotal) * 100 : 0;
