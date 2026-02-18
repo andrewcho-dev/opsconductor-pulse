@@ -324,6 +324,12 @@ class AlertRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] = "threshold"
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    sensor_id: int | None = Field(
+        default=None, description="If set, target a specific sensor (tenant-scoped)"
+    )
+    sensor_type: str | None = Field(
+        default=None, description="If set, target all sensors of this type"
+    )
     operator: str | None = None
     threshold: float | None = None
     severity: int = Field(default=3, ge=1, le=5)
@@ -365,6 +371,8 @@ class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] | None = None
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    sensor_id: int | None = None
+    sensor_type: str | None = None
     operator: str | None = None
     threshold: float | None = None
     severity: int | None = Field(default=None, ge=1, le=5)

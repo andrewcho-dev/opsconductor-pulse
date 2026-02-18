@@ -514,11 +514,17 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
     else:
         if body.operator not in VALID_OPERATORS:
             raise HTTPException(status_code=400, detail="Invalid operator value")
-        if body.metric_name is None or not METRIC_NAME_PATTERN.match(body.metric_name):
-            raise HTTPException(status_code=400, detail="Invalid metric_name format")
         if body.threshold is None:
             raise HTTPException(status_code=400, detail="threshold is required")
-        metric_name = body.metric_name
+        if body.metric_name is None:
+            # Allow metric_name to be inferred from sensor_id (or omitted for sensor_type targeting).
+            if getattr(body, "sensor_id", None) is None and getattr(body, "sensor_type", None) is None:
+                raise HTTPException(status_code=400, detail="Invalid metric_name format")
+            metric_name = None
+        else:
+            if not METRIC_NAME_PATTERN.match(body.metric_name):
+                raise HTTPException(status_code=400, detail="Invalid metric_name format")
+            metric_name = body.metric_name
         operator = body.operator
         threshold = body.threshold
         conditions_payload = None
@@ -538,6 +544,52 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
             check = await check_alert_rule_limit(conn, tenant_id)
             if not check["allowed"]:
                 raise HTTPException(check["status_code"], check["message"])
+
+            sensor_id = getattr(body, "sensor_id", None)
+            sensor_type = getattr(body, "sensor_type", None)
+            if sensor_type is not None:
+                sensor_type = str(sensor_type).strip() or None
+
+            # Phase 152: sensor targeting (additive; limited to threshold rules for now).
+            if sensor_id is not None and sensor_type is not None:
+                raise HTTPException(
+                    status_code=400, detail="Only one targeting mode allowed: sensor_id OR sensor_type"
+                )
+            if (sensor_id is not None or sensor_type is not None) and rule_type != "threshold":
+                raise HTTPException(
+                    status_code=400,
+                    detail="sensor_id/sensor_type targeting is only supported for threshold rules",
+                )
+            if (sensor_id is not None or sensor_type is not None) and conditions_list:
+                raise HTTPException(
+                    status_code=400,
+                    detail="sensor_id/sensor_type targeting is not supported for multi-condition rules",
+                )
+
+            if sensor_id is not None:
+                try:
+                    sensor_row = await conn.fetchrow(
+                        """
+                        SELECT sensor_id, metric_name
+                        FROM sensors
+                        WHERE tenant_id = $1 AND sensor_id = $2
+                        """,
+                        tenant_id,
+                        int(sensor_id),
+                    )
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Sensors table not available; apply migration 099+ before using sensor targeting",
+                    )
+                if not sensor_row:
+                    raise HTTPException(status_code=400, detail="Invalid sensor_id for tenant")
+                metric_name = sensor_row["metric_name"]
+                if not METRIC_NAME_PATTERN.match(metric_name):
+                    raise HTTPException(status_code=400, detail="Invalid sensor metric_name format")
+
+            if sensor_type is not None and not METRIC_NAME_PATTERN.match(sensor_type):
+                raise HTTPException(status_code=400, detail="Invalid sensor_type format")
 
             rule = await create_alert_rule(
                 conn,
@@ -559,6 +611,8 @@ async def create_alert_rule_endpoint(request: Request, body: AlertRuleCreate, po
                 aggregation=body.aggregation,
                 window_seconds=body.window_seconds,
                 device_group_id=body.device_group_id,
+                sensor_id=sensor_id,
+                sensor_type=sensor_type,
             )
     except Exception:
         logger.exception("Failed to create alert rule")
@@ -598,6 +652,8 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
         body.name is None
         and body.rule_type is None
         and body.metric_name is None
+        and body.sensor_id is None
+        and body.sensor_type is None
         and body.operator is None
         and body.threshold is None
         and body.severity is None
@@ -703,6 +759,56 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
+            sensor_id = getattr(body, "sensor_id", None)
+            sensor_type = getattr(body, "sensor_type", None)
+            if sensor_type is not None:
+                sensor_type = str(sensor_type).strip() or None
+
+            if sensor_id is not None and sensor_type is not None:
+                raise HTTPException(
+                    status_code=400, detail="Only one targeting mode allowed: sensor_id OR sensor_type"
+                )
+
+            if sensor_id is not None or sensor_type is not None:
+                existing = await fetch_alert_rule(conn, tenant_id, rule_id)
+                if not existing:
+                    raise HTTPException(status_code=404, detail="Alert rule not found")
+                if (body.rule_type or existing.get("rule_type")) != "threshold":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="sensor_id/sensor_type targeting is only supported for threshold rules",
+                    )
+                if conditions_list:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="sensor_id/sensor_type targeting is not supported for multi-condition rules",
+                    )
+
+            if sensor_id is not None:
+                try:
+                    sensor_row = await conn.fetchrow(
+                        """
+                        SELECT sensor_id, metric_name
+                        FROM sensors
+                        WHERE tenant_id = $1 AND sensor_id = $2
+                        """,
+                        tenant_id,
+                        int(sensor_id),
+                    )
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Sensors table not available; apply migration 099+ before using sensor targeting",
+                    )
+                if not sensor_row:
+                    raise HTTPException(status_code=400, detail="Invalid sensor_id for tenant")
+                metric_name = sensor_row["metric_name"]
+                if not METRIC_NAME_PATTERN.match(metric_name):
+                    raise HTTPException(status_code=400, detail="Invalid sensor metric_name format")
+
+            if sensor_type is not None and not METRIC_NAME_PATTERN.match(sensor_type):
+                raise HTTPException(status_code=400, detail="Invalid sensor_type format")
+
             rule = await update_alert_rule(
                 conn,
                 tenant_id=tenant_id,
@@ -724,6 +830,8 @@ async def update_alert_rule_endpoint(rule_id: str, body: AlertRuleUpdate, pool=D
                 aggregation=body.aggregation,
                 window_seconds=body.window_seconds,
                 device_group_id=body.device_group_id,
+                sensor_id=sensor_id,
+                sensor_type=sensor_type,
             )
     except Exception:
         logger.exception("Failed to update alert rule")

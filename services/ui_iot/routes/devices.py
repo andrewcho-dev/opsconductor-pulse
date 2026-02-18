@@ -842,10 +842,34 @@ async def get_fleet_summary(pool=Depends(get_db_pool)):
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             summary = await fetch_fleet_summary(conn, tenant_id)
+            result = dict(summary)
+
+            # Phase 152: sensor stats (graceful if sensors table not present yet)
+            try:
+                sensor_stats = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*) AS total_sensors,
+                        COUNT(*) FILTER (WHERE status = 'active') AS active_sensors,
+                        COUNT(DISTINCT sensor_type) AS sensor_types,
+                        COUNT(DISTINCT device_id) AS devices_with_sensors
+                    FROM sensors
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                )
+                if sensor_stats:
+                    result["total_sensors"] = int(sensor_stats["total_sensors"] or 0)
+                    result["active_sensors"] = int(sensor_stats["active_sensors"] or 0)
+                    result["sensor_types"] = int(sensor_stats["sensor_types"] or 0)
+                    result["devices_with_sensors"] = int(sensor_stats["devices_with_sensors"] or 0)
+            except Exception:
+                # Do not fail the fleet summary if sensors table isn't available yet.
+                pass
     except Exception:
         logger.exception("Failed to fetch fleet summary")
         raise HTTPException(status_code=500, detail="Internal server error")
-    return summary
+    return result
 
 
 @router.delete(
@@ -937,6 +961,71 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
 
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
+
+            # Phase 150: attach sensors, connection, and latest health telemetry.
+            # These are optional in case migrations haven't been applied yet.
+            try:
+                sensor_rows = await conn.fetch(
+                    """
+                    SELECT sensor_id, metric_name, sensor_type, label, unit,
+                           min_range, max_range, precision_digits, status,
+                           auto_discovered, last_value, last_seen_at, created_at
+                    FROM sensors
+                    WHERE tenant_id = $1 AND device_id = $2
+                    ORDER BY metric_name
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                sensor_rows = []
+
+            try:
+                conn_row = await conn.fetchrow(
+                    """
+                    SELECT connection_type, carrier_name, plan_name, sim_iccid, sim_status,
+                           data_limit_mb, data_used_mb, data_used_updated_at,
+                           network_status, ip_address::text AS ip_address, last_network_attach
+                    FROM device_connections
+                    WHERE tenant_id = $1 AND device_id = $2
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                conn_row = None
+
+            try:
+                health_row = await conn.fetchrow(
+                    """
+                    SELECT time, rssi, signal_quality, network_type, battery_pct, battery_voltage,
+                           power_source, cpu_temp_c, memory_used_pct, uptime_seconds, reboot_count,
+                           gps_lat, gps_lon, gps_fix
+                    FROM device_health_telemetry
+                    WHERE tenant_id = $1 AND device_id = $2
+                    ORDER BY time DESC LIMIT 1
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                health_row = None
+
+            try:
+                limit_row = await conn.fetchrow(
+                    "SELECT sensor_limit FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                    tenant_id,
+                    device_id,
+                )
+                sensor_limit = (limit_row["sensor_limit"] if limit_row else None) or 20
+            except Exception:
+                sensor_limit = 20
+
+            device["sensors"] = [dict(r) for r in sensor_rows]
+            device["sensor_count"] = len(sensor_rows)
+            device["sensor_limit"] = sensor_limit
+            device["connection"] = dict(conn_row) if conn_row else None
+            device["health"] = dict(health_row) if health_row else None
     except HTTPException:
         raise
     except Exception:

@@ -65,32 +65,65 @@ async def fetch_device(
 ) -> Dict[str, Any] | None:
     _require_tenant(tenant_id)
     _require_device(device_id)
-    row = await conn.fetchrow(
-        """
-        SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
-               ds.state->>'battery_pct' AS battery_pct,
-               ds.state->>'temp_c' AS temp_c,
-               ds.state->>'rssi_dbm' AS rssi_dbm,
-               ds.state->>'snr_db' AS snr_db,
-               dr.latitude, dr.longitude, dr.address, dr.location_source,
-               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
-               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
-               COALESCE(
-                   (
-                       SELECT array_agg(dt.tag ORDER BY dt.tag)
-                       FROM device_tags dt
-                       WHERE dt.tenant_id = ds.tenant_id AND dt.device_id = ds.device_id
-                   ),
-                   ARRAY[]::text[]
-               ) AS tags
-        FROM device_state ds
-        LEFT JOIN device_registry dr
-          ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
-        WHERE ds.tenant_id = $1 AND ds.device_id = $2
-        """,
-        tenant_id,
-        device_id,
-    )
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+                   ds.state->>'battery_pct' AS battery_pct,
+                   ds.state->>'temp_c' AS temp_c,
+                   ds.state->>'rssi_dbm' AS rssi_dbm,
+                   ds.state->>'snr_db' AS snr_db,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   dr.chipset, dr.modem_model, dr.board_revision, dr.meid,
+                   dr.bootloader_version, dr.modem_fw_version,
+                   dr.deployment_date, dr.batch_id, dr.installation_notes,
+                   dr.sensor_limit,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = ds.tenant_id AND dt.device_id = ds.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_state ds
+            LEFT JOIN device_registry dr
+              ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+            WHERE ds.tenant_id = $1 AND ds.device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+    except asyncpg.UndefinedColumnError:
+        # Graceful degradation if migration 102 hasn't been applied yet.
+        row = await conn.fetchrow(
+            """
+            SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+                   ds.state->>'battery_pct' AS battery_pct,
+                   ds.state->>'temp_c' AS temp_c,
+                   ds.state->>'rssi_dbm' AS rssi_dbm,
+                   ds.state->>'snr_db' AS snr_db,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = ds.tenant_id AND dt.device_id = ds.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_state ds
+            LEFT JOIN device_registry dr
+              ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+            WHERE ds.tenant_id = $1 AND ds.device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
     return dict(row) if row else None
 
 
@@ -662,19 +695,36 @@ async def fetch_alert_rules(
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
     _require_tenant(tenant_id)
-    rows = await conn.fetch(
-        """
-        SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-               severity, description, site_ids, group_ids, conditions, match_mode,
-               duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
-        FROM alert_rules
-        WHERE tenant_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        """,
-        tenant_id,
-        limit,
-    )
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                   severity, description, site_ids, group_ids, conditions, match_mode,
+                   duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id,
+                   sensor_id, sensor_type,
+                   created_at, updated_at
+            FROM alert_rules
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            limit,
+        )
+    except asyncpg.UndefinedColumnError:
+        rows = await conn.fetch(
+            """
+            SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                   severity, description, site_ids, group_ids, conditions, match_mode,
+                   duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
+            FROM alert_rules
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            limit,
+        )
     return [dict(r) for r in rows]
 
 
@@ -684,17 +734,32 @@ async def fetch_alert_rule(
     rule_id: str,
 ) -> Dict[str, Any] | None:
     _require_tenant(tenant_id)
-    row = await conn.fetchrow(
-        """
-        SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-               severity, description, site_ids, group_ids, conditions, match_mode,
-               duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
-        FROM alert_rules
-        WHERE tenant_id = $1 AND rule_id = $2
-        """,
-        tenant_id,
-        rule_id,
-    )
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                   severity, description, site_ids, group_ids, conditions, match_mode,
+                   duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id,
+                   sensor_id, sensor_type,
+                   created_at, updated_at
+            FROM alert_rules
+            WHERE tenant_id = $1 AND rule_id = $2
+            """,
+            tenant_id,
+            rule_id,
+        )
+    except asyncpg.UndefinedColumnError:
+        row = await conn.fetchrow(
+            """
+            SELECT tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                   severity, description, site_ids, group_ids, conditions, match_mode,
+                   duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
+            FROM alert_rules
+            WHERE tenant_id = $1 AND rule_id = $2
+            """,
+            tenant_id,
+            rule_id,
+        )
     return dict(row) if row else None
 
 
@@ -718,40 +783,83 @@ async def create_alert_rule(
     aggregation: str | None = None,
     window_seconds: int | None = None,
     device_group_id: str | None = None,
+    sensor_id: int | None = None,
+    sensor_type: str | None = None,
 ) -> Dict[str, Any]:
     _require_tenant(tenant_id)
     rule_id = str(uuid.uuid4())
-    row = await conn.fetchrow(
-        """
-        INSERT INTO alert_rules
-            (tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-             severity, description, site_ids, group_ids, conditions, match_mode,
-             duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, now(), now())
-        RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
-                  severity, description, site_ids, group_ids, conditions, match_mode,
-                  duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
-        """,
-        tenant_id,
-        rule_id,
-        name,
-        enabled,
-        rule_type,
-        metric_name,
-        operator,
-        threshold,
-        severity,
-        description,
-        site_ids,
-        group_ids,
-        json.dumps(conditions) if conditions is not None else None,
-        match_mode,
-        duration_seconds,
-        duration_minutes,
-        aggregation,
-        window_seconds,
-        device_group_id,
-    )
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO alert_rules
+                (tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                 severity, description, site_ids, group_ids, conditions, match_mode,
+                 duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id,
+                 sensor_id, sensor_type,
+                 created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, now(), now())
+            RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                      severity, description, site_ids, group_ids, conditions, match_mode,
+                      duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id,
+                      sensor_id, sensor_type,
+                      created_at, updated_at
+            """,
+            tenant_id,
+            rule_id,
+            name,
+            enabled,
+            rule_type,
+            metric_name,
+            operator,
+            threshold,
+            severity,
+            description,
+            site_ids,
+            group_ids,
+            json.dumps(conditions) if conditions is not None else None,
+            match_mode,
+            duration_seconds,
+            duration_minutes,
+            aggregation,
+            window_seconds,
+            device_group_id,
+            sensor_id,
+            sensor_type,
+        )
+    except asyncpg.UndefinedColumnError:
+        if sensor_id is not None or sensor_type is not None:
+            raise
+        row = await conn.fetchrow(
+            """
+            INSERT INTO alert_rules
+                (tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                 severity, description, site_ids, group_ids, conditions, match_mode,
+                 duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, now(), now())
+            RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold,
+                      severity, description, site_ids, group_ids, conditions, match_mode,
+                      duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at
+            """,
+            tenant_id,
+            rule_id,
+            name,
+            enabled,
+            rule_type,
+            metric_name,
+            operator,
+            threshold,
+            severity,
+            description,
+            site_ids,
+            group_ids,
+            json.dumps(conditions) if conditions is not None else None,
+            match_mode,
+            duration_seconds,
+            duration_minutes,
+            aggregation,
+            window_seconds,
+            device_group_id,
+        )
     return dict(row)
 
 
@@ -776,6 +884,8 @@ async def update_alert_rule(
     aggregation: str | None = None,
     window_seconds: int | None = None,
     device_group_id: str | None = None,
+    sensor_id: int | None = None,
+    sensor_type: str | None = None,
 ) -> Dict[str, Any] | None:
     _require_tenant(tenant_id)
 
@@ -852,16 +962,39 @@ async def update_alert_rule(
         params.append(device_group_id if device_group_id else None)
         idx += 1
 
+    if sensor_id is not None:
+        sets.append(f"sensor_id = ${idx}")
+        params.append(sensor_id)
+        idx += 1
+
+    if sensor_type is not None:
+        sets.append(f"sensor_type = ${idx}")
+        params.append(sensor_type)
+        idx += 1
+
     sets.append("updated_at = now()")
 
-    query = (
-        "UPDATE alert_rules SET "
-        + ", ".join(sets)
-        + " WHERE tenant_id = $1 AND rule_id = $2 "
-        + "RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold, "
-        + "severity, description, site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at"
-    )
-    row = await conn.fetchrow(query, *params)
+    try:
+        query = (
+            "UPDATE alert_rules SET "
+            + ", ".join(sets)
+            + " WHERE tenant_id = $1 AND rule_id = $2 "
+            + "RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold, "
+            + "severity, description, site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, "
+            + "sensor_id, sensor_type, created_at, updated_at"
+        )
+        row = await conn.fetchrow(query, *params)
+    except asyncpg.UndefinedColumnError:
+        if sensor_id is not None or sensor_type is not None:
+            raise
+        query = (
+            "UPDATE alert_rules SET "
+            + ", ".join(sets)
+            + " WHERE tenant_id = $1 AND rule_id = $2 "
+            + "RETURNING tenant_id, rule_id, name, enabled, rule_type, metric_name, operator, threshold, "
+            + "severity, description, site_ids, group_ids, conditions, match_mode, duration_seconds, duration_minutes, aggregation, window_seconds, device_group_id, created_at, updated_at"
+        )
+        row = await conn.fetchrow(query, *params)
     return dict(row) if row else None
 
 
@@ -949,38 +1082,95 @@ async def fetch_devices_v2(
         *params,
     )
 
-    rows = await conn.fetch(
-        f"""
-        SELECT dr.tenant_id,
-               dr.device_id,
-               dr.site_id,
-               COALESCE(ds.status, 'OFFLINE') AS status,
-               ds.last_seen_at,
-               ds.last_heartbeat_at,
-               ds.last_telemetry_at,
-               COALESCE(ds.state, '{{}}'::jsonb) AS state,
-               dr.latitude, dr.longitude, dr.address, dr.location_source,
-               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
-               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
-               COALESCE(
-                   (
-                       SELECT array_agg(dt.tag ORDER BY dt.tag)
-                       FROM device_tags dt
-                       WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
-                   ),
-                   ARRAY[]::text[]
-               ) AS tags
-        FROM device_registry dr
-        LEFT JOIN device_state ds
-          ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
-        WHERE {where_sql}
-        ORDER BY dr.site_id, dr.device_id
-        LIMIT ${idx} OFFSET ${idx + 1}
-        """,
-        *params,
-        limit,
-        offset,
-    )
+    try:
+        rows = await conn.fetch(
+            f"""
+            SELECT dr.tenant_id,
+                   dr.device_id,
+                   dr.site_id,
+                   COALESCE(ds.status, 'OFFLINE') AS status,
+                   ds.last_seen_at,
+                   ds.last_heartbeat_at,
+                   ds.last_telemetry_at,
+                   COALESCE(ds.state, '{{}}'::jsonb) AS state,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   dr.chipset, dr.modem_model, dr.board_revision, dr.meid,
+                   dr.bootloader_version, dr.modem_fw_version,
+                   dr.deployment_date, dr.batch_id, dr.installation_notes,
+                   dr.sensor_limit,
+                   CASE
+                       WHEN to_regclass('public.sensors') IS NULL THEN 0
+                       ELSE (
+                           SELECT COUNT(*)
+                           FROM sensors s
+                           WHERE s.tenant_id = dr.tenant_id
+                             AND s.device_id = dr.device_id
+                       )
+                   END AS sensor_count,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_registry dr
+            LEFT JOIN device_state ds
+              ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+            WHERE {where_sql}
+            ORDER BY dr.site_id, dr.device_id
+            LIMIT ${idx} OFFSET ${idx + 1}
+            """,
+            *params,
+            limit,
+            offset,
+        )
+    except asyncpg.UndefinedColumnError:
+        # Graceful degradation if migration 102 hasn't been applied yet.
+        rows = await conn.fetch(
+            f"""
+            SELECT dr.tenant_id,
+                   dr.device_id,
+                   dr.site_id,
+                   COALESCE(ds.status, 'OFFLINE') AS status,
+                   ds.last_seen_at,
+                   ds.last_heartbeat_at,
+                   ds.last_telemetry_at,
+                   COALESCE(ds.state, '{{}}'::jsonb) AS state,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   CASE
+                       WHEN to_regclass('public.sensors') IS NULL THEN 0
+                       ELSE (
+                           SELECT COUNT(*)
+                           FROM sensors s
+                           WHERE s.tenant_id = dr.tenant_id
+                             AND s.device_id = dr.device_id
+                       )
+                   END AS sensor_count,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_registry dr
+            LEFT JOIN device_state ds
+              ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+            WHERE {where_sql}
+            ORDER BY dr.site_id, dr.device_id
+            LIMIT ${idx} OFFSET ${idx + 1}
+            """,
+            *params,
+            limit,
+            offset,
+        )
     return {"devices": [dict(r) for r in rows], "total": int(total_count or 0)}
 
 
@@ -1018,33 +1208,66 @@ async def fetch_device_v2(
     """Fetch single device with full state JSONB and all timestamp columns."""
     _require_tenant(tenant_id)
     _require_device(device_id)
-    row = await conn.fetchrow(
-        """
-        SELECT dr.tenant_id,
-               dr.device_id,
-               dr.site_id,
-               COALESCE(ds.status, dr.status) AS status,
-               ds.last_heartbeat_at, ds.last_telemetry_at, ds.last_seen_at,
-               ds.last_state_change_at, COALESCE(ds.state, '{}'::jsonb) AS state,
-               dr.latitude, dr.longitude, dr.address, dr.location_source,
-               dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
-               dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
-               COALESCE(
-                   (
-                       SELECT array_agg(dt.tag ORDER BY dt.tag)
-                       FROM device_tags dt
-                       WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
-                   ),
-                   ARRAY[]::text[]
-               ) AS tags
-        FROM device_registry dr
-        LEFT JOIN device_state ds
-          ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
-        WHERE dr.tenant_id = $1 AND dr.device_id = $2
-        """,
-        tenant_id,
-        device_id,
-    )
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT dr.tenant_id,
+                   dr.device_id,
+                   dr.site_id,
+                   COALESCE(ds.status, dr.status) AS status,
+                   ds.last_heartbeat_at, ds.last_telemetry_at, ds.last_seen_at,
+                   ds.last_state_change_at, COALESCE(ds.state, '{}'::jsonb) AS state,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   dr.chipset, dr.modem_model, dr.board_revision, dr.meid,
+                   dr.bootloader_version, dr.modem_fw_version,
+                   dr.deployment_date, dr.batch_id, dr.installation_notes,
+                   dr.sensor_limit,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_registry dr
+            LEFT JOIN device_state ds
+              ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+            WHERE dr.tenant_id = $1 AND dr.device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
+    except asyncpg.UndefinedColumnError:
+        row = await conn.fetchrow(
+            """
+            SELECT dr.tenant_id,
+                   dr.device_id,
+                   dr.site_id,
+                   COALESCE(ds.status, dr.status) AS status,
+                   ds.last_heartbeat_at, ds.last_telemetry_at, ds.last_seen_at,
+                   ds.last_state_change_at, COALESCE(ds.state, '{}'::jsonb) AS state,
+                   dr.latitude, dr.longitude, dr.address, dr.location_source,
+                   dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                   dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                   COALESCE(
+                       (
+                           SELECT array_agg(dt.tag ORDER BY dt.tag)
+                           FROM device_tags dt
+                           WHERE dt.tenant_id = dr.tenant_id AND dt.device_id = dr.device_id
+                       ),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM device_registry dr
+            LEFT JOIN device_state ds
+              ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+            WHERE dr.tenant_id = $1 AND dr.device_id = $2
+            """,
+            tenant_id,
+            device_id,
+        )
     return dict(row) if row else None
 
 

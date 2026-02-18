@@ -26,6 +26,7 @@ class DeviceSummary(BaseModel):
     device_type: Optional[str] = None
     last_seen_at: Optional[datetime] = None
     tags: list[str] = []
+    sensor_count: int = 0
     subscription_id: Optional[str] = None
     subscription_type: Optional[str] = None
     subscription_status: Optional[str] = None
