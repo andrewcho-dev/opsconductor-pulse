@@ -1,14 +1,15 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/routes/devices.py
   - services/ui_iot/routes/customer.py
   - services/ui_iot/routes/jobs.py
   - services/ui_iot/routes/ota.py
   - services/ui_iot/routes/certificates.py
+  - frontend/src/features/devices/DeviceCarrierPanel.tsx
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142]
+phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157]
 ---
 
 # Device Management
@@ -65,6 +66,13 @@ Certificate endpoints manage:
 - Certificate upload/revocation
 - Device certificate generation and rotation
 - CRL retrieval
+
+### Carrier SIM provisioning
+
+From the device detail page, devices that are not yet linked to a carrier integration can provision a SIM directly:
+
+- Users select a carrier integration, enter an ICCID, and optionally select a carrier plan.
+- After provisioning, the device is automatically linked to the carrier integration and carrier diagnostics/usage become available.
 
 ## Database Schema
 

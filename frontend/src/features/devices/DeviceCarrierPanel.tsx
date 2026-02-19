@@ -1,11 +1,28 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Pause, Play, Radio, RefreshCw, RotateCcw, XCircle } from "lucide-react";
+import { Pause, Play, Plus, Radio, RefreshCw, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -23,8 +40,11 @@ import {
   getCarrierDiagnostics,
   getCarrierStatus,
   getCarrierUsage,
+  listCarrierIntegrations,
+  listCarrierPlans,
+  provisionDeviceSim,
 } from "@/services/api/carrier";
-import type { CarrierDeviceStatus, CarrierDeviceUsage } from "@/services/api/types";
+import type { CarrierDeviceStatus, CarrierDeviceUsage, CarrierPlansResponse } from "@/services/api/types";
 
 interface DeviceCarrierPanelProps {
   deviceId: string;
@@ -48,12 +68,28 @@ function usageBarColor(pct: number) {
 export function DeviceCarrierPanel({ deviceId }: DeviceCarrierPanelProps) {
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<(typeof CARRIER_ACTIONS)[number] | null>(null);
+  const [provisionOpen, setProvisionOpen] = useState(false);
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState<number | null>(null);
+  const [iccid, setIccid] = useState("");
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ["carrier-status", deviceId],
     queryFn: () => getCarrierStatus(deviceId),
     refetchInterval: 60_000,
     enabled: !!deviceId,
+  });
+
+  const integrationsQuery = useQuery({
+    queryKey: ["carrier-integrations"],
+    queryFn: listCarrierIntegrations,
+    enabled: provisionOpen,
+  });
+
+  const plansQuery = useQuery({
+    queryKey: ["carrier-plans", selectedIntegrationId],
+    queryFn: () => listCarrierPlans(selectedIntegrationId!),
+    enabled: provisionOpen && selectedIntegrationId != null,
   });
 
   const usageQuery = useQuery({
@@ -79,6 +115,28 @@ export function DeviceCarrierPanel({ deviceId }: DeviceCarrierPanelProps) {
   const usagePct = usageInfo?.usage_pct ?? 0;
   const usageBar = usageBarColor(usagePct);
   const simStatus = statusQuery.data?.device_info?.sim_status;
+
+  const provisionMutation = useMutation({
+    mutationFn: () =>
+      provisionDeviceSim(deviceId, {
+        carrier_integration_id: selectedIntegrationId!,
+        iccid,
+        plan_id: selectedPlanId ?? undefined,
+      }),
+    onSuccess: async () => {
+      toast.success("SIM provisioned successfully");
+      setProvisionOpen(false);
+      setIccid("");
+      setSelectedIntegrationId(null);
+      setSelectedPlanId(null);
+      await queryClient.invalidateQueries({ queryKey: ["carrier-status", deviceId] });
+      await queryClient.invalidateQueries({ queryKey: ["carrier-usage", deviceId] });
+      await queryClient.invalidateQueries({ queryKey: ["carrier-diagnostics", deviceId] });
+    },
+    onError: (err: any) => {
+      toast.error(`Provisioning failed: ${err?.message ?? "Unknown error"}`);
+    },
+  });
 
   const actionMutation = useMutation({
     mutationFn: ({ action }: { action: "activate" | "suspend" | "deactivate" | "reboot" }) =>
@@ -153,14 +211,118 @@ export function DeviceCarrierPanel({ deviceId }: DeviceCarrierPanelProps) {
   }
 
   if (status?.linked === false) {
+    const integrations =
+      (integrationsQuery.data as
+        | {
+            integrations: Array<{ id: number; display_name: string; carrier_name: string }>;
+          }
+        | undefined)?.integrations ?? [];
+    const plans = (plansQuery.data as CarrierPlansResponse | undefined)?.plans ?? [];
+
     return (
       <div className="rounded-md border border-border p-3 space-y-3">
         <h3 className="text-sm font-medium">Carrier Integration</h3>
         <div className="text-center py-6 text-muted-foreground text-sm">
           <Radio className="h-8 w-8 mx-auto mb-2 opacity-40" />
           <p>No carrier integration linked to this device.</p>
-          <p className="text-xs mt-1">Link a carrier in device settings to enable diagnostics.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => setProvisionOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Provision SIM
+          </Button>
         </div>
+
+        <Dialog open={provisionOpen} onOpenChange={setProvisionOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Provision SIM Card</DialogTitle>
+              <DialogDescription>
+                Claim a new SIM from your carrier and link it to this device.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="prov-integration">Carrier Integration</Label>
+                <Select
+                  value={selectedIntegrationId?.toString() ?? ""}
+                  onValueChange={(v) => {
+                    setSelectedIntegrationId(Number(v));
+                    setSelectedPlanId(null);
+                  }}
+                >
+                  <SelectTrigger id="prov-integration">
+                    <SelectValue placeholder="Select carrier..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {integrations.map((i) => (
+                      <SelectItem key={i.id} value={i.id.toString()}>
+                        {i.display_name} ({i.carrier_name})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="prov-iccid">ICCID</Label>
+                <Input
+                  id="prov-iccid"
+                  placeholder="89014103211118510720"
+                  value={iccid}
+                  onChange={(e) => setIccid(e.target.value)}
+                  maxLength={22}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The 15-22 digit number printed on the SIM card.
+                </p>
+              </div>
+
+              {plans.length > 0 ? (
+                <div className="space-y-2">
+                  <Label htmlFor="prov-plan">Data Plan (optional)</Label>
+                  <Select
+                    value={selectedPlanId?.toString() ?? ""}
+                    onValueChange={(v) => setSelectedPlanId(v ? Number(v) : null)}
+                  >
+                    <SelectTrigger id="prov-plan">
+                      <SelectValue placeholder="Select plan..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plans.map((p) => (
+                        <SelectItem key={p.id} value={p.id.toString()}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setProvisionOpen(false)}
+                disabled={provisionMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => provisionMutation.mutate()}
+                disabled={
+                  !selectedIntegrationId ||
+                  iccid.length < 15 ||
+                  provisionMutation.isPending
+                }
+              >
+                {provisionMutation.isPending ? "Provisioning..." : "Provision SIM"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

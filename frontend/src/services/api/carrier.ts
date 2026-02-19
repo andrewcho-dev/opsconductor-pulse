@@ -7,6 +7,9 @@ import type {
   CarrierDeviceUsage,
   CarrierActionResult,
   CarrierLinkRequest,
+  CarrierProvisionRequest,
+  CarrierProvisionResponse,
+  CarrierPlansResponse,
 } from "./types";
 
 // ─── Carrier Integrations ────────────────────────────
@@ -56,5 +59,16 @@ export async function executeCarrierAction(
 
 export async function linkDeviceToCarrier(deviceId: string, data: CarrierLinkRequest): Promise<void> {
   return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/carrier/link`, data);
+}
+
+export async function provisionDeviceSim(
+  deviceId: string,
+  data: CarrierProvisionRequest,
+): Promise<CarrierProvisionResponse> {
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/carrier/provision`, data);
+}
+
+export async function listCarrierPlans(integrationId: number): Promise<CarrierPlansResponse> {
+  return apiGet(`/api/v1/customer/carrier/integrations/${integrationId}/plans`);
 }
 

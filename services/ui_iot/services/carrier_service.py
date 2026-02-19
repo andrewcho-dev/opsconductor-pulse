@@ -97,6 +97,27 @@ class CarrierProvider(ABC):
         """Get detailed network diagnostics (carrier-specific)."""
         raise NotImplementedError
 
+    async def get_bulk_usage(self, carrier_device_ids: list[str]) -> dict[str, CarrierUsageInfo]:
+        """Get usage for multiple devices in one call.
+
+        Default behavior: call get_usage() per device and return a map.
+        """
+        results: dict[str, CarrierUsageInfo] = {}
+        for device_id in carrier_device_ids:
+            try:
+                results[device_id] = await self.get_usage(device_id)
+            except Exception:
+                logger.warning("Bulk usage: failed for device %s", device_id)
+        return results
+
+    async def claim_sim(self, iccid: str, plan_id: int | None = None) -> dict:
+        """Claim/provision a new SIM card. Returns carrier device info."""
+        raise NotImplementedError
+
+    async def list_plans(self) -> list[dict]:
+        """List available data plans from the carrier."""
+        raise NotImplementedError
+
 
 class HologramProvider(CarrierProvider):
     """Hologram (hologram.io) carrier API integration.
@@ -110,7 +131,7 @@ class HologramProvider(CarrierProvider):
         self.base_url = base_url or "https://dashboard.hologram.io/api/1"
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            headers={"apikey": self.api_key},
+            params={"apikey": self.api_key},
             timeout=30.0,
         )
 
@@ -120,48 +141,121 @@ class HologramProvider(CarrierProvider):
         data = resp.json().get("data", {})
         links = data.get("links", {}).get("cellular", [])
         link = links[0] if links else {}
+        last_session = data.get("lastsession", {})
+
+        # Map Hologram states to our enum
+        hologram_state = (data.get("state") or "").lower()
+        state_map = {"live": "active", "paused": "suspended", "deactivated": "deactivated"}
+        sim_status = state_map.get(hologram_state, hologram_state or None)
+
+        # Infer network status from last session
+        network_status = "connected" if last_session.get("active") else "disconnected"
+
         return CarrierDeviceInfo(
             carrier_device_id=carrier_device_id,
             iccid=link.get("sim"),
-            sim_status=data.get("state"),
-            network_status="connected" if link.get("last_connect_time") else "disconnected",
+            sim_status=sim_status,
+            network_status=network_status,
+            ip_address=last_session.get("ip"),
+            network_type=link.get("networktype"),
             last_connection=link.get("last_connect_time"),
             raw=data,
         )
 
     async def get_usage(self, carrier_device_id: str) -> CarrierUsageInfo:
-        resp = await self.client.get(f"/devices/{carrier_device_id}/usage")
+        resp = await self.client.get("/usage/data", params={"deviceid": carrier_device_id})
         resp.raise_for_status()
-        data = resp.json().get("data", {})
+        records = resp.json().get("data", [])
+        total_bytes = sum(r.get("bytes", 0) for r in records)
         return CarrierUsageInfo(
             carrier_device_id=carrier_device_id,
-            data_used_bytes=data.get("data", 0),
-            raw=data,
+            data_used_bytes=total_bytes,
+            sessions=records,
+            raw={"records": records},
         )
 
     async def activate_sim(self, carrier_device_id: str) -> bool:
-        resp = await self.client.post(f"/devices/{carrier_device_id}/activate")
+        resp = await self.client.post(f"/devices/{carrier_device_id}/state", json={"state": "live"})
         return resp.status_code == 200
 
     async def suspend_sim(self, carrier_device_id: str) -> bool:
-        resp = await self.client.post(f"/devices/{carrier_device_id}/pause")
+        resp = await self.client.post(f"/devices/{carrier_device_id}/state", json={"state": "pause"})
         return resp.status_code == 200
 
     async def deactivate_sim(self, carrier_device_id: str) -> bool:
-        resp = await self.client.post(f"/devices/{carrier_device_id}/deactivate")
+        resp = await self.client.post(
+            f"/devices/{carrier_device_id}/state",
+            json={"state": "deactivate"},
+        )
         return resp.status_code == 200
 
     async def send_sms(self, carrier_device_id: str, message: str) -> bool:
         resp = await self.client.post(
-            f"/sms/incoming",
-            json={"deviceid": int(carrier_device_id), "body": message, "fromNumber": "system"},
+            "/sms/incoming",
+            json={"deviceid": int(carrier_device_id), "body": message, "fromnumber": "system"},
         )
         return resp.status_code == 200
 
     async def get_network_diagnostics(self, carrier_device_id: str) -> dict[str, Any]:
         resp = await self.client.get(f"/devices/{carrier_device_id}")
         resp.raise_for_status()
+        device_data = resp.json().get("data", {})
+
+        link_data: Any = {}
+        try:
+            link_resp = await self.client.get("/links/cellular", params={"deviceid": carrier_device_id})
+            if link_resp.status_code == 200:
+                link_data = link_resp.json().get("data", [])
+        except Exception:
+            pass  # Non-critical; return device data alone
+
+        return {
+            "device": device_data,
+            "cellular_links": link_data,
+        }
+
+    async def get_bulk_usage(self, carrier_device_ids: list[str]) -> dict[str, CarrierUsageInfo]:
+        """Fetch usage for all devices in the org in a single API call."""
+        if not self.account_id:
+            return await super().get_bulk_usage(carrier_device_ids)
+
+        resp = await self.client.get("/usage/data", params={"orgid": self.account_id})
+        resp.raise_for_status()
+        records = resp.json().get("data", [])
+
+        by_device: dict[str, list[dict]] = {}
+        for r in records:
+            did = str(r.get("deviceid", ""))
+            if did in carrier_device_ids:
+                by_device.setdefault(did, []).append(r)
+
+        results: dict[str, CarrierUsageInfo] = {}
+        for did in carrier_device_ids:
+            device_records = by_device.get(did, [])
+            total_bytes = sum(r.get("bytes", 0) for r in device_records)
+            results[did] = CarrierUsageInfo(
+                carrier_device_id=did,
+                data_used_bytes=total_bytes,
+                sessions=device_records,
+                raw={"records": device_records},
+            )
+        return results
+
+    async def claim_sim(self, iccid: str, plan_id: int | None = None) -> dict:
+        body: dict[str, Any] = {"sim": iccid}
+        if plan_id:
+            body["plan"] = plan_id
+        resp = await self.client.post(f"/links/cellular/sim_{iccid}/claim", json=body)
+        resp.raise_for_status()
         return resp.json().get("data", {})
+
+    async def list_plans(self) -> list[dict]:
+        params: dict[str, Any] = {}
+        if self.account_id:
+            params["orgid"] = self.account_id
+        resp = await self.client.get("/plans", params=params)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
 
 
 class OneNCEProvider(CarrierProvider):
@@ -225,6 +319,14 @@ class OneNCEProvider(CarrierProvider):
         if resp.status_code == 200:
             return resp.json()
         return {}
+
+    async def claim_sim(self, iccid: str, plan_id: int | None = None) -> dict:
+        # 1NCE SIMs are pre-provisioned; no claim flow needed.
+        return {"iccid": iccid, "note": "1NCE SIMs are pre-provisioned"}
+
+    async def list_plans(self) -> list[dict]:
+        # 1NCE has a single flat-rate plan; not queryable via API.
+        return []
 
 
 # ─── Provider Registry ─────────────────────────────────

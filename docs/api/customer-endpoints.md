@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/routes/customer.py
   - services/ui_iot/routes/alerts.py
@@ -16,11 +16,12 @@ sources:
   - services/ui_iot/routes/roles.py
   - services/ui_iot/routes/preferences.py
   - services/ui_iot/routes/billing.py
+  - services/ui_iot/routes/carrier.py
   - services/ui_iot/routes/organization.py
   - services/ui_iot/routes/certificates.py
   - services/ui_iot/routes/analytics.py
   - services/ui_iot/routes/message_routing.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142]
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157]
 ---
 
 # Customer API Endpoints
@@ -116,6 +117,46 @@ Maintenance windows:
 - `POST /api/v1/customer/maintenance-windows`
 - `PATCH /api/v1/customer/maintenance-windows/{window_id}`
 - `DELETE /api/v1/customer/maintenance-windows/{window_id}`
+
+## Carrier
+
+Base prefix: `/api/v1/customer`
+
+Carrier integrations:
+
+- `GET /api/v1/customer/carrier/integrations`
+- `POST /api/v1/customer/carrier/integrations` (permission: `carrier.integrations.write`, feature gate: `carrier_self_service`)
+- `PUT /api/v1/customer/carrier/integrations/{integration_id}` (permission: `carrier.integrations.write`, feature gate: `carrier_self_service`)
+- `DELETE /api/v1/customer/carrier/integrations/{integration_id}` (permission: `carrier.integrations.write`, feature gate: `carrier_self_service`)
+
+Device carrier operations:
+
+- `GET /api/v1/customer/devices/{device_id}/carrier/status`
+- `GET /api/v1/customer/devices/{device_id}/carrier/usage`
+- `GET /api/v1/customer/devices/{device_id}/carrier/diagnostics`
+- `POST /api/v1/customer/devices/{device_id}/carrier/actions/{action}` (permission: `carrier.actions.execute`)
+- `POST /api/v1/customer/devices/{device_id}/carrier/link` (permission: `carrier.links.write`)
+
+### SIM Provisioning
+
+`POST /api/v1/customer/devices/{device_id}/carrier/provision`
+
+Claim a new SIM from the carrier and link it to a device.
+
+- Permission: `carrier.links.write`
+- Feature gate: `carrier_self_service`
+- Body: `{ carrier_integration_id: int, iccid: string, plan_id?: int }`
+- Response: `{ provisioned: bool, device_id, carrier_device_id, iccid, claim_result }`
+
+### Plan Discovery
+
+`GET /api/v1/customer/carrier/integrations/{integration_id}/plans`
+
+List available data plans from the carrier.
+
+- Permission: none (read-only)
+- Response: `{ plans: [{ id, name, ... }], carrier_name }`
+- Note: returns empty array for carriers that don't support plan listing (e.g., 1NCE).
 
 ## Alerts
 
