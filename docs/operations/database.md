@@ -5,7 +5,10 @@ sources:
   - db/migrations/
   - db/migrations/109_device_templates.sql
   - db/migrations/110_seed_device_templates.sql
-phases: [20, 21, 34, 137, 142, 160, 163, 165, 166]
+  - db/migrations/111_device_modules.sql
+  - db/migrations/112_device_sensors_transports.sql
+  - db/migrations/113_device_registry_template_fk.sql
+phases: [20, 21, 34, 137, 142, 160, 163, 165, 166, 167]
 ---
 
 # Database
@@ -92,6 +95,23 @@ RLS note:
 
 - `device_templates` has a special RLS policy to allow tenant reads of system templates (`tenant_id IS NULL`) in addition to tenant-owned templates.
 - Child tables (`template_metrics`, `template_commands`, `template_slots`) use `EXISTS (...)` subqueries joining through `device_templates` since RLS does not cascade across FKs.
+
+### Device Instance Tables (Phase 167)
+
+Instance-level tables linking real devices to templates:
+
+- `device_modules` — physical modules installed in a device slot/bus interface.
+  - Unique constraint uses `COALESCE(bus_address, '')` so analog ports (NULL address) enforce 1:1 while buses allow multiple modules.
+  - `metric_key_map` stores raw-to-semantic key translation for module firmware telemetry.
+- `device_sensors` — restructured sensor model (migrated from legacy `sensors`).
+  - Optional links: `template_metric_id` and `device_module_id`
+  - `source` indicates `required`, `optional`, or `unmodeled` (migrated sensors are `unmodeled`).
+- `device_transports` — restructured connectivity model (migrated from legacy `device_connections`).
+  - Separates `ingestion_protocol` (mqtt_direct/http_api/...) from `physical_connectivity` (cellular/wifi/...)
+  - Stores `protocol_config` + `connectivity_config` JSONB for protocol/connectivity layers.
+- `device_registry` additions:
+  - `template_id` FK to `device_templates`
+  - `parent_device_id` gateway hierarchy pointer (validated via trigger to ensure parent exists within same tenant)
 
 ### User & Auth Tables
 
@@ -214,6 +234,9 @@ There are 84 migration files in `db/migrations/`:
 | 098 | 098_fix_customer_viewer_bootstrap.sql |
 | 109 | 109_device_templates.sql |
 | 110 | 110_seed_device_templates.sql |
+| 111 | 111_device_modules.sql |
+| 112 | 112_device_sensors_transports.sql |
+| 113 | 113_device_registry_template_fk.sql |
 
 ## TimescaleDB
 

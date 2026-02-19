@@ -15,7 +15,10 @@ sources:
   - compose/nats/init-streams.sh
   - db/migrations/109_device_templates.sql
   - db/migrations/110_seed_device_templates.sql
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166]
+  - db/migrations/111_device_modules.sql
+  - db/migrations/112_device_sensors_transports.sql
+  - db/migrations/113_device_registry_template_fk.sql
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167]
 ---
 
 # System Architecture
@@ -186,6 +189,14 @@ Template hierarchy:
 - `template_commands` — what commands this device type accepts
 - `template_slots` — expansion ports / bus interfaces for module assignment
   - `compatible_templates` constrains which expansion module templates can be assigned to a slot
+
+Instance hierarchy (Phase 167):
+
+- `device_registry.template_id` — which device template this device instance uses
+- `device_registry.parent_device_id` — gateway hierarchy pointer for child/peripheral devices
+- `device_modules` — modules installed into slots (per device)
+- `device_sensors` — active measurement points (per device), optionally linked to template metrics and modules
+- `device_transports` — ingestion protocol and physical connectivity configuration (per device)
 
 Both MQTT and HTTP ingestion flows use the same backend pipeline regardless of whether a device's template is system-defined or tenant-defined.
 
