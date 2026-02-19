@@ -8,14 +8,19 @@ sources:
   - services/ui_iot/routes/jobs.py
   - services/ui_iot/routes/ota.py
   - services/ui_iot/routes/certificates.py
-  - frontend/src/features/devices/DeviceCarrierPanel.tsx
+  - frontend/src/features/devices/DeviceDetailPage.tsx
+  - frontend/src/features/devices/DeviceSensorsDataTab.tsx
+  - frontend/src/features/devices/DeviceTransportTab.tsx
+  - frontend/src/features/devices/DeviceHealthTab.tsx
+  - frontend/src/features/devices/DeviceTwinCommandsTab.tsx
+  - frontend/src/features/devices/DeviceSecurityTab.tsx
   - services/ui_iot/routes/operator.py
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
   - frontend/src/features/templates/TemplateListPage.tsx
   - frontend/src/features/templates/TemplateDetailPage.tsx
   - frontend/src/services/api/templates.ts
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170]
+phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170, 171]
 ---
 
 # Device Management
@@ -68,6 +73,17 @@ The customer UI includes a dedicated template management experience:
   - Commands
   - Slots
 - System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
+
+## Device Detail UI (Phase 171)
+
+The customer UI restructures the device detail page into a 6-tab layout to keep all instance management in one place:
+
+- Overview: identity, map/location, plan/tier info, template badge link, notes/tags editing.
+- Sensors & Data: module assignment (template slots), sensor management, telemetry charts.
+- Transport: per-device transport configuration (protocol + physical connectivity) and carrier integration linking.
+- Health: device health telemetry and uptime.
+- Twin & Commands: desired/reported state management and command dispatch/history.
+- Security: API tokens and mTLS certificates.
 
 ### Telemetry and state
 

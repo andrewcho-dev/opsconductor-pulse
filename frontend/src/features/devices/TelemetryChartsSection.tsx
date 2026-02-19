@@ -65,11 +65,21 @@ function TelemetryChartsSectionInner({
   const sensorMap = useMemo(() => {
     const map = new Map<string, { label: string; unit: string; type: string }>();
     for (const s of sensorsData?.sensors ?? []) {
-      map.set(s.metric_name, {
-        label: s.label || s.metric_name,
-        unit: s.unit || "",
-        type: s.sensor_type,
-      });
+      // Backward compatible with both legacy `sensors` shape and Phase 169 `device_sensors` shape.
+      const anyS = s as unknown as Record<string, unknown>;
+      const metricKey =
+        (anyS.metric_key as string | undefined) ?? (anyS.metric_name as string | undefined) ?? "";
+      if (!metricKey) continue;
+      const label =
+        (anyS.display_name as string | undefined) ??
+        (anyS.label as string | undefined) ??
+        metricKey;
+      const unit = (anyS.unit as string | undefined) ?? "";
+      const type =
+        (anyS.sensor_type as string | undefined) ??
+        (((anyS.template_metric as object | null) && "template") as string) ??
+        "";
+      map.set(metricKey, { label, unit, type });
     }
     return map;
   }, [sensorsData]);

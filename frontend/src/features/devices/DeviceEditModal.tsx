@@ -27,8 +27,10 @@ import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
+import { listTemplates } from "@/services/api/templates";
 
 interface DeviceEditModalProps {
   device: Device;
@@ -40,6 +42,7 @@ interface DeviceEditModalProps {
 const MAC_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
 
 const deviceEditSchema = z.object({
+  template_id: z.string().optional().or(z.literal("")),
   model: z.string().max(100).optional().or(z.literal("")),
   manufacturer: z.string().max(100).optional().or(z.literal("")),
   serial_number: z.string().max(100).optional().or(z.literal("")),
@@ -97,6 +100,7 @@ export function DeviceEditModal({
 
   const defaults = useMemo<DeviceEditFormValues>(
     () => ({
+      template_id: device.template_id != null ? String(device.template_id) : "",
       model: device.model ?? "",
       manufacturer: device.manufacturer ?? "",
       serial_number: device.serial_number ?? "",
@@ -123,6 +127,16 @@ export function DeviceEditModal({
     onClose,
   });
 
+  const templatesQuery = useQuery({
+    queryKey: ["templates", "device-edit"],
+    queryFn: () => listTemplates(),
+    enabled: open,
+  });
+  const templates = templatesQuery.data ?? [];
+  const selectedTemplateId = form.watch("template_id") ?? "";
+  const initialTemplateId = device.template_id != null ? String(device.template_id) : "";
+  const templateChanged = selectedTemplateId !== initialTemplateId;
+
   useEffect(() => {
     if (!open) return;
     form.reset(defaults);
@@ -130,6 +144,11 @@ export function DeviceEditModal({
   }, [defaults, device, form, open]);
 
   const onSubmit = async (values: DeviceEditFormValues) => {
+    const templateIdTrim = (values.template_id ?? "").trim();
+    const parsedTemplateId = templateIdTrim ? Number(templateIdTrim) : null;
+    if (templateIdTrim && !Number.isFinite(parsedTemplateId)) {
+      throw new Error("Invalid template selection");
+    }
     const latValue = (values.latitude ?? "").trim();
     const lngValue = (values.longitude ?? "").trim();
     const parsedLat = latValue ? Number(latValue) : null;
@@ -141,6 +160,7 @@ export function DeviceEditModal({
       !Number.isNaN(parsedLng);
 
     const update: DeviceUpdate = {
+      template_id: parsedTemplateId,
       model: values.model?.trim() || null,
       manufacturer: values.manufacturer?.trim() || null,
       serial_number: values.serial_number?.trim() || null,
@@ -206,6 +226,35 @@ export function DeviceEditModal({
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2">
+              <FormField
+                control={form.control}
+                name="template_id"
+                render={({ field }) => (
+                  <FormItem className="col-span-2">
+                    <FormLabel className="text-sm">Template</FormLabel>
+                    <FormControl>
+                      <select
+                        className="h-8 w-full rounded border border-border bg-background px-2 text-sm"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.value)}
+                      >
+                        <option value="">(none)</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={String(t.id)}>
+                            {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </FormControl>
+                    {templateChanged ? (
+                      <div className="text-xs text-yellow-600">
+                        Changing the template will not remove existing sensors.
+                      </div>
+                    ) : null}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="model"

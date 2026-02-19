@@ -4,6 +4,10 @@ import type {
   DeviceConnection,
   DeviceHealthPoint,
   DeviceHealthResponse,
+  DeviceSensor,
+  DeviceSensorCreate,
+  DeviceSensorListResponse,
+  DeviceSensorUpdate,
   Sensor,
   SensorCreate,
   SensorListResponse,
@@ -12,8 +16,21 @@ import type {
 
 // ─── Sensors ─────────────────────────────────────────
 
-export async function listDeviceSensors(deviceId: string): Promise<SensorListResponse> {
-  return apiGet(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors`);
+export async function listDeviceSensors(deviceId: string): Promise<DeviceSensorListResponse> {
+  const res = await apiGet<DeviceSensorListResponse>(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors`
+  );
+  // Populate legacy alias fields (`metric_name`, `label`, etc.) so existing UI modules
+  // can continue to render without needing to understand the new `device_sensors` shape.
+  const sensors = (res.sensors ?? []).map((s) => ({
+    ...s,
+    sensor_id: s.id,
+    metric_name: s.metric_key,
+    label: s.display_name,
+    sensor_type: s.template_metric ? "template" : "custom",
+    auto_discovered: s.source === "required",
+  }));
+  return { ...res, sensors };
 }
 
 export async function listAllSensors(
@@ -37,6 +54,31 @@ export async function listAllSensors(
 
 export async function createSensor(deviceId: string, data: SensorCreate): Promise<Sensor> {
   return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors`, data);
+}
+
+// Phase 169+ device_sensors shape for per-device UI
+export async function createDeviceSensor(
+  deviceId: string,
+  data: DeviceSensorCreate
+): Promise<DeviceSensor> {
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors`, data);
+}
+
+export async function updateDeviceSensor(
+  deviceId: string,
+  sensorId: number,
+  data: DeviceSensorUpdate
+): Promise<DeviceSensor> {
+  return apiPut(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors/${sensorId}`,
+    data
+  );
+}
+
+export async function deleteDeviceSensor(deviceId: string, sensorId: number): Promise<void> {
+  await apiDelete(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/sensors/${sensorId}`
+  );
 }
 
 export async function updateSensor(sensorId: number, data: SensorUpdate): Promise<Sensor> {

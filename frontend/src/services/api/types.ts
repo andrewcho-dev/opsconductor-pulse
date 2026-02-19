@@ -16,6 +16,13 @@ export interface Device {
   last_heartbeat_at: string | null;
   last_telemetry_at: string | null;
   state: DeviceState | null;
+  // Phase 169+ (template-driven instance model). Optional for older endpoints.
+  template_id?: number | null;
+  template?: { id: number; name: string; slug: string; category: string } | null;
+  parent_device_id?: string | null;
+  module_count?: number;
+  sensor_count?: number;
+  template_name?: string | null;
   plan_id?: string | null;
   subscription_id?: string | null;
   subscription_type?: string | null;
@@ -67,6 +74,131 @@ export interface DeviceUpdate {
   hw_revision?: string | null;
   fw_version?: string | null;
   notes?: string | null;
+  template_id?: number | null;
+}
+
+// ─── Device Modules (Phase 169+) ──────────────────────
+
+export interface DeviceModule {
+  id: number;
+  slot_key: string;
+  bus_address: string | null;
+  module_template: { id: number; name: string; slug?: string } | null;
+  label: string;
+  serial_number: string | null;
+  metric_key_map: Record<string, string>;
+  status: "active" | "inactive" | "removed";
+  installed_at: string;
+}
+
+export interface ModuleCreatePayload {
+  slot_key: string;
+  bus_address?: string;
+  module_template_id?: number;
+  label: string;
+  serial_number?: string;
+  metric_key_map?: Record<string, string>;
+}
+
+export interface ModuleUpdatePayload {
+  label?: string;
+  serial_number?: string;
+  metric_key_map?: Record<string, string>;
+  status?: string;
+}
+
+// ─── Device Sensors (Phase 169+) ──────────────────────
+
+export interface DeviceSensor {
+  id: number;
+  device_id: string;
+  metric_key: string;
+  display_name: string;
+  template_metric: { id: number; metric_key: string; display_name: string } | null;
+  module: { id: number; label: string } | null;
+  unit: string | null;
+  min_range: number | null;
+  max_range: number | null;
+  precision_digits: number;
+  status: "active" | "inactive" | "disabled" | "stale" | "error";
+  source: "required" | "optional" | "unmodeled";
+  last_value: number | null;
+  last_value_text: string | null;
+  last_seen_at: string | null;
+
+  // Legacy aliases used in older UI modules that still expect the pre-Phase-169 sensor naming.
+  // These are populated by the API client mapping in `services/api/sensors.ts`.
+  sensor_id?: number;
+  metric_name?: string;
+  label?: string | null;
+  sensor_type?: string;
+  auto_discovered?: boolean;
+}
+
+export interface DeviceSensorCreate {
+  metric_key: string;
+  display_name: string;
+  template_metric_id?: number;
+  device_module_id?: number;
+  unit?: string;
+  min_range?: number;
+  max_range?: number;
+  precision_digits?: number;
+}
+
+export interface DeviceSensorUpdate {
+  display_name?: string;
+  unit?: string;
+  min_range?: number;
+  max_range?: number;
+  precision_digits?: number;
+  status?: string;
+}
+
+export interface DeviceSensorListResponse {
+  device_id: string;
+  sensors: DeviceSensor[];
+  total: number;
+  sensor_limit?: number;
+}
+
+// ─── Device Transports (Phase 169+) ───────────────────
+
+export interface DeviceTransport {
+  id: number;
+  device_id: string;
+  ingestion_protocol: string;
+  physical_connectivity: string | null;
+  protocol_config: Record<string, unknown>;
+  connectivity_config: Record<string, unknown>;
+  carrier_integration: { id: number; display_name: string } | null;
+  is_primary: boolean;
+  status: "active" | "inactive" | "failover";
+  last_connected_at: string | null;
+}
+
+export interface TransportCreatePayload {
+  ingestion_protocol: string;
+  physical_connectivity?: string;
+  protocol_config?: Record<string, unknown>;
+  connectivity_config?: Record<string, unknown>;
+  carrier_integration_id?: number;
+  is_primary?: boolean;
+}
+
+export interface TransportUpdatePayload {
+  physical_connectivity?: string;
+  protocol_config?: Record<string, unknown>;
+  connectivity_config?: Record<string, unknown>;
+  carrier_integration_id?: number;
+  is_primary?: boolean;
+  status?: string;
+}
+
+export interface DeviceTransportListResponse {
+  device_id: string;
+  transports: DeviceTransport[];
+  total: number;
 }
 
 // ─── Sensor Types ────────────────────────────────────

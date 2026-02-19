@@ -7,11 +7,18 @@ sources:
   - frontend/src/components/
   - frontend/src/features/
   - frontend/src/features/templates/
+  - frontend/src/features/devices/DeviceDetailPage.tsx
+  - frontend/src/features/devices/DeviceSensorsDataTab.tsx
+  - frontend/src/features/devices/DeviceTransportTab.tsx
+  - frontend/src/features/devices/DeviceHealthTab.tsx
+  - frontend/src/features/devices/DeviceTwinCommandsTab.tsx
+  - frontend/src/features/devices/DeviceSecurityTab.tsx
   - frontend/src/hooks/
   - frontend/src/services/
   - frontend/src/services/api/templates.ts
+  - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171]
 ---
 
 # Frontend
@@ -49,7 +56,7 @@ From `frontend/package.json`:
 Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 
 - `dashboard/` — dashboards and widget builder
-- `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands
+- `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands (Phase 171: tabbed device detail)
 - `alerts/` — alert inbox and rule dialogs
 - `escalation/` — escalation policies UI
 - `notifications/` — channels and routing rules UI
@@ -111,6 +118,23 @@ Phases 143–144 establish a baseline visual system to keep the UI consistent an
 ## UI Pattern Conventions
 
 Phase 145 standardizes UI usage patterns across the app. These are conventions (how components are used), not a restyling.
+
+## Device Detail Tabs (Phase 171)
+
+The primary customer device detail page (`features/devices/DeviceDetailPage.tsx`) is structured as a 6-tab layout with tab-specific components:
+
+- `DeviceSensorsDataTab.tsx` (modules + sensors + telemetry charts)
+- `DeviceTransportTab.tsx` (protocol/connectivity + carrier linking)
+- `DeviceHealthTab.tsx` (health + uptime)
+- `DeviceTwinCommandsTab.tsx` (twin + commands)
+- `DeviceSecurityTab.tsx` (API tokens + certificates)
+
+Deprecated, duplicate, or reorganized components removed in Phase 171:
+
+- `EditDeviceModal.tsx`
+- `DeviceConnectionPanel.tsx`
+- `DeviceCarrierPanel.tsx`
+- `DeviceConnectivityPanel.tsx`
 
 ### Page Header Actions
 

@@ -5,6 +5,9 @@ sources:
   - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/internal.py
   - services/ui_iot/routes/templates.py
+  - frontend/src/features/templates/TemplateListPage.tsx
+  - frontend/src/features/templates/TemplateDetailPage.tsx
+  - frontend/src/features/devices/DeviceDetailPage.tsx
   - services/evaluator_iot/evaluator.py
   - services/ingest_iot/ingest.py
   - services/ops_worker/main.py
@@ -19,7 +22,7 @@ sources:
   - db/migrations/111_device_modules.sql
   - db/migrations/112_device_sensors_transports.sql
   - db/migrations/113_device_registry_template_fk.sql
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168]
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171]
 ---
 
 # System Architecture
@@ -116,6 +119,7 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
 Primary platform API service. Responsibilities:
 
 - Serves the React SPA bundle (behind Caddy `/app/*` routing).
+- Customer UI includes template management pages and a tabbed device detail view (Phases 170–171).
 - Customer APIs (`/api/v1/customer/*`) and operator APIs (`/api/v1/operator/*`).
 - Legacy v2 endpoints (`/api/v2/*`) and real-time protocols (WebSocket/SSE).
 - HTTP ingestion endpoints (`/ingest/*`) that publish envelopes to JetStream (`telemetry.{tenant_id}`).

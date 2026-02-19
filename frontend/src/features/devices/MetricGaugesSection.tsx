@@ -26,7 +26,9 @@ function MetricGaugesSectionInner({
   const sensorMap = useMemo(() => {
     const map = new Map<string, { label: string; unit: string }>();
     for (const s of sensorsData?.sensors ?? []) {
-      map.set(s.metric_name, { label: s.label || s.metric_name, unit: s.unit || "" });
+      const key = s.metric_name ?? s.metric_key;
+      if (!key) continue;
+      map.set(key, { label: s.label || s.metric_name || s.display_name || key, unit: s.unit || "" });
     }
     return map;
   }, [sensorsData]);
