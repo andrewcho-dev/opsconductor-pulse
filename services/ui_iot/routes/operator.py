@@ -206,26 +206,460 @@ router = APIRouter(
 )
 
 
+# ── Account Tiers + Device Plans (Phase 156) ──────────────────────
+
+class AccountTierCreate(BaseModel):
+    tier_id: str = Field(..., max_length=50)
+    name: str = Field(..., max_length=100)
+    description: str = ""
+    limits: dict = Field(default_factory=dict)
+    features: dict = Field(default_factory=dict)
+    support: dict = Field(default_factory=dict)
+    monthly_price_cents: int = Field(default=0, ge=0)
+    annual_price_cents: int = Field(default=0, ge=0)
+    sort_order: int = Field(default=0)
+
+
+class AccountTierUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = None
+    limits: Optional[dict] = None
+    features: Optional[dict] = None
+    support: Optional[dict] = None
+    monthly_price_cents: Optional[int] = Field(None, ge=0)
+    annual_price_cents: Optional[int] = Field(None, ge=0)
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class DevicePlanCreate(BaseModel):
+    plan_id: str = Field(..., max_length=50)
+    name: str = Field(..., max_length=100)
+    description: str = ""
+    limits: dict = Field(default_factory=dict)
+    features: dict = Field(default_factory=dict)
+    monthly_price_cents: int = Field(default=0, ge=0)
+    annual_price_cents: int = Field(default=0, ge=0)
+    sort_order: int = Field(default=0)
+
+
+class DevicePlanUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = None
+    limits: Optional[dict] = None
+    features: Optional[dict] = None
+    monthly_price_cents: Optional[int] = Field(None, ge=0)
+    annual_price_cents: Optional[int] = Field(None, ge=0)
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class TenantTierAssign(BaseModel):
+    tier_id: str = Field(..., max_length=50)
+
+
+class DeviceSubscriptionCreateV2(BaseModel):
+    tenant_id: str
+    device_id: str
+    plan_id: str = Field(..., max_length=50)
+    status: str = Field(default="ACTIVE", pattern="^(TRIAL|ACTIVE|GRACE|SUSPENDED|EXPIRED|CANCELLED)$")
+    term_start: Optional[datetime] = None
+    term_end: Optional[datetime] = None
+
+
+class DeviceSubscriptionUpdateV2(BaseModel):
+    plan_id: Optional[str] = Field(None, max_length=50)
+    status: Optional[str] = Field(None, pattern="^(TRIAL|ACTIVE|GRACE|SUSPENDED|EXPIRED|CANCELLED)$")
+    term_end: Optional[datetime] = None
+
+
+@router.get("/account-tiers")
+async def operator_list_account_tiers():
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        rows = await conn.fetch("SELECT * FROM account_tiers ORDER BY sort_order")
+    return {"tiers": [dict(r) for r in rows]}
+
+
+@router.post("/account-tiers", status_code=201)
+async def operator_create_account_tier(
+    data: AccountTierCreate,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO account_tiers (
+                tier_id, name, description, limits, features, support,
+                monthly_price_cents, annual_price_cents, sort_order
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *
+            """,
+            data.tier_id,
+            data.name,
+            data.description,
+            json.dumps(data.limits),
+            json.dumps(data.features),
+            json.dumps(data.support),
+            data.monthly_price_cents,
+            data.annual_price_cents,
+            data.sort_order,
+        )
+    return dict(row)
+
+
+@router.put("/account-tiers/{tier_id}")
+async def operator_update_account_tier(
+    tier_id: str,
+    data: AccountTierUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    updates = []
+    params = []
+    idx = 1
+    for key, value in [
+        ("name", data.name),
+        ("description", data.description),
+        ("monthly_price_cents", data.monthly_price_cents),
+        ("annual_price_cents", data.annual_price_cents),
+        ("sort_order", data.sort_order),
+        ("is_active", data.is_active),
+    ]:
+        if value is not None:
+            updates.append(f"{key} = ${idx}")
+            params.append(value)
+            idx += 1
+
+    if data.limits is not None:
+        updates.append(f"limits = ${idx}")
+        params.append(json.dumps(data.limits))
+        idx += 1
+    if data.features is not None:
+        updates.append(f"features = ${idx}")
+        params.append(json.dumps(data.features))
+        idx += 1
+    if data.support is not None:
+        updates.append(f"support = ${idx}")
+        params.append(json.dumps(data.support))
+        idx += 1
+
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            f"UPDATE account_tiers SET {', '.join(updates)}, updated_at = NOW() WHERE tier_id = ${idx} RETURNING *",
+            *params,
+            tier_id,
+        )
+    if not row:
+        raise HTTPException(404, "Account tier not found")
+    return dict(row)
+
+
+@router.delete("/account-tiers/{tier_id}")
+async def operator_deactivate_account_tier(
+    tier_id: str,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            "UPDATE account_tiers SET is_active = false, updated_at = NOW() WHERE tier_id = $1 RETURNING *",
+            tier_id,
+        )
+    if not row:
+        raise HTTPException(404, "Account tier not found")
+    return dict(row)
+
+
+@router.get("/device-plans")
+async def operator_list_device_plans():
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        rows = await conn.fetch("SELECT * FROM device_plans ORDER BY sort_order")
+    return {"plans": [dict(r) for r in rows]}
+
+
+@router.post("/device-plans", status_code=201)
+async def operator_create_device_plan(
+    data: DevicePlanCreate,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO device_plans (
+                plan_id, name, description, limits, features,
+                monthly_price_cents, annual_price_cents, sort_order
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *
+            """,
+            data.plan_id,
+            data.name,
+            data.description,
+            json.dumps(data.limits),
+            json.dumps(data.features),
+            data.monthly_price_cents,
+            data.annual_price_cents,
+            data.sort_order,
+        )
+    return dict(row)
+
+
+@router.put("/device-plans/{plan_id}")
+async def operator_update_device_plan(
+    plan_id: str,
+    data: DevicePlanUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    updates = []
+    params = []
+    idx = 1
+    for key, value in [
+        ("name", data.name),
+        ("description", data.description),
+        ("monthly_price_cents", data.monthly_price_cents),
+        ("annual_price_cents", data.annual_price_cents),
+        ("sort_order", data.sort_order),
+        ("is_active", data.is_active),
+    ]:
+        if value is not None:
+            updates.append(f"{key} = ${idx}")
+            params.append(value)
+            idx += 1
+
+    if data.limits is not None:
+        updates.append(f"limits = ${idx}")
+        params.append(json.dumps(data.limits))
+        idx += 1
+    if data.features is not None:
+        updates.append(f"features = ${idx}")
+        params.append(json.dumps(data.features))
+        idx += 1
+
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            f"UPDATE device_plans SET {', '.join(updates)}, updated_at = NOW() WHERE plan_id = ${idx} RETURNING *",
+            *params,
+            plan_id,
+        )
+    if not row:
+        raise HTTPException(404, "Device plan not found")
+    return dict(row)
+
+
+@router.delete("/device-plans/{plan_id}")
+async def operator_deactivate_device_plan(
+    plan_id: str,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            "UPDATE device_plans SET is_active = false, updated_at = NOW() WHERE plan_id = $1 RETURNING *",
+            plan_id,
+        )
+    if not row:
+        raise HTTPException(404, "Device plan not found")
+    return dict(row)
+
+
+@router.patch("/tenants/{tenant_id}/tier")
+async def operator_assign_tenant_tier(
+    tenant_id: str,
+    data: TenantTierAssign,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        tier_exists = await conn.fetchval(
+            "SELECT 1 FROM account_tiers WHERE tier_id = $1 AND is_active = true",
+            data.tier_id,
+        )
+        if not tier_exists:
+            raise HTTPException(404, "Account tier not found")
+        row = await conn.fetchrow(
+            """
+            UPDATE tenants SET account_tier_id = $2, updated_at = NOW()
+            WHERE tenant_id = $1
+            RETURNING tenant_id, account_tier_id
+            """,
+            tenant_id,
+            data.tier_id,
+        )
+    if not row:
+        raise HTTPException(404, "Tenant not found")
+    return dict(row)
+
+
+@router.get("/device-subscriptions")
+async def operator_list_device_subscriptions(
+    tenant_id: Optional[str] = None,
+    device_id: Optional[str] = None,
+    status: Optional[str] = None,
+):
+    pool = await get_pool()
+    where = ["1=1"]
+    params = []
+    idx = 1
+    for col, value in [("tenant_id", tenant_id), ("device_id", device_id), ("status", status)]:
+        if value:
+            where.append(f"{col} = ${idx}")
+            params.append(value)
+            idx += 1
+
+    sql = f"SELECT * FROM device_subscriptions WHERE {' AND '.join(where)} ORDER BY created_at DESC"
+    async with operator_connection(pool) as conn:
+        rows = await conn.fetch(sql, *params)
+    return {"subscriptions": [dict(r) for r in rows]}
+
+
+@router.post("/device-subscriptions", status_code=201)
+async def operator_create_device_subscription(
+    data: DeviceSubscriptionCreateV2,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        plan_exists = await conn.fetchval(
+            "SELECT 1 FROM device_plans WHERE plan_id = $1 AND is_active = true",
+            data.plan_id,
+        )
+        if not plan_exists:
+            raise HTTPException(404, "Device plan not found")
+
+        device_exists = await conn.fetchval(
+            "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+            data.tenant_id,
+            data.device_id,
+        )
+        if not device_exists:
+            raise HTTPException(404, "Device not found for tenant")
+
+        # Keep device_registry in sync with the authoritative subscription plan.
+        await conn.execute(
+            """
+            UPDATE device_registry SET plan_id = $1, updated_at = NOW()
+            WHERE tenant_id = $2 AND device_id = $3
+            """,
+            data.plan_id,
+            data.tenant_id,
+            data.device_id,
+        )
+
+        subscription_id = await conn.fetchval("SELECT generate_subscription_id()")
+        term_start = data.term_start or datetime.now(timezone.utc)
+        term_end = data.term_end
+        row = await conn.fetchrow(
+            """
+            INSERT INTO device_subscriptions (
+                subscription_id, tenant_id, device_id, plan_id, status, term_start, term_end
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+            """,
+            subscription_id,
+            data.tenant_id,
+            data.device_id,
+            data.plan_id,
+            data.status,
+            term_start,
+            term_end,
+        )
+    return dict(row)
+
+
+@router.patch("/device-subscriptions/{subscription_id}")
+async def operator_update_device_subscription(
+    subscription_id: str,
+    data: DeviceSubscriptionUpdateV2,
+    _: None = Depends(require_operator_admin),
+):
+    updates = []
+    params = []
+    idx = 1
+    if data.plan_id is not None:
+        updates.append(f"plan_id = ${idx}")
+        params.append(data.plan_id)
+        idx += 1
+    if data.status is not None:
+        updates.append(f"status = ${idx}")
+        params.append(data.status)
+        idx += 1
+    if data.term_end is not None:
+        updates.append(f"term_end = ${idx}")
+        params.append(data.term_end)
+        idx += 1
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        if data.plan_id is not None:
+            plan_exists = await conn.fetchval(
+                "SELECT 1 FROM device_plans WHERE plan_id = $1 AND is_active = true",
+                data.plan_id,
+            )
+            if not plan_exists:
+                raise HTTPException(404, "Device plan not found")
+
+        row = await conn.fetchrow(
+            f"UPDATE device_subscriptions SET {', '.join(updates)}, updated_at = NOW() WHERE subscription_id = ${idx} RETURNING *",
+            *params,
+            subscription_id,
+        )
+        if not row:
+            raise HTTPException(404, "Device subscription not found")
+
+        if data.plan_id is not None:
+            await conn.execute(
+                """
+                UPDATE device_registry SET plan_id = $1, updated_at = NOW()
+                WHERE tenant_id = $2 AND device_id = $3
+                """,
+                data.plan_id,
+                row["tenant_id"],
+                row["device_id"],
+            )
+
+    return dict(row)
+
+
+@router.delete("/device-subscriptions/{subscription_id}")
+async def operator_cancel_device_subscription(
+    subscription_id: str,
+    _: None = Depends(require_operator_admin),
+):
+    pool = await get_pool()
+    async with operator_connection(pool) as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE device_subscriptions
+            SET status = 'CANCELLED', cancelled_at = NOW(), updated_at = NOW()
+            WHERE subscription_id = $1
+            RETURNING *
+            """,
+            subscription_id,
+        )
+    if not row:
+        raise HTTPException(404, "Device subscription not found")
+    return dict(row)
+
+
 @router.get("/device-tiers")
 async def list_device_tiers():
     """List all device tiers (operator view — includes inactive)."""
-    pool = await get_pool()
-    async with operator_connection(pool) as conn:
-        rows = await conn.fetch(
-            "SELECT tier_id, name, display_name, description, features, sort_order, is_active, created_at FROM device_tiers ORDER BY sort_order"
-        )
-    return {
-        "tiers": [
-            {
-                **dict(r),
-                "features": json.loads(r["features"])
-                if isinstance(r["features"], str)
-                else (r["features"] or {}),
-                "created_at": r["created_at"].isoformat() + "Z" if r["created_at"] else None,
-            }
-            for r in rows
-        ]
-    }
+    raise HTTPException(
+        410,
+        "Device tiers are deprecated. Use /operator/device-plans (Phase 156).",
+    )
 
 
 @router.post("/device-tiers", status_code=201)
@@ -234,33 +668,10 @@ async def create_device_tier(
     _: None = Depends(require_operator_admin),
 ):
     """Create a new device tier (operator_admin only)."""
-    pool = await get_pool()
-    async with operator_connection(pool) as conn:
-        try:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO device_tiers (name, display_name, description, features, sort_order)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING tier_id, name, display_name, description, features, sort_order, is_active, created_at
-                """,
-                data.name,
-                data.display_name,
-                data.description,
-                json.dumps(data.features),
-                data.sort_order,
-            )
-        except Exception as exc:
-            if "unique" in str(exc).lower():
-                raise HTTPException(409, f"Tier name '{data.name}' already exists")
-            raise
-
-    return {
-        **dict(row),
-        "features": json.loads(row["features"])
-        if isinstance(row["features"], str)
-        else (row["features"] or {}),
-        "created_at": row["created_at"].isoformat() + "Z" if row["created_at"] else None,
-    }
+    raise HTTPException(
+        410,
+        "Device tiers are deprecated. Use /operator/device-plans (Phase 156).",
+    )
 
 
 @router.put("/device-tiers/{tier_id}")
@@ -270,38 +681,10 @@ async def update_device_tier(
     _: None = Depends(require_operator_admin),
 ):
     """Update a device tier (operator_admin only)."""
-    pool = await get_pool()
-    updates = []
-    params = []
-    idx = 1
-
-    for field_name, value in data.model_dump(exclude_unset=True).items():
-        if field_name == "features" and value is not None:
-            value = json.dumps(value)
-        updates.append(f"{field_name} = ${idx}")
-        params.append(value)
-        idx += 1
-
-    if not updates:
-        raise HTTPException(400, "No fields to update")
-
-    updates.append("updated_at = NOW()")
-    params.append(tier_id)
-
-    async with operator_connection(pool) as conn:
-        row = await conn.fetchrow(
-            f"UPDATE device_tiers SET {', '.join(updates)} WHERE tier_id = ${idx} RETURNING *",
-            *params,
-        )
-    if not row:
-        raise HTTPException(404, "Device tier not found")
-
-    return {
-        **dict(row),
-        "features": json.loads(row["features"])
-        if isinstance(row["features"], str)
-        else (row["features"] or {}),
-    }
+    raise HTTPException(
+        410,
+        "Device tiers are deprecated. Use /operator/device-plans (Phase 156).",
+    )
 
 
 @router.get("/migration/integration-status")
@@ -501,85 +884,10 @@ async def get_tenant(request: Request, tenant_id: str):
 @router.post("/subscriptions", status_code=201)
 async def create_subscription(data: SubscriptionCreate, request: Request):
     """Create a new subscription for a tenant."""
-    user = get_user()
-    ip, _ = get_request_metadata(request)
-
-    pool = await get_pool()
-    async with operator_connection(pool) as conn:
-        tenant = await conn.fetchval(
-            "SELECT 1 FROM tenants WHERE tenant_id = $1",
-            data.tenant_id,
-        )
-        if not tenant:
-            raise HTTPException(404, "Tenant not found")
-
-        term_start = data.term_start or datetime.now(timezone.utc)
-        if data.term_days:
-            term_end = term_start + timedelta(days=data.term_days)
-        elif data.term_end:
-            term_end = data.term_end
-        elif data.subscription_type == "TRIAL":
-            term_end = term_start + timedelta(days=14)
-        else:
-            raise HTTPException(400, "term_end or term_days required for non-TRIAL subscriptions")
-
-        if data.subscription_type == "ADDON":
-            if not data.parent_subscription_id:
-                raise HTTPException(400, "ADDON requires parent_subscription_id")
-            parent = await conn.fetchrow(
-                "SELECT subscription_type, term_end FROM subscriptions WHERE subscription_id = $1",
-                data.parent_subscription_id,
-            )
-            if not parent:
-                raise HTTPException(404, "Parent subscription not found")
-            if parent["subscription_type"] != "MAIN":
-                raise HTTPException(400, "Parent must be MAIN subscription")
-            term_end = parent["term_end"]
-
-        subscription_id = await conn.fetchval("SELECT generate_subscription_id()")
-
-        row = await conn.fetchrow(
-            """
-            INSERT INTO subscriptions (
-                subscription_id, tenant_id, subscription_type, parent_subscription_id,
-                device_limit, term_start, term_end, status, plan_id, description, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', $8, $9, $10)
-            RETURNING *
-            """,
-            subscription_id,
-            data.tenant_id,
-            data.subscription_type,
-            data.parent_subscription_id,
-            data.device_limit,
-            term_start,
-            term_end,
-            data.plan_id,
-            data.description,
-            user.get("sub") if user else None,
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO subscription_audit
-                (tenant_id, event_type, actor_type, actor_id, new_state, details, ip_address)
-            VALUES ($1, 'SUBSCRIPTION_CREATED', 'admin', $2, $3, $4, $5)
-            """,
-            data.tenant_id,
-            user.get("sub") if user else None,
-            json.dumps(dict(row), default=str),
-            json.dumps({"notes": data.notes}) if data.notes else None,
-            ip,
-        )
-
-        return {
-            "subscription_id": row["subscription_id"],
-            "tenant_id": row["tenant_id"],
-            "subscription_type": row["subscription_type"],
-            "device_limit": row["device_limit"],
-            "term_start": row["term_start"].isoformat(),
-            "term_end": row["term_end"].isoformat(),
-            "status": row["status"],
-        }
+    raise HTTPException(
+        410,
+        "Legacy subscriptions are deprecated. Use /operator/device-subscriptions and /operator/tenants/{tenant_id}/tier (Phase 156).",
+    )
 
 
 @router.get("/subscriptions")
@@ -593,70 +901,10 @@ async def list_subscriptions(
     offset: int = Query(0, ge=0),
 ):
     """List subscriptions with optional filters."""
-    pool = await get_pool()
-    async with operator_connection(pool) as conn:
-        conditions = []
-        params = []
-        param_idx = 1
-
-        if tenant_id:
-            conditions.append(f"s.tenant_id = ${param_idx}")
-            params.append(tenant_id)
-            param_idx += 1
-
-        if subscription_type:
-            conditions.append(f"s.subscription_type = ${param_idx}")
-            params.append(subscription_type)
-            param_idx += 1
-
-        if status:
-            conditions.append(f"s.status = ${param_idx}")
-            params.append(status)
-            param_idx += 1
-
-        if expiring_days:
-            conditions.append(f"s.term_end <= now() + (${param_idx} || ' days')::interval")
-            conditions.append("s.status = 'ACTIVE'")
-            params.append(str(expiring_days))
-            param_idx += 1
-
-        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
-
-        query = f"""
-            SELECT
-                s.subscription_id, s.tenant_id, t.name as tenant_name,
-                s.subscription_type, s.parent_subscription_id,
-                s.device_limit, s.active_device_count, s.term_start, s.term_end,
-                s.status, s.plan_id, s.description
-            FROM subscriptions s
-            JOIN tenants t ON t.tenant_id = s.tenant_id
-            {where_clause}
-            ORDER BY s.term_end ASC
-            LIMIT ${param_idx} OFFSET ${param_idx + 1}
-        """
-        params.extend([limit, offset])
-
-        rows = await conn.fetch(query, *params)
-
-        return {
-            "subscriptions": [
-                {
-                    "subscription_id": r["subscription_id"],
-                    "tenant_id": r["tenant_id"],
-                    "tenant_name": r["tenant_name"],
-                    "subscription_type": r["subscription_type"],
-                    "parent_subscription_id": r["parent_subscription_id"],
-                    "device_limit": r["device_limit"],
-                    "active_device_count": r["active_device_count"],
-                    "term_start": r["term_start"].isoformat(),
-                    "term_end": r["term_end"].isoformat(),
-                    "status": r["status"],
-                    "description": r["description"],
-                }
-                for r in rows
-            ],
-            "count": len(rows),
-        }
+    raise HTTPException(
+        410,
+        "Legacy subscriptions are deprecated. Use /operator/device-subscriptions (Phase 156).",
+    )
 
 
 @router.get("/subscriptions/expiring-notifications")
@@ -666,33 +914,10 @@ async def list_expiring_notifications(
     limit: int = Query(100, ge=1, le=500),
 ):
     """List subscription expiry notification records."""
-    conditions: list[str] = []
-    params: list[str | int] = []
-
-    if status:
-        params.append(status.upper())
-        conditions.append(f"status = ${len(params)}")
-    if tenant_id:
-        params.append(tenant_id)
-        conditions.append(f"tenant_id = ${len(params)}")
-
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    params.append(limit)
-
-    p = await get_pool()
-    async with operator_connection(p) as conn:
-        rows = await conn.fetch(
-            f"""
-            SELECT id, tenant_id, notification_type, scheduled_at, sent_at,
-                   channel, status, error
-            FROM subscription_notifications
-            {where_clause}
-            ORDER BY scheduled_at DESC
-            LIMIT ${len(params)}
-            """,
-            *params,
-        )
-    return {"notifications": [dict(r) for r in rows], "total": len(rows)}
+    raise HTTPException(
+        410,
+        "Legacy subscription notifications are deprecated in the Phase 156 model.",
+    )
 
 
 @router.get("/subscriptions/{subscription_id}")
@@ -893,85 +1118,10 @@ async def assign_device_subscription(
     request: Request,
 ):
     """Assign a device to a subscription."""
-    user = get_user()
-    ip, _ = get_request_metadata(request)
-
-    pool = await get_pool()
-    async with operator_connection(pool) as conn:
-        device = await conn.fetchrow(
-            "SELECT tenant_id, subscription_id FROM device_registry WHERE device_id = $1",
-            device_id,
-        )
-        if not device:
-            raise HTTPException(404, "Device not found")
-
-        old_subscription_id = device["subscription_id"]
-        tenant_id = device["tenant_id"]
-
-        new_sub = await conn.fetchrow(
-            "SELECT * FROM subscriptions WHERE subscription_id = $1",
-            data.subscription_id,
-        )
-        if not new_sub:
-            raise HTTPException(404, "Subscription not found")
-
-        if new_sub["tenant_id"] != tenant_id:
-            raise HTTPException(400, "Subscription belongs to different tenant")
-
-        if new_sub["status"] in ("SUSPENDED", "EXPIRED"):
-            raise HTTPException(400, f"Cannot assign to {new_sub['status']} subscription")
-
-        if new_sub["active_device_count"] >= new_sub["device_limit"]:
-            raise HTTPException(400, "Subscription at device limit")
-
-        await conn.execute(
-            "UPDATE device_registry SET subscription_id = $1 WHERE device_id = $2",
-            data.subscription_id,
-            device_id,
-        )
-
-        if old_subscription_id:
-            await conn.execute(
-                """
-                UPDATE subscriptions
-                SET active_device_count = GREATEST(0, active_device_count - 1)
-                WHERE subscription_id = $1
-                """,
-                old_subscription_id,
-            )
-        await conn.execute(
-            """
-            UPDATE subscriptions
-            SET active_device_count = active_device_count + 1
-            WHERE subscription_id = $1
-            """,
-            data.subscription_id,
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO subscription_audit
-                (tenant_id, event_type, actor_type, actor_id, details, ip_address)
-            VALUES ($1, 'DEVICE_REASSIGNED', 'admin', $2, $3, $4)
-            """,
-            tenant_id,
-            user.get("sub") if user else None,
-            json.dumps(
-                {
-                    "device_id": device_id,
-                    "from_subscription": old_subscription_id,
-                    "to_subscription": data.subscription_id,
-                    "notes": data.notes,
-                }
-            ),
-            ip,
-        )
-
-        return {
-            "device_id": device_id,
-            "subscription_id": data.subscription_id,
-            "previous_subscription_id": old_subscription_id,
-        }
+    raise HTTPException(
+        410,
+        "Legacy subscription assignment is deprecated. Use /operator/device-subscriptions and update device plan_id (Phase 156).",
+    )
 
 
 # ── Manual Provisioning Workflow (for offline-payment customers) ──

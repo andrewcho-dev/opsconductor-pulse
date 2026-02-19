@@ -7,6 +7,9 @@ import { useUIStore } from "@/stores/ui-store";
 interface MetricGaugeProps {
   metricName: string;
   value: number | null;
+  /** Optional overrides for per-device sensor labeling */
+  displayLabel?: string;
+  unit?: string;
   /** Optional data values for auto-scaling unknown metrics */
   allValues?: number[];
   className?: string;
@@ -15,6 +18,8 @@ interface MetricGaugeProps {
 function MetricGaugeInner({
   metricName,
   value,
+  displayLabel,
+  unit,
   allValues,
   className,
 }: MetricGaugeProps) {
@@ -27,6 +32,12 @@ function MetricGaugeInner({
     () => getMetricConfig(metricName, allValues),
     [metricName, allValues]
   );
+  const effectiveLabel = displayLabel?.trim() ? displayLabel.trim() : config.label;
+  const effectiveUnit = unit?.trim()
+    ? ` ${unit.trim()}`
+    : config.unit?.trim()
+      ? config.unit.trim()
+      : "";
 
   const option = useMemo<EChartsOption>(() => {
     // Build color stops for the gauge arc from zones
@@ -96,13 +107,13 @@ function MetricGaugeInner({
             color: textColor,
             formatter: (v: number) => {
               if (v == null) return "—";
-              return `${v.toFixed(config.precision)}${config.unit}`;
+              return `${v.toFixed(config.precision)}${effectiveUnit}`;
             },
           },
           data: [
             {
               value: value ?? 0,
-              name: config.label,
+              name: effectiveLabel,
             },
           ],
         },
@@ -111,6 +122,8 @@ function MetricGaugeInner({
   }, [
     value,
     config,
+    effectiveLabel,
+    effectiveUnit,
     textColor,
     mutedColor,
     axisLabelColor,

@@ -9,47 +9,36 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  createDeviceTier,
-  fetchDeviceTiers,
-  updateDeviceTier,
-  type OperatorDeviceTier,
+  createDevicePlan,
+  deactivateDevicePlan,
+  fetchDevicePlans,
+  updateDevicePlan,
+  type OperatorDevicePlan,
 } from "@/services/api/device-tiers";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 
 const KNOWN_FEATURES = [
-  "telemetry",
-  "alerts",
-  "dashboards",
-  "ota",
-  "analytics",
-  "x509_auth",
+  "ota_updates",
+  "advanced_analytics",
   "streaming_export",
+  "x509_auth",
   "message_routing",
+  "device_commands",
+  "device_twin",
+  "carrier_diagnostics",
+] as const;
+
+const KNOWN_LIMITS = [
+  { key: "sensors", label: "Sensors" },
+  { key: "data_retention_days", label: "Data Retention (days)" },
+  { key: "telemetry_rate_per_minute", label: "Telemetry Rate (msg/min)" },
+  { key: "health_telemetry_interval_seconds", label: "Health Interval (sec)" },
 ] as const;
 
 function FeatureBadges({ features }: { features: Record<string, boolean> }) {
@@ -77,61 +66,79 @@ function makeDefaultFeatures(): Record<string, boolean> {
   return out;
 }
 
-type DialogMode = { mode: "create" } | { mode: "edit"; tier: OperatorDeviceTier };
+function makeDefaultLimits(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const l of KNOWN_LIMITS) out[l.key] = 0;
+  return out;
+}
 
-const deviceTierSchema = z.object({
-  name: z.string().min(2, "Tier name required").max(50),
-  display_name: z.string().min(2, "Display name required").max(100),
+type DialogMode = { mode: "create" } | { mode: "edit"; plan: OperatorDevicePlan };
+
+const devicePlanSchema = z.object({
+  plan_id: z
+    .string()
+    .min(2)
+    .max(50)
+    .regex(/^[a-z0-9_-]+$/, "Lowercase alphanumeric with hyphens/underscores"),
+  name: z.string().min(2).max(100),
   description: z.string().max(500).optional().or(z.literal("")),
-  // Zod v4: record requires key schema + value schema.
+  limits: z.record(z.string(), z.coerce.number()).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
-  sort_order: z.coerce.number().int().min(0, "Must be non-negative").optional(),
+  monthly_price_cents: z.coerce.number().int().min(0),
+  annual_price_cents: z.coerce.number().int().min(0),
+  sort_order: z.coerce.number().int().min(0).optional(),
   is_active: z.boolean().optional(),
 });
 
-type DeviceTierFormValues = z.infer<typeof deviceTierSchema>;
+type DevicePlanFormValues = z.infer<typeof devicePlanSchema>;
 
-function mapTierToFormValues(tier: OperatorDeviceTier): DeviceTierFormValues {
+function mapPlanToFormValues(plan: OperatorDevicePlan): DevicePlanFormValues {
   return {
-    name: tier.name,
-    display_name: tier.display_name || "",
-    description: tier.description || "",
-    features: { ...makeDefaultFeatures(), ...(tier.features || {}) },
-    sort_order: tier.sort_order ?? 0,
-    is_active: Boolean(tier.is_active),
+    plan_id: plan.plan_id,
+    name: plan.name,
+    description: plan.description || "",
+    limits: { ...makeDefaultLimits(), ...(plan.limits || {}) },
+    features: { ...makeDefaultFeatures(), ...(plan.features || {}) },
+    monthly_price_cents: plan.monthly_price_cents ?? 0,
+    annual_price_cents: plan.annual_price_cents ?? 0,
+    sort_order: plan.sort_order ?? 0,
+    is_active: Boolean(plan.is_active),
   };
 }
 
 export default function DeviceTiersPage() {
   const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery({
-    queryKey: ["operator-device-tiers"],
-    queryFn: fetchDeviceTiers,
+    queryKey: ["operator-device-plans"],
+    queryFn: fetchDevicePlans,
   });
 
-  const tiers = data?.tiers ?? [];
+  const plans = data?.plans ?? [];
   const sorted = useMemo(
-    () => [...tiers].sort((a, b) => a.sort_order - b.sort_order),
-    [tiers]
+    () => [...plans].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [plans]
   );
 
   const [dialog, setDialog] = useState<DialogMode | null>(null);
 
-  const defaultCreateValues: DeviceTierFormValues = useMemo(
+  const defaultCreateValues: DevicePlanFormValues = useMemo(
     () => ({
+      plan_id: "",
       name: "",
-      display_name: "",
       description: "",
+      limits: makeDefaultLimits(),
       features: makeDefaultFeatures(),
+      monthly_price_cents: 0,
+      annual_price_cents: 0,
       sort_order: 0,
       is_active: true,
     }),
     []
   );
 
-  const form = useForm<DeviceTierFormValues>({
-    // zodResolver types can get confused with Zod v4 coercion; runtime validation is correct.
-    resolver: zodResolver(deviceTierSchema) as any,
+  const form = useForm<DevicePlanFormValues>({
+    resolver: zodResolver(devicePlanSchema) as any,
     defaultValues: defaultCreateValues,
   });
 
@@ -141,54 +148,63 @@ export default function DeviceTiersPage() {
       form.reset(defaultCreateValues);
       return;
     }
-    form.reset(mapTierToFormValues(dialog.tier));
+    form.reset(mapPlanToFormValues(dialog.plan));
   }, [defaultCreateValues, dialog, form]);
 
   const createMutation = useMutation({
-    mutationFn: async (values: DeviceTierFormValues) => {
+    mutationFn: async (values: DevicePlanFormValues) => {
       const order = values.sort_order ?? 0;
-      const payload = {
-        name: values.name.trim().toLowerCase(),
-        display_name: values.display_name.trim(),
+      return createDevicePlan({
+        plan_id: values.plan_id.trim(),
+        name: values.name.trim(),
         description: values.description?.trim() || undefined,
+        limits: values.limits || makeDefaultLimits(),
         features: values.features || makeDefaultFeatures(),
+        monthly_price_cents: values.monthly_price_cents,
+        annual_price_cents: values.annual_price_cents,
         sort_order: Number.isFinite(order) ? order : 0,
-      };
-      return createDeviceTier(payload);
+      });
     },
     onSuccess: () => {
-      toast.success("Device tier created");
-      void queryClient.invalidateQueries({ queryKey: ["operator-device-tiers"] });
+      toast.success("Device plan created");
+      void queryClient.invalidateQueries({ queryKey: ["operator-device-plans"] });
       setDialog(null);
     },
-    onError: (err: any) => toast.error(err?.message || "Failed to create tier"),
+    onError: (err: any) => toast.error(err?.message || "Failed to create plan"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (args: { tierId: number; values: DeviceTierFormValues }) => {
+    mutationFn: async (args: { planId: string; values: DevicePlanFormValues }) => {
       const order = args.values.sort_order ?? 0;
-      return updateDeviceTier(args.tierId, {
-        display_name: args.values.display_name.trim() || undefined,
+      return updateDevicePlan(args.planId, {
+        name: args.values.name.trim() || undefined,
         description: args.values.description?.trim() || undefined,
-        features: args.values.features || makeDefaultFeatures(),
+        limits: args.values.limits,
+        features: args.values.features,
+        monthly_price_cents: args.values.monthly_price_cents,
+        annual_price_cents: args.values.annual_price_cents,
         sort_order: Number.isFinite(order) ? order : 0,
         is_active: Boolean(args.values.is_active),
       });
     },
     onSuccess: () => {
-      toast.success("Device tier updated");
-      void queryClient.invalidateQueries({ queryKey: ["operator-device-tiers"] });
+      toast.success("Device plan updated");
+      void queryClient.invalidateQueries({ queryKey: ["operator-device-plans"] });
       setDialog(null);
     },
-    onError: (err: any) => toast.error(err?.message || "Failed to update tier"),
+    onError: (err: any) => toast.error(err?.message || "Failed to update plan"),
   });
 
   const activeToggleMutation = useMutation({
-    mutationFn: async (args: { tierId: number; next: boolean }) => {
-      return updateDeviceTier(args.tierId, { is_active: args.next });
+    mutationFn: async (args: { planId: string; next: boolean }) => {
+      if (!args.next) {
+        await deactivateDevicePlan(args.planId);
+        return;
+      }
+      return updateDevicePlan(args.planId, { is_active: true });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["operator-device-tiers"] });
+      void queryClient.invalidateQueries({ queryKey: ["operator-device-plans"] });
     },
     onError: (err: any) => toast.error(err?.message || "Failed to update active status"),
   });
@@ -197,28 +213,32 @@ export default function DeviceTiersPage() {
     form.setValue(`features.${name}` as any, value, { shouldDirty: true });
   }
 
-  function onSubmit(values: DeviceTierFormValues) {
+  function setLimit(name: string, value: number) {
+    form.setValue(`limits.${name}` as any, value, { shouldDirty: true });
+  }
+
+  function onSubmit(values: DevicePlanFormValues) {
     if (!dialog) return;
     if (dialog.mode === "create") {
       createMutation.mutate(values);
     } else {
-      updateMutation.mutate({ tierId: dialog.tier.tier_id, values });
+      updateMutation.mutate({ planId: dialog.plan.plan_id, values });
     }
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Device Tiers"
-        description="Manage tier definitions and feature access for tenant devices."
+        title="Device Plans"
+        description="Manage per-device plan definitions (limits, features, pricing)."
       />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Tiers</CardTitle>
+          <CardTitle>Plans</CardTitle>
           <Button size="sm" onClick={() => setDialog({ mode: "create" })}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Tier
+            Create Plan
           </Button>
         </CardHeader>
         <CardContent>
@@ -226,10 +246,11 @@ export default function DeviceTiersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Plan ID</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Display Name</TableHead>
-                  <TableHead>Description</TableHead>
+                  <TableHead>Limits</TableHead>
                   <TableHead>Features</TableHead>
+                  <TableHead>Price</TableHead>
                   <TableHead>Sort</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -238,27 +259,34 @@ export default function DeviceTiersPage() {
               <TableBody>
                 {!isLoading && sorted.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-sm text-muted-foreground">
-                      No device tiers found.
+                    <TableCell colSpan={8} className="text-sm text-muted-foreground">
+                      No device plans found.
                     </TableCell>
                   </TableRow>
                 )}
-                {sorted.map((t) => (
-                  <TableRow key={t.tier_id}>
-                    <TableCell className="font-mono text-sm">{t.name}</TableCell>
-                    <TableCell>{t.display_name}</TableCell>
-                    <TableCell className="max-w-[260px] truncate">
-                      {t.description || "—"}
+                {sorted.map((p) => (
+                  <TableRow key={p.plan_id}>
+                    <TableCell className="font-mono text-sm">{p.plan_id}</TableCell>
+                    <TableCell>{p.name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {KNOWN_LIMITS.map((l) => (
+                        <div key={l.key}>
+                          {l.key}: {p.limits?.[l.key] ?? "—"}
+                        </div>
+                      ))}
                     </TableCell>
                     <TableCell>
-                      <FeatureBadges features={t.features || {}} />
+                      <FeatureBadges features={p.features || {}} />
                     </TableCell>
-                    <TableCell>{t.sort_order}</TableCell>
+                    <TableCell className="text-sm">
+                      ${(p.monthly_price_cents / 100).toFixed(2)}/mo
+                    </TableCell>
+                    <TableCell>{p.sort_order}</TableCell>
                     <TableCell>
                       <Switch
-                        checked={!!t.is_active}
+                        checked={!!p.is_active}
                         onCheckedChange={(next) =>
-                          activeToggleMutation.mutate({ tierId: t.tier_id, next })
+                          activeToggleMutation.mutate({ planId: p.plan_id, next })
                         }
                       />
                     </TableCell>
@@ -266,7 +294,7 @@ export default function DeviceTiersPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => setDialog({ mode: "edit", tier: t })}
+                        onClick={() => setDialog({ mode: "edit", plan: p })}
                       >
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
@@ -281,12 +309,12 @@ export default function DeviceTiersPage() {
       </Card>
 
       <Dialog open={!!dialog} onOpenChange={(open) => (!open ? setDialog(null) : null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {dialog?.mode === "create"
-                ? "Create Device Tier"
-                : `Edit Device Tier: ${dialog?.mode === "edit" ? dialog.tier.name : ""}`}
+                ? "Create Device Plan"
+                : `Edit Device Plan: ${dialog?.mode === "edit" ? dialog.plan.plan_id : ""}`}
             </DialogTitle>
           </DialogHeader>
 
@@ -295,12 +323,12 @@ export default function DeviceTiersPage() {
               {dialog?.mode === "create" && (
                 <FormField
                   control={form.control}
-                  name="name"
+                  name="plan_id"
                   render={({ field }) => (
                     <FormItem className="space-y-2">
-                      <FormLabel>Name</FormLabel>
+                      <FormLabel>Plan ID</FormLabel>
                       <FormControl>
-                        <Input id="tier-name" placeholder="basic" {...field} />
+                        <Input id="plan-id" placeholder="basic" {...field} />
                       </FormControl>
                       <p className="text-sm text-muted-foreground">
                         Lowercase identifier (used in APIs and seed data).
@@ -313,12 +341,12 @@ export default function DeviceTiersPage() {
 
               <FormField
                 control={form.control}
-                name="display_name"
+                name="name"
                 render={({ field }) => (
                   <FormItem className="space-y-2">
-                    <FormLabel>Display Name</FormLabel>
+                    <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <Input id="tier-display-name" placeholder="Basic" {...field} />
+                      <Input id="plan-name" placeholder="Basic" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -332,12 +360,32 @@ export default function DeviceTiersPage() {
                   <FormItem className="space-y-2">
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Textarea id="tier-description" placeholder="Describe what this tier enables..." {...field} />
+                      <Textarea
+                        id="plan-description"
+                        placeholder="Describe what this plan enables..."
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Limits</legend>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {KNOWN_LIMITS.map((l) => (
+                    <div key={l.key} className="space-y-2">
+                      <div className="text-sm font-medium">{l.label}</div>
+                      <Input
+                        type="number"
+                        value={Number(form.watch(`limits.${l.key}` as any) ?? 0)}
+                        onChange={(e) => setLimit(l.key, Number(e.target.value))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
 
               <fieldset className="space-y-3 rounded-md border p-4">
                 <legend className="px-1 text-sm font-medium">Features</legend>
@@ -357,13 +405,53 @@ export default function DeviceTiersPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <FormField
                   control={form.control}
+                  name="monthly_price_cents"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel>Monthly Price (cents)</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="plan-monthly-price"
+                          type="number"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="annual_price_cents"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel>Annual Price (cents)</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="plan-annual-price"
+                          type="number"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <FormField
+                  control={form.control}
                   name="sort_order"
                   render={({ field }) => (
                     <FormItem className="space-y-2">
                       <FormLabel>Sort Order</FormLabel>
                       <FormControl>
                         <Input
-                          id="tier-sort-order"
+                          id="plan-sort-order"
                           type="number"
                           value={field.value ?? 0}
                           onChange={(e) => field.onChange(e.target.value)}
@@ -383,7 +471,7 @@ export default function DeviceTiersPage() {
                         <div className="space-y-0.5">
                           <div className="text-sm font-medium">Active</div>
                           <div className="text-sm text-muted-foreground">
-                            Disable to hide tier from customers.
+                            Disable to hide plan from customers.
                           </div>
                         </div>
                         <FormControl>

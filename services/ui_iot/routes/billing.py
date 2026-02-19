@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, get_user, require_customer
-from middleware.entitlements import get_plan_usage
+from middleware.entitlements import get_account_usage, get_device_usage
 from dependencies import get_db_pool
 from db.pool import tenant_connection
 from services.stripe_service import (
@@ -71,9 +71,29 @@ async def get_entitlements(pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
 
     async with tenant_connection(pool, tenant_id) as conn:
-        usage = await get_plan_usage(conn, tenant_id)
+        usage = await get_account_usage(conn, tenant_id)
 
     return usage
+
+
+@customer_router.get("/device-plans")
+async def list_device_plans(pool=Depends(get_db_pool)):
+    """List all active device plans."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM device_plans WHERE is_active = true ORDER BY sort_order"
+        )
+    return {"plans": [dict(r) for r in rows]}
+
+
+@customer_router.get("/account-tiers")
+async def list_account_tiers(pool=Depends(get_db_pool)):
+    """List all active account tiers."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM account_tiers WHERE is_active = true ORDER BY sort_order"
+        )
+    return {"tiers": [dict(r) for r in rows]}
 
 
 @customer_router.post("/checkout-session")
@@ -181,9 +201,8 @@ async def create_addon_checkout(
         parent = await conn.fetchrow(
             """
             SELECT subscription_id, tenant_id, term_end, status, stripe_subscription_id, plan_id
-            FROM subscriptions
+            FROM device_subscriptions
             WHERE subscription_id = $1 AND tenant_id = $2
-              AND subscription_type = 'MAIN'
               AND status IN ('ACTIVE', 'TRIAL')
             """,
             data.parent_subscription_id,
@@ -264,95 +283,87 @@ async def create_addon_checkout(
 
 @customer_router.get("/status")
 async def get_billing_status(pool=Depends(get_db_pool)):
-    """Get current billing/subscription status with tier allocations."""
+    """Get current billing/subscription status for the new two-tier model."""
     tenant_id = get_tenant_id()
 
     async with tenant_connection(pool, tenant_id) as conn:
         tenant = await conn.fetchrow(
-            "SELECT stripe_customer_id, billing_email, support_tier, sla_level FROM tenants WHERE tenant_id = $1",
-            tenant_id,
-        )
-
-        subs = await conn.fetch(
             """
-            SELECT subscription_id, subscription_type, plan_id, status, device_limit,
-                   active_device_count, stripe_subscription_id, term_start, term_end,
-                   parent_subscription_id, description
-            FROM subscriptions
-            WHERE tenant_id = $1 AND status IN ('ACTIVE', 'TRIAL', 'GRACE')
-            ORDER BY subscription_type, created_at DESC
+            SELECT stripe_customer_id, billing_email, account_tier_id
+            FROM tenants
+            WHERE tenant_id = $1
             """,
             tenant_id,
         )
 
-        all_allocations = []
-        for sub in subs:
-            alloc_rows = await conn.fetch(
-                """
-                SELECT sta.tier_id, dt.name, dt.display_name,
-                       sta.slot_limit, sta.slots_used
-                FROM subscription_tier_allocations sta
-                JOIN device_tiers dt ON dt.tier_id = sta.tier_id
-                WHERE sta.subscription_id = $1
-                ORDER BY dt.sort_order
-                """,
-                sub["subscription_id"],
+        tier = await conn.fetchrow(
+            """
+            SELECT at.*
+            FROM tenants t
+            LEFT JOIN account_tiers at ON at.tier_id = t.account_tier_id
+            WHERE t.tenant_id = $1
+            """,
+            tenant_id,
+        )
+
+        plan_rows = await conn.fetch(
+            """
+            SELECT dp.plan_id, dp.name, dp.monthly_price_cents, COUNT(*)::int AS device_count
+            FROM device_registry dr
+            JOIN device_plans dp ON dp.plan_id = dr.plan_id
+            WHERE dr.tenant_id = $1 AND dr.status = 'ACTIVE'
+            GROUP BY dp.plan_id, dp.name, dp.monthly_price_cents, dp.sort_order
+            ORDER BY dp.sort_order
+            """,
+            tenant_id,
+        )
+
+        device_total_cents = 0
+        by_plan = []
+        for r in plan_rows:
+            plan_total = int(r["monthly_price_cents"] or 0) * int(r["device_count"] or 0)
+            device_total_cents += plan_total
+            by_plan.append(
+                {
+                    "plan_id": r["plan_id"],
+                    "plan_name": r["name"],
+                    "device_count": r["device_count"],
+                    "monthly_price_cents": int(r["monthly_price_cents"] or 0),
+                    "total_monthly_price_cents": plan_total,
+                }
             )
-            for r in alloc_rows:
-                all_allocations.append(
-                    {
-                        "subscription_id": sub["subscription_id"],
-                        "tier_id": r["tier_id"],
-                        "tier_name": r["name"],
-                        "tier_display_name": r["display_name"],
-                        "slot_limit": r["slot_limit"],
-                        "slots_used": r["slots_used"],
-                        "slots_available": r["slot_limit"] - r["slots_used"],
-                    }
-                )
 
     has_billing = bool(tenant and tenant["stripe_customer_id"])
+
+    tier_monthly = int(tier["monthly_price_cents"]) if tier and tier.get("monthly_price_cents") is not None else 0
 
     return {
         "has_billing_account": has_billing,
         "billing_email": tenant["billing_email"] if tenant else None,
-        "support_tier": tenant["support_tier"] if tenant else None,
-        "sla_level": float(tenant["sla_level"]) if tenant and tenant["sla_level"] else None,
-        "subscriptions": [
-            {
-                "subscription_id": s["subscription_id"],
-                "subscription_type": s["subscription_type"],
-                "plan_id": s["plan_id"],
-                "status": s["status"],
-                "device_limit": s["device_limit"],
-                "active_device_count": s["active_device_count"],
-                "stripe_subscription_id": s["stripe_subscription_id"],
-                "parent_subscription_id": s["parent_subscription_id"],
-                "description": s["description"],
-                "term_start": s["term_start"].isoformat() + "Z" if s["term_start"] else None,
-                "term_end": s["term_end"].isoformat() + "Z" if s["term_end"] else None,
-            }
-            for s in subs
-        ],
-        "tier_allocations": all_allocations,
+        "account_tier": {
+            "tier_id": tier["tier_id"] if tier else None,
+            "name": tier["name"] if tier else None,
+            "monthly_price_cents": tier_monthly,
+        },
+        "device_plans": by_plan,
+        "total_monthly_price_cents": tier_monthly + device_total_cents,
     }
 
 
 @customer_router.get("/subscriptions")
 async def list_customer_subscriptions(pool=Depends(get_db_pool)):
-    """List all subscriptions for the current tenant with add-on relationships."""
+    """List all device subscriptions for the current tenant."""
     tenant_id = get_tenant_id()
 
     async with tenant_connection(pool, tenant_id) as conn:
         subs = await conn.fetch(
             """
-            SELECT subscription_id, subscription_type, parent_subscription_id,
-                   plan_id, status, device_limit, active_device_count,
-                   term_start, term_end, grace_end, description,
-                   stripe_subscription_id
-            FROM subscriptions
+            SELECT subscription_id, tenant_id, device_id, plan_id, status,
+                   term_start, term_end, grace_end,
+                   stripe_subscription_id, created_at
+            FROM device_subscriptions
             WHERE tenant_id = $1
-            ORDER BY subscription_type, created_at DESC
+            ORDER BY created_at DESC
             """,
             tenant_id,
         )
@@ -361,33 +372,19 @@ async def list_customer_subscriptions(pool=Depends(get_db_pool)):
         "subscriptions": [
             {
                 "subscription_id": s["subscription_id"],
-                "subscription_type": s["subscription_type"],
-                "parent_subscription_id": s["parent_subscription_id"],
+                "tenant_id": s["tenant_id"],
+                "device_id": s["device_id"],
                 "plan_id": s["plan_id"],
                 "status": s["status"],
-                "device_limit": s["device_limit"],
-                "active_device_count": s["active_device_count"],
                 "term_start": s["term_start"].isoformat() + "Z" if s["term_start"] else None,
                 "term_end": s["term_end"].isoformat() + "Z" if s["term_end"] else None,
                 "grace_end": s["grace_end"].isoformat() + "Z" if s["grace_end"] else None,
-                "description": s["description"],
-                "is_stripe_managed": bool(s["stripe_subscription_id"]),
+                "stripe_subscription_id": s["stripe_subscription_id"],
+                "created_at": s["created_at"].isoformat() + "Z" if s["created_at"] else None,
             }
             for s in subs
         ],
     }
-
-
-async def _get_plan_device_limit(conn, plan_id: str) -> int:
-    """Look up device_limit from subscription_plans table."""
-    row = await conn.fetchrow(
-        "SELECT device_limit FROM subscription_plans WHERE plan_id = $1 AND is_active = true",
-        plan_id,
-    )
-    if not row:
-        logger.warning("Unknown plan_id '%s', defaulting device_limit to 0", plan_id)
-        return 0
-    return row["device_limit"]
 
 
 def _generate_tenant_id(company_name: str) -> str:
@@ -400,36 +397,18 @@ def _generate_tenant_id(company_name: str) -> str:
     return slug[:50] if slug else f"tenant-{int(datetime.now(timezone.utc).timestamp())}"
 
 
-async def _sync_tier_allocations(conn, subscription_id: str, plan_id: str):
-    """Copy tier allocations from plan_tier_defaults to subscription_tier_allocations."""
-    defaults = await conn.fetch(
-        "SELECT tier_id, slot_limit FROM plan_tier_defaults WHERE plan_id = $1",
-        plan_id,
-    )
-    for default in defaults:
-        await conn.execute(
-            """
-            INSERT INTO subscription_tier_allocations (subscription_id, tier_id, slot_limit)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (subscription_id, tier_id)
-            DO UPDATE SET slot_limit = EXCLUDED.slot_limit, updated_at = NOW()
-            """,
-            subscription_id,
-            default["tier_id"],
-            default["slot_limit"],
-        )
-
-
 async def _handle_checkout_completed(pool, session):
-    """Handle checkout completion — provision tenant if new, create subscription."""
-    metadata = session.get("metadata", {})
+    """Handle checkout completion for account tier and/or device subscription."""
+    metadata = session.get("metadata", {}) or {}
     customer_id = session.get("customer")
     stripe_sub_id = session.get("subscription")
-    customer_details = session.get("customer_details", {})
-    customer_address = customer_details.get("address", {})
+    customer_details = session.get("customer_details", {}) or {}
+    customer_address = customer_details.get("address", {}) or {}
 
     tenant_id = metadata.get("tenant_id")
-    plan_id = metadata.get("plan_id", "starter")
+    tier_id = metadata.get("tier_id")
+    device_id = metadata.get("device_id")
+    plan_id = metadata.get("plan_id") or "basic"
     is_new_tenant = not tenant_id
 
     async with pool.acquire() as conn:
@@ -455,13 +434,14 @@ async def _handle_checkout_completed(pool, session):
                         phone, industry, company_size,
                         address_line1, address_line2, city, state_province,
                         postal_code, country,
-                        stripe_customer_id, billing_email, support_tier
+                        stripe_customer_id, billing_email, support_tier,
+                        account_tier_id
                     ) VALUES (
                         $1, $2, 'ACTIVE', $3, $4, $5,
                         $6, $7, $8,
                         $9, $10, $11, $12,
                         $13, $14,
-                        $15, $16, 'standard'
+                        $15, $16, 'standard', $17
                     )
                     """,
                     tenant_id,
@@ -480,6 +460,7 @@ async def _handle_checkout_completed(pool, session):
                     customer_address.get("country"),
                     customer_id,
                     customer_details.get("email"),
+                    tier_id or "growth",
                 )
 
                 logger.info("Created tenant %s from checkout", tenant_id)
@@ -495,8 +476,39 @@ async def _handle_checkout_completed(pool, session):
                         customer_id, tenant_id,
                     )
 
-            # ── 2. CREATE SUBSCRIPTION ──
-            if stripe_sub_id:
+            # Apply account tier change (tier checkout)
+            if tier_id:
+                await conn.execute(
+                    """
+                    UPDATE tenants SET account_tier_id = $2, updated_at = NOW()
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                    tier_id,
+                )
+
+            # Create or update a device subscription (device checkout)
+            if stripe_sub_id and device_id:
+                plan_exists = await conn.fetchval(
+                    "SELECT 1 FROM device_plans WHERE plan_id = $1 AND is_active = true",
+                    plan_id,
+                )
+                if not plan_exists:
+                    logger.warning("Unknown device plan_id '%s' in Stripe metadata, defaulting to 'basic'", plan_id)
+                    plan_id = "basic"
+
+                # Keep device_registry in sync for fast plan lookups
+                await conn.execute(
+                    """
+                    UPDATE device_registry
+                    SET plan_id = $1, updated_at = NOW()
+                    WHERE tenant_id = $2 AND device_id = $3
+                    """,
+                    plan_id,
+                    tenant_id,
+                    device_id,
+                )
+
                 stripe_sub = retrieve_subscription(stripe_sub_id)
                 price_id = (
                     stripe_sub["items"]["data"][0]["price"]["id"]
@@ -504,10 +516,6 @@ async def _handle_checkout_completed(pool, session):
                     else None
                 )
 
-                device_limit = await _get_plan_device_limit(conn, plan_id)
-                sub_id = await conn.fetchval("SELECT generate_subscription_id()")
-
-                # Determine term dates from Stripe subscription
                 term_start = datetime.fromtimestamp(
                     stripe_sub["current_period_start"], tz=timezone.utc
                 )
@@ -515,28 +523,63 @@ async def _handle_checkout_completed(pool, session):
                     stripe_sub["current_period_end"], tz=timezone.utc
                 )
 
-                # Check for parent_subscription_id (co-termination case)
-                parent_sub_id = metadata.get("parent_subscription_id")
-                sub_type = "ADDON" if parent_sub_id else "MAIN"
+                status_map = {
+                    "active": "ACTIVE",
+                    "past_due": "GRACE",
+                    "canceled": "EXPIRED",
+                    "unpaid": "SUSPENDED",
+                    "trialing": "TRIAL",
+                }
+                platform_status = status_map.get(stripe_sub.get("status"), "ACTIVE")
 
-                await conn.execute(
-                    """
-                    INSERT INTO subscriptions (
-                        subscription_id, tenant_id, subscription_type, parent_subscription_id,
-                        device_limit, status, plan_id, stripe_subscription_id, stripe_price_id,
-                        term_start, term_end, description, created_by
-                    ) VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, $10, $11, 'stripe')
-                    """,
-                    sub_id, tenant_id, sub_type, parent_sub_id,
-                    device_limit, plan_id, stripe_sub_id, price_id,
-                    term_start, term_end,
-                    f"Created via Stripe Checkout ({plan_id})",
+                existing = await conn.fetchrow(
+                    "SELECT subscription_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
+                    stripe_sub_id,
                 )
+                if existing:
+                    await conn.execute(
+                        """
+                        UPDATE device_subscriptions
+                        SET tenant_id = $2,
+                            device_id = $3,
+                            plan_id = $4,
+                            status = $5,
+                            term_start = $6,
+                            term_end = $7,
+                            stripe_price_id = $8,
+                            updated_at = NOW()
+                        WHERE subscription_id = $1
+                        """,
+                        existing["subscription_id"],
+                        tenant_id,
+                        device_id,
+                        plan_id,
+                        platform_status,
+                        term_start,
+                        term_end,
+                        price_id,
+                    )
+                else:
+                    sub_id = await conn.fetchval("SELECT generate_subscription_id()")
+                    await conn.execute(
+                        """
+                        INSERT INTO device_subscriptions (
+                            subscription_id, tenant_id, device_id, plan_id, status,
+                            term_start, term_end, stripe_subscription_id, stripe_price_id
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        """,
+                        sub_id,
+                        tenant_id,
+                        device_id,
+                        plan_id,
+                        platform_status,
+                        term_start,
+                        term_end,
+                        stripe_sub_id,
+                        price_id,
+                    )
 
-                # ── 3. SYNC TIER ALLOCATIONS ──
-                await _sync_tier_allocations(conn, sub_id, plan_id)
-
-            # ── 4. AUDIT LOG ──
+            # ── AUDIT LOG ──
             await conn.execute(
                 """
                 INSERT INTO subscription_audit
@@ -548,6 +591,8 @@ async def _handle_checkout_completed(pool, session):
                 json.dumps({
                     "stripe_customer_id": customer_id,
                     "stripe_subscription_id": stripe_sub_id,
+                    "tier_id": tier_id,
+                    "device_id": device_id,
                     "plan_id": plan_id,
                     "is_new_tenant": is_new_tenant,
                 }),
@@ -590,15 +635,19 @@ async def _handle_checkout_completed(pool, session):
                 # Operator can manually create the user
 
     logger.info(
-        "Checkout completed: tenant=%s new=%s plan=%s",
-        tenant_id, is_new_tenant, plan_id,
+        "Checkout completed: tenant=%s new=%s tier=%s device=%s plan=%s",
+        tenant_id, is_new_tenant, tier_id, device_id, plan_id,
     )
 
 
 async def _handle_subscription_updated(pool, stripe_sub):
     """Handle plan change or status change from Stripe."""
     stripe_sub_id = stripe_sub["id"]
-    plan_id = stripe_sub.get("metadata", {}).get("plan_id")
+    metadata = stripe_sub.get("metadata", {}) or {}
+    tenant_id = metadata.get("tenant_id")
+    device_id = metadata.get("device_id")
+    plan_id = metadata.get("plan_id")
+    tier_id = metadata.get("tier_id")
     status = stripe_sub.get("status")
 
     status_map = {
@@ -611,35 +660,52 @@ async def _handle_subscription_updated(pool, stripe_sub):
     platform_status = status_map.get(status, "ACTIVE")
 
     async with pool.acquire() as conn:
-        existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id, plan_id FROM subscriptions WHERE stripe_subscription_id = $1",
-            stripe_sub_id,
-        )
-        if not existing:
-            logger.warning("No subscription for Stripe sub %s", stripe_sub_id)
-            return
-
         async with conn.transaction():
-            updates = ["status = $2", "updated_at = NOW()"]
-            params = [existing["subscription_id"], platform_status]
-            idx = 3
+            if tier_id and tenant_id:
+                await conn.execute(
+                    """
+                    UPDATE tenants SET account_tier_id = $2, updated_at = NOW()
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                    tier_id,
+                )
 
-            if plan_id and plan_id != existing["plan_id"]:
-                device_limit = await _get_plan_device_limit(conn, plan_id)
-                updates.append(f"plan_id = ${idx}")
-                params.append(plan_id)
-                idx += 1
-                updates.append(f"device_limit = ${idx}")
-                params.append(device_limit)
-                idx += 1
+            existing = await conn.fetchrow(
+                "SELECT subscription_id, tenant_id, plan_id, device_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
+                stripe_sub_id,
+            )
+            if not existing:
+                logger.warning("No device_subscription for Stripe sub %s", stripe_sub_id)
+                return
 
+            new_plan_id = plan_id or existing["plan_id"]
             await conn.execute(
-                f"UPDATE subscriptions SET {', '.join(updates)} WHERE subscription_id = $1",
-                *params,
+                """
+                UPDATE device_subscriptions
+                SET status = $2,
+                    plan_id = $3,
+                    updated_at = NOW()
+                WHERE subscription_id = $1
+                """,
+                existing["subscription_id"],
+                platform_status,
+                new_plan_id,
             )
 
-            if plan_id and plan_id != existing["plan_id"]:
-                await _sync_tier_allocations(conn, existing["subscription_id"], plan_id)
+            # Keep device_registry in sync if we have a device_id
+            effective_device_id = device_id or existing["device_id"]
+            if effective_device_id and new_plan_id:
+                await conn.execute(
+                    """
+                    UPDATE device_registry
+                    SET plan_id = $1, updated_at = NOW()
+                    WHERE tenant_id = $2 AND device_id = $3
+                    """,
+                    new_plan_id,
+                    existing["tenant_id"],
+                    effective_device_id,
+                )
 
             await conn.execute(
                 """
@@ -648,7 +714,15 @@ async def _handle_subscription_updated(pool, stripe_sub):
                 VALUES ($1, 'STRIPE_SUBSCRIPTION_UPDATED', 'system', 'stripe', $2)
                 """,
                 existing["tenant_id"],
-                json.dumps({"stripe_sub_id": stripe_sub_id, "status": status, "plan_id": plan_id}),
+                json.dumps(
+                    {
+                        "stripe_sub_id": stripe_sub_id,
+                        "status": status,
+                        "tier_id": tier_id,
+                        "device_id": effective_device_id,
+                        "plan_id": new_plan_id,
+                    }
+                ),
             )
 
 
@@ -658,7 +732,7 @@ async def _handle_subscription_deleted(pool, stripe_sub):
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id FROM subscriptions WHERE stripe_subscription_id = $1",
+            "SELECT subscription_id, tenant_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
             stripe_sub_id,
         )
         if not existing:
@@ -666,7 +740,11 @@ async def _handle_subscription_deleted(pool, stripe_sub):
 
         async with conn.transaction():
             await conn.execute(
-                "UPDATE subscriptions SET status = 'EXPIRED', updated_at = NOW() WHERE subscription_id = $1",
+                """
+                UPDATE device_subscriptions
+                SET status = 'EXPIRED', cancelled_at = NOW(), updated_at = NOW()
+                WHERE subscription_id = $1
+                """,
                 existing["subscription_id"],
             )
             await conn.execute(
@@ -688,7 +766,7 @@ async def _handle_payment_failed(pool, invoice):
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id FROM subscriptions WHERE stripe_subscription_id = $1",
+            "SELECT subscription_id, tenant_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
             stripe_sub_id,
         )
         if not existing:
@@ -697,7 +775,7 @@ async def _handle_payment_failed(pool, invoice):
         async with conn.transaction():
             await conn.execute(
                 """
-                UPDATE subscriptions SET status = 'GRACE',
+                UPDATE device_subscriptions SET status = 'GRACE',
                     grace_end = NOW() + interval '14 days', updated_at = NOW()
                 WHERE subscription_id = $1 AND status = 'ACTIVE'
                 """,
@@ -722,7 +800,7 @@ async def _handle_invoice_paid(pool, invoice):
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id FROM subscriptions WHERE stripe_subscription_id = $1",
+            "SELECT subscription_id, tenant_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
             stripe_sub_id,
         )
         if not existing:
@@ -737,7 +815,7 @@ async def _handle_invoice_paid(pool, invoice):
         async with conn.transaction():
             await conn.execute(
                 """
-                UPDATE subscriptions SET status = 'ACTIVE', term_end = $2, updated_at = NOW()
+                UPDATE device_subscriptions SET status = 'ACTIVE', term_end = $2, updated_at = NOW()
                 WHERE subscription_id = $1
                 """,
                 existing["subscription_id"],

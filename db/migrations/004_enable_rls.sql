@@ -53,8 +53,14 @@ ALTER TABLE integration_routes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integration_routes FORCE ROW LEVEL SECURITY;
  
 -- raw_events
-ALTER TABLE raw_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE raw_events FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF to_regclass('public.raw_events') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE raw_events ENABLE ROW LEVEL SECURITY';
+        EXECUTE 'ALTER TABLE raw_events FORCE ROW LEVEL SECURITY';
+    END IF;
+END
+$$;
  
 -- rate_limits
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
@@ -95,10 +101,18 @@ CREATE POLICY tenant_isolation_policy ON integration_routes
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
  
 -- raw_events
-CREATE POLICY tenant_isolation_policy ON raw_events
-    FOR ALL TO pulse_app
-    USING (tenant_id = current_setting('app.tenant_id', true))
-    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+DO $$
+BEGIN
+    IF to_regclass('public.raw_events') IS NOT NULL THEN
+        EXECUTE $sql$
+        CREATE POLICY tenant_isolation_policy ON raw_events
+            FOR ALL TO pulse_app
+            USING (tenant_id = current_setting('app.tenant_id', true))
+            WITH CHECK (tenant_id = current_setting('app.tenant_id', true))
+        $sql$;
+    END IF;
+END
+$$;
  
 -- rate_limits
 CREATE POLICY tenant_isolation_policy ON rate_limits
@@ -115,5 +129,13 @@ COMMENT ON POLICY tenant_isolation_policy ON fleet_alert IS 'Restrict access to 
 COMMENT ON POLICY tenant_isolation_policy ON delivery_attempts IS 'Restrict access to rows matching app.tenant_id session variable';
 COMMENT ON POLICY tenant_isolation_policy ON integrations IS 'Restrict access to rows matching app.tenant_id session variable';
 COMMENT ON POLICY tenant_isolation_policy ON integration_routes IS 'Restrict access to rows matching app.tenant_id session variable';
-COMMENT ON POLICY tenant_isolation_policy ON raw_events IS 'Restrict access to rows matching app.tenant_id session variable';
+DO $$
+BEGIN
+    IF to_regclass('public.raw_events') IS NOT NULL THEN
+        EXECUTE $sql$
+        COMMENT ON POLICY tenant_isolation_policy ON raw_events IS 'Restrict access to rows matching app.tenant_id session variable'
+        $sql$;
+    END IF;
+END
+$$;
 COMMENT ON POLICY tenant_isolation_policy ON rate_limits IS 'Restrict access to rows matching app.tenant_id session variable';

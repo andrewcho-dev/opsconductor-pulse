@@ -4,7 +4,6 @@ from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
 from middleware.permissions import require_permission
-from middleware.entitlements import check_device_limit
 from typing import Any, Optional
 from fastapi import Query, Response as FastAPIResponse
 
@@ -75,6 +74,12 @@ class TierAssignment(BaseModel):
     tier_id: int
 
 
+class DeviceCreateV2(BaseModel):
+    device_id: str
+    site_id: str | None = None
+    plan_id: str | None = None
+
+
 async def _publish_shadow_desired(
     tenant_id: str, device_id: str, desired: dict[str, Any], desired_version: int
 ) -> None:
@@ -136,52 +141,60 @@ def _jsonb_to_dict(value: Any) -> dict[str, Any]:
     dependencies=[require_permission("devices.create")],
 )
 @limiter.limit("30/minute")
-async def create_device(request: Request, device: DeviceCreate, pool=Depends(get_db_pool)):
+async def create_device(request: Request, device: DeviceCreateV2, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     user = get_user()
 
     p = pool
     async with tenant_connection(p, tenant_id) as conn:
-        check = await check_device_limit(conn, tenant_id)
-        if not check["allowed"]:
-            raise HTTPException(check["status_code"], check["message"])
+        plan_id = getattr(device, "plan_id", None) or "basic"
+        plan_exists = await conn.fetchval(
+            "SELECT 1 FROM device_plans WHERE plan_id = $1 AND is_active = true",
+            plan_id,
+        )
+        if not plan_exists:
+            raise HTTPException(400, "Invalid plan_id")
 
-        subscription_id = device.subscription_id
-        if not subscription_id:
-            sub = await conn.fetchrow(
-                """
-                SELECT subscription_id
-                FROM subscriptions
-                WHERE tenant_id = $1
-                  AND subscription_type = 'MAIN'
-                  AND status = 'ACTIVE'
-                  AND active_device_count < device_limit
-                ORDER BY created_at
-                LIMIT 1
-                """,
-                tenant_id,
-            )
-            if not sub:
-                raise HTTPException(403, "No MAIN subscription with available capacity")
-            subscription_id = sub["subscription_id"]
-
+        # 1) Create device record with plan_id
         try:
-            await create_device_on_subscription(
-                conn,
+            await conn.execute(
+                """
+                INSERT INTO device_registry (tenant_id, device_id, site_id, plan_id, status)
+                VALUES ($1, $2, $3, $4, 'ACTIVE')
+                """,
                 tenant_id,
                 device.device_id,
                 device.site_id,
-                subscription_id,
-                actor_id=user.get("sub") if user else None,
+                plan_id,
             )
-        except ValueError as exc:
-            message = str(exc)
-            status_code = 403 if "limit" in message.lower() else 400
-            raise HTTPException(status_code, message)
+        except Exception as exc:
+            # Keep error handling simple for now; most common is duplicate device_id.
+            if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
+                raise HTTPException(409, "Device already exists")
+            raise
+
+        # 2) Create an initial device subscription (trial, 14 days)
+        subscription_id = await conn.fetchval("SELECT generate_subscription_id()")
+        term_start = datetime.now(timezone.utc)
+        term_end = term_start + timedelta(days=14)
+        await conn.execute(
+            """
+            INSERT INTO device_subscriptions (
+                subscription_id, tenant_id, device_id, plan_id, status, term_start, term_end
+            ) VALUES ($1, $2, $3, $4, 'TRIAL', $5, $6)
+            """,
+            subscription_id,
+            tenant_id,
+            device.device_id,
+            plan_id,
+            term_start,
+            term_end,
+        )
 
     return {
         "device_id": device.device_id,
         "subscription_id": subscription_id,
+        "plan_id": plan_id,
         "status": "created",
     }
 
@@ -368,42 +381,37 @@ async def import_devices_csv(request: Request, file: UploadFile = File(...), poo
                 )
                 continue
 
-            subscription_id = await conn.fetchval(
-                """
-                SELECT subscription_id
-                FROM subscriptions
-                WHERE tenant_id = $1
-                  AND subscription_type = 'MAIN'
-                  AND status = 'ACTIVE'
-                  AND active_device_count < device_limit
-                ORDER BY created_at
-                LIMIT 1
-                """,
-                tenant_id,
-            )
-            if not subscription_id:
-                failed += 1
-                results.append(
-                    {
-                        "row": idx,
-                        "name": name,
-                        "status": "error",
-                        "message": "No active subscription capacity",
-                    }
-                )
-                continue
-
             base_id = re.sub(r"[^A-Za-z0-9-]+", "-", name).strip("-").upper() or "DEVICE"
             device_id = f"{base_id}-{uuid.uuid4().hex[:6]}"
             try:
                 async with conn.transaction():
-                    await create_device_on_subscription(
-                        conn,
+                    plan_id = "basic"
+                    await conn.execute(
+                        """
+                        INSERT INTO device_registry (tenant_id, device_id, site_id, plan_id, status)
+                        VALUES ($1, $2, $3, $4, 'ACTIVE')
+                        """,
                         tenant_id,
                         device_id,
                         site_id,
+                        plan_id,
+                    )
+
+                    subscription_id = await conn.fetchval("SELECT generate_subscription_id()")
+                    term_start = datetime.now(timezone.utc)
+                    term_end = term_start + timedelta(days=14)
+                    await conn.execute(
+                        """
+                        INSERT INTO device_subscriptions (
+                            subscription_id, tenant_id, device_id, plan_id, status, term_start, term_end
+                        ) VALUES ($1, $2, $3, $4, 'TRIAL', $5, $6)
+                        """,
                         subscription_id,
-                        actor_id=user.get("sub") if user else None,
+                        tenant_id,
+                        device_id,
+                        plan_id,
+                        term_start,
+                        term_end,
                     )
 
                     if tags:
@@ -638,11 +646,18 @@ async def list_devices(
                     """
                     SELECT
                         d.device_id,
-                        d.subscription_id,
-                        s.subscription_type,
-                        s.status as subscription_status
+                        ds.subscription_id,
+                        ds.status as subscription_status
                     FROM device_registry d
-                    LEFT JOIN subscriptions s ON d.subscription_id = s.subscription_id
+                    LEFT JOIN LATERAL (
+                        SELECT subscription_id, status
+                        FROM device_subscriptions
+                        WHERE tenant_id = d.tenant_id
+                          AND device_id = d.device_id
+                          AND status NOT IN ('EXPIRED', 'CANCELLED')
+                        ORDER BY term_start DESC
+                        LIMIT 1
+                    ) ds ON true
                     WHERE d.tenant_id = $1 AND d.device_id = ANY($2::text[])
                     """,
                     tenant_id,
@@ -653,7 +668,7 @@ async def list_devices(
                     subscription = subscription_map.get(device["device_id"])
                     if subscription:
                         device["subscription_id"] = subscription["subscription_id"]
-                        device["subscription_type"] = subscription["subscription_type"]
+                        device["subscription_type"] = None
                         device["subscription_status"] = subscription["subscription_status"]
     except Exception:
         logger.exception("Failed to fetch tenant devices")
@@ -673,24 +688,7 @@ async def list_devices(
 @router.get("/device-tiers")
 async def list_customer_device_tiers(pool=Depends(get_db_pool)):
     """List active device tiers available to customers."""
-    tenant_id = get_tenant_id()
-
-    async with tenant_connection(pool, tenant_id) as conn:
-        rows = await conn.fetch(
-            "SELECT tier_id, name, display_name, description, features FROM device_tiers WHERE is_active = true ORDER BY sort_order"
-        )
-
-    return {
-        "tiers": [
-            {
-                **dict(r),
-                "features": json.loads(r["features"])
-                if isinstance(r["features"], str)
-                else (r["features"] or {}),
-            }
-            for r in rows
-        ]
-    }
+    raise HTTPException(410, "Device tiers were removed in Phase 156. Use device plans instead.")
 
 
 @router.put("/devices/{device_id}/tier")
@@ -700,97 +698,7 @@ async def assign_device_tier(
     pool=Depends(get_db_pool),
 ):
     """Assign a device to a tier, checking subscription slot availability."""
-    tenant_id = get_tenant_id()
-
-    async with tenant_connection(pool, tenant_id) as conn:
-        async with conn.transaction():
-            # 1. Verify device exists and belongs to tenant
-            device = await conn.fetchrow(
-                "SELECT device_id, subscription_id, tier_id FROM device_registry WHERE device_id = $1 AND tenant_id = $2",
-                device_id,
-                tenant_id,
-            )
-            if not device:
-                raise HTTPException(404, "Device not found")
-
-            # 2. Verify tier exists and is active
-            tier = await conn.fetchrow(
-                "SELECT tier_id, name, display_name FROM device_tiers WHERE tier_id = $1 AND is_active = true",
-                data.tier_id,
-            )
-            if not tier:
-                raise HTTPException(404, "Device tier not found or inactive")
-
-            # 3. Device must have a subscription
-            subscription_id = device["subscription_id"]
-            if not subscription_id:
-                raise HTTPException(
-                    400,
-                    "Device has no subscription assigned. Assign a subscription first.",
-                )
-
-            # 4. Check slot availability
-            alloc = await conn.fetchrow(
-                """
-                SELECT slot_limit, slots_used FROM subscription_tier_allocations
-                WHERE subscription_id = $1 AND tier_id = $2
-                """,
-                subscription_id,
-                data.tier_id,
-            )
-            if not alloc:
-                raise HTTPException(
-                    402,
-                    f"Your plan does not include {tier['display_name']} tier slots. Upgrade your plan.",
-                )
-
-            old_tier_id = device["tier_id"]
-            if old_tier_id == data.tier_id:
-                return {"status": "ok", "device_id": device_id, "tier_id": data.tier_id}
-
-            if alloc["slots_used"] >= alloc["slot_limit"]:
-                raise HTTPException(
-                    402,
-                    f"No available {tier['display_name']} slots. Used: {alloc['slots_used']}/{alloc['slot_limit']}. Upgrade your plan or reassign another device.",
-                )
-
-            # 5. Decrement old tier slots_used if device had a tier
-            if old_tier_id is not None:
-                await conn.execute(
-                    """
-                    UPDATE subscription_tier_allocations
-                    SET slots_used = GREATEST(slots_used - 1, 0), updated_at = NOW()
-                    WHERE subscription_id = $1 AND tier_id = $2
-                    """,
-                    subscription_id,
-                    old_tier_id,
-                )
-
-            # 6. Update device tier
-            await conn.execute(
-                "UPDATE device_registry SET tier_id = $1 WHERE device_id = $2 AND tenant_id = $3",
-                data.tier_id,
-                device_id,
-                tenant_id,
-            )
-
-            # 7. Increment new tier slots_used
-            await conn.execute(
-                """
-                UPDATE subscription_tier_allocations
-                SET slots_used = slots_used + 1, updated_at = NOW()
-                WHERE subscription_id = $1 AND tier_id = $2
-                """,
-                subscription_id,
-                data.tier_id,
-            )
-
-    return {
-        "status": "ok",
-        "device_id": device_id,
-        "tier_id": data.tier_id,
-        "tier_name": tier["display_name"],
-    }
+    raise HTTPException(410, "Device tiers were removed in Phase 156. Use device plans instead.")
 
 
 @router.delete("/devices/{device_id}/tier")
@@ -799,40 +707,76 @@ async def remove_device_tier(
     pool=Depends(get_db_pool),
 ):
     """Remove tier assignment from a device (goes back to untiered)."""
-    tenant_id = get_tenant_id()
+    raise HTTPException(410, "Device tiers were removed in Phase 156. Use device plans instead.")
 
+
+class DevicePlanChange(BaseModel):
+    plan_id: str
+
+
+@router.put(
+    "/devices/{device_id}/plan",
+    dependencies=[require_permission("devices.update")],
+)
+async def change_device_plan(
+    device_id: str,
+    data: DevicePlanChange,
+    pool=Depends(get_db_pool),
+):
+    """Change a device's plan (updates device_registry + active device subscription)."""
+    tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
+        plan_exists = await conn.fetchval(
+            "SELECT 1 FROM device_plans WHERE plan_id = $1 AND is_active = true",
+            data.plan_id,
+        )
+        if not plan_exists:
+            raise HTTPException(404, "Device plan not found")
+
         async with conn.transaction():
-            device = await conn.fetchrow(
-                "SELECT device_id, subscription_id, tier_id FROM device_registry WHERE device_id = $1 AND tenant_id = $2",
-                device_id,
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
                 tenant_id,
+                device_id,
             )
-            if not device:
+            if not exists:
                 raise HTTPException(404, "Device not found")
 
-            old_tier_id = device["tier_id"]
-            if old_tier_id is None:
-                return {"status": "ok", "device_id": device_id, "tier_id": None}
-
-            if device["subscription_id"]:
-                await conn.execute(
-                    """
-                    UPDATE subscription_tier_allocations
-                    SET slots_used = GREATEST(slots_used - 1, 0), updated_at = NOW()
-                    WHERE subscription_id = $1 AND tier_id = $2
-                    """,
-                    device["subscription_id"],
-                    old_tier_id,
-                )
-
             await conn.execute(
-                "UPDATE device_registry SET tier_id = NULL WHERE device_id = $1 AND tenant_id = $2",
-                device_id,
+                """
+                UPDATE device_registry
+                SET plan_id = $1, updated_at = NOW()
+                WHERE tenant_id = $2 AND device_id = $3
+                """,
+                data.plan_id,
                 tenant_id,
+                device_id,
             )
 
-    return {"status": "ok", "device_id": device_id, "tier_id": None}
+            dsub = await conn.fetchrow(
+                """
+                SELECT subscription_id
+                FROM device_subscriptions
+                WHERE tenant_id = $1 AND device_id = $2
+                  AND status NOT IN ('EXPIRED', 'CANCELLED')
+                ORDER BY term_start DESC
+                LIMIT 1
+                """,
+                tenant_id,
+                device_id,
+            )
+            if dsub:
+                await conn.execute(
+                    """
+                    UPDATE device_subscriptions
+                    SET plan_id = $1, updated_at = NOW()
+                    WHERE subscription_id = $2
+                    """,
+                    data.plan_id,
+                    dsub["subscription_id"],
+                )
+
+    return {"device_id": device_id, "plan_id": data.plan_id, "status": "ok"}
 
 
 @router.get("/devices/summary")
@@ -842,10 +786,34 @@ async def get_fleet_summary(pool=Depends(get_db_pool)):
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             summary = await fetch_fleet_summary(conn, tenant_id)
+            result = dict(summary)
+
+            # Phase 152: sensor stats (graceful if sensors table not present yet)
+            try:
+                sensor_stats = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*) AS total_sensors,
+                        COUNT(*) FILTER (WHERE status = 'active') AS active_sensors,
+                        COUNT(DISTINCT sensor_type) AS sensor_types,
+                        COUNT(DISTINCT device_id) AS devices_with_sensors
+                    FROM sensors
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                )
+                if sensor_stats:
+                    result["total_sensors"] = int(sensor_stats["total_sensors"] or 0)
+                    result["active_sensors"] = int(sensor_stats["active_sensors"] or 0)
+                    result["sensor_types"] = int(sensor_stats["sensor_types"] or 0)
+                    result["devices_with_sensors"] = int(sensor_stats["devices_with_sensors"] or 0)
+            except Exception:
+                # Do not fail the fleet summary if sensors table isn't available yet.
+                pass
     except Exception:
         logger.exception("Failed to fetch fleet summary")
         raise HTTPException(status_code=500, detail="Internal server error")
-    return summary
+    return result
 
 
 @router.delete(
@@ -884,11 +852,25 @@ async def delete_device(request: Request, device_id: str, pool=Depends(get_db_po
             )
 
             subscription_id = device["subscription_id"]
-            if subscription_id:
+            # Phase 156: cancel the active device subscription (if any).
+            dsub = await conn.fetchrow(
+                """
+                SELECT subscription_id
+                FROM device_subscriptions
+                WHERE tenant_id = $1 AND device_id = $2
+                  AND status NOT IN ('EXPIRED', 'CANCELLED')
+                ORDER BY term_start DESC
+                LIMIT 1
+                """,
+                tenant_id,
+                device_id,
+            )
+            if dsub:
+                subscription_id = dsub["subscription_id"]
                 await conn.execute(
                     """
-                    UPDATE subscriptions
-                    SET active_device_count = GREATEST(0, active_device_count - 1), updated_at = now()
+                    UPDATE device_subscriptions
+                    SET status = 'CANCELLED', cancelled_at = NOW(), updated_at = NOW()
                     WHERE subscription_id = $1
                     """,
                     subscription_id,
@@ -920,23 +902,112 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            tier_row = await conn.fetchrow(
+            plan_row = await conn.fetchrow(
                 """
-                SELECT dr.tier_id, dt.name as tier_name, dt.display_name as tier_display_name
+                SELECT dr.plan_id, dp.name AS plan_name
                 FROM device_registry dr
-                LEFT JOIN device_tiers dt ON dt.tier_id = dr.tier_id
+                LEFT JOIN device_plans dp ON dp.plan_id = dr.plan_id
                 WHERE dr.device_id = $1 AND dr.tenant_id = $2
                 """,
                 device_id,
                 tenant_id,
             )
-            if tier_row:
-                device["tier_id"] = tier_row["tier_id"]
-                device["tier_name"] = tier_row["tier_name"]
-                device["tier_display_name"] = tier_row["tier_display_name"]
+            if plan_row:
+                device["plan_id"] = plan_row["plan_id"]
+                device["plan_name"] = plan_row["plan_name"]
+
+            dsub_row = await conn.fetchrow(
+                """
+                SELECT subscription_id, status, term_start, term_end, grace_end, plan_id
+                FROM device_subscriptions
+                WHERE tenant_id = $1 AND device_id = $2
+                  AND status NOT IN ('EXPIRED', 'CANCELLED')
+                ORDER BY term_start DESC
+                LIMIT 1
+                """,
+                tenant_id,
+                device_id,
+            )
+            if dsub_row:
+                device["device_subscription_id"] = dsub_row["subscription_id"]
+                device["device_subscription_status"] = dsub_row["status"]
+                device["device_subscription_term_start"] = (
+                    dsub_row["term_start"].isoformat() + "Z" if dsub_row["term_start"] else None
+                )
+                device["device_subscription_term_end"] = (
+                    dsub_row["term_end"].isoformat() + "Z" if dsub_row["term_end"] else None
+                )
+                device["device_subscription_grace_end"] = (
+                    dsub_row["grace_end"].isoformat() + "Z" if dsub_row["grace_end"] else None
+                )
 
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
+
+            # Phase 150: attach sensors, connection, and latest health telemetry.
+            # These are optional in case migrations haven't been applied yet.
+            try:
+                sensor_rows = await conn.fetch(
+                    """
+                    SELECT sensor_id, metric_name, sensor_type, label, unit,
+                           min_range, max_range, precision_digits, status,
+                           auto_discovered, last_value, last_seen_at, created_at
+                    FROM sensors
+                    WHERE tenant_id = $1 AND device_id = $2
+                    ORDER BY metric_name
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                sensor_rows = []
+
+            try:
+                conn_row = await conn.fetchrow(
+                    """
+                    SELECT connection_type, carrier_name, plan_name, sim_iccid, sim_status,
+                           data_limit_mb, data_used_mb, data_used_updated_at,
+                           network_status, ip_address::text AS ip_address, last_network_attach
+                    FROM device_connections
+                    WHERE tenant_id = $1 AND device_id = $2
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                conn_row = None
+
+            try:
+                health_row = await conn.fetchrow(
+                    """
+                    SELECT time, rssi, signal_quality, network_type, battery_pct, battery_voltage,
+                           power_source, cpu_temp_c, memory_used_pct, uptime_seconds, reboot_count,
+                           gps_lat, gps_lon, gps_fix
+                    FROM device_health_telemetry
+                    WHERE tenant_id = $1 AND device_id = $2
+                    ORDER BY time DESC LIMIT 1
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+            except Exception:
+                health_row = None
+
+            try:
+                limit_row = await conn.fetchrow(
+                    "SELECT sensor_limit FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                    tenant_id,
+                    device_id,
+                )
+                sensor_limit = (limit_row["sensor_limit"] if limit_row else None) or 20
+            except Exception:
+                sensor_limit = 20
+
+            device["sensors"] = [dict(r) for r in sensor_rows]
+            device["sensor_count"] = len(sensor_rows)
+            device["sensor_limit"] = sensor_limit
+            device["connection"] = dict(conn_row) if conn_row else None
+            device["health"] = dict(health_row) if health_row else None
     except HTTPException:
         raise
     except Exception:

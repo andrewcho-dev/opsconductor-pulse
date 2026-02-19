@@ -324,6 +324,12 @@ class AlertRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] = "threshold"
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    sensor_id: int | None = Field(
+        default=None, description="If set, target a specific sensor (tenant-scoped)"
+    )
+    sensor_type: str | None = Field(
+        default=None, description="If set, target all sensors of this type"
+    )
     operator: str | None = None
     threshold: float | None = None
     severity: int = Field(default=3, ge=1, le=5)
@@ -365,6 +371,8 @@ class AlertRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     rule_type: Literal["threshold", "anomaly", "telemetry_gap", "window"] | None = None
     metric_name: str | None = Field(default=None, min_length=1, max_length=100)
+    sensor_id: int | None = None
+    sensor_type: str | None = None
     operator: str | None = None
     threshold: float | None = None
     severity: int | None = Field(default=None, ge=1, le=5)
@@ -722,97 +730,63 @@ async def list_subscriptions(
     include_expired: bool = Query(False),
     pool=Depends(get_db_pool),
 ):
-    """List all subscriptions for the tenant."""
+    """List all device subscriptions for the tenant."""
     tenant_id = get_tenant_id()
 
-    p = pool
-    async with tenant_connection(p, tenant_id) as conn:
-        if include_expired:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    subscription_id, subscription_type, parent_subscription_id,
-                    device_limit, active_device_count, term_start, term_end,
-                    status, plan_id, description, created_at
-                FROM subscriptions
-                WHERE tenant_id = $1
-                ORDER BY
-                    CASE subscription_type
-                        WHEN 'MAIN' THEN 1
-                        WHEN 'ADDON' THEN 2
-                        WHEN 'TRIAL' THEN 3
-                        WHEN 'TEMPORARY' THEN 4
-                    END,
-                    term_end DESC
-                """,
-                tenant_id,
-            )
-        else:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    subscription_id, subscription_type, parent_subscription_id,
-                    device_limit, active_device_count, term_start, term_end,
-                    status, plan_id, description, created_at
-                FROM subscriptions
-                WHERE tenant_id = $1 AND status != 'EXPIRED'
-                ORDER BY
-                    CASE subscription_type
-                        WHEN 'MAIN' THEN 1
-                        WHEN 'ADDON' THEN 2
-                        WHEN 'TRIAL' THEN 3
-                        WHEN 'TEMPORARY' THEN 4
-                    END,
-                    term_end DESC
-                """,
-                tenant_id,
-            )
-
-        total_limit = sum(
-            r["device_limit"] for r in rows if r["status"] not in ("SUSPENDED", "EXPIRED")
-        )
-        total_active = sum(
-            r["active_device_count"]
-            for r in rows
-            if r["status"] not in ("SUSPENDED", "EXPIRED")
+    async with tenant_connection(pool, tenant_id) as conn:
+        status_filter = "" if include_expired else "AND ds.status NOT IN ('EXPIRED', 'CANCELLED')"
+        rows = await conn.fetch(
+            f"""
+            SELECT ds.subscription_id, ds.device_id, ds.plan_id, ds.status,
+                   ds.term_start, ds.term_end, ds.grace_end,
+                   ds.stripe_subscription_id, ds.created_at,
+                   dp.name AS plan_name, dp.monthly_price_cents
+            FROM device_subscriptions ds
+            LEFT JOIN device_plans dp ON dp.plan_id = ds.plan_id
+            WHERE ds.tenant_id = $1 {status_filter}
+            ORDER BY ds.device_id
+            """,
+            tenant_id,
         )
 
-        return {
-            "subscriptions": [
-                {
-                    "subscription_id": r["subscription_id"],
-                    "subscription_type": r["subscription_type"],
-                    "parent_subscription_id": r["parent_subscription_id"],
-                    "device_limit": r["device_limit"],
-                    "active_device_count": r["active_device_count"],
-                    "devices_available": r["device_limit"] - r["active_device_count"],
-                    "term_start": r["term_start"].isoformat() if r["term_start"] else None,
-                    "term_end": r["term_end"].isoformat() if r["term_end"] else None,
-                    "status": r["status"],
-                    "plan_id": r["plan_id"],
-                    "description": r["description"],
-                }
-                for r in rows
-            ],
-            "summary": {
-                "total_device_limit": total_limit,
-                "total_active_devices": total_active,
-                "total_available": total_limit - total_active,
-            },
+    subscriptions = [
+        {
+            "subscription_id": r["subscription_id"],
+            "device_id": r["device_id"],
+            "plan_id": r["plan_id"],
+            "plan_name": r["plan_name"],
+            "status": r["status"],
+            "term_start": r["term_start"].isoformat() if r["term_start"] else None,
+            "term_end": r["term_end"].isoformat() if r["term_end"] else None,
+            "monthly_price_cents": r["monthly_price_cents"],
         }
+        for r in rows
+    ]
+
+    active_count = sum(1 for s in subscriptions if s["status"] in ("ACTIVE", "TRIAL"))
+
+    return {
+        "subscriptions": subscriptions,
+        "summary": {
+            "total_subscriptions": len(subscriptions),
+            "active_subscriptions": active_count,
+        },
+    }
 
 
 @router.get("/subscriptions/{subscription_id}")
 async def get_subscription_detail(subscription_id: str, pool=Depends(get_db_pool)):
-    """Get details of a specific subscription."""
+    """Get details of a specific device subscription."""
     tenant_id = get_tenant_id()
 
-    p = pool
-    async with tenant_connection(p, tenant_id) as conn:
+    async with tenant_connection(pool, tenant_id) as conn:
         row = await conn.fetchrow(
             """
-            SELECT * FROM subscriptions
-            WHERE subscription_id = $1 AND tenant_id = $2
+            SELECT ds.*, dp.name AS plan_name, dp.monthly_price_cents,
+                   dp.limits AS plan_limits, dp.features AS plan_features
+            FROM device_subscriptions ds
+            LEFT JOIN device_plans dp ON dp.plan_id = ds.plan_id
+            WHERE ds.subscription_id = $1 AND ds.tenant_id = $2
             """,
             subscription_id,
             tenant_id,
@@ -821,23 +795,6 @@ async def get_subscription_detail(subscription_id: str, pool=Depends(get_db_pool
         if not row:
             raise HTTPException(404, "Subscription not found")
 
-        devices = await conn.fetch(
-            """
-            SELECT d.device_id, d.site_id, d.status, ds.last_seen_at
-            FROM device_registry d
-            LEFT JOIN device_state ds ON d.tenant_id = ds.tenant_id AND d.device_id = ds.device_id
-            WHERE d.subscription_id = $1
-            ORDER BY d.device_id
-            LIMIT 100
-            """,
-            subscription_id,
-        )
-
-        device_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM device_registry WHERE subscription_id = $1",
-            subscription_id,
-        )
-
         days_until_expiry = None
         if row["term_end"]:
             delta = row["term_end"] - datetime.now(timezone.utc)
@@ -845,29 +802,16 @@ async def get_subscription_detail(subscription_id: str, pool=Depends(get_db_pool
 
         return {
             "subscription_id": row["subscription_id"],
-            "subscription_type": row["subscription_type"],
-            "parent_subscription_id": row["parent_subscription_id"],
-            "device_limit": row["device_limit"],
-            "active_device_count": row["active_device_count"],
-            "devices_available": row["device_limit"] - row["active_device_count"],
+            "device_id": row["device_id"],
+            "plan_id": row["plan_id"],
+            "plan_name": row["plan_name"],
+            "status": row["status"],
             "term_start": row["term_start"].isoformat() if row["term_start"] else None,
             "term_end": row["term_end"].isoformat() if row["term_end"] else None,
             "days_until_expiry": days_until_expiry,
-            "status": row["status"],
-            "plan_id": row["plan_id"],
-            "description": row["description"],
-            "devices": [
-                {
-                    "device_id": d["device_id"],
-                    "site_id": d["site_id"],
-                    "status": d["status"],
-                    "last_seen_at": d["last_seen_at"].isoformat()
-                    if d["last_seen_at"]
-                    else None,
-                }
-                for d in devices
-            ],
-            "total_devices": device_count,
+            "monthly_price_cents": row["monthly_price_cents"],
+            "plan_limits": row["plan_limits"],
+            "plan_features": row["plan_features"],
         }
 
 

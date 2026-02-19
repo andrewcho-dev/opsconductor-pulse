@@ -29,6 +29,8 @@ from routes.metrics import router as metrics_router
 from routes.exports import router as exports_router
 from routes.operator import router as operator_router
 from routes.dashboards import router as dashboards_router
+from routes.sensors import router as sensors_router
+from routes.carrier import router as carrier_router
 from routes.analytics import router as analytics_router
 from routes.system import (
     router as system_router,
@@ -60,6 +62,7 @@ from routes.billing import (
 from routes.organization import router as organization_router
 from routes.certificates import router as certificates_router, operator_router as operator_certificates_router
 from middleware.auth import validate_token
+from services.carrier_sync import carrier_sync_loop
 from shared.ingest_core import DeviceAuthCache, TimescaleBatchWriter
 from shared.audit import init_audit_logger
 from shared.http_client import traced_client
@@ -354,6 +357,8 @@ app.include_router(metrics_router)
 app.include_router(exports_router)
 app.include_router(customer_router)
 app.include_router(dashboards_router)
+app.include_router(sensors_router)
+app.include_router(carrier_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(analytics_router)
@@ -592,6 +597,12 @@ async def startup():
     await setup_ws_listener()
     # Start telemetry stream manager for real-time export
     stream_manager.start(asyncio.get_running_loop())
+
+    # Phase 153: carrier usage sync background worker
+    try:
+        background_tasks.append(asyncio.create_task(carrier_sync_loop(app.state.pool)))
+    except Exception:
+        logger.warning("Failed to start carrier sync worker", exc_info=True)
 
 @app.on_event("shutdown")
 async def shutdown():

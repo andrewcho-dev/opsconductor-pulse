@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 from starlette.requests import Request
 
+from db.pool import tenant_connection
 from middleware.auth import JWTBearer
+from middleware.entitlements import check_user_limit
 from middleware.permissions import require_permission
 from middleware.tenant import (
     inject_tenant_context,
@@ -746,6 +748,11 @@ async def invite_user_to_tenant(payload: InviteUserRequest, request: Request):
     valid_roles = ["customer", "tenant-admin"]
     if payload.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
+    pool = request.app.state.pool
+    async with tenant_connection(pool, tenant_id) as conn:
+        result = await check_user_limit(conn, tenant_id)
+        if not result["allowed"]:
+            raise HTTPException(status_code=result["status_code"], detail=result["message"])
     try:
         existing = await get_user_by_email(payload.email)
         if existing:

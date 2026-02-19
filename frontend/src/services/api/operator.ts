@@ -245,42 +245,94 @@ export interface TenantStats {
   [key: string]: unknown;
 }
 
-export interface Subscription {
+// ─── Device Subscriptions (Phase 156) ───────────────────
+
+export interface DeviceSubscriptionRow {
   subscription_id: string;
   tenant_id: string;
-  subscription_type: string;
-  status: string;
-  device_limit: number | null;
+  device_id: string;
+  plan_id: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED" | "CANCELLED";
+  term_start: string;
   term_end: string | null;
-  description: string | null;
-  created_at?: string;
+  grace_end: string | null;
+  stripe_subscription_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface ExpiryNotification {
-  id: string | number;
-  tenant_id: string;
-  notification_type: string;
-  scheduled_at: string;
-  sent_at: string | null;
-  channel: string | null;
-  status: string;
-  error: string | null;
-}
-
-export async function fetchExpiryNotifications(params?: {
-  status?: string;
+export async function fetchDeviceSubscriptions(params?: {
   tenant_id?: string;
-  limit?: number;
-}): Promise<{ notifications: ExpiryNotification[]; total: number }> {
-  const searchParams = new URLSearchParams();
-  if (params?.status) searchParams.set("status", params.status);
-  if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
-  if (params?.limit != null) searchParams.set("limit", String(params.limit));
+  device_id?: string;
+  status?: string;
+}): Promise<{ subscriptions: DeviceSubscriptionRow[] }> {
+  const sp = new URLSearchParams();
+  if (params?.tenant_id) sp.set("tenant_id", params.tenant_id);
+  if (params?.device_id) sp.set("device_id", params.device_id);
+  if (params?.status) sp.set("status", params.status);
   return apiGet(
-    `/api/v1/operator/subscriptions/expiring-notifications${
-      searchParams.toString() ? `?${searchParams.toString()}` : ""
-    }`
+    `/api/v1/operator/device-subscriptions${sp.toString() ? `?${sp.toString()}` : ""}`
   );
+}
+
+export async function createDeviceSubscription(data: {
+  tenant_id: string;
+  device_id: string;
+  plan_id: string;
+  status?: string;
+  term_start?: string;
+  term_end?: string;
+}): Promise<DeviceSubscriptionRow> {
+  return apiPost("/api/v1/operator/device-subscriptions", data);
+}
+
+export async function updateDeviceSubscription(
+  subscriptionId: string,
+  data: {
+    plan_id?: string;
+    status?: string;
+    term_end?: string;
+  }
+): Promise<DeviceSubscriptionRow> {
+  return apiPatch(
+    `/api/v1/operator/device-subscriptions/${encodeURIComponent(subscriptionId)}`,
+    data
+  );
+}
+
+export async function cancelDeviceSubscription(
+  subscriptionId: string
+): Promise<void> {
+  await apiDelete(
+    `/api/v1/operator/device-subscriptions/${encodeURIComponent(subscriptionId)}`
+  );
+}
+
+// ─── Account Tiers (Phase 156) ──────────────────────────
+
+export interface OperatorAccountTier {
+  tier_id: string;
+  name: string;
+  description: string;
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+  support: Record<string, unknown>;
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchAccountTiers(): Promise<{ tiers: OperatorAccountTier[] }> {
+  return apiGet("/api/v1/operator/account-tiers");
+}
+
+export async function assignTenantTier(tenantId: string, tierId: string): Promise<void> {
+  await apiPatch(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}/tier`, {
+    tier_id: tierId,
+  });
 }
 
 export interface AuditEvent {
@@ -323,33 +375,4 @@ export async function updateTenant(
   data: Partial<Tenant>
 ): Promise<Tenant> {
   return apiPatch(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}`, data);
-}
-
-export async function fetchSubscriptions(params?: {
-  tenant_id?: string;
-  status?: string;
-  limit?: number;
-}): Promise<{ subscriptions: Subscription[] }> {
-  const sp = new URLSearchParams();
-  if (params?.tenant_id) sp.set("tenant_id", params.tenant_id);
-  if (params?.status) sp.set("status", params.status);
-  if (params?.limit != null) sp.set("limit", String(params.limit));
-  return apiGet(`/api/v1/operator/subscriptions${sp.toString() ? `?${sp.toString()}` : ""}`);
-}
-
-export async function createSubscription(data: {
-  tenant_id: string;
-  subscription_type: string;
-  device_limit?: number;
-  term_end?: string;
-  description?: string;
-}): Promise<Subscription> {
-  return apiPost("/api/v1/operator/subscriptions", data);
-}
-
-export async function updateSubscription(
-  subscriptionId: string,
-  data: Partial<Subscription>
-): Promise<Subscription> {
-  return apiPatch(`/api/v1/operator/subscriptions/${encodeURIComponent(subscriptionId)}`, data);
 }

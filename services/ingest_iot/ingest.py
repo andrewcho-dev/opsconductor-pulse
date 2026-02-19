@@ -98,6 +98,72 @@ def _as_json_dict(value) -> dict:
     return {}
 
 
+def _infer_sensor_type(metric_name: str) -> str:
+    """Infer sensor type from metric name using common patterns."""
+    name = metric_name.lower()
+    if "temp" in name:
+        return "temperature"
+    if "humid" in name:
+        return "humidity"
+    if "press" in name:
+        return "pressure"
+    if "vibrat" in name:
+        return "vibration"
+    if "flow" in name:
+        return "flow"
+    if "level" in name:
+        return "level"
+    if "power" in name or "kw" in name or "watt" in name:
+        return "power"
+    if "volt" in name:
+        return "electrical"
+    if "current" in name or "amp" in name:
+        return "electrical"
+    if "battery" in name or "batt" in name:
+        return "battery"
+    if "speed" in name or "rpm" in name:
+        return "speed"
+    if "weight" in name or "mass" in name or "load" in name:
+        return "weight"
+    if "ph" == name or name.startswith("ph_"):
+        return "chemical"
+    if "co2" in name or "gas" in name or "air" in name:
+        return "air_quality"
+    return "unknown"
+
+
+def _infer_unit(metric_name: str, sensor_type: str) -> str | None:
+    """Infer measurement unit from metric name and type."""
+    name = metric_name.lower()
+    unit_hints = {
+        "temperature": "°C",
+        "humidity": "%RH",
+        "pressure": "hPa",
+        "vibration": "mm/s",
+        "flow": "L/min",
+        "level": "%",
+        "battery": "%",
+    }
+    if "pct" in name or "percent" in name:
+        return "%"
+    if "celsius" in name or "_c" in name:
+        return "°C"
+    if "fahrenheit" in name or "_f" in name:
+        return "°F"
+    if "_kw" in name or name.endswith("_kw"):
+        return "kW"
+    if "volt" in name:
+        return "V"
+    if "amp" in name or "current" in name:
+        return "A"
+    return unit_hints.get(sensor_type)
+
+
+def _humanize_metric_name(metric_name: str) -> str:
+    """Convert snake_case metric name to human-readable label."""
+    return metric_name.replace("_", " ").title()
+
+
 DEVICE_ALLOWED_TRANSITIONS = {
     "QUEUED": {"IN_PROGRESS"},
     "IN_PROGRESS": {"SUCCEEDED", "FAILED", "REJECTED"},
@@ -756,6 +822,173 @@ class Ingestor:
         self._message_routes_cache: dict[str, list] = {}  # tenant_id -> [route_rows]
         self._routes_cache_ts: dict[str, float] = {}  # tenant_id -> last_refresh_time
         self._routes_cache_ttl = 30  # seconds
+        # Sensor auto-discovery cache: set of (tenant_id, device_id, metric_name) tuples
+        # that are known to exist. Avoids DB lookup on every telemetry message.
+        self._known_sensors: set[tuple[str, str, str]] = set()
+
+    async def _ensure_sensors(self, tenant_id: str, device_id: str, metrics: dict, ts):
+        """Auto-discover sensors from telemetry metric keys.
+
+        For each metric key in the payload, ensure a sensor record exists.
+        Uses an in-memory cache to avoid DB hits on known sensors.
+        Respects the device's sensor_limit.
+        """
+        if not metrics:
+            return
+
+        new_keys: list[str] = []
+        for key in metrics:
+            if (tenant_id, device_id, key) not in self._known_sensors:
+                new_keys.append(key)
+
+        if not new_keys:
+            # All metric keys are already known — just update last_value/last_seen
+            try:
+                assert self.pool is not None
+                async with self.pool.acquire() as conn:
+                    async with conn.transaction():
+                        await _set_tenant_write_context(conn, tenant_id)
+                        for key in metrics:
+                            value = metrics[key]
+                            if isinstance(value, (int, float)):
+                                await conn.execute(
+                                    """
+                                    UPDATE sensors
+                                    SET last_value = $1, last_seen_at = $2, updated_at = now()
+                                    WHERE tenant_id = $3 AND device_id = $4 AND metric_name = $5
+                                    """,
+                                    float(value),
+                                    ts,
+                                    tenant_id,
+                                    device_id,
+                                    key,
+                                )
+            except Exception as e:
+                logger.debug("sensor_last_value_update_failed: %s", e)
+            return
+
+        # Some new keys found — check DB for existing sensors and auto-create missing ones
+        try:
+            assert self.pool is not None
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await _set_tenant_write_context(conn, tenant_id)
+
+                    # Fetch all existing sensors for this device
+                    existing = await conn.fetch(
+                        "SELECT metric_name FROM sensors WHERE tenant_id = $1 AND device_id = $2",
+                        tenant_id,
+                        device_id,
+                    )
+                    existing_names = {row["metric_name"] for row in existing}
+
+                    # Cache all existing
+                    for name in existing_names:
+                        self._known_sensors.add((tenant_id, device_id, name))
+
+                    # Find truly new metric keys
+                    to_create = [k for k in new_keys if k not in existing_names]
+
+                    if to_create:
+                        # Check sensor limit
+                        limit_row = await conn.fetchrow(
+                            """
+                            SELECT dr.sensor_limit, dt.default_sensor_limit
+                            FROM device_registry dr
+                            LEFT JOIN device_tiers dt ON dt.tier_id = dr.tier_id
+                            WHERE dr.tenant_id = $1 AND dr.device_id = $2
+                            """,
+                            tenant_id,
+                            device_id,
+                        )
+                        effective_limit = 20
+                        if limit_row:
+                            effective_limit = (
+                                limit_row["sensor_limit"] or limit_row["default_sensor_limit"] or 20
+                            )
+
+                        current_count = len(existing_names)
+                        available_slots = max(0, effective_limit - current_count)
+
+                        if available_slots == 0:
+                            logger.warning(
+                                "sensor_limit_reached",
+                                extra={
+                                    "tenant_id": tenant_id,
+                                    "device_id": device_id,
+                                    "limit": effective_limit,
+                                    "new_keys": to_create,
+                                },
+                            )
+                        else:
+                            # Create sensors up to the available slots
+                            for key in to_create[:available_slots]:
+                                sensor_type = _infer_sensor_type(key)
+                                unit = _infer_unit(key, sensor_type)
+                                value = metrics.get(key)
+                                numeric_value = (
+                                    float(value) if isinstance(value, (int, float)) else None
+                                )
+
+                                await conn.execute(
+                                    """
+                                    INSERT INTO sensors (
+                                        tenant_id, device_id, metric_name, sensor_type,
+                                        label, unit, auto_discovered, last_value, last_seen_at, status
+                                    ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, 'active')
+                                    ON CONFLICT (tenant_id, device_id, metric_name) DO NOTHING
+                                    """,
+                                    tenant_id,
+                                    device_id,
+                                    key,
+                                    sensor_type,
+                                    _humanize_metric_name(key),
+                                    unit,
+                                    numeric_value,
+                                    ts,
+                                )
+                                self._known_sensors.add((tenant_id, device_id, key))
+                                logger.info(
+                                    "sensor_auto_discovered",
+                                    extra={
+                                        "tenant_id": tenant_id,
+                                        "device_id": device_id,
+                                        "metric_name": key,
+                                        "sensor_type": sensor_type,
+                                    },
+                                )
+
+                            if len(to_create) > available_slots:
+                                logger.warning(
+                                    "sensor_limit_partial",
+                                    extra={
+                                        "tenant_id": tenant_id,
+                                        "device_id": device_id,
+                                        "created": available_slots,
+                                        "skipped": to_create[available_slots:],
+                                    },
+                                )
+
+                    # Update last_value for all known sensors
+                    for key in metrics:
+                        value = metrics[key]
+                        if isinstance(value, (int, float)):
+                            await conn.execute(
+                                """
+                                UPDATE sensors
+                                SET last_value = $1, last_seen_at = $2, updated_at = now()
+                                WHERE tenant_id = $3 AND device_id = $4 AND metric_name = $5
+                                """,
+                                float(value),
+                                ts,
+                                tenant_id,
+                                device_id,
+                                key,
+                            )
+
+        except Exception as e:
+            # Sensor auto-discovery failure should NOT block telemetry ingestion
+            logger.warning("sensor_autodiscovery_failed: %s", e)
 
     async def _get_device_subscription_status(
         self,
@@ -874,6 +1107,9 @@ class Ingestor:
     async def stats_worker(self):
         while True:
             await asyncio.sleep(LOG_STATS_EVERY_SECONDS)
+            # Evict sensor cache periodically to prevent unbounded growth and pick up manual deletions.
+            if self._known_sensors and len(self._known_sensors) > 10000:
+                self._known_sensors.clear()
             cache_stats = self.auth_cache.stats()
             batch_stats = {
                 "records_written": 0,
@@ -1289,6 +1525,9 @@ class Ingestor:
                 )
                 COUNTERS["last_write_at"] = utcnow().isoformat()
                 await self.batch_writer.add(record)
+
+                # Sensor auto-discovery
+                await self._ensure_sensors(tenant_id, device_id, record.metrics, ts)
 
                 # --- Message route fan-out ---
                 try:

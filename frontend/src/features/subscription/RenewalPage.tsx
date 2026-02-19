@@ -1,319 +1,188 @@
-import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { format, addDays } from "date-fns";
-import { Check, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Check } from "lucide-react";
+
 import { PageHeader } from "@/components/shared";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { apiGet, apiPost } from "@/services/api/client";
-import { DeviceSelectionModal } from "./DeviceSelectionModal";
 import { getErrorMessage } from "@/lib/errors";
+import {
+  createCheckoutSession,
+  getEntitlements,
+  listAccountTiers,
+  listDevicePlans,
+} from "@/services/api/billing";
+import type { AccountTier, DevicePlan } from "@/services/api/types";
 
-interface Subscription {
-  subscription_id: string;
-  subscription_type: string;
-  device_limit: number;
-  active_device_count: number;
-  term_end: string;
-  status: string;
+function formatUsd(cents: number | null | undefined) {
+  const c = typeof cents === "number" ? cents : 0;
+  return `$${(c / 100).toFixed(2)}`;
 }
 
-interface RenewalOption {
-  id: string;
-  name: string;
-  device_limit: number;
-  term_days: number;
-  price_display: string;
-  features: string[];
+function renderKeyValue(label: string, value: string) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
 }
 
-const RENEWAL_OPTIONS: RenewalOption[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    device_limit: 50,
-    term_days: 365,
-    price_display: "Contact Sales",
-    features: ["50 devices", "1 year term", "Email support"],
-  },
-  {
-    id: "professional",
-    name: "Professional",
-    device_limit: 200,
-    term_days: 365,
-    price_display: "Contact Sales",
-    features: ["200 devices", "1 year term", "Priority support", "API access"],
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    device_limit: 1000,
-    term_days: 365,
-    price_display: "Contact Sales",
-    features: [
-      "1000 devices",
-      "1 year term",
-      "24/7 support",
-      "Dedicated CSM",
-      "Custom integrations",
-    ],
-  },
-];
+function TierCard({
+  tier,
+  isCurrent,
+  onSelect,
+}: {
+  tier: AccountTier;
+  isCurrent: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <Card className={isCurrent ? "border-primary bg-primary/5" : ""}>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span>{tier.name}</span>
+          {isCurrent ? <Badge variant="outline">Current</Badge> : null}
+        </CardTitle>
+        <CardDescription>
+          {tier.description} · {formatUsd(tier.monthly_price_cents)}/month
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {renderKeyValue("Users", String(tier.limits.users ?? "—"))}
+        {renderKeyValue("Alert rules", String(tier.limits.alert_rules ?? "—"))}
+        {renderKeyValue("Channels", String(tier.limits.notification_channels ?? "—"))}
+        <Separator className="my-2" />
+        <div className="grid gap-1 text-xs">
+          {Object.entries(tier.features ?? {}).slice(0, 6).map(([key, enabled]) => (
+            <div key={key} className="flex items-center gap-2">
+              <Check className={`h-3 w-3 ${enabled ? "text-green-600" : "text-muted-foreground"}`} />
+              <span className={enabled ? "" : "text-muted-foreground"}>{key}</span>
+            </div>
+          ))}
+        </div>
+        <div className="pt-2">
+          <Button size="sm" variant={isCurrent ? "outline" : "default"} onClick={onSelect}>
+            {isCurrent ? "Selected" : "Select"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PlanCard({
+  plan,
+  onSelect,
+}: {
+  plan: DevicePlan;
+  onSelect: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span>{plan.name}</span>
+          <Badge variant="outline">{formatUsd(plan.monthly_price_cents)}/mo</Badge>
+        </CardTitle>
+        <CardDescription>{plan.description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {renderKeyValue("Sensors", String(plan.limits.sensors ?? "—"))}
+        {renderKeyValue("Retention", `${plan.limits.data_retention_days ?? "—"} days`)}
+        {renderKeyValue("Telemetry", `${plan.limits.telemetry_rate_per_minute ?? "—"} msg/min`)}
+        <div className="pt-2">
+          <Button size="sm" variant="outline" onClick={onSelect}>
+            Select
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function RenewalPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const subscriptionId = searchParams.get("subscription");
 
-  const [selectedPlan, setSelectedPlan] = useState<string>("");
-  const [showDeviceSelection, setShowDeviceSelection] = useState(false);
-  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
+  const entitlements = useQuery({ queryKey: ["entitlements"], queryFn: getEntitlements });
+  const tiers = useQuery({ queryKey: ["account-tiers"], queryFn: listAccountTiers });
+  const plans = useQuery({ queryKey: ["device-plans"], queryFn: listDevicePlans });
 
-  const { data: subsData } = useQuery({
-    queryKey: ["subscriptions"],
-    queryFn: () => apiGet<{ subscriptions: Subscription[] }>("/customer/subscriptions"),
-  });
-
-  const subscriptions = subsData?.subscriptions || [];
-  const targetSub = subscriptionId
-    ? subscriptions.find((s) => s.subscription_id === subscriptionId)
-    : subscriptions.find((s) => s.subscription_type === "MAIN");
-
-  const selectedOption = RENEWAL_OPTIONS.find((o) => o.id === selectedPlan);
-
-  const isDownsizing =
-    selectedOption &&
-    targetSub &&
-    selectedOption.device_limit < targetSub.active_device_count;
-
-  const devicesToRemove = isDownsizing
-    ? targetSub.active_device_count - selectedOption.device_limit
-    : 0;
-
-  const renewMutation = useMutation({
-    mutationFn: async () => {
-      return apiPost("/customer/subscription/renew", {
-        subscription_id: targetSub?.subscription_id,
-        plan_id: selectedPlan,
-        term_days: selectedOption?.term_days,
-        new_device_limit: selectedOption?.device_limit,
-        devices_to_deactivate: isDownsizing ? selectedDevices : undefined,
+  const checkoutMutation = useMutation({
+    mutationFn: async (priceId: string) => {
+      const resp = await createCheckoutSession({
+        price_id: priceId,
+        success_url: `${window.location.origin}/app/subscription?success=true`,
+        cancel_url: `${window.location.origin}/app/subscription/renew`,
       });
+      window.location.href = resp.url;
     },
-    onSuccess: () => {
-      toast.success("Subscription renewed");
-      navigate("/app/subscription?renewed=true");
-    },
-    onError: (err: Error) => {
-      toast.error(getErrorMessage(err) || "Failed to renew subscription");
-    },
+    onError: (err: Error) => toast.error(getErrorMessage(err) || "Failed to start checkout"),
   });
-
-  const canProceed =
-    selectedPlan &&
-    targetSub &&
-    (!isDownsizing || selectedDevices.length === devicesToRemove);
-
-  if (!targetSub) {
-    return (
-      <div className="space-y-4">
-        <PageHeader
-          title="Renew Subscription"
-          description="No subscription found to renew"
-        />
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground">
-              You don't have an active subscription to renew.
-            </p>
-            <Button className="mt-4" onClick={() => navigate("/app/subscription")}>
-              Back to Subscriptions
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Renew Subscription"
-        description="Choose a plan and extend your subscription term"
+        title="Upgrade"
+        description="Choose an account tier and device plan options"
       />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Current Subscription</CardTitle>
+          <CardTitle>Account Tier Selection</CardTitle>
+          <CardDescription>Account-level limits and features for your tenant</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-mono text-sm">{targetSub.subscription_id}</p>
-              <p className="text-sm text-muted-foreground">
-                {targetSub.active_device_count} devices • Expires{" "}
-                {format(new Date(targetSub.term_end), "MMM d, yyyy")}
-              </p>
-            </div>
-            <Badge variant={targetSub.status === "ACTIVE" ? "default" : "destructive"}>
-              {targetSub.status}
-            </Badge>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            {(tiers.data?.tiers ?? []).map((tier) => (
+              <TierCard
+                key={tier.tier_id}
+                tier={tier}
+                isCurrent={tier.tier_id === entitlements.data?.tier_id}
+                onSelect={() => {
+                  const priceId = window.prompt("Enter Stripe price_id for this tier:");
+                  if (!priceId) return;
+                  checkoutMutation.mutate(priceId);
+                }}
+              />
+            ))}
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Select Plan</CardTitle>
-          <CardDescription>Choose the plan that fits your needs</CardDescription>
+          <CardTitle>Device Plan Selection</CardTitle>
+          <CardDescription>Device-level limits and features (applied per device)</CardDescription>
         </CardHeader>
         <CardContent>
-          <RadioGroup value={selectedPlan} onValueChange={setSelectedPlan}>
-            <div className="grid gap-3 md:grid-cols-3">
-              {RENEWAL_OPTIONS.map((option) => (
-                <Label
-                  key={option.id}
-                  htmlFor={option.id}
-                  className={`cursor-pointer rounded-lg border p-4 ${
-                    selectedPlan === option.id
-                      ? "border-primary bg-primary/5"
-                      : "border-muted hover:border-primary/50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-semibold">{option.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {option.price_display}
-                      </p>
-                    </div>
-                    <RadioGroupItem value={option.id} id={option.id} />
-                  </div>
-                  <Separator className="my-3" />
-                  <ul className="space-y-1">
-                    {option.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-600" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                  {targetSub &&
-                    option.device_limit < targetSub.active_device_count && (
-                      <div className="mt-3 rounded bg-orange-50 p-2 dark:bg-orange-950">
-                        <p className="flex items-center gap-1 text-xs text-orange-700 dark:text-orange-300">
-                          <AlertTriangle className="h-3 w-3" />
-                          Requires removing{" "}
-                          {targetSub.active_device_count - option.device_limit} devices
-                        </p>
-                      </div>
-                    )}
-                </Label>
-              ))}
-            </div>
-          </RadioGroup>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {(plans.data?.plans ?? []).map((plan) => (
+              <PlanCard
+                key={plan.plan_id}
+                plan={plan}
+                onSelect={() => {
+                  const priceId = window.prompt("Enter Stripe price_id for this device plan:");
+                  if (!priceId) return;
+                  checkoutMutation.mutate(priceId);
+                }}
+              />
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">
+            Device plans are assigned per device from the device detail page.
+          </div>
         </CardContent>
       </Card>
 
-      {isDownsizing && (
-        <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950">
-          <CardContent className="py-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-orange-600" />
-              <div>
-                <p className="font-medium text-orange-800 dark:text-orange-200">
-                  Device Reduction Required
-                </p>
-                <p className="mt-1 text-sm text-orange-700 dark:text-orange-300">
-                  The selected plan allows {selectedOption?.device_limit} devices,
-                  but you currently have {targetSub.active_device_count}. You need
-                  to select {devicesToRemove} device(s) to deactivate.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => setShowDeviceSelection(true)}
-                >
-                  Select Devices to Deactivate ({selectedDevices.length}/
-                  {devicesToRemove})
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Renewal Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {selectedOption ? (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Plan</span>
-                <span>{selectedOption.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Device Limit</span>
-                <span>{selectedOption.device_limit} devices</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">New Term End</span>
-                <span>
-                  {format(
-                    addDays(new Date(), selectedOption.term_days),
-                    "MMM d, yyyy"
-                  )}
-                </span>
-              </div>
-              <Separator className="my-3" />
-              <div className="flex justify-between font-medium">
-                <span>Price</span>
-                <span>{selectedOption.price_display}</span>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Select a plan to see summary
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => navigate("/app/subscription")}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!canProceed || renewMutation.isPending}
-          onClick={() => renewMutation.mutate()}
-        >
-          {renewMutation.isPending ? "Processing..." : "Request Renewal"}
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => navigate("/subscription")}>
+          Back
         </Button>
       </div>
-
-      <DeviceSelectionModal
-        open={showDeviceSelection}
-        onOpenChange={setShowDeviceSelection}
-        subscriptionId={targetSub.subscription_id}
-        requiredCount={devicesToRemove}
-        selectedDevices={selectedDevices}
-        onSelectionChange={setSelectedDevices}
-      />
     </div>
   );
 }

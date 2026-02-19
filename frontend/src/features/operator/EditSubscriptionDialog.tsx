@@ -1,20 +1,20 @@
-"use client"
+"use client";
 
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import { CalendarPlus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -22,41 +22,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { apiPost } from "@/services/api/client";
-import { CalendarPlus, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
-import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
-
-interface Subscription {
-  tenant_id: string;
-  device_limit: number;
-  active_device_count: number;
-  term_start: string | null;
-  term_end: string | null;
-  plan_id: string | null;
-  status: string;
-  grace_end: string | null;
-}
+import {
+  updateDeviceSubscription,
+  type DeviceSubscriptionRow,
+} from "@/services/api/operator";
+import { fetchDevicePlans } from "@/services/api/device-tiers";
 
 interface EditSubscriptionDialogProps {
   tenantId: string;
-  subscription: Subscription | null;
+  subscription: DeviceSubscriptionRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }
 
-const STATUSES = ["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"];
+const STATUSES = [
+  "TRIAL",
+  "ACTIVE",
+  "GRACE",
+  "SUSPENDED",
+  "EXPIRED",
+  "CANCELLED",
+] as const;
 
 export function EditSubscriptionDialog({
   tenantId,
@@ -65,42 +53,37 @@ export function EditSubscriptionDialog({
   onOpenChange,
   onSaved,
 }: EditSubscriptionDialogProps) {
-  const [deviceLimit, setDeviceLimit] = useState(
-    subscription?.device_limit?.toString() || "100"
-  );
-  const [termEnd, setTermEnd] = useState(
-    subscription?.term_end
-      ? format(new Date(subscription.term_end), "yyyy-MM-dd")
-      : format(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), "yyyy-MM-dd")
-  );
-  const [status, setStatus] = useState(subscription?.status || "ACTIVE");
-  const [notes, setNotes] = useState("");
-  const [transactionRef, setTransactionRef] = useState("");
+  const [termEnd, setTermEnd] = useState("");
+  const [status, setStatus] = useState<string>("ACTIVE");
+  const [planId, setPlanId] = useState<string>("");
 
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{
-    type: string;
-    data: Record<string, unknown>;
-  } | null>(null);
+  useEffect(() => {
+    if (!open || !subscription) return;
+    setStatus(subscription.status);
+    setPlanId(subscription.plan_id);
+    setTermEnd(
+      subscription.term_end
+        ? format(new Date(subscription.term_end), "yyyy-MM-dd")
+        : ""
+    );
+  }, [open, subscription]);
 
-  const handleOpenChange = (openState: boolean) => {
-    if (openState && subscription) {
-      setDeviceLimit(subscription.device_limit?.toString() || "100");
-      setTermEnd(
-        subscription.term_end
-          ? format(new Date(subscription.term_end), "yyyy-MM-dd")
-          : format(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), "yyyy-MM-dd")
-      );
-      setStatus(subscription.status || "ACTIVE");
-      setNotes("");
-      setTransactionRef("");
-    }
-    onOpenChange(openState);
-  };
+  const { data: plansData } = useQuery({
+    queryKey: ["operator-device-plans"],
+    queryFn: fetchDevicePlans,
+    enabled: open,
+  });
+
+  const plans = plansData?.plans ?? [];
 
   const mutation = useMutation({
-    mutationFn: async (data: Record<string, unknown>) => {
-      return apiPost(`/operator/tenants/${tenantId}/subscription`, data);
+    mutationFn: async () => {
+      if (!subscription) return;
+      return updateDeviceSubscription(subscription.subscription_id, {
+        status,
+        plan_id: planId,
+        term_end: termEnd ? new Date(termEnd).toISOString() : undefined,
+      });
     },
     onSuccess: () => {
       onSaved();
@@ -111,75 +94,33 @@ export function EditSubscriptionDialog({
     },
   });
 
-  const handleSave = () => {
-    const data = {
-      device_limit: parseInt(deviceLimit, 10),
-      term_end: new Date(termEnd).toISOString(),
-      status,
-      notes: notes || undefined,
-      transaction_ref: transactionRef || undefined,
-    };
-
-    if (status === "SUSPENDED" || status === "EXPIRED") {
-      setPendingAction({ type: "status_change", data });
-      setShowConfirm(true);
-      return;
-    }
-
-    if (
-      subscription &&
-      parseInt(deviceLimit, 10) < subscription.active_device_count
-    ) {
-      setPendingAction({ type: "limit_reduction", data });
-      setShowConfirm(true);
-      return;
-    }
-
-    mutation.mutate(data);
-  };
-
-  const confirmAction = () => {
-    if (pendingAction) {
-      mutation.mutate(pendingAction.data);
-      setPendingAction(null);
-      setShowConfirm(false);
-    }
-  };
+  const canSubmit = useMemo(() => {
+    return Boolean(subscription && planId && status);
+  }, [planId, status, subscription]);
 
   const extendTerm = (days: number) => {
-    const currentEnd = subscription?.term_end
-      ? new Date(subscription.term_end)
-      : new Date();
-    const newEnd = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
+    const base = subscription?.term_end ? new Date(subscription.term_end) : new Date();
+    const newEnd = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
     setTermEnd(format(newEnd, "yyyy-MM-dd"));
   };
 
-  const quickActivate = () => {
-    setStatus("ACTIVE");
-    setNotes("Manually activated by operator");
-  };
-
-  const quickSuspend = () => {
-    setStatus("SUSPENDED");
-    setNotes("Manually suspended by operator");
-  };
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {subscription ? "Edit Subscription" : "Create Subscription"}
-            </DialogTitle>
-            <DialogDescription>
-              Manage subscription for tenant: {tenantId}
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit Device Subscription</DialogTitle>
+          <DialogDescription>
+            Tenant: {tenantId}
+            {subscription ? ` · Device: ${subscription.device_id}` : ""}
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-6 py-4">
+        {!subscription ? (
+          <div className="py-4 text-sm text-muted-foreground">No subscription selected.</div>
+        ) : (
+          <div className="space-y-5 py-4">
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Quick Actions</Label>
+              <div className="text-xs text-muted-foreground">Quick extend</div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={() => extendTerm(30)}>
                   <CalendarPlus className="mr-1 h-3 w-3" />
@@ -193,60 +134,27 @@ export function EditSubscriptionDialog({
                   <CalendarPlus className="mr-1 h-3 w-3" />
                   +1 Year
                 </Button>
-                {subscription?.status !== "ACTIVE" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-green-500 text-green-600 hover:bg-green-50"
-                    onClick={quickActivate}
-                  >
-                    <CheckCircle className="mr-1 h-3 w-3" />
-                    Activate
-                  </Button>
-                )}
-                {subscription?.status === "ACTIVE" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-red-500 text-red-600 hover:bg-red-50"
-                    onClick={quickSuspend}
-                  >
-                    <XCircle className="mr-1 h-3 w-3" />
-                    Suspend
-                  </Button>
-                )}
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="deviceLimit">Device Limit</Label>
-              <Input
-                id="deviceLimit"
-                type="number"
-                min="0"
-                value={deviceLimit}
-                onChange={(e) => setDeviceLimit(e.target.value)}
-              />
-              {subscription && parseInt(deviceLimit, 10) < subscription.active_device_count && (
-                <p className="text-xs text-orange-600">
-                  Warning: Current usage ({subscription.active_device_count}) exceeds this
-                  limit. Tenant will need to remove devices.
-                </p>
-              )}
+              <div className="text-sm font-medium">Plan</div>
+              <Select value={planId} onValueChange={setPlanId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.map((p) => (
+                    <SelectItem key={p.plan_id} value={p.plan_id}>
+                      {p.name} ({p.plan_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="termEnd">Term End Date</Label>
-              <Input
-                id="termEnd"
-                type="date"
-                value={termEnd}
-                onChange={(e) => setTermEnd(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
+              <div className="text-sm font-medium">Status</div>
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger>
                   <SelectValue />
@@ -262,93 +170,35 @@ export function EditSubscriptionDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="transactionRef">
-                Transaction/Approval Reference
-                <span className="text-muted-foreground font-normal"> (optional)</span>
-              </Label>
+              <div className="text-sm font-medium">Term End (optional)</div>
               <Input
-                id="transactionRef"
-                placeholder="e.g., INV-2024-001, PO-12345"
-                value={transactionRef}
-                onChange={(e) => setTransactionRef(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="notes">
-                Notes / Reason
-                <span className="text-destructive"> *</span>
-              </Label>
-              <Textarea
-                id="notes"
-                placeholder="Reason for this change (required for audit log)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
+                type="date"
+                value={termEnd}
+                onChange={(e) => setTermEnd(e.target.value)}
               />
             </div>
           </div>
+        )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={!notes.trim() || mutation.isPending}>
-              {mutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
+        {mutation.isError && (
+          <p className="text-sm text-destructive">
+            Error: {(mutation.error as Error).message}
+          </p>
+        )}
 
-          {mutation.isError && (
-            <p className="text-sm text-destructive">
-              Error: {(mutation.error as Error).message}
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" />
-              Confirm Action
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingAction?.type === "status_change" && (
-                <>
-                  You are about to set the subscription status to <strong>{status}</strong>.
-                  This will:
-                  <ul className="mt-2 list-disc pl-6">
-                    {status === "SUSPENDED" && (
-                      <>
-                        <li>Block all UI access for this tenant</li>
-                        <li>Reject all incoming telemetry</li>
-                      </>
-                    )}
-                    {status === "EXPIRED" && (
-                      <>
-                        <li>Block all access for this tenant</li>
-                        <li>Mark subscription for data retention review</li>
-                      </>
-                    )}
-                  </ul>
-                </>
-              )}
-              {pendingAction?.type === "limit_reduction" && (
-                <>
-                  The new device limit ({deviceLimit}) is below the current usage (
-                  {subscription?.active_device_count}). The tenant will need to remove
-                  devices to comply.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmAction}>Confirm</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!canSubmit || mutation.isPending}
+          >
+            {mutation.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+

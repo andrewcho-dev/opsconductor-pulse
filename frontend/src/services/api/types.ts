@@ -16,6 +16,7 @@ export interface Device {
   last_heartbeat_at: string | null;
   last_telemetry_at: string | null;
   state: DeviceState | null;
+  plan_id?: string | null;
   subscription_id?: string | null;
   subscription_type?: string | null;
   subscription_status?: string | null;
@@ -68,6 +69,294 @@ export interface DeviceUpdate {
   notes?: string | null;
 }
 
+// ─── Sensor Types ────────────────────────────────────
+
+export interface Sensor {
+  sensor_id: number;
+  device_id: string;
+  metric_name: string;
+  sensor_type: string;
+  label: string | null;
+  unit: string | null;
+  min_range: number | null;
+  max_range: number | null;
+  precision_digits: number;
+  status: "active" | "disabled" | "stale" | "error";
+  auto_discovered: boolean;
+  last_value: number | null;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
+export interface SensorListResponse {
+  device_id?: string;
+  sensors: Sensor[];
+  total: number;
+  sensor_limit?: number;
+}
+
+export interface SensorCreate {
+  metric_name: string;
+  sensor_type: string;
+  label?: string;
+  unit?: string;
+  min_range?: number;
+  max_range?: number;
+  precision_digits?: number;
+}
+
+export interface SensorUpdate {
+  sensor_type?: string;
+  label?: string;
+  unit?: string;
+  min_range?: number;
+  max_range?: number;
+  precision_digits?: number;
+  status?: "active" | "disabled";
+}
+
+// ─── Device Connection Types ─────────────────────────
+
+export interface DeviceConnection {
+  device_id: string;
+  connection_type: "cellular" | "ethernet" | "wifi" | "lora" | "satellite" | "other";
+  carrier_name: string | null;
+  carrier_account_id: string | null;
+  plan_name: string | null;
+  apn: string | null;
+  sim_iccid: string | null;
+  sim_status: "active" | "suspended" | "deactivated" | "ready" | "unknown" | null;
+  data_limit_mb: number | null;
+  data_used_mb: number | null;
+  data_used_updated_at: string | null;
+  billing_cycle_start: number | null;
+  ip_address: string | null;
+  msisdn: string | null;
+  network_status: "connected" | "disconnected" | "suspended" | "unknown" | null;
+  last_network_attach: string | null;
+}
+
+export interface ConnectionUpsert {
+  connection_type?: string;
+  carrier_name?: string;
+  carrier_account_id?: string;
+  plan_name?: string;
+  apn?: string;
+  sim_iccid?: string;
+  sim_status?: string;
+  data_limit_mb?: number;
+  billing_cycle_start?: number;
+  ip_address?: string;
+  msisdn?: string;
+}
+
+// ─── Device Health Types ─────────────────────────────
+
+export interface DeviceHealthPoint {
+  time: string;
+  rssi: number | null;
+  rsrp: number | null;
+  rsrq: number | null;
+  sinr: number | null;
+  signal_quality: number | null;
+  network_type: string | null;
+  cell_id: string | null;
+  battery_pct: number | null;
+  battery_voltage: number | null;
+  power_source: string | null;
+  charging: boolean | null;
+  cpu_temp_c: number | null;
+  memory_used_pct: number | null;
+  storage_used_pct: number | null;
+  uptime_seconds: number | null;
+  reboot_count: number | null;
+  error_count: number | null;
+  data_tx_bytes: number | null;
+  data_rx_bytes: number | null;
+  gps_lat: number | null;
+  gps_lon: number | null;
+  gps_fix: boolean | null;
+}
+
+export interface DeviceHealthResponse {
+  device_id: string;
+  range: string;
+  data_points: DeviceHealthPoint[];
+  total: number;
+  latest: DeviceHealthPoint | null;
+}
+
+// ─── Carrier Integration Types ───────────────────────
+
+export interface CarrierIntegration {
+  id: number;
+  carrier_name: string;
+  display_name: string;
+  enabled: boolean;
+  account_id: string | null;
+  api_key_masked: string | null; // Last 4 chars only
+  sync_enabled: boolean;
+  sync_interval_minutes: number;
+  last_sync_at: string | null;
+  last_sync_status: string; // 'success', 'error', 'partial', 'never'
+  last_sync_error: string | null;
+  created_at: string;
+}
+
+export interface CarrierIntegrationCreate {
+  carrier_name: string;
+  display_name: string;
+  api_key: string;
+  api_secret?: string;
+  account_id?: string;
+  api_base_url?: string;
+  sync_enabled?: boolean;
+  sync_interval_minutes?: number;
+  config?: Record<string, unknown>;
+}
+
+export interface CarrierIntegrationUpdate {
+  display_name?: string;
+  api_key?: string;
+  api_secret?: string;
+  account_id?: string;
+  api_base_url?: string;
+  enabled?: boolean;
+  sync_enabled?: boolean;
+  sync_interval_minutes?: number;
+  config?: Record<string, unknown>;
+}
+
+export interface CarrierDeviceStatus {
+  linked: boolean;
+  carrier_name?: string;
+  device_info?: {
+    carrier_device_id: string;
+    iccid: string | null;
+    sim_status: string | null;
+    network_status: string | null;
+    ip_address: string | null;
+    network_type: string | null;
+    last_connection: string | null;
+    signal_strength: number | null;
+  };
+}
+
+export interface CarrierDeviceUsage {
+  linked: boolean;
+  carrier_name?: string;
+  usage?: {
+    data_used_bytes: number;
+    data_limit_bytes: number | null;
+    data_used_mb: number;
+    data_limit_mb: number | null;
+    usage_pct: number;
+    billing_cycle_start: string | null;
+    billing_cycle_end: string | null;
+    sms_count: number;
+  };
+}
+
+export interface CarrierActionResult {
+  action: string;
+  success: boolean;
+  carrier_name: string;
+}
+
+export interface CarrierLinkRequest {
+  carrier_integration_id: number;
+  carrier_device_id: string;
+}
+
+// ─── Subscription Package Architecture (Phase 156) ───────────────
+
+export interface AccountTier {
+  tier_id: string;
+  name: string;
+  description: string;
+  limits: {
+    users?: number;
+    alert_rules?: number;
+    notification_channels?: number;
+    dashboards_per_user?: number;
+    device_groups?: number;
+    api_requests_per_minute?: number;
+  };
+  features: {
+    sso?: boolean;
+    custom_branding?: boolean;
+    audit_log_export?: boolean;
+    bulk_device_import?: boolean;
+    carrier_self_service?: boolean;
+    alert_escalation?: boolean;
+    oncall_scheduling?: boolean;
+    maintenance_windows?: boolean;
+  };
+  support: {
+    level?: string;
+    sla_uptime_pct?: number | null;
+    response_time_hours?: number | null;
+    dedicated_csm?: boolean;
+  };
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface DevicePlan {
+  plan_id: string;
+  name: string;
+  description: string;
+  limits: {
+    sensors?: number;
+    data_retention_days?: number;
+    telemetry_rate_per_minute?: number;
+    health_telemetry_interval_seconds?: number;
+  };
+  features: {
+    ota_updates?: boolean;
+    advanced_analytics?: boolean;
+    streaming_export?: boolean;
+    x509_auth?: boolean;
+    message_routing?: boolean;
+    device_commands?: boolean;
+    device_twin?: boolean;
+    carrier_diagnostics?: boolean;
+  };
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface DeviceSubscription {
+  subscription_id: string;
+  tenant_id: string;
+  device_id: string;
+  plan_id: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED" | "CANCELLED";
+  term_start: string;
+  term_end: string | null;
+  grace_end: string | null;
+  stripe_subscription_id: string | null;
+  created_at: string;
+}
+
+export interface AccountEntitlements {
+  tier_id: string | null;
+  tier_name: string | null;
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+  support: {
+    level?: string;
+    sla_uptime_pct?: number | null;
+    response_time_hours?: number | null;
+    dedicated_csm?: boolean;
+  };
+  usage: Record<string, { current: number; limit: number | null }>;
+}
+
 export interface SubscriptionDevice {
   device_id: string;
   site_id: string;
@@ -85,21 +374,15 @@ export interface ChildSubscription {
 export interface SubscriptionDetail {
   subscription_id: string;
   tenant_id: string;
-  tenant_name: string;
-  subscription_type: "MAIN" | "ADDON" | "TRIAL" | "TEMPORARY";
-  parent_subscription_id: string | null;
-  device_limit: number;
-  active_device_count: number;
+  device_id: string;
+  plan_id: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED" | "CANCELLED";
   term_start: string;
-  term_end: string;
-  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED";
+  term_end: string | null;
   grace_end: string | null;
-  plan_id: string | null;
-  description: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
   updated_at: string;
-  devices: SubscriptionDevice[];
-  child_subscriptions: ChildSubscription[];
 }
 
 export interface DeviceTagsResponse {
@@ -128,6 +411,10 @@ export interface FleetSummary {
   low_battery_count?: number;
   low_battery_threshold?: number;
   low_battery_devices?: string[];
+  total_sensors?: number;
+  active_sensors?: number;
+  sensor_types?: number;
+  devices_with_sensors?: number;
 }
 
 // Alert types
@@ -178,6 +465,8 @@ export interface AlertRule {
   name: string;
   rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name: string;
+  sensor_id?: number | null;
+  sensor_type?: string | null;
   operator: string;
   threshold: number;
   severity: number;
@@ -222,6 +511,8 @@ export interface AlertRuleCreate {
   name: string;
   rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name?: string;
+  sensor_id?: number | null;
+  sensor_type?: string | null;
   operator?: "GT" | "LT" | "GTE" | "LTE";
   threshold?: number;
   severity?: number;
@@ -244,6 +535,8 @@ export interface AlertRuleUpdate {
   name?: string;
   rule_type?: "threshold" | "anomaly" | "telemetry_gap" | "window";
   metric_name?: string;
+  sensor_id?: number | null;
+  sensor_type?: string | null;
   operator?: "GT" | "LT" | "GTE" | "LTE";
   threshold?: number;
   severity?: number;

@@ -5,6 +5,7 @@ import DashboardPage from "@/features/dashboard/DashboardPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
+import { SensorListPage } from "@/features/devices/SensorListPage";
 import FleetMapPage from "@/features/map/FleetMapPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
@@ -26,6 +27,7 @@ import TenantDetailPage from "@/features/operator/TenantDetailPage";
 import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
 import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
 import DeviceTiersPage from "@/features/operator/DeviceTiersPage";
+import AccountTiersPage from "@/features/operator/AccountTiersPage";
 import OperatorUsersPage from "@/features/operator/OperatorUsersPage";
 import UserDetailPage from "@/features/operator/UserDetailPage";
 import { SystemDashboard } from "@/features/operator/SystemDashboard";
@@ -48,6 +50,7 @@ import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import ProfilePage from "@/features/settings/ProfilePage";
 import OrganizationPage from "@/features/settings/OrganizationPage";
 import BillingPage from "@/features/settings/BillingPage";
+import CarrierIntegrationsPage from "@/features/settings/CarrierIntegrationsPage";
 import AnalyticsPage from "@/features/analytics/AnalyticsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
@@ -100,6 +103,7 @@ export const router = createBrowserRouter(
             { path: "devices/import", element: <BulkImportPage /> },
             { path: "devices/wizard", element: <SetupWizard /> },
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
+            { path: "sensors", element: <SensorListPage /> },
             { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <FleetMapPage /> },
@@ -127,6 +131,7 @@ export const router = createBrowserRouter(
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "settings/profile", element: <ProfilePage /> },
             { path: "settings/organization", element: <OrganizationPage /> },
+            { path: "settings/carrier", element: <CarrierIntegrationsPage /> },
             { path: "billing", element: <BillingPage /> },
           ],
         },
@@ -152,7 +157,8 @@ export const router = createBrowserRouter(
             { path: "users/:userId", element: <UserDetailPage /> },
             { path: "subscriptions", element: <SubscriptionsPage /> },
             { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
-            { path: "device-tiers", element: <DeviceTiersPage /> },
+            { path: "device-plans", element: <DeviceTiersPage /> },
+            { path: "account-tiers", element: <AccountTiersPage /> },
             { path: "certificates", element: <CertificateOverviewPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "system-metrics", element: <SystemMetricsPage /> },

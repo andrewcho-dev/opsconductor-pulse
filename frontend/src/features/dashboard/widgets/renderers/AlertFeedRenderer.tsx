@@ -53,7 +53,7 @@ function AlertFeedRendererInner({ config }: WidgetRendererProps) {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="h-full overflow-y-auto space-y-1">
       {wsStatus === "connected" && (
         <div className="text-sm text-muted-foreground pb-1">LIVE</div>
       )}

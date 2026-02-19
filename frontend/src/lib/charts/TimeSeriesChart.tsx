@@ -10,6 +10,9 @@ import { useUIStore } from "@/stores/ui-store";
 interface TimeSeriesChartProps {
   metricName: string;
   points: TelemetryPoint[];
+  /** Optional overrides for per-device sensor labeling */
+  displayLabel?: string;
+  unit?: string;
   colorIndex?: number;
   height?: number;
   className?: string;
@@ -18,6 +21,8 @@ interface TimeSeriesChartProps {
 function TimeSeriesChartInner({
   metricName,
   points,
+  displayLabel,
+  unit,
   colorIndex = 0,
   height = 200,
   className,
@@ -30,6 +35,8 @@ function TimeSeriesChartInner({
     () => getMetricConfig(metricName),
     [metricName]
   );
+  const effectiveLabel = displayLabel?.trim() ? displayLabel.trim() : config.label;
+  const effectiveUnit = unit?.trim() ? unit.trim() : config.unit?.trim() ? config.unit.trim() : "";
 
   const data = useMemo(
     () => toUPlotData(points, metricName) as uPlot.AlignedData,
@@ -54,7 +61,7 @@ function TimeSeriesChartInner({
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
           ticks: { stroke: tickColor, width: 1 },
-          label: `${config.label}${config.unit ? ` (${config.unit})` : ""}`,
+          label: `${effectiveLabel}${effectiveUnit ? ` (${effectiveUnit})` : ""}`,
           labelSize: 16,
           labelFont: "11px system-ui",
           size: 60,
@@ -66,7 +73,7 @@ function TimeSeriesChartInner({
       series: [
         {}, // timestamps series (always first, no config)
         {
-          label: config.label,
+          label: effectiveLabel,
           stroke: getSeriesColor(colorIndex),
           width: 2,
           points: { show: false },
@@ -74,7 +81,7 @@ function TimeSeriesChartInner({
         },
       ],
     }),
-    [config, colorIndex, axisColor, gridColor, tickColor]
+    [config, effectiveLabel, effectiveUnit, colorIndex, axisColor, gridColor, tickColor]
   );
 
   if (data[0].length === 0) {
@@ -83,7 +90,7 @@ function TimeSeriesChartInner({
         className="flex items-center justify-center text-sm text-muted-foreground border border-border rounded-md"
         style={{ height }}
       >
-        No data for {config.label}
+        No data for {effectiveLabel}
       </div>
     );
   }

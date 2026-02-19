@@ -73,6 +73,9 @@ import {
   type AlertRuleTemplate,
 } from "@/services/api/alert-rules";
 import { ConditionRow } from "./ConditionRow";
+import { useDevices } from "@/hooks/use-devices";
+import { listAllSensors, listDeviceSensors } from "@/services/api/sensors";
+import type { Sensor } from "@/services/api/types";
 
 interface AlertRuleDialogProps {
   open: boolean;
@@ -83,6 +86,24 @@ interface AlertRuleDialogProps {
 const ruleOperators = ["GT", "GTE", "LT", "LTE"] as const;
 const matchModes = ["all", "any"] as const;
 const windowAggregations = ["avg", "min", "max", "count", "sum"] as const;
+const sensorTargetingModes = ["metric", "sensor", "sensor_type"] as const;
+const sensorTypeOptions = [
+  "temperature",
+  "humidity",
+  "pressure",
+  "vibration",
+  "flow",
+  "level",
+  "power",
+  "electrical",
+  "speed",
+  "weight",
+  "air_quality",
+  "battery",
+  "digital",
+  "analog",
+  "unknown",
+] as const;
 
 const requiredNumber = (message = "Must be a number") =>
   z
@@ -129,14 +150,65 @@ const commonSchema = z.object({
   enabled: z.boolean().default(true),
   group_ids: z.array(z.string()).default([]),
   device_group_id: z.string().optional().default(""),
+  targeting_mode: z.enum(sensorTargetingModes).default("metric"),
+  sensor_device_id: z.string().optional().default(""),
+  sensor_id: z
+    .union([z.number(), z.string(), z.null(), z.undefined()])
+    .transform((v) => {
+      if (v == null) return null;
+      if (typeof v === "number") return Number.isFinite(v) ? Math.trunc(v) : null;
+      if (v.trim() === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    })
+    .nullable()
+    .default(null),
+  sensor_type: z.string().optional().default(""),
 });
 
 const alertRuleSchema = z.discriminatedUnion("ruleMode", [
   commonSchema.extend({
     ruleMode: z.literal("simple"),
-    metric_name: z.string().min(1, "Metric name is required"),
+    metric_name: z.string().optional().default(""),
     operator: z.enum(ruleOperators),
     threshold: requiredNumber(),
+  }).superRefine((values, ctx) => {
+    if (values.targeting_mode === "metric") {
+      if (!values.metric_name || values.metric_name.trim() === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["metric_name"],
+          message: "Metric name is required",
+        });
+      }
+      return;
+    }
+    if (values.targeting_mode === "sensor") {
+      if (!values.sensor_device_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sensor_device_id"],
+          message: "Device is required",
+        });
+      }
+      if (values.sensor_id == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sensor_id"],
+          message: "Sensor is required",
+        });
+      }
+      return;
+    }
+    if (values.targeting_mode === "sensor_type") {
+      if (!values.sensor_type || values.sensor_type.trim() === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sensor_type"],
+          message: "Sensor type is required",
+        });
+      }
+    }
   }),
   commonSchema.extend({
     ruleMode: z.literal("multi"),
@@ -177,6 +249,10 @@ type AlertRuleFormValues = {
   enabled: boolean;
   group_ids: string[];
   device_group_id: string;
+  targeting_mode: (typeof sensorTargetingModes)[number];
+  sensor_device_id: string;
+  sensor_id: number | null;
+  sensor_type: string;
   metric_name?: string;
   operator?: RuleOperator;
   threshold?: number;
@@ -209,6 +285,10 @@ const defaultValues: AlertRuleFormValues = {
   enabled: true,
   group_ids: [],
   device_group_id: "",
+  targeting_mode: "metric",
+  sensor_device_id: "",
+  sensor_id: null,
+  sensor_type: "",
 };
 
 function mapRuleToFormValues(rule: AlertRule): AlertRuleFormValues {
@@ -225,6 +305,10 @@ function mapRuleToFormValues(rule: AlertRule): AlertRuleFormValues {
     enabled: Boolean(rule.enabled),
     group_ids: rule.group_ids ?? [],
     device_group_id: rule.device_group_id ?? "",
+    targeting_mode: rule.sensor_id != null ? "sensor" : rule.sensor_type ? "sensor_type" : "metric",
+    sensor_device_id: "",
+    sensor_id: (rule.sensor_id as number | null | undefined) ?? null,
+    sensor_type: (rule.sensor_type as string | null | undefined) ?? "",
   };
 
   if (rule.rule_type === "anomaly" && rule.anomaly_conditions) {
@@ -317,12 +401,44 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
   const ruleMode = form.watch("ruleMode");
   const metricName = form.watch("metric_name") ?? "";
+  const targetingMode = form.watch("targeting_mode") ?? "metric";
+  const sensorDeviceId = form.watch("sensor_device_id") ?? "";
   const matchMode = form.watch("match_mode") ?? "all";
   const multiConditions = ruleMode === "multi" ? form.watch("conditions") ?? [] : [];
   const gapMetricName = form.watch("gap_metric_name") ?? "";
   const gapMinutes = String(form.watch("gap_minutes") ?? 10);
   const windowAggregation = form.watch("window_aggregation") ?? "avg";
   const windowSeconds = String(form.watch("window_seconds") ?? 300);
+
+  const { data: devicesData, isLoading: devicesLoading } = useDevices({ limit: 200, offset: 0 });
+  const devices = devicesData?.devices ?? [];
+
+  const { data: deviceSensorsData, isLoading: sensorsLoading } = useQuery({
+    queryKey: ["device-sensors", sensorDeviceId],
+    queryFn: () => listDeviceSensors(sensorDeviceId),
+    enabled: open && ruleMode === "simple" && targetingMode === "sensor" && !!sensorDeviceId,
+  });
+  const deviceSensors = deviceSensorsData?.sensors ?? [];
+
+  // Best-effort prefill when editing a sensor-targeted rule.
+  const { data: allSensorsForEdit } = useQuery({
+    queryKey: ["all-sensors-for-alert-rule-edit", rule?.sensor_id],
+    queryFn: () => listAllSensors({ limit: 500 }),
+    enabled: open && isEditing && (rule?.sensor_id as number | undefined) != null,
+  });
+
+  useEffect(() => {
+    if (!open || !isEditing) return;
+    if (targetingMode !== "sensor") return;
+    if (!rule?.sensor_id) return;
+    if (sensorDeviceId) return;
+    const sensors = allSensorsForEdit?.sensors ?? [];
+    const match = sensors.find((s: Sensor) => s.sensor_id === rule.sensor_id);
+    if (!match) return;
+    form.setValue("sensor_device_id", match.device_id, { shouldDirty: false });
+    form.setValue("sensor_id", match.sensor_id, { shouldDirty: false });
+    form.setValue("metric_name", match.metric_name, { shouldDirty: false });
+  }, [open, isEditing, targetingMode, rule?.sensor_id, sensorDeviceId, allSensorsForEdit, form]);
 
   useEffect(() => {
     if (!open) return;
@@ -465,7 +581,18 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
         }));
       } else {
         payload.rule_type = "threshold";
-        payload.metric_name = values.metric_name ?? "";
+        if (values.targeting_mode === "sensor") {
+          payload.sensor_id = values.sensor_id;
+          payload.sensor_type = null;
+          payload.metric_name = values.metric_name ?? "";
+        } else if (values.targeting_mode === "sensor_type") {
+          payload.sensor_type = values.sensor_type || null;
+          payload.sensor_id = null;
+        } else {
+          payload.metric_name = values.metric_name ?? "";
+          payload.sensor_id = null;
+          payload.sensor_type = null;
+        }
         payload.operator = (values.operator ?? "GT") as RuleOperator;
         payload.threshold = Number(values.threshold ?? 0);
       }
@@ -535,7 +662,18 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       updates.gap_conditions = null;
     } else {
       updates.rule_type = "threshold";
-      updates.metric_name = values.metric_name ?? "";
+      if (values.targeting_mode === "sensor") {
+        updates.sensor_id = values.sensor_id;
+        updates.sensor_type = null;
+        updates.metric_name = values.metric_name ?? "";
+      } else if (values.targeting_mode === "sensor_type") {
+        updates.sensor_type = values.sensor_type || null;
+        updates.sensor_id = null;
+      } else {
+        updates.metric_name = values.metric_name ?? "";
+        updates.sensor_id = null;
+        updates.sensor_type = null;
+      }
       updates.operator = (values.operator ?? "GT") as RuleOperator;
       updates.threshold = Number(values.threshold ?? 0);
       updates.conditions = null;
@@ -668,6 +806,48 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
               <>
                 <FormField
                   control={form.control}
+                  name="targeting_mode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Targeting</FormLabel>
+                      <Select
+                        value={(field.value as string) || "metric"}
+                        onValueChange={(v) => {
+                          field.onChange(v);
+                          // Clear other targeting fields when switching modes.
+                          if (v === "metric") {
+                            form.setValue("sensor_device_id", "", { shouldDirty: true });
+                            form.setValue("sensor_id", null, { shouldDirty: true });
+                            form.setValue("sensor_type", "", { shouldDirty: true });
+                          } else if (v === "sensor") {
+                            form.setValue("sensor_type", "", { shouldDirty: true });
+                            form.setValue("metric_name", "", { shouldDirty: true });
+                          } else if (v === "sensor_type") {
+                            form.setValue("sensor_device_id", "", { shouldDirty: true });
+                            form.setValue("sensor_id", null, { shouldDirty: true });
+                            form.setValue("metric_name", "", { shouldDirty: true });
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select targeting mode" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="metric">By metric name</SelectItem>
+                          <SelectItem value="sensor">By specific sensor</SelectItem>
+                          <SelectItem value="sensor_type">By sensor type</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {targetingMode === "metric" ? (
+                <FormField
+                  control={form.control}
                   name="metric_name"
                   render={({ field }) => (
                     <FormItem>
@@ -770,6 +950,132 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                     </FormItem>
                   )}
                 />
+                ) : targetingMode === "sensor" ? (
+                  <div className="grid gap-3">
+                    <FormField
+                      control={form.control}
+                      name="sensor_device_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Device *</FormLabel>
+                          <Select
+                            value={(field.value as string) || undefined}
+                            onValueChange={(v) => {
+                              field.onChange(v);
+                              form.setValue("sensor_id", null, { shouldDirty: true });
+                              form.setValue("metric_name", "", { shouldDirty: true });
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-full" disabled={devicesLoading}>
+                                <SelectValue
+                                  placeholder={
+                                    devicesLoading
+                                      ? "Loading devices..."
+                                      : devices.length === 0
+                                        ? "No devices"
+                                        : "Select device"
+                                  }
+                                />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {devices.map((d) => (
+                                <SelectItem key={d.device_id} value={d.device_id}>
+                                  {d.device_id}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="sensor_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Sensor *</FormLabel>
+                          <Select
+                            value={field.value != null ? String(field.value) : undefined}
+                            onValueChange={(v) => {
+                              const id = Number(v);
+                              form.setValue("sensor_id", Number.isFinite(id) ? id : null, {
+                                shouldDirty: true,
+                              });
+                              const s = deviceSensors.find((x) => x.sensor_id === id);
+                              if (s) {
+                                form.setValue("metric_name", s.metric_name, { shouldDirty: true });
+                              }
+                            }}
+                            disabled={sensorsLoading || !sensorDeviceId || deviceSensors.length === 0}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-full">
+                                <SelectValue
+                                  placeholder={
+                                    !sensorDeviceId
+                                      ? "Select a device first"
+                                      : sensorsLoading
+                                        ? "Loading sensors..."
+                                        : deviceSensors.length === 0
+                                          ? "No sensors"
+                                          : "Select sensor"
+                                  }
+                                />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {deviceSensors.map((s) => (
+                                <SelectItem key={s.sensor_id} value={String(s.sensor_id)}>
+                                  {s.label || s.metric_name}
+                                  <span className="text-xs text-muted-foreground ml-2">
+                                    ({s.sensor_type}
+                                    {s.unit ? `, ${s.unit}` : ""})
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription className="text-sm">
+                            Uses the selected sensor’s underlying metric key for evaluation.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="sensor_type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sensor type *</FormLabel>
+                        <Select value={(field.value as string) || undefined} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select sensor type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {sensorTypeOptions.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-sm">
+                          Stored for targeting; evaluator support will be added later.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

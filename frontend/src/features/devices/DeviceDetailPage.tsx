@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/shared";
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
@@ -20,11 +12,16 @@ import { DeviceMapCard } from "./DeviceMapCard";
 import { DeviceEditModal } from "./DeviceEditModal";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
+import { DeviceSensorsPanel } from "./DeviceSensorsPanel";
+import { DeviceConnectionPanel } from "./DeviceConnectionPanel";
+import { DeviceCarrierPanel } from "./DeviceCarrierPanel";
+import { DeviceHealthPanel } from "./DeviceHealthPanel";
 import { DeviceCertificatesTab } from "./DeviceCertificatesTab";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
 import { DeviceConnectivityPanel } from "./DeviceConnectivityPanel";
 import { DeviceCommandPanel } from "./DeviceCommandPanel";
+import { DevicePlanPanel } from "./DevicePlanPanel";
 import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 import {
   getDeviceTags,
@@ -34,11 +31,6 @@ import {
 import { getLatestValue } from "@/lib/charts/transforms";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
-import {
-  getDeviceTiers,
-  assignDeviceTier,
-  removeDeviceTier,
-} from "@/services/api/billing";
 
 export default function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -60,11 +52,6 @@ export default function DeviceDetailPage() {
   const { data: alertsData } = useDeviceAlerts(deviceId || "", "OPEN", 50);
 
   const device = deviceData?.device;
-
-  const { data: tiers } = useQuery({
-    queryKey: ["device-tiers"],
-    queryFn: getDeviceTiers,
-  });
 
   const [notesValue, setNotesValue] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
@@ -218,50 +205,12 @@ export default function DeviceDetailPage() {
         </div>
       </div>
 
-      {deviceId && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Device Tier</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {/*
-              DeviceDetail API now returns tier_id/tier_name (phase134 task 007),
-              but the frontend Device type may lag behind; treat it as optional.
-            */}
-            <Select
-              value={
-                (device as any)?.tier_id != null ? String((device as any).tier_id) : "none"
-              }
-              onValueChange={async (val) => {
-                try {
-                  if (val === "none") {
-                    await removeDeviceTier(deviceId);
-                  } else {
-                    await assignDeviceTier(deviceId, parseInt(val));
-                  }
-                  await queryClient.invalidateQueries({ queryKey: ["device", deviceId] });
-                  toast.success("Device tier updated");
-                } catch (err: any) {
-                  toast.error(err?.message || "Failed to update tier");
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select tier..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No tier assigned</SelectItem>
-                {tiers?.map((tier) => (
-                  <SelectItem key={tier.tier_id} value={tier.tier_id.toString()}>
-                    {tier.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-      )}
+      {deviceId && <DevicePlanPanel deviceId={deviceId} />}
 
+      {deviceId && <DeviceSensorsPanel deviceId={deviceId} />}
+      {deviceId && <DeviceConnectionPanel deviceId={deviceId} />}
+      {deviceId && <DeviceCarrierPanel deviceId={deviceId} />}
+      {deviceId && <DeviceHealthPanel deviceId={deviceId} />}
       {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
       {deviceId && <DeviceCertificatesTab deviceId={deviceId} />}
       {deviceId && <DeviceUptimePanel deviceId={deviceId} />}

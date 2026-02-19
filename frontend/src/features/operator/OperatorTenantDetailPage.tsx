@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { PageHeader } from "@/components/shared";
+import { PageHeader, StatusBadge } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,18 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet } from "@/services/api/client";
 import {
   fetchTenant,
   fetchTenantStats,
 } from "@/services/api/tenants";
-import {
-  fetchExpiryNotifications,
-  type ExpiryNotification,
-} from "@/services/api/operator";
+import { fetchDeviceSubscriptions } from "@/services/api/operator";
 import { EditTenantDialog } from "./EditTenantDialog";
 import { CreateSubscriptionDialog } from "./CreateSubscriptionDialog";
-import { BulkAssignDialog } from "./BulkAssignDialog";
 import {
   Cpu,
   Wifi,
@@ -39,25 +34,10 @@ import {
   CreditCard,
 } from "lucide-react";
 
-interface Subscription {
-  subscription_id: string;
-  tenant_id: string;
-  subscription_type: string;
-  parent_subscription_id: string | null;
-  device_limit: number;
-  active_device_count: number;
-  term_start: string | null;
-  term_end: string | null;
-  status: string;
-  plan_id: string | null;
-  description: string | null;
-}
-
 export default function OperatorTenantDetailPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const [editOpen, setEditOpen] = useState(false);
   const [subscriptionCreateOpen, setSubscriptionCreateOpen] = useState(false);
-  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tenant-stats", tenantId],
@@ -72,22 +52,9 @@ export default function OperatorTenantDetailPage() {
     enabled: !!tenantId,
   });
 
-  const { data: subscriptionList, refetch: refetchSubscriptions } = useQuery<{
-    subscriptions: Subscription[];
-  }>({
-    queryKey: ["tenant-subscriptions", tenantId],
-    queryFn: () =>
-      apiGet<{ subscriptions: Subscription[] }>(
-        `/operator/subscriptions?tenant_id=${tenantId}&limit=200`
-      ),
-    enabled: !!tenantId,
-  });
-  const { data: expiryNotifications } = useQuery<{
-    notifications: ExpiryNotification[];
-    total: number;
-  }>({
-    queryKey: ["tenant-expiry-notifications", tenantId],
-    queryFn: () => fetchExpiryNotifications({ tenant_id: tenantId, limit: 50 }),
+  const { data: subscriptionList, refetch: refetchSubscriptions } = useQuery({
+    queryKey: ["tenant-device-subscriptions", tenantId],
+    queryFn: () => fetchDeviceSubscriptions({ tenant_id: tenantId! }),
     enabled: !!tenantId,
   });
 
@@ -101,21 +68,6 @@ export default function OperatorTenantDetailPage() {
 
   const { stats } = data;
   const subscriptions = subscriptionList?.subscriptions ?? [];
-
-  const typeClasses: Record<string, string> = {
-    MAIN: "bg-blue-100 text-blue-800",
-    ADDON: "bg-purple-100 text-purple-800",
-    TRIAL: "bg-yellow-100 text-yellow-800",
-    TEMPORARY: "bg-orange-100 text-orange-800",
-  };
-
-  const statusClasses: Record<string, string> = {
-    ACTIVE: "bg-green-100 text-green-800",
-    TRIAL: "bg-blue-100 text-blue-800",
-    GRACE: "bg-orange-100 text-orange-800",
-    SUSPENDED: "bg-red-100 text-red-800",
-    EXPIRED: "bg-gray-200 text-gray-700",
-  };
 
   const t = fullTenant;
   const valOrDash = (v?: string | number | null) =>
@@ -334,9 +286,6 @@ export default function OperatorTenantDetailPage() {
             Subscriptions
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setBulkAssignOpen(true)}>
-              Bulk Assign Devices
-            </Button>
             <Button size="sm" onClick={() => setSubscriptionCreateOpen(true)}>
               Add Subscription
             </Button>
@@ -348,9 +297,9 @@ export default function OperatorTenantDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Devices</TableHead>
+                  <TableHead>Device</TableHead>
                   <TableHead>Term End</TableHead>
+                  <TableHead>Plan</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -373,15 +322,7 @@ export default function OperatorTenantDetailPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={typeClasses[subscription.subscription_type] ?? ""}
-                      >
-                        {subscription.subscription_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {subscription.active_device_count}/{subscription.device_limit}
+                      <span className="font-mono text-sm">{subscription.device_id}</span>
                     </TableCell>
                     <TableCell>
                       {subscription.term_end
@@ -389,69 +330,10 @@ export default function OperatorTenantDetailPage() {
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={statusClasses[subscription.status] ?? ""}
-                      >
-                        {subscription.status}
-                      </Badge>
+                      <Badge variant="outline">{subscription.plan_id}</Badge>
                     </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Expiry Notifications</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Notification Type</TableHead>
-                  <TableHead>Scheduled At</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Channel</TableHead>
-                  <TableHead>Sent At</TableHead>
-                  <TableHead>Error</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(expiryNotifications?.notifications ?? []).length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-sm text-muted-foreground">
-                      No expiry notifications found.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {(expiryNotifications?.notifications ?? []).map((notification) => (
-                  <TableRow key={String(notification.id)}>
-                    <TableCell>{notification.notification_type}</TableCell>
-                    <TableCell>{new Date(notification.scheduled_at).toLocaleString()}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          notification.status === "SENT"
-                            ? "bg-green-100 text-green-800"
-                            : notification.status === "FAILED"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                        }
-                      >
-                        {notification.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{notification.channel ?? "-"}</TableCell>
-                    <TableCell>
-                      {notification.sent_at ? new Date(notification.sent_at).toLocaleString() : "-"}
-                    </TableCell>
-                    <TableCell className="max-w-[240px] truncate">
-                      {notification.status === "FAILED" ? notification.error ?? "-" : "-"}
+                      <StatusBadge status={subscription.status} variant="subscription" />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -474,17 +356,6 @@ export default function OperatorTenantDetailPage() {
           setSubscriptionCreateOpen(false);
         }}
       />
-      {tenantId && (
-        <BulkAssignDialog
-          open={bulkAssignOpen}
-          onOpenChange={setBulkAssignOpen}
-          tenantId={tenantId}
-          onComplete={() => {
-            refetchSubscriptions();
-            setBulkAssignOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }

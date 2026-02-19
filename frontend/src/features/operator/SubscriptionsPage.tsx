@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { PageHeader, StatusBadge } from "@/components/shared";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,122 +22,83 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet } from "@/services/api/client";
-import { CreateSubscriptionDialog } from "./CreateSubscriptionDialog";
+import {
+  fetchDeviceSubscriptions,
+  type DeviceSubscriptionRow,
+} from "@/services/api/operator";
 
-interface SubscriptionRow {
-  subscription_id: string;
-  tenant_id: string;
-  tenant_name: string;
-  subscription_type: string;
-  parent_subscription_id: string | null;
-  device_limit: number;
-  active_device_count: number;
-  term_start: string | null;
-  term_end: string | null;
-  status: string;
-  description: string | null;
-}
-
-interface SubscriptionListResponse {
-  subscriptions: SubscriptionRow[];
-  count: number;
-}
-
-const TYPE_OPTIONS = ["ALL", "MAIN", "ADDON", "TRIAL", "TEMPORARY"] as const;
-const STATUS_OPTIONS = ["ALL", "TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"] as const;
-
-function TypeBadge({ type }: { type: string }) {
-  const classes: Record<string, string> = {
-    MAIN: "bg-blue-100 text-blue-800",
-    ADDON: "bg-purple-100 text-purple-800",
-    TRIAL: "bg-yellow-100 text-yellow-800",
-    TEMPORARY: "bg-orange-100 text-orange-800",
-  };
-  return (
-    <Badge variant="outline" className={classes[type] ?? ""}>
-      {type}
-    </Badge>
-  );
-}
+const STATUS_OPTIONS = [
+  "ALL",
+  "TRIAL",
+  "ACTIVE",
+  "GRACE",
+  "SUSPENDED",
+  "EXPIRED",
+  "CANCELLED",
+] as const;
 
 export default function SubscriptionsPage() {
-  const [typeFilter, setTypeFilter] = useState<(typeof TYPE_OPTIONS)[number]>("ALL");
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]>("ALL");
+  const [statusFilter, setStatusFilter] = useState<
+    (typeof STATUS_OPTIONS)[number]
+  >("ALL");
   const [tenantFilter, setTenantFilter] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("limit", "200");
-    if (typeFilter !== "ALL") params.set("subscription_type", typeFilter);
-    if (statusFilter !== "ALL") params.set("status", statusFilter);
-    if (tenantFilter.trim()) params.set("tenant_id", tenantFilter.trim());
-    return params.toString();
-  }, [typeFilter, statusFilter, tenantFilter]);
+  const params = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (statusFilter !== "ALL") p.status = statusFilter;
+    if (tenantFilter.trim()) p.tenant_id = tenantFilter.trim();
+    return p;
+  }, [statusFilter, tenantFilter]);
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["operator-subscriptions", queryString],
-    queryFn: () => apiGet<SubscriptionListResponse>(`/operator/subscriptions?${queryString}`),
+  const { data, isLoading } = useQuery({
+    queryKey: ["operator-device-subscriptions", params],
+    queryFn: () => fetchDeviceSubscriptions(params),
   });
 
-  const rows = data?.subscriptions ?? [];
+  const rows: DeviceSubscriptionRow[] = data?.subscriptions ?? [];
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Subscriptions"
-        description="Manage subscriptions across all tenants"
+        title="Device Subscriptions"
+        description="Manage per-device subscriptions across all tenants"
       />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="w-44">
-          <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              {TYPE_OPTIONS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="w-44">
-          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              {STATUS_OPTIONS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+
         <Input
           className="w-56"
           placeholder="Filter by tenant ID"
           value={tenantFilter}
-          onChange={(event) => setTenantFilter(event.target.value)}
+          onChange={(e) => setTenantFilter(e.target.value)}
         />
-        <div className="ml-auto">
-          <Button onClick={() => setCreateOpen(true)}>New Subscription</Button>
-        </div>
       </div>
 
       <div className="rounded-md border">
-        <Table aria-label="Subscriptions list">
+        <Table aria-label="Device subscriptions list">
           <TableHeader>
             <TableRow>
               <TableHead>Subscription ID</TableHead>
               <TableHead>Tenant</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Devices</TableHead>
+              <TableHead>Device</TableHead>
+              <TableHead>Plan</TableHead>
               <TableHead>Term End</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -154,13 +114,13 @@ export default function SubscriptionsPage() {
             {!isLoading && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-sm text-muted-foreground">
-                  No subscriptions found.
+                  No device subscriptions found.
                 </TableCell>
               </TableRow>
             )}
             {rows.map((row) => (
               <TableRow key={row.subscription_id}>
-                <TableCell>
+                <TableCell className="font-mono text-sm">
                   <Link
                     className="text-primary hover:underline"
                     to={`/operator/subscriptions/${row.subscription_id}`}
@@ -169,21 +129,16 @@ export default function SubscriptionsPage() {
                   </Link>
                 </TableCell>
                 <TableCell>
-                  <div className="space-y-1">
-                    <Link
-                      className="text-primary hover:underline"
-                      to={`/operator/tenants/${row.tenant_id}`}
-                    >
-                      {row.tenant_name}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">{row.tenant_id}</div>
-                  </div>
+                  <Link
+                    className="text-primary hover:underline"
+                    to={`/operator/tenants/${row.tenant_id}`}
+                  >
+                    {row.tenant_id}
+                  </Link>
                 </TableCell>
+                <TableCell className="font-mono text-sm">{row.device_id}</TableCell>
                 <TableCell>
-                  <TypeBadge type={row.subscription_type} />
-                </TableCell>
-                <TableCell>
-                  {row.active_device_count}/{row.device_limit}
+                  <Badge variant="outline">{row.plan_id}</Badge>
                 </TableCell>
                 <TableCell>
                   {row.term_end ? format(new Date(row.term_end), "MMM d, yyyy") : "—"}
@@ -196,15 +151,7 @@ export default function SubscriptionsPage() {
           </TableBody>
         </Table>
       </div>
-
-      <CreateSubscriptionDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={() => {
-          setCreateOpen(false);
-          refetch();
-        }}
-      />
     </div>
   );
 }
+

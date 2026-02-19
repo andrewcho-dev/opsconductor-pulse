@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchTenantsSummary, type TenantSummary } from "@/services/api/tenants";
-import { fetchSubscriptions } from "@/services/api/operator";
+import { fetchDeviceSubscriptions } from "@/services/api/operator";
 import TenantActivitySparkline from "./TenantActivitySparkline";
 
 // DataTable not used: TenantHealthMatrix uses a custom grid layout with
@@ -56,20 +56,56 @@ export default function TenantHealthMatrix() {
 
   const { data: subscriptionData } = useQuery({
     queryKey: ["operator-subscriptions-health-matrix"],
-    queryFn: () => fetchSubscriptions({ limit: 500 }),
+    queryFn: () => fetchDeviceSubscriptions(),
     refetchInterval: 60000,
   });
 
   const subscriptionByTenant = useMemo(() => {
-    const map = new Map<string, { type: string; status: string }>();
-    for (const sub of subscriptionData?.subscriptions ?? []) {
-      if (!map.has(sub.tenant_id)) {
-        map.set(sub.tenant_id, {
-          type: sub.subscription_type,
-          status: sub.status,
-        });
+    const map = new Map<
+      string,
+      { worst_status: string; subscription_count: number; active_count: number }
+    >();
+
+    const rank = (status: string): number => {
+      // Higher is "worse" from an operator attention perspective.
+      switch (status) {
+        case "SUSPENDED":
+          return 6;
+        case "GRACE":
+          return 5;
+        case "EXPIRED":
+          return 4;
+        case "CANCELLED":
+          return 3;
+        case "TRIAL":
+          return 2;
+        case "ACTIVE":
+        default:
+          return 1;
       }
+    };
+
+    for (const sub of subscriptionData?.subscriptions ?? []) {
+      const existing = map.get(sub.tenant_id);
+      const next = {
+        worst_status: sub.status,
+        subscription_count: 1,
+        active_count: sub.status === "ACTIVE" || sub.status === "TRIAL" ? 1 : 0,
+      };
+      if (!existing) {
+        map.set(sub.tenant_id, next);
+        continue;
+      }
+      map.set(sub.tenant_id, {
+        worst_status:
+          rank(sub.status) > rank(existing.worst_status)
+            ? sub.status
+            : existing.worst_status,
+        subscription_count: existing.subscription_count + 1,
+        active_count: existing.active_count + next.active_count,
+      });
     }
+
     return map;
   }, [subscriptionData?.subscriptions]);
 
@@ -161,9 +197,11 @@ export default function TenantHealthMatrix() {
                   <td className="px-3 py-2">
                     <div className="font-semibold">{tenant.tenant_id}</div>
                     <div className="text-sm text-muted-foreground">{tenant.name}</div>
-                    <Badge variant="outline" className="mt-1">
-                      {sub?.type ?? "STANDARD"}
-                    </Badge>
+                    {sub ? (
+                      <Badge variant="outline" className="mt-1">
+                        {sub.active_count}/{sub.subscription_count} subs
+                      </Badge>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 tabular-nums">
                     {tenant.online_count}/{tenant.device_count}
@@ -197,7 +235,7 @@ export default function TenantHealthMatrix() {
                   </td>
                   <td className="px-3 py-2">
                     <Badge variant={tenant.status === "ACTIVE" ? "default" : "destructive"}>
-                      {sub?.status ?? tenant.status}
+                      {sub?.worst_status ?? tenant.status}
                     </Badge>
                   </td>
                 </tr>

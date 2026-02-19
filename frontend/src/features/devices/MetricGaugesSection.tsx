@@ -2,17 +2,35 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricGauge } from "@/lib/charts";
 import { getLatestValue, getMetricValues } from "@/lib/charts/transforms";
 import type { TelemetryPoint } from "@/services/api/types";
-import { memo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { memo, useMemo } from "react";
+import { listDeviceSensors } from "@/services/api/sensors";
 
 interface MetricGaugesSectionProps {
+  deviceId?: string;
   metrics: string[];
   points: TelemetryPoint[];
 }
 
 function MetricGaugesSectionInner({
+  deviceId,
   metrics,
   points,
 }: MetricGaugesSectionProps) {
+  const { data: sensorsData } = useQuery({
+    queryKey: ["device-sensors", deviceId],
+    queryFn: () => listDeviceSensors(deviceId!),
+    enabled: !!deviceId,
+  });
+
+  const sensorMap = useMemo(() => {
+    const map = new Map<string, { label: string; unit: string }>();
+    for (const s of sensorsData?.sensors ?? []) {
+      map.set(s.metric_name, { label: s.label || s.metric_name, unit: s.unit || "" });
+    }
+    return map;
+  }, [sensorsData]);
+
   if (metrics.length === 0) {
     return (
       <Card>
@@ -36,6 +54,8 @@ function MetricGaugesSectionInner({
             <MetricGauge
               key={metricName}
               metricName={metricName}
+              displayLabel={sensorMap.get(metricName)?.label}
+              unit={sensorMap.get(metricName)?.unit}
               value={getLatestValue(points, metricName)}
               allValues={getMetricValues(points, metricName)}
             />

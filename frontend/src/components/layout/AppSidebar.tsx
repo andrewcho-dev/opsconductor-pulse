@@ -59,6 +59,7 @@ type NavItem = {
 
 const customerFleetNav: NavItem[] = [
   { label: "Devices", href: "/devices", icon: Cpu },
+  { label: "Sensors", href: "/sensors", icon: Activity },
   { label: "Device Groups", href: "/device-groups", icon: Layers },
   { label: "Fleet Map", href: "/map", icon: MapPin },
   { label: "OTA Updates", href: "/ota/campaigns", icon: Radio },
@@ -96,7 +97,8 @@ const operatorTenantNav: NavItem[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Health Matrix", href: "/operator/tenant-matrix", icon: LayoutGrid },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
-  { label: "Device Tiers", href: "/operator/device-tiers", icon: Layers },
+  { label: "Device Plans", href: "/operator/device-plans", icon: Layers },
+  { label: "Account Tiers", href: "/operator/account-tiers", icon: Shield },
 ];
 
 const operatorUsersAuditNav: NavItem[] = [
@@ -160,6 +162,7 @@ export function AppSidebar() {
   const settingsNav: NavItem[] = [
     { label: "Profile", href: "/settings/profile", icon: UserCircle },
     { label: "Organization", href: "/settings/organization", icon: Building2 },
+    { label: "Carrier Integrations", href: "/settings/carrier", icon: Radio },
     { label: "Subscription", href: "/subscription", icon: CreditCard },
     { label: "Billing", href: "/billing", icon: CreditCard },
     ...(canManageUsers ? [{ label: "Team", href: "/users", icon: Users }] : []),

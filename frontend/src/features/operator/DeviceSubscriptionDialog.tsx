@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -19,21 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiGet, apiPost } from "@/services/api/client";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
-
-interface SubscriptionRow {
-  subscription_id: string;
-  subscription_type: string;
-  device_limit: number;
-  active_device_count: number;
-  status: string;
-}
-
-interface SubscriptionListResponse {
-  subscriptions: SubscriptionRow[];
-}
+import {
+  createDeviceSubscription,
+  updateDeviceSubscription,
+} from "@/services/api/operator";
+import { fetchDevicePlans } from "@/services/api/device-tiers";
 
 interface DeviceSubscriptionDialogProps {
   open: boolean;
@@ -52,48 +44,49 @@ export function DeviceSubscriptionDialog({
   currentSubscriptionId,
   onAssigned,
 }: DeviceSubscriptionDialogProps) {
-  const [targetSubscriptionId, setTargetSubscriptionId] = useState("");
-  const [notes, setNotes] = useState("");
+  const [planId, setPlanId] = useState("");
+  const [termEnd, setTermEnd] = useState("");
 
   useEffect(() => {
-    if (open) {
-      setTargetSubscriptionId("");
-      setNotes("");
-    }
+    if (!open) return;
+    setPlanId("");
+    setTermEnd("");
   }, [open]);
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("tenant_id", tenantId);
-    params.set("status", "ACTIVE");
-    params.set("limit", "200");
-    return params.toString();
-  }, [tenantId]);
-
-  const { data } = useQuery({
-    queryKey: ["operator-device-subscriptions", queryString],
-    queryFn: () =>
-      apiGet<SubscriptionListResponse>(`/operator/subscriptions?${queryString}`),
+  const { data: planData, isLoading: plansLoading } = useQuery({
+    queryKey: ["operator-device-plans"],
+    queryFn: fetchDevicePlans,
     enabled: open,
   });
 
-  const subscriptions = data?.subscriptions ?? [];
-  const selected = subscriptions.find(
-    (sub) => sub.subscription_id === targetSubscriptionId
-  );
+  const plans = planData?.plans ?? [];
+
+  const canSubmit = useMemo(() => {
+    return Boolean(planId);
+  }, [planId]);
 
   const mutation = useMutation({
-    mutationFn: async () =>
-      apiPost(`/operator/devices/${deviceId}/subscription`, {
-        subscription_id: targetSubscriptionId,
-        notes,
-      }),
+    mutationFn: async () => {
+      if (currentSubscriptionId) {
+        return updateDeviceSubscription(currentSubscriptionId, {
+          plan_id: planId,
+          term_end: termEnd ? new Date(termEnd).toISOString() : undefined,
+        });
+      }
+      return createDeviceSubscription({
+        tenant_id: tenantId,
+        device_id: deviceId,
+        plan_id: planId,
+        status: "ACTIVE",
+        term_end: termEnd ? new Date(termEnd).toISOString() : undefined,
+      });
+    },
     onSuccess: () => {
       onAssigned();
-      toast.success("Subscription assigned");
+      toast.success(currentSubscriptionId ? "Subscription updated" : "Subscription created");
     },
     onError: (err: Error) => {
-      toast.error(getErrorMessage(err) || "Failed to assign subscription");
+      toast.error(getErrorMessage(err) || "Failed to save subscription");
     },
   });
 
@@ -101,7 +94,9 @@ export function DeviceSubscriptionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Assign Subscription</DialogTitle>
+          <DialogTitle>
+            {currentSubscriptionId ? "Update Device Subscription" : "Create Device Subscription"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -115,47 +110,33 @@ export function DeviceSubscriptionDialog({
               {currentSubscriptionId ? (
                 <Badge variant="outline">{currentSubscriptionId}</Badge>
               ) : (
-                <Badge variant="secondary">Unassigned</Badge>
+                <Badge variant="secondary">None</Badge>
               )}
             </div>
           </div>
 
           <div className="space-y-2">
-            <span className="text-sm font-medium">Target Subscription</span>
-            <Select value={targetSubscriptionId} onValueChange={setTargetSubscriptionId}>
+            <span className="text-sm font-medium">Plan</span>
+            <Select value={planId} onValueChange={setPlanId} disabled={plansLoading}>
               <SelectTrigger>
-                <SelectValue placeholder="Select subscription" />
+                <SelectValue placeholder={plansLoading ? "Loading plans..." : "Select plan"} />
               </SelectTrigger>
               <SelectContent>
-                {subscriptions.map((sub) => {
-                  const isFull = sub.active_device_count >= sub.device_limit;
-                  const isCurrent = sub.subscription_id === currentSubscriptionId;
-                  return (
-                    <SelectItem
-                      key={sub.subscription_id}
-                      value={sub.subscription_id}
-                      disabled={isFull || isCurrent}
-                    >
-                      {sub.subscription_id} ({sub.active_device_count}/{sub.device_limit})
-                    </SelectItem>
-                  );
-                })}
+                {plans.map((p) => (
+                  <SelectItem key={p.plan_id} value={p.plan_id}>
+                    {p.name} ({p.plan_id})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            {selected && selected.active_device_count >= selected.device_limit && (
-              <p className="text-xs text-destructive">
-                Subscription is at device limit.
-              </p>
-            )}
           </div>
 
           <div className="space-y-2">
-            <span className="text-sm font-medium">Notes</span>
-            <Textarea
-              placeholder="Reason for assignment (required)"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={3}
+            <span className="text-sm font-medium">Term End (optional)</span>
+            <Input
+              type="date"
+              value={termEnd}
+              onChange={(e) => setTermEnd(e.target.value)}
             />
           </div>
         </div>
@@ -172,12 +153,13 @@ export function DeviceSubscriptionDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!targetSubscriptionId || !notes.trim() || mutation.isPending}
+            disabled={!canSubmit || mutation.isPending}
           >
-            {mutation.isPending ? "Assigning..." : "Assign"}
+            {mutation.isPending ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
