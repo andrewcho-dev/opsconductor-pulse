@@ -7,6 +7,7 @@ import { apiGet } from "@/services/api/client";
 
 interface Subscription {
   subscription_id: string;
+  device_id: string;
   status: string;
   term_end: string | null;
 }
@@ -14,9 +15,8 @@ interface Subscription {
 interface SubscriptionsResponse {
   subscriptions: Subscription[];
   summary: {
-    total_device_limit: number;
-    total_active_devices: number;
-    total_available: number;
+    total_subscriptions: number;
+    active_subscriptions: number;
   };
 }
 
