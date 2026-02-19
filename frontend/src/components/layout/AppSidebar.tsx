@@ -99,6 +99,7 @@ const operatorTenantNav: NavItem[] = [
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
   { label: "Device Plans", href: "/operator/device-plans", icon: Layers },
   { label: "Account Tiers", href: "/operator/account-tiers", icon: Shield },
+  { label: "Carrier Integrations", href: "/operator/carriers", icon: Radio },
 ];
 
 const operatorUsersAuditNav: NavItem[] = [

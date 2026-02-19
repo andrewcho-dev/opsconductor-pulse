@@ -268,6 +268,36 @@ export interface CarrierLinkRequest {
   carrier_device_id: string;
 }
 
+export interface CarrierProvisionRequest {
+  carrier_integration_id: number;
+  iccid: string;
+  plan_id?: number;
+}
+
+export interface CarrierProvisionResponse {
+  provisioned: boolean;
+  device_id: string;
+  carrier_device_id: string;
+  carrier_integration_id: number;
+  iccid: string;
+  claim_result: Record<string, unknown>;
+}
+
+export interface CarrierPlan {
+  id: number;
+  name: string;
+  description?: string;
+  data: number; // bytes or plan-specific
+  price?: number;
+  [key: string]: unknown;
+}
+
+export interface CarrierPlansResponse {
+  plans: CarrierPlan[];
+  carrier_name: string;
+  note?: string;
+}
+
 // ─── Subscription Package Architecture (Phase 156) ───────────────
 
 export interface AccountTier {

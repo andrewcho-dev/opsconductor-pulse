@@ -97,12 +97,41 @@ async def _sync_integration(pool: asyncpg.Pool, integration: dict):
     except (asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError):
         return
 
+    if not devices:
+        return
+
+    # Attempt bulk usage fetch for efficiency
+    carrier_ids = [d["carrier_device_id"] for d in devices]
+    usage_map: dict = {}
+    try:
+        usage_map = await provider.get_bulk_usage(carrier_ids)
+    except Exception:
+        logger.warning(
+            "Bulk usage fetch failed for integration %s, falling back to per-device",
+            integration_id,
+        )
+
     synced = 0
     errors = 0
     for device in devices:
+        carrier_device_id = device["carrier_device_id"]
         try:
-            usage = await provider.get_usage(device["carrier_device_id"])
+            usage = usage_map.get(carrier_device_id)
+            if usage is None:
+                usage = await provider.get_usage(carrier_device_id)
             data_used_mb = usage.data_used_bytes / (1024 * 1024) if usage.data_used_bytes else 0
+
+            sim_status = None
+            network_status = None
+            try:
+                info = await provider.get_device_info(carrier_device_id)
+                sim_status = info.sim_status
+                network_status = info.network_status
+            except Exception:
+                logger.debug(
+                    "Could not fetch device info for %s during sync",
+                    carrier_device_id,
+                )
 
             async with pool.acquire() as conn:
                 # Use SET LOCAL for RLS-like behavior (matches existing patterns in repo).
@@ -111,12 +140,18 @@ async def _sync_integration(pool: asyncpg.Pool, integration: dict):
                 await conn.execute(
                     """
                     UPDATE device_connections
-                    SET data_used_mb = $1, data_used_updated_at = now(), updated_at = now()
+                    SET data_used_mb = $1,
+                        data_used_updated_at = now(),
+                        sim_status = COALESCE($4, sim_status),
+                        network_status = COALESCE($5, network_status),
+                        updated_at = now()
                     WHERE tenant_id = $2 AND device_id = $3
                     """,
                     round(float(data_used_mb), 2),
                     tenant_id,
                     device["device_id"],
+                    sim_status,
+                    network_status,
                 )
             synced += 1
         except Exception as e:
