@@ -5,13 +5,15 @@ sources:
   - services/ui_iot/Dockerfile
   - services/ui_iot/services/carrier_service.py
   - services/ui_iot/services/carrier_sync.py
+  - services/ui_iot/routes/devices.py
+  - services/ui_iot/routes/sensors.py
   - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/operator.py
   - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169]
 ---
 
 # ui-iot
@@ -182,6 +184,15 @@ Device template CRUD and sub-resource management is implemented in:
 
 - Customer routes: `services/ui_iot/routes/templates.py`
 - Router registration: `services/ui_iot/app.py` (`app.include_router(templates_router)`)
+
+## Device Instance Model
+
+Phase 169 updates device management APIs to use the instance-level template model:
+
+- Device provisioning supports `template_id` and `parent_device_id` (stored on `device_registry`).
+- Module assignment endpoints live in `services/ui_iot/routes/devices.py` (`/devices/{device_id}/modules`).
+- Sensor endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_sensors` and keep the fleet-wide `/sensors` endpoint for backward compatibility.
+- Transport endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_transports`. Legacy `/devices/{device_id}/connection` remains temporarily but is marked deprecated.
 
 ## Troubleshooting
 

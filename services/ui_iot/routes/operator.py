@@ -2338,6 +2338,7 @@ async def get_tenant_stats(request: Request, tenant_id: str):
 async def list_devices(
     request: Request,
     tenant_filter: str | None = Query(None),
+    template_id: int | None = Query(default=None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -2356,15 +2357,90 @@ async def list_devices(
                 rls_bypassed=True,
             )
         async with operator_connection(p) as conn:
-            if tenant_filter:
-                devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
+            if template_id is not None:
+                conditions: list[str] = []
+                params: list = []
+                idx = 1
+
+                if tenant_filter:
+                    conditions.append(f"ds.tenant_id = ${idx}")
+                    params.append(tenant_filter)
+                    idx += 1
+
+                conditions.append(f"dr.template_id = ${idx}")
+                params.append(template_id)
+                idx += 1
+
+                where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
                 total = await conn.fetchval(
-                    "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
-                    tenant_filter,
+                    f"""
+                    SELECT COUNT(*)
+                    FROM device_state ds
+                    LEFT JOIN device_registry dr
+                      ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+                    {where}
+                    """,
+                    *params,
                 )
+                rows = await conn.fetch(
+                    f"""
+                    SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+                           state->>'battery_pct' AS battery_pct,
+                           state->>'temp_c' AS temp_c,
+                           state->>'rssi_dbm' AS rssi_dbm,
+                           state->>'snr_db' AS snr_db,
+                           dr.subscription_id,
+                           dr.template_id,
+                           dt.name AS template_name
+                    FROM device_state ds
+                    LEFT JOIN device_registry dr
+                      ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+                    LEFT JOIN device_templates dt
+                      ON dt.id = dr.template_id
+                    {where}
+                    ORDER BY ds.tenant_id, ds.site_id, ds.device_id
+                    LIMIT ${idx} OFFSET ${idx + 1}
+                    """,
+                    *params,
+                    limit,
+                    offset,
+                )
+                devices = [dict(r) for r in rows]
             else:
-                devices = await fetch_all_devices(conn, limit=limit, offset=offset)
-                total = await conn.fetchval("SELECT COUNT(*) FROM device_state")
+                if tenant_filter:
+                    devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
+                    total = await conn.fetchval(
+                        "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
+                        tenant_filter,
+                    )
+                else:
+                    devices = await fetch_all_devices(conn, limit=limit, offset=offset)
+                    total = await conn.fetchval("SELECT COUNT(*) FROM device_state")
+
+                if devices:
+                    tenant_ids = [d["tenant_id"] for d in devices]
+                    device_ids = [d["device_id"] for d in devices]
+                    trows = await conn.fetch(
+                        """
+                        SELECT
+                            dr.tenant_id,
+                            dr.device_id,
+                            dr.template_id,
+                            dt.name AS template_name
+                        FROM device_registry dr
+                        LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                        JOIN unnest($1::text[], $2::text[]) AS u(tenant_id, device_id)
+                          ON u.tenant_id = dr.tenant_id AND u.device_id = dr.device_id
+                        """,
+                        tenant_ids,
+                        device_ids,
+                    )
+                    tmap = {(r["tenant_id"], r["device_id"]): dict(r) for r in trows}
+                    for d in devices:
+                        t = tmap.get((d.get("tenant_id"), d.get("device_id"))) or {}
+                        d["template_id"] = t.get("template_id")
+                        d["template_name"] = t.get("template_name")
     except Exception:
         logger.exception("Failed to fetch operator devices")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -2455,6 +2531,67 @@ async def view_device(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
+            tpl = await conn.fetchrow(
+                """
+                SELECT
+                    dr.template_id,
+                    dr.parent_device_id,
+                    dt.id AS template_row_id,
+                    dt.name AS template_name,
+                    dt.category AS template_category,
+                    dt.source AS template_source,
+                    (SELECT count(*) FROM device_modules dm WHERE dm.tenant_id = dr.tenant_id AND dm.device_id = dr.device_id) AS module_count,
+                    (SELECT count(*) FROM device_sensors ds WHERE ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id AND ds.status = 'active') AS sensor_count
+                FROM device_registry dr
+                LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                WHERE dr.tenant_id = $1 AND dr.device_id = $2
+                """,
+                tenant_id,
+                device_id,
+            )
+            if tpl:
+                device["template_id"] = tpl["template_id"]
+                device["parent_device_id"] = tpl["parent_device_id"]
+                device["module_count"] = int(tpl["module_count"] or 0)
+                device["sensor_count"] = int(tpl["sensor_count"] or 0)
+                device["template"] = (
+                    {
+                        "id": tpl["template_row_id"],
+                        "name": tpl["template_name"],
+                        "category": tpl["template_category"],
+                        "source": tpl["template_source"],
+                    }
+                    if tpl["template_row_id"]
+                    else None
+                )
+
+            trows = await conn.fetch(
+                """
+                SELECT
+                    t.id,
+                    t.ingestion_protocol,
+                    t.physical_connectivity,
+                    t.protocol_config,
+                    t.connectivity_config,
+                    t.carrier_integration_id,
+                    ci.display_name AS carrier_display_name,
+                    t.is_primary,
+                    t.status,
+                    t.last_connected_at,
+                    t.created_at,
+                    t.updated_at
+                FROM device_transports t
+                LEFT JOIN carrier_integrations ci
+                  ON ci.id = t.carrier_integration_id
+                 AND ci.tenant_id = t.tenant_id
+                WHERE t.tenant_id = $1 AND t.device_id = $2
+                ORDER BY t.is_primary DESC, t.id
+                """,
+                tenant_id,
+                device_id,
+            )
+            device["transports"] = [dict(r) for r in trows]
+
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
     except HTTPException:
@@ -2469,6 +2606,166 @@ async def view_device(
         "events": events,
         "telemetry": telemetry,
     }
+
+
+@router.get("/devices/{device_id}/modules")
+async def operator_list_device_modules(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    dm.tenant_id,
+                    dm.device_id,
+                    dm.id,
+                    dm.slot_key,
+                    dm.bus_address,
+                    dm.module_template_id,
+                    dt.name AS module_template_name,
+                    dm.label,
+                    dm.serial_number,
+                    dm.metric_key_map,
+                    dm.status,
+                    dm.installed_at
+                FROM device_modules dm
+                LEFT JOIN device_templates dt ON dt.id = dm.module_template_id
+                WHERE dm.device_id = $1
+                ORDER BY dm.tenant_id, dm.slot_key, COALESCE(dm.bus_address, ''), dm.id
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device modules")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_modules",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "modules": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.get("/devices/{device_id}/sensors")
+async def operator_list_device_sensors(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    ds.tenant_id,
+                    ds.device_id,
+                    ds.id,
+                    ds.metric_key,
+                    ds.display_name,
+                    ds.source,
+                    ds.template_metric_id,
+                    tm.display_name AS template_metric_display_name,
+                    ds.device_module_id,
+                    dm.label AS module_label,
+                    ds.unit,
+                    ds.min_range,
+                    ds.max_range,
+                    ds.precision_digits,
+                    ds.status,
+                    ds.last_value,
+                    ds.last_value_text,
+                    ds.last_seen_at,
+                    ds.created_at,
+                    ds.updated_at
+                FROM device_sensors ds
+                LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
+                LEFT JOIN device_modules dm ON dm.id = ds.device_module_id
+                WHERE ds.device_id = $1
+                ORDER BY ds.tenant_id, ds.metric_key
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device sensors")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_sensors",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "sensors": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.get("/devices/{device_id}/transports")
+async def operator_list_device_transports(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    t.tenant_id,
+                    t.device_id,
+                    t.id,
+                    t.ingestion_protocol,
+                    t.physical_connectivity,
+                    t.protocol_config,
+                    t.connectivity_config,
+                    t.carrier_integration_id,
+                    ci.display_name AS carrier_display_name,
+                    t.is_primary,
+                    t.status,
+                    t.last_connected_at,
+                    t.created_at,
+                    t.updated_at
+                FROM device_transports t
+                LEFT JOIN carrier_integrations ci
+                  ON ci.id = t.carrier_integration_id
+                 AND ci.tenant_id = t.tenant_id
+                WHERE t.device_id = $1
+                ORDER BY t.tenant_id, t.is_primary DESC, t.id
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device transports")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_transports",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "transports": [dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/alerts")

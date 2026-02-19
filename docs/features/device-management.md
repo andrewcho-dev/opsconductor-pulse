@@ -2,6 +2,8 @@
 last-verified: 2026-02-19
 sources:
   - services/ui_iot/routes/devices.py
+  - services/ui_iot/routes/sensors.py
+  - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/customer.py
   - services/ui_iot/routes/jobs.py
   - services/ui_iot/routes/ota.py
@@ -10,7 +12,7 @@ sources:
   - services/ui_iot/routes/operator.py
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158]
+phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169]
 ---
 
 # Device Management
@@ -37,6 +39,20 @@ Devices are registered in the device registry tables. Provisioning flows:
 
 - Admin provisioning API registers devices and issues tokens.
 - Devices authenticate ingestion using provision tokens (and optionally certificates, depending on deployment).
+
+### Templates and device instances (Phases 166-169)
+
+The platform models device capability vs device reality:
+
+- Templates (`device_templates`, `template_metrics`, `template_commands`, `template_slots`) describe what a device type can do.
+- Instances (`device_registry`, `device_modules`, `device_sensors`, `device_transports`) describe what a specific device actually has configured.
+
+Key behaviors:
+
+- When a device is created with `template_id`, the system auto-creates `device_sensors` rows for all required template metrics (`template_metrics.is_required = true`).
+- Template changes do not delete sensors automatically; they only add missing required sensors from the new template.
+- Module assignment validates slot compatibility (slot exists in the device template; optional `compatible_templates` checks; `max_devices` slot enforcement).
+- Transport configuration uses `device_transports` (replacing the legacy `device_connections` model). Legacy connection endpoints remain temporarily but are deprecated in favor of transports.
 
 ### Telemetry and state
 

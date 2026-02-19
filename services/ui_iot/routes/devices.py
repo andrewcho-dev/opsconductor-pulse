@@ -3,9 +3,11 @@
 from routes.customer import *  # noqa: F401,F403
 from routes.customer import _normalize_optional_ids
 from routes.customer import _normalize_tags
+from routes.customer import DeviceUpdate as _CustomerDeviceUpdate
 from middleware.permissions import require_permission
 from typing import Any, Optional
 from fastapi import Query, Response as FastAPIResponse
+import asyncpg
 
 from shared.logging import get_logger
 from shared.twin import compute_delta, compute_structured_delta, sync_status
@@ -78,6 +80,14 @@ class DeviceCreateV2(BaseModel):
     device_id: str
     site_id: str | None = None
     plan_id: str | None = None
+    template_id: int | None = None
+    parent_device_id: str | None = None
+
+
+# Phase 169: allow updating template_id on devices. We keep the original shared
+# model (routes/customer.py) for backwards compatibility, and extend it here.
+class DeviceUpdate(_CustomerDeviceUpdate):
+    template_id: int | None = None
 
 
 async def _publish_shadow_desired(
@@ -155,23 +165,78 @@ async def create_device(request: Request, device: DeviceCreateV2, pool=Depends(g
         if not plan_exists:
             raise HTTPException(400, "Invalid plan_id")
 
+        template_row = None
+        if getattr(device, "template_id", None) is not None:
+            template_row = await conn.fetchrow(
+                """
+                SELECT id, category, transport_defaults
+                FROM device_templates
+                WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+                """,
+                device.template_id,
+                tenant_id,
+            )
+            if not template_row:
+                raise HTTPException(status_code=404, detail="Template not found")
+
         # 1) Create device record with plan_id
         try:
             await conn.execute(
                 """
-                INSERT INTO device_registry (tenant_id, device_id, site_id, plan_id, status)
-                VALUES ($1, $2, $3, $4, 'ACTIVE')
+                INSERT INTO device_registry (tenant_id, device_id, site_id, plan_id, status, template_id, parent_device_id)
+                VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $6)
                 """,
                 tenant_id,
                 device.device_id,
                 device.site_id,
                 plan_id,
+                device.template_id,
+                device.parent_device_id,
             )
         except Exception as exc:
             # Keep error handling simple for now; most common is duplicate device_id.
             if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
                 raise HTTPException(409, "Device already exists")
             raise
+
+        # Phase 169: when created with a template, auto-create required sensors and a default transport.
+        if template_row:
+            await conn.execute(
+                """
+                INSERT INTO device_sensors (
+                    tenant_id, device_id, metric_key, display_name, template_metric_id,
+                    unit, min_range, max_range, precision_digits, source
+                )
+                SELECT $1, $2, tm.metric_key, tm.display_name, tm.id,
+                       tm.unit, tm.min_value, tm.max_value, tm.precision_digits, 'required'
+                FROM template_metrics tm
+                WHERE tm.template_id = $3 AND tm.is_required = true
+                ON CONFLICT (tenant_id, device_id, metric_key) DO NOTHING
+                """,
+                tenant_id,
+                device.device_id,
+                device.template_id,
+            )
+
+            defaults = _jsonb_to_dict(template_row.get("transport_defaults"))
+            if defaults:
+                await conn.execute(
+                    """
+                    INSERT INTO device_transports (
+                        tenant_id, device_id, ingestion_protocol, physical_connectivity,
+                        protocol_config, connectivity_config, carrier_integration_id, is_primary, status
+                    )
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, true, 'active')
+                    ON CONFLICT (tenant_id, device_id, ingestion_protocol) DO NOTHING
+                    """,
+                    tenant_id,
+                    device.device_id,
+                    defaults.get("ingestion_protocol", "mqtt_direct"),
+                    defaults.get("physical_connectivity"),
+                    json.dumps(defaults.get("protocol_config", {})),
+                    json.dumps(defaults.get("connectivity_config", {})),
+                    defaults.get("carrier_integration_id"),
+                )
 
         # 2) Create an initial device subscription (trial, 14 days)
         subscription_id = await conn.fetchval("SELECT generate_subscription_id()")
@@ -197,6 +262,335 @@ async def create_device(request: Request, device: DeviceCreateV2, pool=Depends(g
         "plan_id": plan_id,
         "status": "created",
     }
+
+
+# ── Device Modules (Phase 169) ────────────────────────────────────────────────
+
+
+class ModuleCreate(BaseModel):
+    slot_key: str = Field(..., min_length=1, max_length=100)
+    bus_address: str | None = Field(default=None, max_length=100)
+    module_template_id: int | None = None
+    label: str = Field(..., min_length=1, max_length=200)
+    serial_number: str | None = Field(default=None, max_length=100)
+    metric_key_map: dict[str, str] = Field(default_factory=dict)
+
+
+class ModuleUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=200)
+    serial_number: str | None = Field(default=None, max_length=100)
+    metric_key_map: dict[str, str] | None = None
+    status: str | None = Field(default=None, pattern=r"^(active|inactive|removed)$")
+
+
+@router.get("/devices/{device_id}/modules")
+async def list_device_modules(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            rows = await conn.fetch(
+                """
+                SELECT
+                    dm.id,
+                    dm.slot_key,
+                    dm.bus_address,
+                    dm.module_template_id,
+                    dt.name AS module_template_name,
+                    dm.label,
+                    dm.serial_number,
+                    dm.metric_key_map,
+                    dm.status,
+                    dm.installed_at
+                FROM device_modules dm
+                LEFT JOIN device_templates dt ON dt.id = dm.module_template_id
+                WHERE dm.tenant_id = $1 AND dm.device_id = $2
+                ORDER BY dm.slot_key, COALESCE(dm.bus_address, ''), dm.id
+                """,
+                tenant_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to list device modules")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r["id"],
+                "slot_key": r["slot_key"],
+                "bus_address": r["bus_address"],
+                "module_template": (
+                    {"id": r["module_template_id"], "name": r["module_template_name"]}
+                    if r["module_template_id"]
+                    else None
+                ),
+                "label": r["label"],
+                "serial_number": r["serial_number"],
+                "metric_key_map": _jsonb_to_dict(r["metric_key_map"]),
+                "status": r["status"],
+                "installed_at": r["installed_at"].isoformat().replace("+00:00", "Z")
+                if r["installed_at"]
+                else None,
+            }
+        )
+    return {"device_id": device_id, "modules": items, "total": len(items)}
+
+
+@router.post("/devices/{device_id}/modules", status_code=201)
+async def create_device_module(device_id: str, body: ModuleCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            device_row = await conn.fetchrow(
+                "SELECT template_id FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not device_row:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            slot_row = None
+            if device_row["template_id"] is not None:
+                slot_row = await conn.fetchrow(
+                    """
+                    SELECT slot_key, max_devices, compatible_templates
+                    FROM template_slots
+                    WHERE template_id = $1 AND slot_key = $2
+                    """,
+                    device_row["template_id"],
+                    body.slot_key,
+                )
+                if not slot_row:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Slot key not found in device template",
+                    )
+
+            if body.module_template_id is not None:
+                tpl = await conn.fetchrow(
+                    """
+                    SELECT id, category
+                    FROM device_templates
+                    WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+                    """,
+                    body.module_template_id,
+                    tenant_id,
+                )
+                if not tpl:
+                    raise HTTPException(status_code=404, detail="Module template not found")
+                if tpl["category"] != "expansion_module":
+                    raise HTTPException(status_code=400, detail="module_template_id must be an expansion_module template")
+
+            if slot_row and slot_row["compatible_templates"] is not None and body.module_template_id is not None:
+                compatible = list(slot_row["compatible_templates"] or [])
+                if body.module_template_id not in compatible:
+                    raise HTTPException(status_code=400, detail="Module template is not compatible with this slot")
+
+            if slot_row and slot_row["max_devices"] is not None:
+                current = await conn.fetchval(
+                    """
+                    SELECT count(*)
+                    FROM device_modules
+                    WHERE tenant_id = $1 AND device_id = $2 AND slot_key = $3 AND status = 'active'
+                    """,
+                    tenant_id,
+                    device_id,
+                    body.slot_key,
+                )
+                if int(current or 0) >= int(slot_row["max_devices"]):
+                    raise HTTPException(status_code=409, detail="Slot full")
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO device_modules
+                    (tenant_id, device_id, slot_key, bus_address, module_template_id,
+                     label, serial_number, metric_key_map, status)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'active')
+                RETURNING id
+                """,
+                tenant_id,
+                device_id,
+                body.slot_key,
+                body.bus_address,
+                body.module_template_id,
+                body.label,
+                body.serial_number,
+                json.dumps(body.metric_key_map),
+            )
+            module_id = int(row["id"])
+
+            # Auto-create required sensors from the module template (if any).
+            if body.module_template_id is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO device_sensors (
+                        tenant_id, device_id, metric_key, display_name, template_metric_id, device_module_id,
+                        unit, min_range, max_range, precision_digits, source
+                    )
+                    SELECT $1, $2, tm.metric_key, tm.display_name, tm.id, $3,
+                           tm.unit, tm.min_value, tm.max_value, tm.precision_digits, 'required'
+                    FROM template_metrics tm
+                    WHERE tm.template_id = $4 AND tm.is_required = true
+                    ON CONFLICT (tenant_id, device_id, metric_key) DO NOTHING
+                    """,
+                    tenant_id,
+                    device_id,
+                    module_id,
+                    body.module_template_id,
+                )
+
+            full = await conn.fetchrow(
+                """
+                SELECT
+                    dm.id,
+                    dm.slot_key,
+                    dm.bus_address,
+                    dm.module_template_id,
+                    dt.name AS module_template_name,
+                    dm.label,
+                    dm.serial_number,
+                    dm.metric_key_map,
+                    dm.status,
+                    dm.installed_at
+                FROM device_modules dm
+                LEFT JOIN device_templates dt ON dt.id = dm.module_template_id
+                WHERE dm.tenant_id = $1 AND dm.device_id = $2 AND dm.id = $3
+                """,
+                tenant_id,
+                device_id,
+                module_id,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Module already exists in this slot/address")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create device module")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return {
+        "id": full["id"],
+        "slot_key": full["slot_key"],
+        "bus_address": full["bus_address"],
+        "module_template": (
+            {"id": full["module_template_id"], "name": full["module_template_name"]}
+            if full["module_template_id"]
+            else None
+        ),
+        "label": full["label"],
+        "serial_number": full["serial_number"],
+        "metric_key_map": _jsonb_to_dict(full["metric_key_map"]),
+        "status": full["status"],
+        "installed_at": full["installed_at"].isoformat().replace("+00:00", "Z") if full["installed_at"] else None,
+    }
+
+
+@router.put("/devices/{device_id}/modules/{module_id}")
+async def update_device_module(
+    device_id: str,
+    module_id: int,
+    body: ModuleUpdate,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    params: list[Any] = [tenant_id, device_id, module_id]
+    idx = 4
+
+    def add_set(col: str, val: Any, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    if "label" in updates:
+        add_set("label", updates["label"])
+    if "serial_number" in updates:
+        add_set("serial_number", updates["serial_number"])
+    if "metric_key_map" in updates:
+        add_set("metric_key_map", json.dumps(updates["metric_key_map"] or {}), "jsonb")
+    if "status" in updates:
+        add_set("status", updates["status"])
+    sets.append("updated_at = now()")
+
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE device_modules
+                SET {", ".join(sets)}
+                WHERE tenant_id = $1 AND device_id = $2 AND id = $3
+                RETURNING *
+                """,
+                *params,
+            )
+    except Exception:
+        logger.exception("Failed to update device module")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    if not row:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return dict(row)
+
+
+@router.delete("/devices/{device_id}/modules/{module_id}", status_code=204)
+async def delete_device_module(device_id: str, module_id: int, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_modules WHERE tenant_id = $1 AND device_id = $2 AND id = $3",
+                tenant_id,
+                device_id,
+                module_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Module not found")
+
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    UPDATE device_modules
+                    SET status = 'removed', updated_at = now()
+                    WHERE tenant_id = $1 AND device_id = $2 AND id = $3
+                    """,
+                    tenant_id,
+                    device_id,
+                    module_id,
+                )
+                await conn.execute(
+                    """
+                    UPDATE device_sensors
+                    SET status = 'inactive', updated_at = now()
+                    WHERE tenant_id = $1 AND device_id = $2 AND device_module_id = $3
+                    """,
+                    tenant_id,
+                    device_id,
+                    module_id,
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete device module")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return Response(status_code=204)
 
 
 @router.get("/devices/{device_id}/tokens")
@@ -608,6 +1002,7 @@ async def list_devices(
     q: str | None = Query(None, max_length=100),
     site_id: str | None = Query(None),
     include_decommissioned: bool = Query(False),
+    template_id: int | None = Query(default=None),
     pool=Depends(get_db_pool),
 ):
     """List all devices for the authenticated tenant.
@@ -628,20 +1023,132 @@ async def list_devices(
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
-            result = await fetch_devices_v2(
-                conn,
-                tenant_id,
-                limit=limit,
-                offset=offset,
-                status=status,
-                tags=tag_list,
-                q=q,
-                site_id=site_id,
-                include_decommissioned=include_decommissioned,
-            )
-            devices = result["devices"]
+            if template_id is None:
+                result = await fetch_devices_v2(
+                    conn,
+                    tenant_id,
+                    limit=limit,
+                    offset=offset,
+                    status=status,
+                    tags=tag_list,
+                    q=q,
+                    site_id=site_id,
+                    include_decommissioned=include_decommissioned,
+                )
+                devices = result["devices"]
+                total = int(result["total"] or 0)
+            else:
+                # Phase 169: apply template_id filter directly in SQL (fetch_devices_v2 does not support it).
+                params: list[Any] = [tenant_id]
+                where_clauses = ["dr.tenant_id = $1"]
+                idx = 2
+
+                if not include_decommissioned:
+                    where_clauses.append("dr.decommissioned_at IS NULL")
+                if status:
+                    where_clauses.append(f"COALESCE(ds.status, 'OFFLINE') = ${idx}")
+                    params.append(status)
+                    idx += 1
+                if tag_list:
+                    where_clauses.append(
+                        f"""(
+                            SELECT COUNT(DISTINCT dt.tag)
+                            FROM device_tags dt
+                            WHERE dt.tenant_id = dr.tenant_id
+                              AND dt.device_id = dr.device_id
+                              AND dt.tag = ANY(${idx}::text[])
+                        ) = {len(tag_list)}"""
+                    )
+                    params.append(tag_list)
+                    idx += 1
+                if q:
+                    where_clauses.append(
+                        f"""(
+                            dr.device_id ILIKE ${idx}
+                            OR dr.model ILIKE ${idx}
+                            OR dr.serial_number ILIKE ${idx}
+                            OR dr.site_id ILIKE ${idx}
+                            OR dr.address ILIKE ${idx}
+                        )"""
+                    )
+                    params.append(f"%{q}%")
+                    idx += 1
+                if site_id:
+                    where_clauses.append(f"dr.site_id = ${idx}")
+                    params.append(site_id)
+                    idx += 1
+
+                where_clauses.append(f"dr.template_id = ${idx}")
+                params.append(template_id)
+                idx += 1
+
+                where_sql = " AND ".join(where_clauses)
+                total = await conn.fetchval(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM device_registry dr
+                    LEFT JOIN device_state ds
+                      ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+                    WHERE {where_sql}
+                    """,
+                    *params,
+                )
+                rows = await conn.fetch(
+                    f"""
+                    SELECT dr.tenant_id,
+                           dr.device_id,
+                           dr.site_id,
+                           COALESCE(ds.status, 'OFFLINE') AS status,
+                           ds.last_seen_at,
+                           ds.last_heartbeat_at,
+                           ds.last_telemetry_at,
+                           COALESCE(ds.state, '{{}}'::jsonb) AS state,
+                           dr.latitude, dr.longitude, dr.address, dr.location_source,
+                           dr.mac_address, dr.imei, dr.iccid, dr.serial_number,
+                           dr.model, dr.manufacturer, dr.hw_revision, dr.fw_version, dr.notes,
+                           dr.chipset, dr.modem_model, dr.board_revision, dr.meid,
+                           dr.bootloader_version, dr.modem_fw_version,
+                           dr.deployment_date, dr.batch_id, dr.installation_notes,
+                           dr.sensor_limit,
+                           dr.template_id,
+                           dt.name AS template_name,
+                           CASE
+                               WHEN to_regclass('public.device_sensors') IS NULL THEN 0
+                               ELSE (
+                                   SELECT COUNT(*)
+                                   FROM device_sensors s
+                                   WHERE s.tenant_id = dr.tenant_id
+                                     AND s.device_id = dr.device_id
+                                     AND s.status = 'active'
+                               )
+                           END AS sensor_count,
+                           COALESCE(
+                               (
+                                   SELECT array_agg(dtag.tag ORDER BY dtag.tag)
+                                   FROM device_tags dtag
+                                   WHERE dtag.tenant_id = dr.tenant_id AND dtag.device_id = dr.device_id
+                               ),
+                               ARRAY[]::text[]
+                           ) AS tags
+                    FROM device_registry dr
+                    LEFT JOIN device_state ds
+                      ON ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id
+                    LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                    WHERE {where_sql}
+                    ORDER BY dr.site_id, dr.device_id
+                    LIMIT ${idx} OFFSET ${idx + 1}
+                    """,
+                    *params,
+                    limit,
+                    offset,
+                )
+                devices = [dict(r) for r in rows]
+                total = int(total or 0)
+
             if devices:
                 device_ids = [device["device_id"] for device in devices]
+
+                # Attach subscription info (Phase 156)
                 rows = await conn.fetch(
                     """
                     SELECT
@@ -670,6 +1177,46 @@ async def list_devices(
                         device["subscription_id"] = subscription["subscription_id"]
                         device["subscription_type"] = None
                         device["subscription_status"] = subscription["subscription_status"]
+
+                # Phase 169: include template_name in list response (and ensure template_id is present).
+                if template_id is None:
+                    trows = await conn.fetch(
+                        """
+                        SELECT dr.device_id, dr.template_id, dt.name AS template_name
+                        FROM device_registry dr
+                        LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                        WHERE dr.tenant_id = $1 AND dr.device_id = ANY($2::text[])
+                        """,
+                        tenant_id,
+                        device_ids,
+                    )
+                    tmap = {r["device_id"]: dict(r) for r in trows}
+                    for device in devices:
+                        t = tmap.get(device["device_id"]) or {}
+                        device["template_id"] = t.get("template_id")
+                        device["template_name"] = t.get("template_name")
+
+                    # Prefer sensor_count from device_sensors when available.
+                    try:
+                        sc_rows = await conn.fetch(
+                            """
+                            SELECT device_id, COUNT(*) AS sensor_count
+                            FROM device_sensors
+                            WHERE tenant_id = $1
+                              AND device_id = ANY($2::text[])
+                              AND status = 'active'
+                            GROUP BY device_id
+                            """,
+                            tenant_id,
+                            device_ids,
+                        )
+                        sc_map = {r["device_id"]: int(r["sensor_count"] or 0) for r in sc_rows}
+                        for device in devices:
+                            if device["device_id"] in sc_map:
+                                device["sensor_count"] = sc_map[device["device_id"]]
+                    except Exception:
+                        # If migrations aren't applied yet, keep existing count.
+                        pass
     except Exception:
         logger.exception("Failed to fetch tenant devices")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -677,7 +1224,7 @@ async def list_devices(
     return {
         "tenant_id": tenant_id,
         "devices": devices,
-        "total": result["total"],
+        "total": total,
         "limit": limit,
         "offset": offset,
     }
@@ -941,6 +1488,40 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
                     dsub_row["grace_end"].isoformat() + "Z" if dsub_row["grace_end"] else None
                 )
 
+            # Phase 169: template summary + module/sensor counts + parent pointer.
+            tpl_info = await conn.fetchrow(
+                """
+                SELECT
+                    dr.template_id,
+                    dr.parent_device_id,
+                    dt.id AS template_row_id,
+                    dt.name AS template_name,
+                    dt.slug AS template_slug,
+                    dt.category AS template_category,
+                    (SELECT count(*) FROM device_modules dm WHERE dm.tenant_id = dr.tenant_id AND dm.device_id = dr.device_id) AS module_count,
+                    (SELECT count(*) FROM device_sensors ds WHERE ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id AND ds.status = 'active') AS sensor_count
+                FROM device_registry dr
+                LEFT JOIN device_templates dt ON dr.template_id = dt.id
+                WHERE dr.tenant_id = $1 AND dr.device_id = $2
+                """,
+                tenant_id,
+                device_id,
+            )
+            if tpl_info:
+                device["template_id"] = tpl_info["template_id"]
+                device["parent_device_id"] = tpl_info["parent_device_id"]
+                device["module_count"] = int(tpl_info["module_count"] or 0)
+                device["sensor_count"] = int(tpl_info["sensor_count"] or 0)
+                if tpl_info["template_row_id"]:
+                    device["template"] = {
+                        "id": tpl_info["template_row_id"],
+                        "name": tpl_info["template_name"],
+                        "slug": tpl_info["template_slug"],
+                        "category": tpl_info["template_category"],
+                    }
+                else:
+                    device["template"] = None
+
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
 
@@ -949,12 +1530,24 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
             try:
                 sensor_rows = await conn.fetch(
                     """
-                    SELECT sensor_id, metric_name, sensor_type, label, unit,
-                           min_range, max_range, precision_digits, status,
-                           auto_discovered, last_value, last_seen_at, created_at
-                    FROM sensors
+                    SELECT
+                        ds.id AS sensor_id,
+                        ds.metric_key AS metric_name,
+                        COALESCE(tm.data_type, 'unknown') AS sensor_type,
+                        ds.display_name AS label,
+                        ds.unit,
+                        ds.min_range,
+                        ds.max_range,
+                        ds.precision_digits,
+                        CASE WHEN ds.status = 'active' THEN 'active' ELSE 'disabled' END AS status,
+                        (ds.source <> 'required') AS auto_discovered,
+                        ds.last_value,
+                        ds.last_seen_at,
+                        ds.created_at
+                    FROM device_sensors ds
+                    LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
                     WHERE tenant_id = $1 AND device_id = $2
-                    ORDER BY metric_name
+                    ORDER BY ds.metric_key
                     """,
                     tenant_id,
                     device_id,
@@ -1004,7 +1597,11 @@ async def get_device_detail(device_id: str, pool=Depends(get_db_pool)):
                 sensor_limit = 20
 
             device["sensors"] = [dict(r) for r in sensor_rows]
-            device["sensor_count"] = len(sensor_rows)
+            if tpl_info:
+                device["sensor_count"] = int(tpl_info["sensor_count"] or 0)
+                device["module_count"] = int(tpl_info["module_count"] or 0)
+            else:
+                device["sensor_count"] = len(sensor_rows)
             device["sensor_limit"] = sensor_limit
             device["connection"] = dict(conn_row) if conn_row else None
             device["health"] = dict(health_row) if health_row else None
@@ -1236,6 +1833,9 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided")
 
+    template_update_provided = "template_id" in update_data
+    new_template_id = update_data.pop("template_id", None)
+
     tags_update = update_data.pop("tags", None)
     if "name" in update_data:
         update_data["model"] = update_data.pop("name")
@@ -1284,24 +1884,33 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
             params.append(update_data[field])
             idx += 1
 
-    if not sets:
+    if not sets and tags_update is None and not template_update_provided:
         raise HTTPException(status_code=400, detail="No fields provided")
 
     try:
         p = pool
         async with tenant_connection(p, tenant_id) as conn:
             async with conn.transaction():
-                row = await conn.fetchrow(
-                    f"""
-                    UPDATE device_registry
-                    SET {", ".join(sets)}
-                    WHERE tenant_id = $1 AND device_id = $2
-                    RETURNING tenant_id, device_id
-                    """,
-                    *params,
-                )
-                if not row:
-                    raise HTTPException(status_code=404, detail="Device not found")
+                if sets:
+                    row = await conn.fetchrow(
+                        f"""
+                        UPDATE device_registry
+                        SET {", ".join(sets)}
+                        WHERE tenant_id = $1 AND device_id = $2
+                        RETURNING tenant_id, device_id
+                        """,
+                        *params,
+                    )
+                    if not row:
+                        raise HTTPException(status_code=404, detail="Device not found")
+                else:
+                    exists = await conn.fetchval(
+                        "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                        tenant_id,
+                        device_id,
+                    )
+                    if not exists:
+                        raise HTTPException(status_code=404, detail="Device not found")
 
                 if tags_update is not None:
                     normalized_tags = _normalize_tags(tags_update)
@@ -1318,6 +1927,55 @@ async def update_device(device_id: str, body: DeviceUpdate, pool=Depends(get_db_
                             ON CONFLICT DO NOTHING
                             """,
                             [(tenant_id, device_id, tag) for tag in normalized_tags],
+                        )
+
+                if template_update_provided:
+                    if new_template_id is not None:
+                        template_row = await conn.fetchrow(
+                            """
+                            SELECT id
+                            FROM device_templates
+                            WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+                            """,
+                            new_template_id,
+                            tenant_id,
+                        )
+                        if not template_row:
+                            raise HTTPException(status_code=404, detail="Template not found")
+
+                    await conn.execute(
+                        """
+                        UPDATE device_registry
+                        SET template_id = $1, updated_at = now()
+                        WHERE tenant_id = $2 AND device_id = $3
+                        """,
+                        new_template_id,
+                        tenant_id,
+                        device_id,
+                    )
+
+                    # Important: do not delete existing sensors; only add missing required sensors
+                    # from the new template (if any).
+                    if new_template_id is not None:
+                        logger.warning(
+                            "device_template_changed",
+                            extra={"tenant_id": tenant_id, "device_id": device_id, "template_id": new_template_id},
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO device_sensors (
+                                tenant_id, device_id, metric_key, display_name, template_metric_id,
+                                unit, min_range, max_range, precision_digits, source
+                            )
+                            SELECT $1, $2, tm.metric_key, tm.display_name, tm.id,
+                                   tm.unit, tm.min_value, tm.max_value, tm.precision_digits, 'required'
+                            FROM template_metrics tm
+                            WHERE tm.template_id = $3 AND tm.is_required = true
+                            ON CONFLICT (tenant_id, device_id, metric_key) DO NOTHING
+                            """,
+                            tenant_id,
+                            device_id,
+                            new_template_id,
                         )
 
             device = await fetch_device(conn, tenant_id, device_id)
