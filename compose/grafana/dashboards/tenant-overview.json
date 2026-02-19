@@ -1,0 +1,87 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (tenant_id) (rate(pulse_ingest_messages_total{result=\"accepted\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingest Throughput by Tenant (accepted)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "sum by (tenant_id) (rate(pulse_ingest_messages_total{result=~\"rejected|rate_limited\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Reject/Rate-limit Rate by Tenant",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "topk(10, sum by (tenant_id) (rate(pulse_ingest_messages_total{result=\"accepted\"}[5m])))",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Tenants by Ingest Volume",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "showLegend": true } },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "expr": "100 * (sum by (tenant_id) (rate(pulse_delivery_total{destination_type=\"webhook\",result=\"success\"}[5m])) / clamp_min(sum by (tenant_id) (rate(pulse_delivery_total{destination_type=\"webhook\"}[5m])), 1e-9))",
+          "refId": "A"
+        }
+      ],
+      "title": "Webhook Delivery Success Rate by Tenant",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["pulse", "tenant"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Tenant Overview",
+  "uid": "pulse-tenant-overview",
+  "version": 1
+}
+

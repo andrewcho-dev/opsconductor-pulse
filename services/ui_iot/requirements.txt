@@ -17,8 +17,10 @@ pyasn1>=0.4.8,<0.6.0
 aiosmtplib>=3.0.0
 email-validator
 paho-mqtt>=2.0.0
+nats-py>=2.7.0
 cryptography>=42.0.0
 prometheus_client>=0.20.0
 slowapi>=0.1.9
 passlib[bcrypt]>=1.7.4
 stripe>=8.0.0
+boto3>=1.34.0

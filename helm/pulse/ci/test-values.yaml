@@ -1,0 +1,21 @@
+# Minimal values for CI chart rendering/linting.
+postgresql:
+  enabled: false
+
+externalDatabase:
+  enabled: true
+  host: example-db.local
+  port: 5432
+  database: iotcloud
+  username: iot
+  existingSecret: pulse-db-secret
+
+emqx:
+  enabled: false
+
+nats:
+  enabled: false
+
+ingress:
+  enabled: false
+

@@ -3,8 +3,11 @@
 import json
 import os
 import uuid
+from urllib.parse import urlparse, urlunparse
 
-from fastapi.responses import FileResponse
+import boto3
+from botocore.config import Config
+from fastapi.responses import RedirectResponse
 
 from routes.customer import *  # noqa: F401,F403
 from schemas.exports import (
@@ -24,6 +27,47 @@ router = APIRouter(
     ],
 )
 
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://iot-minio:9000")
+S3_PUBLIC_ENDPOINT = os.getenv("S3_PUBLIC_ENDPOINT", "").strip()
+S3_BUCKET = os.getenv("S3_BUCKET", "exports")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+
+
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=S3_ACCESS_KEY,
+        aws_secret_access_key=S3_SECRET_KEY,
+        region_name=S3_REGION,
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def _rewrite_presigned_url(url: str) -> str:
+    """
+    For local dev, pre-signed URLs may contain the internal Docker hostname.
+    When S3_PUBLIC_ENDPOINT is set, rewrite to a browser-reachable base.
+    """
+    if not S3_PUBLIC_ENDPOINT:
+        return url
+    try:
+        pub = urlparse(S3_PUBLIC_ENDPOINT)
+        parsed = urlparse(url)
+        return urlunparse(
+            (
+                pub.scheme or parsed.scheme,
+                pub.netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+    except Exception:
+        return url
 @router.get("/delivery-status")
 async def delivery_status(
     limit: int = Query(20, ge=1, le=100),
@@ -525,20 +569,27 @@ async def download_export(
             detail=f"Export is not ready. Current status: {row['status']}",
         )
 
-    file_path = row["file_path"]
-    if not file_path or not os.path.exists(file_path):
+    s3_key = row["file_path"]
+    if not s3_key:
         raise HTTPException(status_code=410, detail="Export file no longer available")
 
     export_format = row["format"]
-    media_type = "text/csv" if export_format == "csv" else "application/json"
-    filename = f"{row['export_type']}-export-{export_id[:8]}.{export_format}"
+    _ = export_format  # kept for backward-compat filename logic in UI
 
-    return FileResponse(
-        path=file_path,
-        media_type=media_type,
-        filename=filename,
-        headers={"X-Export-Row-Count": str(row["row_count"] or 0)},
-    )
+    try:
+        s3 = get_s3_client()
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": s3_key},
+            ExpiresIn=3600,
+        )
+    except Exception:
+        logger.exception("Failed to generate presigned export URL")
+        raise HTTPException(status_code=503, detail="Export download temporarily unavailable")
+
+    resp = RedirectResponse(_rewrite_presigned_url(url))
+    resp.headers["X-Export-Row-Count"] = str(row["row_count"] or 0)
+    return resp
 
 
 @router.get("/export/devices")

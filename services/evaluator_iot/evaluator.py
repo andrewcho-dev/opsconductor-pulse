@@ -46,6 +46,8 @@ PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 configure_logging("evaluator")
 logger = logging.getLogger("evaluator")
 
@@ -60,6 +62,8 @@ COUNTERS = {
     "evaluation_errors": 0,
     "last_evaluation_at": None,
 }
+
+_POOL_READY = False
 
 # In-memory sliding window buffer for WINDOW rules.
 # Key: (device_id, rule_id) -> deque of (timestamp: float, value: float)
@@ -92,6 +96,12 @@ async def health_handler(request):
     )
 
 
+async def ready_handler(_request):
+    if _POOL_READY:
+        return web.json_response({"status": "ready"})
+    return web.json_response({"status": "not_ready"}, status=503)
+
+
 async def metrics_handler(_request):
     return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
 
@@ -99,6 +109,7 @@ async def metrics_handler(_request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
     app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
@@ -167,6 +178,7 @@ async def health_handler(request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
     app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
@@ -1198,15 +1210,24 @@ async def maintain_notify_listener(channel: str, callback, stop_event: asyncio.E
 
 async def main():
     if DATABASE_URL:
-        pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+        pool = await asyncpg.create_pool(
+            dsn=DATABASE_URL,
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
+            command_timeout=30,
+        )
     else:
         pool = await asyncpg.create_pool(
             host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-            min_size=2, max_size=10, command_timeout=30
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
+            command_timeout=30,
         )
 
     async with pool.acquire() as conn:
         await ensure_schema(conn)
+    global _POOL_READY
+    _POOL_READY = True
     await start_health_server()
     audit = init_audit_logger(pool, "evaluator")
     await audit.start()

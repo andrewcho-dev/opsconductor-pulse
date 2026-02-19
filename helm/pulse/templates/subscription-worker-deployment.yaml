@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pulse.fullname" . }}-subscription-worker
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: subscription-worker
+spec:
+  replicas: {{ .Values.subscriptionWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: subscription-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: subscription-worker
+    spec:
+      containers:
+        - name: subscription-worker
+          image: "{{ .Values.subscriptionWorker.image.repository }}:{{ .Values.subscriptionWorker.image.tag }}"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pulse-db-secret
+                  key: url
+

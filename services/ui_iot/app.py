@@ -31,7 +31,9 @@ from routes.operator import router as operator_router
 from routes.dashboards import router as dashboards_router
 from routes.sensors import router as sensors_router
 from routes.carrier import router as carrier_router
+from routes.templates import router as templates_router
 from routes.analytics import router as analytics_router
+from routes.internal import router as internal_router
 from routes.system import (
     router as system_router,
 )
@@ -122,6 +124,8 @@ PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
@@ -359,9 +363,11 @@ app.include_router(customer_router)
 app.include_router(dashboards_router)
 app.include_router(sensors_router)
 app.include_router(carrier_router)
+app.include_router(templates_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(analytics_router)
+app.include_router(internal_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
 app.include_router(users_router)
@@ -466,6 +472,7 @@ CSRF_EXEMPT_PATHS = (
     "/metrics",
     "/webhook/",
     "/.well-known/",
+    "/api/v1/internal/",
     # Legacy paths are redirected to /api/v1/*; exempt them so CSRF doesn't block the redirect.
     "/customer/",
     "/operator/",
@@ -517,14 +524,29 @@ def generate_pkce_pair() -> tuple[str, str]:
 def generate_state() -> str:
     return secrets.token_urlsafe(32)
 
+
+_nats_client = None
+
+
+async def get_nats():
+    """Get or create a shared NATS connection for publishing ingest messages."""
+    global _nats_client
+    if _nats_client is None or not _nats_client.is_connected:
+        import nats
+
+        nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+        _nats_client = await nats.connect(nats_url)
+    return _nats_client
+
+
 async def get_pool():
     global pool
     if pool is None:
         if DATABASE_URL:
             pool = await asyncpg.create_pool(
                 dsn=DATABASE_URL,
-                min_size=2,
-                max_size=10,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
                 command_timeout=30,
                 init=_init_db_connection,
             )
@@ -532,8 +554,8 @@ async def get_pool():
             pool = await asyncpg.create_pool(
                 host=PG_HOST, port=PG_PORT, database=PG_DB,
                 user=PG_USER, password=PG_PASS,
-                min_size=2,
-                max_size=10,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
                 command_timeout=30,
                 init=_init_db_connection,
             )
@@ -546,6 +568,7 @@ async def startup():
 
     # Initialize HTTP ingest infrastructure
     app.state.get_pool = get_pool
+    app.state.get_nats = get_nats
     app.state.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL)
     pool = await get_pool()
     app.state.pool = pool
@@ -606,10 +629,16 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    global _nats_client
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
         await app.state.audit.stop()
+    try:
+        if _nats_client:
+            await _nats_client.drain()
+    except Exception:
+        pass
     try:
         cache = get_jwks_cache()
         if cache is not None:

@@ -1,16 +1,25 @@
 services:
   mqtt:
-    image: eclipse-mosquitto@sha256:e011726bdfa757011bc8b8716e03b7c35d2c3f623d9f658c2c6bf66e909ea42e
+    image: emqx/emqx:5.8
     container_name: iot-mqtt
+    environment:
+      EMQX_NODE_COOKIE: "${EMQX_NODE_COOKIE:-emqx_pulse_secret}"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
     ports:
       - "8883:8883"
       - "9001:9001"
+      - "18083:18083"
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/acl.conf:/mosquitto/config/acl.conf
-      - ./mosquitto/certs:/mosquitto/certs
-      - mosquitto-passwd:/mosquitto/passwd
-      - mosquitto-data:/mosquitto/data
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./mosquitto/certs:/certs:ro
+      - emqx-data:/opt/emqx/data
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: unless-stopped
 
   postgres:
@@ -31,6 +40,39 @@ services:
       retries: 30
       start_period: 5s
     restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: iot-minio
+    command: server /data --console-address ":9091"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9091:9091"   # Console (9091 to avoid conflict with Prometheus on 9090)
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: iot-minio-init
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set pulse http://iot-minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb --ignore-existing pulse/exports;
+      mc mb --ignore-existing pulse/reports;
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
 
   pgbouncer:
     image: edoburu/pgbouncer@sha256:85d1e38593617af1b5f7f285e97d407e56c29939683cc7cfe4c8f6dc19f1268b
@@ -59,6 +101,76 @@ services:
       retries: 3
     restart: unless-stopped
 
+  nats:
+    image: nats:2.10-alpine
+    container_name: iot-nats
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "127.0.0.1:4222:4222"   # NATS client
+      - "127.0.0.1:8222:8222"   # HTTP monitoring
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  nats-init:
+    image: natsio/nats-box:latest
+    container_name: iot-nats-init
+    entrypoint: ["/bin/sh", "/scripts/init-streams.sh"]
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+    volumes:
+      - ./nats/init-streams.sh:/scripts/init-streams.sh:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: "no"
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: iot-nats-exporter
+    command:
+      [
+        "-varz",
+        "-connz",
+        "-healthz",
+        "-jsz",
+        "streams,consumers",
+        "http://nats:8222",
+      ]
+    expose:
+      - "7777"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mqtt-nats-bridge:
+    build:
+      context: ../services
+      dockerfile: mqtt_nats_bridge/Dockerfile
+    container_name: iot-mqtt-nats-bridge
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_TLS: "false"
+      MQTT_TOPIC: "tenant/+/device/+/+"
+    depends_on:
+      nats:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+
   migrator:
     build:
       context: ../db
@@ -79,19 +191,16 @@ services:
     container_name: iot-ingest
     environment:
       SERVICE_NAME: ingest_iot
-      MQTT_HOST: iot-mqtt
-      MQTT_PORT: "1883"
-      MQTT_USERNAME: "service_pulse"
-      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
-      MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
-      MQTT_TLS_INSECURE: "true"
-      MQTT_TOPIC: "tenant/+/device/+/+"
+      NATS_URL: "nats://iot-nats:4222"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      # PG_POOL_MIN: "2"      # DB pool minimum connections (default: 2)
+      # PG_POOL_MAX: "10"     # DB pool maximum connections (default: 10)
+      # DELIVERY_WORKER_COUNT: "2"   # Async route delivery workers (default: 2)
       AUTO_PROVISION: "0"
       REQUIRE_TOKEN: "1"
       COUNTERS_ENABLED: "1"
@@ -102,10 +211,7 @@ services:
       BATCH_SIZE: "${BATCH_SIZE:-1000}"
       FLUSH_INTERVAL_MS: "${FLUSH_INTERVAL_MS:-500}"
       INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-8}"
-      INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-100000}"
       CERT_AUTH_ENABLED: "1"
-    volumes:
-      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     expose:
       - "8080"
     healthcheck:
@@ -115,14 +221,36 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      mqtt:
-        condition: service_started
+      nats:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  route-delivery:
+    build:
+      context: ../services
+      dockerfile: route_delivery/Dockerfile
+    container_name: iot-route-delivery
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_TLS: "false"
+      DELIVERY_WORKER_COUNT: "4"
+      WEBHOOK_TIMEOUT_SECONDS: "10"
+    depends_on:
+      nats:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     restart: unless-stopped
 
   evaluator:
@@ -176,6 +304,11 @@ services:
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      S3_ENDPOINT: "http://iot-minio:9000"
+      S3_BUCKET: "exports"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
       HEALTH_CHECK_INTERVAL: "60"
       SYSTEM_ALERT_ENABLED: "true"
       METRICS_COLLECTION_INTERVAL: "5"
@@ -183,18 +316,25 @@ services:
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
       DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
-      CRL_OUTPUT_PATH: "/mosquitto/certs/device-crl.pem"
+      CRL_OUTPUT_PATH: "/certs/device-crl.pem"
+      EMQX_API_URL: "http://iot-mqtt:18083"
+      EMQX_API_USER: "admin"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
       CERT_EXPIRY_WARNING_DAYS: "30"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
-      - export-data:/tmp/pulse-exports
       - ./mosquitto/certs:/mosquitto/certs
+      - ./mosquitto/certs:/certs
     depends_on:
       postgres:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
       migrator:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
       ingest:
         condition: service_started
@@ -288,7 +428,6 @@ services:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
       - ./mosquitto/certs:/mosquitto/certs:ro
-      - export-data:/tmp/pulse-exports
     environment:
       SERVICE_NAME: ui_iot
       PG_HOST: iot-pgbouncer
@@ -297,6 +436,14 @@ services:
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      NATS_URL: "nats://iot-nats:4222"
+      S3_ENDPOINT: "http://iot-minio:9000"
+      # When returning pre-signed URLs to the browser, rewrite to a reachable base.
+      S3_PUBLIC_ENDPOINT: "${S3_PUBLIC_ENDPOINT:-http://localhost:9000}"
+      S3_BUCKET: "exports"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
       PROVISION_ADMIN_KEY: ${PROVISION_ADMIN_KEY}
@@ -316,6 +463,7 @@ services:
       MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
       MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
       MQTT_TLS_INSECURE: "true"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       METRICS_COLLECTION_INTERVAL: "5"
@@ -338,6 +486,12 @@ services:
       pgbouncer:
         condition: service_healthy
       migrator:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
       api:
         condition: service_started
@@ -568,7 +722,9 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  export-data:
+  emqx-data:
+  minio-data:
+  nats-data:
   mosquitto-data:
   mosquitto-passwd:
   prometheus_data:

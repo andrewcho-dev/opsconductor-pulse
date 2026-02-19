@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import timedelta
 from typing import Any, Optional
@@ -33,29 +34,24 @@ router = APIRouter(
 )
 
 
-class SensorCreate(BaseModel):
-    metric_name: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$",
-    )
-    sensor_type: str = Field(..., min_length=1, max_length=50)
-    label: str | None = Field(default=None, max_length=200)
+class DeviceSensorCreate(BaseModel):
+    metric_key: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$")
+    display_name: str = Field(..., min_length=1, max_length=200)
+    template_metric_id: int | None = None
+    device_module_id: int | None = None
     unit: str | None = Field(default=None, max_length=20)
     min_range: float | None = None
     max_range: float | None = None
-    precision_digits: int = Field(default=1, ge=0, le=6)
+    precision_digits: int = Field(default=2, ge=0, le=6)
 
 
-class SensorUpdate(BaseModel):
-    sensor_type: str | None = Field(default=None, min_length=1, max_length=50)
-    label: str | None = Field(default=None, max_length=200)
+class DeviceSensorUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
     unit: str | None = Field(default=None, max_length=20)
     min_range: float | None = None
     max_range: float | None = None
     precision_digits: int | None = Field(default=None, ge=0, le=6)
-    status: str | None = Field(default=None, pattern=r"^(active|disabled)$")
+    status: str | None = Field(default=None, pattern=r"^(active|inactive)$")
 
 
 class ConnectionUpsert(BaseModel):
@@ -97,8 +93,8 @@ def _serialize_health_row(row) -> dict[str, Any]:
 @router.get("/devices/{device_id}/sensors")
 async def list_device_sensors(
     device_id: str,
-    sensor_type: Optional[str] = Query(default=None),
-    status: Optional[str] = Query(default=None),
+    status: str | None = Query(default=None),
+    source: str | None = Query(default=None),
     pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
@@ -112,37 +108,42 @@ async def list_device_sensors(
             if not exists:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            where_clauses: list[str] = ["tenant_id = $1", "device_id = $2"]
+            where_clauses: list[str] = ["ds.tenant_id = $1", "ds.device_id = $2"]
             args: list[Any] = [tenant_id, device_id]
             arg_idx = 3
-            if sensor_type:
-                where_clauses.append(f"sensor_type = ${arg_idx}")
-                args.append(sensor_type)
-                arg_idx += 1
             if status:
-                where_clauses.append(f"status = ${arg_idx}")
+                where_clauses.append(f"ds.status = ${arg_idx}")
                 args.append(status)
+                arg_idx += 1
+            if source:
+                where_clauses.append(f"ds.source = ${arg_idx}")
+                args.append(source)
                 arg_idx += 1
 
             rows = await conn.fetch(
                 f"""
                 SELECT
-                    sensor_id,
-                    metric_name,
-                    sensor_type,
-                    label,
-                    unit,
-                    min_range,
-                    max_range,
-                    precision_digits,
-                    status,
-                    auto_discovered,
-                    last_value,
-                    last_seen_at,
-                    created_at
-                FROM sensors
+                    ds.id,
+                    ds.metric_key,
+                    ds.display_name,
+                    ds.source,
+                    tm.id AS template_metric_id,
+                    tm.display_name AS template_metric_display_name,
+                    dm.id AS module_id,
+                    dm.label AS module_label,
+                    ds.unit,
+                    ds.min_range,
+                    ds.max_range,
+                    ds.precision_digits,
+                    ds.status,
+                    ds.last_value,
+                    ds.last_value_text,
+                    ds.last_seen_at
+                FROM device_sensors ds
+                LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
+                LEFT JOIN device_modules dm ON dm.id = ds.device_module_id
                 WHERE {' AND '.join(where_clauses)}
-                ORDER BY metric_name
+                ORDER BY ds.metric_key
                 """,
                 *args,
             )
@@ -158,7 +159,29 @@ async def list_device_sensors(
 
     return {
         "device_id": device_id,
-        "sensors": [dict(r) for r in rows],
+        "sensors": [
+            {
+                "id": r["id"],
+                "metric_key": r["metric_key"],
+                "display_name": r["display_name"],
+                "source": r["source"],
+                "template_metric": (
+                    {"id": r["template_metric_id"], "display_name": r["template_metric_display_name"]}
+                    if r["template_metric_id"]
+                    else None
+                ),
+                "module": ({"id": r["module_id"], "label": r["module_label"]} if r["module_id"] else None),
+                "unit": r["unit"],
+                "min_range": r["min_range"],
+                "max_range": r["max_range"],
+                "precision_digits": r["precision_digits"],
+                "status": r["status"],
+                "last_value": r["last_value"],
+                "last_value_text": r["last_value_text"],
+                "last_seen_at": _serialize_time(r["last_seen_at"]),
+            }
+            for r in rows
+        ],
         "total": len(rows),
         "sensor_limit": sensor_limit,
     }
@@ -176,47 +199,58 @@ async def list_sensors(
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:
-            where_clauses: list[str] = ["tenant_id = $1"]
+            where_clauses: list[str] = ["ds.tenant_id = $1"]
             args: list[Any] = [tenant_id]
             arg_idx = 2
 
             if sensor_type:
-                where_clauses.append(f"sensor_type = ${arg_idx}")
+                # Backward compat: sensor_type derives from template metric data_type when available.
+                where_clauses.append(f"COALESCE(tm.data_type, 'unknown') = ${arg_idx}")
                 args.append(sensor_type)
                 arg_idx += 1
             if status:
-                where_clauses.append(f"status = ${arg_idx}")
-                args.append(status)
-                arg_idx += 1
+                # Backward compat: translate legacy disabled -> inactive
+                if status == "disabled":
+                    where_clauses.append("ds.status = 'inactive'")
+                else:
+                    where_clauses.append(f"ds.status = ${arg_idx}")
+                    args.append(status)
+                    arg_idx += 1
             if device_id:
-                where_clauses.append(f"device_id = ${arg_idx}")
+                where_clauses.append(f"ds.device_id = ${arg_idx}")
                 args.append(device_id)
                 arg_idx += 1
 
             where_sql = " AND ".join(where_clauses)
 
             total = await conn.fetchval(
-                f"SELECT COUNT(*) FROM sensors WHERE {where_sql}",
+                f"""
+                SELECT COUNT(*)
+                FROM device_sensors ds
+                LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
+                WHERE {where_sql}
+                """,
                 *args,
             )
             rows = await conn.fetch(
                 f"""
                 SELECT
-                    sensor_id,
-                    device_id,
-                    metric_name,
-                    sensor_type,
-                    label,
-                    unit,
-                    min_range,
-                    max_range,
-                    precision_digits,
-                    status,
-                    auto_discovered,
-                    last_value,
-                    last_seen_at,
-                    created_at
-                FROM sensors
+                    ds.id AS sensor_id,
+                    ds.device_id,
+                    ds.metric_key AS metric_name,
+                    COALESCE(tm.data_type, 'unknown') AS sensor_type,
+                    ds.display_name AS label,
+                    ds.unit,
+                    ds.min_range,
+                    ds.max_range,
+                    ds.precision_digits,
+                    CASE WHEN ds.status = 'active' THEN 'active' ELSE 'disabled' END AS status,
+                    (ds.source <> 'required') AS auto_discovered,
+                    ds.last_value,
+                    ds.last_seen_at,
+                    ds.created_at
+                FROM device_sensors ds
+                LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
                 WHERE {where_sql}
                 ORDER BY device_id, metric_name
                 LIMIT {limit} OFFSET {offset}
@@ -232,79 +266,82 @@ async def list_sensors(
 
 
 @router.post("/devices/{device_id}/sensors", status_code=201)
-async def create_sensor(device_id: str, payload: SensorCreate, pool=Depends(get_db_pool)):
+async def create_device_sensor(device_id: str, body: DeviceSensorCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:
-            exists = await conn.fetchval(
-                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+            device_row = await conn.fetchrow(
+                "SELECT template_id FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
                 tenant_id,
                 device_id,
             )
-            if not exists:
+            if not device_row:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            result = await check_sensor_limit(conn, tenant_id, device_id)
-            if not result["allowed"]:
-                raise HTTPException(status_code=result["status_code"], detail=result["message"])
-
-            dup = await conn.fetchval(
-                """
-                SELECT 1
-                FROM sensors
-                WHERE tenant_id = $1 AND device_id = $2 AND metric_name = $3
-                """,
+            # Enforce sensor limit based on plan limits, but count device_sensors.
+            usage = await get_device_usage(conn, tenant_id, device_id)
+            sensor_limit = (usage.get("limits") or {}).get("sensors")
+            current_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM device_sensors WHERE tenant_id = $1 AND device_id = $2",
                 tenant_id,
                 device_id,
-                payload.metric_name,
             )
-            if dup:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Sensor with metric_name '{payload.metric_name}' already exists on this device",
+            if sensor_limit is not None and int(current_count or 0) >= int(sensor_limit):
+                raise HTTPException(status_code=403, detail="Sensor limit reached for this device plan")
+
+            if body.template_metric_id is not None:
+                if device_row["template_id"] is None:
+                    raise HTTPException(status_code=400, detail="Device has no template; cannot use template_metric_id")
+                owns = await conn.fetchval(
+                    """
+                    SELECT 1
+                    FROM template_metrics tm
+                    WHERE tm.id = $1 AND tm.template_id = $2
+                    """,
+                    body.template_metric_id,
+                    device_row["template_id"],
                 )
+                if not owns:
+                    raise HTTPException(status_code=400, detail="template_metric_id does not belong to device template")
+
+            if body.device_module_id is not None:
+                module_ok = await conn.fetchval(
+                    """
+                    SELECT 1
+                    FROM device_modules dm
+                    WHERE dm.id = $1 AND dm.tenant_id = $2 AND dm.device_id = $3
+                    """,
+                    body.device_module_id,
+                    tenant_id,
+                    device_id,
+                )
+                if not module_ok:
+                    raise HTTPException(status_code=400, detail="device_module_id does not belong to this device")
+
+            source = "optional" if body.template_metric_id is not None else "unmodeled"
 
             row = await conn.fetchrow(
                 """
-                INSERT INTO sensors (
-                    tenant_id,
-                    device_id,
-                    metric_name,
-                    sensor_type,
-                    label,
-                    unit,
-                    min_range,
-                    max_range,
-                    precision_digits,
-                    status,
-                    auto_discovered
+                INSERT INTO device_sensors (
+                    tenant_id, device_id, metric_key, display_name,
+                    template_metric_id, device_module_id,
+                    unit, min_range, max_range, precision_digits,
+                    status, source
                 )
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active',false)
-                RETURNING
-                    sensor_id,
-                    device_id,
-                    metric_name,
-                    sensor_type,
-                    label,
-                    unit,
-                    min_range,
-                    max_range,
-                    precision_digits,
-                    status,
-                    auto_discovered,
-                    last_value,
-                    last_seen_at,
-                    created_at
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11)
+                RETURNING *
                 """,
                 tenant_id,
                 device_id,
-                payload.metric_name,
-                payload.sensor_type,
-                payload.label,
-                payload.unit,
-                payload.min_range,
-                payload.max_range,
-                payload.precision_digits,
+                body.metric_key,
+                body.display_name,
+                body.template_metric_id,
+                body.device_module_id,
+                body.unit,
+                body.min_range,
+                body.max_range,
+                body.precision_digits,
+                source,
             )
     except HTTPException:
         raise
@@ -315,13 +352,96 @@ async def create_sensor(device_id: str, payload: SensorCreate, pool=Depends(get_
     return dict(row)
 
 
+@router.put("/devices/{device_id}/sensors/{sensor_id}")
+async def update_device_sensor(
+    device_id: str,
+    sensor_id: int,
+    body: DeviceSensorUpdate,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    updates: dict[str, Any] = body.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in updates.items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    set_parts: list[str] = []
+    args: list[Any] = [tenant_id, device_id, sensor_id]
+    arg_idx = 4
+    for key, value in updates.items():
+        set_parts.append(f"{key} = ${arg_idx}")
+        args.append(value)
+        arg_idx += 1
+    set_parts.append("updated_at = now()")
+
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            existing = await conn.fetchrow(
+                "SELECT id FROM device_sensors WHERE tenant_id = $1 AND device_id = $2 AND id = $3",
+                tenant_id,
+                device_id,
+                sensor_id,
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail="Sensor not found")
+
+            row = await conn.fetchrow(
+                f"""
+                UPDATE device_sensors
+                SET {', '.join(set_parts)}
+                WHERE tenant_id = $1 AND device_id = $2 AND id = $3
+                RETURNING *
+                """,
+                *args,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update device sensor")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return dict(row)
+
+
+@router.delete("/devices/{device_id}/sensors/{sensor_id}", status_code=204)
+async def delete_device_sensor(device_id: str, sensor_id: int, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                "SELECT id, source FROM device_sensors WHERE tenant_id = $1 AND device_id = $2 AND id = $3",
+                tenant_id,
+                device_id,
+                sensor_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Sensor not found")
+            if row["source"] == "required":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete a required sensor. Deactivate it instead.",
+                )
+            await conn.execute(
+                "DELETE FROM device_sensors WHERE tenant_id = $1 AND device_id = $2 AND id = $3",
+                tenant_id,
+                device_id,
+                sensor_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete device sensor")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return Response(status_code=204)
+
+
 @router.put("/sensors/{sensor_id}")
-async def update_sensor(sensor_id: int, payload: SensorUpdate, pool=Depends(get_db_pool)):
+async def update_sensor(sensor_id: int, payload: DeviceSensorUpdate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             existing = await conn.fetchrow(
-                "SELECT sensor_id FROM sensors WHERE tenant_id = $1 AND sensor_id = $2",
+                "SELECT tenant_id, device_id, id FROM device_sensors WHERE tenant_id = $1 AND id = $2",
                 tenant_id,
                 sensor_id,
             )
@@ -344,25 +464,10 @@ async def update_sensor(sensor_id: int, payload: SensorUpdate, pool=Depends(get_
 
             row = await conn.fetchrow(
                 f"""
-                UPDATE sensors
+                UPDATE device_sensors
                 SET {', '.join(set_parts)}
-                WHERE tenant_id = $1 AND sensor_id = $2
-                RETURNING
-                    sensor_id,
-                    device_id,
-                    metric_name,
-                    sensor_type,
-                    label,
-                    unit,
-                    min_range,
-                    max_range,
-                    precision_digits,
-                    status,
-                    auto_discovered,
-                    last_value,
-                    last_seen_at,
-                    created_at,
-                    updated_at
+                WHERE tenant_id = $1 AND id = $2
+                RETURNING *
                 """,
                 *args,
             )
@@ -376,7 +481,7 @@ async def update_sensor(sensor_id: int, payload: SensorUpdate, pool=Depends(get_
 
 
 @router.get("/devices/{device_id}/connection")
-async def get_device_connection(device_id: str, pool=Depends(get_db_pool)):
+async def get_device_connection(device_id: str, response: Response, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:
@@ -422,6 +527,10 @@ async def get_device_connection(device_id: str, pool=Depends(get_db_pool)):
         logger.exception("Failed to fetch device connection")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-06-01"
+    response.headers["Link"] = f'</api/v1/customer/devices/{device_id}/transports>; rel="successor-version"'
+
     if not row:
         return {"device_id": device_id, "connection": None}
     return dict(row)
@@ -431,6 +540,7 @@ async def get_device_connection(device_id: str, pool=Depends(get_db_pool)):
 async def upsert_device_connection(
     device_id: str,
     payload: ConnectionUpsert,
+    response: Response,
     pool=Depends(get_db_pool),
 ):
     tenant_id = get_tenant_id()
@@ -508,11 +618,14 @@ async def upsert_device_connection(
         logger.exception("Failed to upsert device connection")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-06-01"
+    response.headers["Link"] = f'</api/v1/customer/devices/{device_id}/transports>; rel="successor-version"'
     return dict(row)
 
 
 @router.delete("/devices/{device_id}/connection", status_code=204)
-async def delete_device_connection(device_id: str, pool=Depends(get_db_pool)):
+async def delete_device_connection(device_id: str, response: Response, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
     try:
         async with tenant_connection(pool, tenant_id) as conn:
@@ -535,6 +648,254 @@ async def delete_device_connection(device_id: str, pool=Depends(get_db_pool)):
         logger.exception("Failed to delete device connection")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-06-01"
+    response.headers["Link"] = f'</api/v1/customer/devices/{device_id}/transports>; rel="successor-version"'
+    return Response(status_code=204)
+
+
+# ── Device Transports (Phase 169) ─────────────────────────────────────────────
+
+
+class TransportCreate(BaseModel):
+    ingestion_protocol: str = Field(
+        ...,
+        pattern=r"^(mqtt_direct|http_api|lorawan|gateway_proxy|modbus_rtu)$",
+    )
+    physical_connectivity: str | None = Field(
+        default=None,
+        pattern=r"^(cellular|ethernet|wifi|satellite|lora|other)$",
+    )
+    protocol_config: dict[str, Any] = Field(default_factory=dict)
+    connectivity_config: dict[str, Any] = Field(default_factory=dict)
+    carrier_integration_id: int | None = None
+    is_primary: bool = True
+    status: str = Field(default="active", pattern=r"^(active|inactive|failover)$")
+
+
+class TransportUpdate(BaseModel):
+    physical_connectivity: str | None = Field(
+        default=None,
+        pattern=r"^(cellular|ethernet|wifi|satellite|lora|other)$",
+    )
+    protocol_config: dict[str, Any] | None = None
+    connectivity_config: dict[str, Any] | None = None
+    carrier_integration_id: int | None = None
+    is_primary: bool | None = None
+    status: str | None = Field(default=None, pattern=r"^(active|inactive|failover)$")
+
+
+@router.get("/devices/{device_id}/transports")
+async def list_device_transports(device_id: str, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            rows = await conn.fetch(
+                """
+                SELECT
+                    t.id,
+                    t.ingestion_protocol,
+                    t.physical_connectivity,
+                    t.protocol_config,
+                    t.connectivity_config,
+                    t.carrier_integration_id,
+                    ci.display_name AS carrier_display_name,
+                    ci.carrier_name AS carrier_name,
+                    t.is_primary,
+                    t.status,
+                    t.last_connected_at,
+                    t.created_at,
+                    t.updated_at
+                FROM device_transports t
+                LEFT JOIN carrier_integrations ci
+                  ON ci.id = t.carrier_integration_id
+                 AND ci.tenant_id = t.tenant_id
+                WHERE t.tenant_id = $1 AND t.device_id = $2
+                ORDER BY t.is_primary DESC, t.id ASC
+                """,
+                tenant_id,
+                device_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to list device transports")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r["id"],
+                "ingestion_protocol": r["ingestion_protocol"],
+                "physical_connectivity": r["physical_connectivity"],
+                "protocol_config": r["protocol_config"] if isinstance(r["protocol_config"], dict) else {},
+                "connectivity_config": r["connectivity_config"] if isinstance(r["connectivity_config"], dict) else {},
+                "carrier_integration_id": r["carrier_integration_id"],
+                "carrier": (
+                    {"display_name": r["carrier_display_name"], "carrier_name": r["carrier_name"]}
+                    if r["carrier_integration_id"]
+                    else None
+                ),
+                "is_primary": r["is_primary"],
+                "status": r["status"],
+                "last_connected_at": _serialize_time(r["last_connected_at"]),
+                "created_at": _serialize_time(r["created_at"]),
+                "updated_at": _serialize_time(r["updated_at"]),
+            }
+        )
+    return {"device_id": device_id, "transports": items, "total": len(items)}
+
+
+@router.post("/devices/{device_id}/transports", status_code=201)
+async def create_device_transport(device_id: str, body: TransportCreate, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM device_registry WHERE tenant_id = $1 AND device_id = $2",
+                tenant_id,
+                device_id,
+            )
+            if not exists:
+                raise HTTPException(status_code=404, detail="Device not found")
+
+            if body.carrier_integration_id is not None:
+                carrier_ok = await conn.fetchval(
+                    "SELECT 1 FROM carrier_integrations WHERE tenant_id = $1 AND id = $2",
+                    tenant_id,
+                    body.carrier_integration_id,
+                )
+                if not carrier_ok:
+                    raise HTTPException(status_code=404, detail="Carrier integration not found")
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO device_transports (
+                    tenant_id, device_id, ingestion_protocol, physical_connectivity,
+                    protocol_config, connectivity_config, carrier_integration_id,
+                    is_primary, status
+                )
+                VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)
+                RETURNING *
+                """,
+                tenant_id,
+                device_id,
+                body.ingestion_protocol,
+                body.physical_connectivity,
+                json.dumps(body.protocol_config),
+                json.dumps(body.connectivity_config),
+                body.carrier_integration_id,
+                body.is_primary,
+                body.status,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create device transport")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    return dict(row)
+
+
+@router.put("/devices/{device_id}/transports/{transport_id}")
+async def update_device_transport(
+    device_id: str,
+    transport_id: int,
+    body: TransportUpdate,
+    pool=Depends(get_db_pool),
+):
+    tenant_id = get_tenant_id()
+    updates: dict[str, Any] = body.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in updates.items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    args: list[Any] = [tenant_id, device_id, transport_id]
+    idx = 4
+
+    def add_set(col: str, val: Any, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        args.append(val)
+        idx += 1
+
+    if "physical_connectivity" in updates:
+        add_set("physical_connectivity", updates["physical_connectivity"])
+    if "carrier_integration_id" in updates:
+        add_set("carrier_integration_id", updates["carrier_integration_id"])
+    if "is_primary" in updates:
+        add_set("is_primary", updates["is_primary"])
+    if "status" in updates:
+        add_set("status", updates["status"])
+    if "protocol_config" in updates:
+        add_set("protocol_config", json.dumps(updates["protocol_config"] or {}), "jsonb")
+    if "connectivity_config" in updates:
+        add_set("connectivity_config", json.dumps(updates["connectivity_config"] or {}), "jsonb")
+
+    sets.append("updated_at = now()")
+
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            if "carrier_integration_id" in updates and updates["carrier_integration_id"] is not None:
+                carrier_ok = await conn.fetchval(
+                    "SELECT 1 FROM carrier_integrations WHERE tenant_id = $1 AND id = $2",
+                    tenant_id,
+                    updates["carrier_integration_id"],
+                )
+                if not carrier_ok:
+                    raise HTTPException(status_code=404, detail="Carrier integration not found")
+
+            row = await conn.fetchrow(
+                f"""
+                UPDATE device_transports
+                SET {", ".join(sets)}
+                WHERE tenant_id = $1 AND device_id = $2 AND id = $3
+                RETURNING *
+                """,
+                *args,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update device transport")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Transport not found")
+    return dict(row)
+
+
+@router.delete("/devices/{device_id}/transports/{transport_id}", status_code=204)
+async def delete_device_transport(device_id: str, transport_id: int, pool=Depends(get_db_pool)):
+    tenant_id = get_tenant_id()
+    try:
+        async with tenant_connection(pool, tenant_id) as conn:
+            row = await conn.fetchrow(
+                "DELETE FROM device_transports WHERE tenant_id = $1 AND device_id = $2 AND id = $3 RETURNING id",
+                tenant_id,
+                device_id,
+                transport_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Transport not found")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete device transport")
+        raise HTTPException(status_code=500, detail="Internal server error")
     return Response(status_code=204)
 
 
@@ -643,12 +1004,22 @@ async def delete_sensor(sensor_id: int, pool=Depends(get_db_pool)):
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             row = await conn.fetchrow(
-                "DELETE FROM sensors WHERE tenant_id = $1 AND sensor_id = $2 RETURNING sensor_id",
+                "SELECT id, source FROM device_sensors WHERE tenant_id = $1 AND id = $2",
                 tenant_id,
                 sensor_id,
             )
             if not row:
                 raise HTTPException(status_code=404, detail="Sensor not found")
+            if row["source"] == "required":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete a required sensor. Deactivate it instead.",
+                )
+            await conn.execute(
+                "DELETE FROM device_sensors WHERE tenant_id = $1 AND id = $2",
+                tenant_id,
+                sensor_id,
+            )
     except HTTPException:
         raise
     except Exception:

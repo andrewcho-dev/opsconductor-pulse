@@ -5,9 +5,15 @@ sources:
   - services/ui_iot/Dockerfile
   - services/ui_iot/services/carrier_service.py
   - services/ui_iot/services/carrier_sync.py
+  - services/ui_iot/routes/devices.py
+  - services/ui_iot/routes/sensors.py
+  - services/ui_iot/routes/ingest.py
+  - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/operator.py
+  - services/ui_iot/routes/templates.py
+  - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169]
 ---
 
 # ui-iot
@@ -25,6 +31,23 @@ phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158]
 - Runs the Phase 91+ notification routing engine for outbound alert delivery.
 - Emits request-context audit events to the audit log.
 
+## HTTP Ingest (JetStream)
+
+`ui_iot` provides HTTP ingest endpoints under `/ingest/v1/*`. These endpoints do fast validation, then publish an ingestion envelope to NATS JetStream using PubAck:
+
+- Subject: `telemetry.{tenant_id}`
+- Publish API: `js.publish(..., timeout=1.0)` (durable PubAck)
+
+This unifies HTTP and MQTT ingestion: both ultimately flow through the same `ingest_iot` JetStream consumers.
+
+## Message Route Delivery (JetStream)
+
+Message routes (webhook / MQTT republish / postgresql destinations) are delivered asynchronously by `route_delivery` consuming from JetStream `ROUTES` (`routes.>`). This is separate from the alert notification routing engine in `ui_iot` (Slack/PagerDuty/Teams).
+
+## Exports (S3/MinIO)
+
+Export artifacts are stored in S3-compatible storage (MinIO in compose). Download endpoints return a pre-signed URL redirect so the client downloads directly from S3/MinIO.
+
 ## Architecture
 
 Primary packages:
@@ -38,8 +61,8 @@ Primary packages:
 
 Background tasks (documented in `app.py`):
 
-- Batch writer (telemetry buffering/flush for HTTP ingest)
 - Audit logger (async buffered audit flush)
+- NATS client lifecycle (lazy connection + drain on shutdown)
 
 ## Configuration
 
@@ -55,15 +78,27 @@ Database:
 | `PG_USER` | `iot` | Database user. |
 | `PG_PASS` | `iot_dev` | Database password. |
 | `DATABASE_URL` | empty | Optional DSN; when set, preferred over `PG_*`. |
+| `PG_POOL_MIN` | `2` | DB pool minimum connections. |
+| `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 
-Ingestion and batching:
+Ingestion and messaging:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_CACHE_TTL_SECONDS` | `60` | Auth cache TTL (shared ingest/auth caching behaviors). |
-| `BATCH_SIZE` | `500` | Batch size threshold for HTTP ingest buffering. |
-| `FLUSH_INTERVAL_MS` | `1000` | Max time before flushing telemetry batch. |
 | `REQUIRE_TOKEN` | `1` | When enabled, ingestion paths require device tokens. |
+| `NATS_URL` | `nats://iot-nats:4222` | NATS JetStream endpoint used by HTTP ingest and internal publishers. |
+
+Exports (S3/MinIO):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `S3_ENDPOINT` | `http://iot-minio:9000` | Internal S3 endpoint (MinIO in compose). |
+| `S3_PUBLIC_ENDPOINT` | empty | Optional base URL rewrite for browser-facing pre-signed URLs. |
+| `S3_BUCKET` | `exports` | Bucket used for export artifacts. |
+| `S3_ACCESS_KEY` | `minioadmin` | S3/MinIO access key. |
+| `S3_SECRET_KEY` | `minioadmin` | S3/MinIO secret key. |
+| `S3_REGION` | `us-east-1` | S3 region. |
 
 UI / request handling:
 
@@ -105,6 +140,15 @@ Prometheus metrics may be exposed depending on the component (see `shared/metric
 - Caddy reverse proxy (TLS termination + routing)
 - Optional: external notification endpoints (Slack/PagerDuty/Teams/webhooks)
 
+## Internal MQTT Auth (EMQX)
+
+EMQX calls internal-only endpoints in `ui_iot` for MQTT CONNECT authentication and per-topic ACL checks:
+
+- `POST /api/v1/internal/mqtt-auth`
+- `POST /api/v1/internal/mqtt-acl`
+
+These endpoints require the `X-Internal-Auth` header to match `MQTT_INTERNAL_AUTH_SECRET` and should never be exposed externally.
+
 ## Carrier Integration
 
 Carrier integrations are implemented in:
@@ -133,6 +177,22 @@ Sync worker notes:
 
 - The carrier sync worker updates `device_connections.data_used_mb` and also syncs `sim_status` and `network_status` when device info is available.
 - Bulk usage optimization is supported via `CarrierProvider.get_bulk_usage()`. For Hologram this uses a single org-level call and aggregates usage per device.
+
+## Template Management
+
+Device template CRUD and sub-resource management is implemented in:
+
+- Customer routes: `services/ui_iot/routes/templates.py`
+- Router registration: `services/ui_iot/app.py` (`app.include_router(templates_router)`)
+
+## Device Instance Model
+
+Phase 169 updates device management APIs to use the instance-level template model:
+
+- Device provisioning supports `template_id` and `parent_device_id` (stored on `device_registry`).
+- Module assignment endpoints live in `services/ui_iot/routes/devices.py` (`/devices/{device_id}/modules`).
+- Sensor endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_sensors` and keep the fleet-wide `/sensors` endpoint for backward compatibility.
+- Transport endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_transports`. Legacy `/devices/{device_id}/connection` remains temporarily but is marked deprecated.
 
 ## Troubleshooting
 

@@ -1,0 +1,162 @@
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# ─── Database ──────────────────────────────────────────
+postgresql:
+  enabled: true
+  image:
+    # Chart version != image version. Pin the image tag explicitly.
+    tag: "16.4.0"
+  auth:
+    database: iotcloud
+    username: iot
+    existingSecret: pulse-db-secret
+
+externalDatabase:
+  enabled: false
+  host: ""
+  port: 5432
+  database: iotcloud
+  username: iot
+  existingSecret: pulse-db-secret
+
+# ─── EMQX ──────────────────────────────────────────────
+emqx:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# ─── NATS ──────────────────────────────────────────────
+nats:
+  enabled: true
+  nats:
+    jetstream:
+      enabled: true
+      memStorage:
+        enabled: true
+        size: 256Mi
+      fileStorage:
+        enabled: true
+        size: 2Gi
+
+# ─── Ingest Workers ────────────────────────────────────
+ingest:
+  replicaCount: 2
+  image:
+    repository: pulse/ingest-iot
+    tag: latest
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  env:
+    BATCH_SIZE: "1000"
+    FLUSH_INTERVAL_MS: "500"
+    INGEST_WORKER_COUNT: "4"
+    PG_POOL_MAX: "10"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ─── UI / API ──────────────────────────────────────────
+ui:
+  replicaCount: 2
+  image:
+    repository: pulse/ui-iot
+    tag: latest
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# ─── Route Delivery ────────────────────────────────────
+routeDelivery:
+  replicaCount: 1
+  image:
+    repository: pulse/route-delivery
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 60
+
+# ─── Evaluator ─────────────────────────────────────────
+evaluator:
+  replicaCount: 1
+  image:
+    repository: pulse/evaluator-iot
+    tag: latest
+
+# ─── Ops Worker ────────────────────────────────────────
+opsWorker:
+  replicaCount: 1
+  image:
+    repository: pulse/ops-worker
+    tag: latest
+
+# ─── Subscription Worker ───────────────────────────────
+subscriptionWorker:
+  replicaCount: 1
+  image:
+    repository: pulse/subscription-worker
+    tag: latest
+
+# ─── Provision API ─────────────────────────────────────
+provisionApi:
+  replicaCount: 1
+  image:
+    repository: pulse/provision-api
+    tag: latest
+
+# ─── Migrator ──────────────────────────────────────────
+migrator:
+  image:
+    repository: pulse/migrator
+    tag: latest
+
+# ─── Caddy (Ingress alternative) ───────────────────────
+caddy:
+  enabled: false
+  image:
+    repository: caddy
+    tag: "2.8"
+
+# ─── Keycloak ──────────────────────────────────────────
+keycloak:
+  replicaCount: 1
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.0"
+
+# ─── Ingress ───────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: pulse.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+

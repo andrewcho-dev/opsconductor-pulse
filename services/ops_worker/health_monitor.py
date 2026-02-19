@@ -17,6 +17,8 @@ PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
 EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
@@ -37,7 +39,12 @@ async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         if DATABASE_URL:
-            _pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+            _pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
+                command_timeout=30,
+            )
         else:
             _pool = await asyncpg.create_pool(
                 host=PG_HOST,
@@ -45,8 +52,8 @@ async def get_pool() -> asyncpg.Pool:
                 database=PG_DB,
                 user=PG_USER,
                 password=PG_PASS,
-                min_size=2,
-                max_size=10,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
                 command_timeout=30,
             )
     return _pool

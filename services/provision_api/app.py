@@ -35,6 +35,15 @@ pool: asyncpg.Pool | None = None
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    try:
+        await get_pool()
+        return {"status": "ready"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="not_ready")
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 

@@ -5,6 +5,8 @@ import time
 import uuid
 
 import asyncpg
+from aiohttp import web
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from health_monitor import run_health_monitor
 from metrics_collector import run_metrics_collector
 from shared.logging import configure_logging
@@ -32,8 +34,32 @@ PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 _pool: asyncpg.Pool | None = None
+
+
+async def start_health_server(pool_obj: asyncpg.Pool) -> None:
+    async def health_handler(_request):
+        return web.json_response({"status": "ok", "service": "ops_worker"})
+
+    async def ready_handler(_request):
+        if pool_obj is not None:
+            return web.json_response({"status": "ready"})
+        return web.json_response({"status": "not_ready"}, status=503)
+
+    async def metrics_handler(_request):
+        return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
+
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
+    app.router.add_get("/metrics", metrics_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
 
 
 async def _init_db_connection(conn: asyncpg.Connection) -> None:
@@ -47,8 +73,8 @@ async def get_pool() -> asyncpg.Pool:
         if DATABASE_URL:
             _pool = await asyncpg.create_pool(
                 dsn=DATABASE_URL,
-                min_size=2,
-                max_size=10,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
                 command_timeout=30,
                 init=_init_db_connection,
             )
@@ -59,8 +85,8 @@ async def get_pool() -> asyncpg.Pool:
                 database=PG_DB,
                 user=PG_USER,
                 password=PG_PASS,
-                min_size=2,
-                max_size=10,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
                 command_timeout=30,
                 init=_init_db_connection,
             )
@@ -98,12 +124,8 @@ async def worker_loop(fn, pool_obj, interval: int) -> None:
 
 
 async def main() -> None:
-    # Expose /metrics on port 8080 for Prometheus scraping.
-    # prometheus_client runs its own small HTTP server in a background thread.
-    from prometheus_client import start_http_server
-
-    start_http_server(8080)
     pool = await get_pool()
+    await start_health_server(pool)
     await asyncio.gather(
         run_health_monitor(),
         run_metrics_collector(),

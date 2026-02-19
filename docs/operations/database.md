@@ -1,9 +1,14 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - db/migrate.py
   - db/migrations/
-phases: [20, 21, 34, 137, 142]
+  - db/migrations/109_device_templates.sql
+  - db/migrations/110_seed_device_templates.sql
+  - db/migrations/111_device_modules.sql
+  - db/migrations/112_device_sensors_transports.sql
+  - db/migrations/113_device_registry_template_fk.sql
+phases: [20, 21, 34, 137, 142, 160, 163, 165, 166, 167]
 ---
 
 # Database
@@ -20,6 +25,20 @@ OpsConductor-Pulse uses:
 ## Connection Pooling (PgBouncer)
 
 PgBouncer is used for connection pooling (transaction pooling mode in compose). Services typically connect via a `DATABASE_URL` pointing at PgBouncer.
+
+Services can tune their client-side pool sizes via:
+
+- `PG_POOL_MIN` (default: `2`)
+- `PG_POOL_MAX` (default: `10`)
+
+Note: PgBouncer `DEFAULT_POOL_SIZE` (server-side) is the shared ceiling across services; avoid setting per-service `PG_POOL_MAX` values such that aggregate concurrency overwhelms PgBouncer/Postgres.
+
+## Managed PostgreSQL (Kubernetes / Production)
+
+For production deployments, consider using a managed PostgreSQL offering (and optionally removing PgBouncer if your platform provides pooling):
+
+- See `docs/operations/managed-postgres.md` for chart configuration and requirements.
+- TimescaleDB must be available on the target database (extension support varies by provider).
 
 ## Schema Overview
 
@@ -54,6 +73,45 @@ High-level table groupings:
 - Notification routing tables (`notification_channels`, `notification_routing_rules`, `notification_log`)
 - Message routing and DLQ tables
 - Legacy delivery retention tables (no longer used for active delivery)
+
+### Device Template Tables (Phase 166)
+
+Unified device template model tables:
+
+- `device_templates` — device type definitions (system or tenant-owned).
+  - `tenant_id` is nullable. `NULL` means system template visible to all tenants.
+  - `is_locked=true` indicates system templates are not editable by tenants.
+  - `source` is `system` or `tenant`.
+  - `category` distinguishes gateways vs expansion modules vs other device types.
+- `template_metrics` — metric definitions per template (what the device type can measure).
+  - `is_required` can be used to auto-create instance sensors at provisioning time (Phase 167+).
+- `template_commands` — command definitions per template (what the device type can accept).
+  - `parameters_schema` supports JSON Schema for parameters.
+- `template_slots` — expansion ports / bus interfaces per template.
+  - `interface_type` covers wired (analog, rs485, i2c, spi, 1-wire, gpio, usb) and wireless (fsk, ble, lora).
+  - `compatible_templates` constrains which expansion module templates can be assigned to a slot.
+
+RLS note:
+
+- `device_templates` has a special RLS policy to allow tenant reads of system templates (`tenant_id IS NULL`) in addition to tenant-owned templates.
+- Child tables (`template_metrics`, `template_commands`, `template_slots`) use `EXISTS (...)` subqueries joining through `device_templates` since RLS does not cascade across FKs.
+
+### Device Instance Tables (Phase 167)
+
+Instance-level tables linking real devices to templates:
+
+- `device_modules` — physical modules installed in a device slot/bus interface.
+  - Unique constraint uses `COALESCE(bus_address, '')` so analog ports (NULL address) enforce 1:1 while buses allow multiple modules.
+  - `metric_key_map` stores raw-to-semantic key translation for module firmware telemetry.
+- `device_sensors` — restructured sensor model (migrated from legacy `sensors`).
+  - Optional links: `template_metric_id` and `device_module_id`
+  - `source` indicates `required`, `optional`, or `unmodeled` (migrated sensors are `unmodeled`).
+- `device_transports` — restructured connectivity model (migrated from legacy `device_connections`).
+  - Separates `ingestion_protocol` (mqtt_direct/http_api/...) from `physical_connectivity` (cellular/wifi/...)
+  - Stores `protocol_config` + `connectivity_config` JSONB for protocol/connectivity layers.
+- `device_registry` additions:
+  - `template_id` FK to `device_templates`
+  - `parent_device_id` gateway hierarchy pointer (validated via trigger to ensure parent exists within same tenant)
 
 ### User & Auth Tables
 
@@ -174,6 +232,11 @@ There are 84 migration files in `db/migrations/`:
 | 096 | 096_tenant_profile.sql |
 | 097 | 097_device_tiers.sql |
 | 098 | 098_fix_customer_viewer_bootstrap.sql |
+| 109 | 109_device_templates.sql |
+| 110 | 110_seed_device_templates.sql |
+| 111 | 111_device_modules.sql |
+| 112 | 112_device_sensors_transports.sql |
+| 113 | 113_device_registry_template_fk.sql |
 
 ## TimescaleDB
 

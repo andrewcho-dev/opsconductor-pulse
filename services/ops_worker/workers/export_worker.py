@@ -8,12 +8,28 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
+import boto3
+from botocore.config import Config
 import httpx
 
 logger = logging.getLogger(__name__)
 
-EXPORT_DIR = os.getenv("EXPORT_DIR", "/tmp/pulse-exports")
-os.makedirs(EXPORT_DIR, exist_ok=True)
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://iot-minio:9000")
+S3_BUCKET = os.getenv("S3_BUCKET", "exports")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+
+
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=S3_ACCESS_KEY,
+        aws_secret_access_key=S3_SECRET_KEY,
+        region_name=S3_REGION,
+        config=Config(signature_version="s3v4"),
+    )
 
 TIME_RANGE_MAP = {
     "1h": "1 hour",
@@ -65,11 +81,21 @@ async def run_export_tick(pool):
     )
 
     try:
-        file_path, row_count = await _process_export(
+        local_path, row_count = await _process_export(
             pool, tenant_id, export_type, export_format, filters, export_id
         )
 
-        file_size = os.path.getsize(file_path) if file_path else 0
+        file_size = os.path.getsize(local_path) if local_path else 0
+
+        # Upload to S3-compatible storage; store the object key in export_jobs.file_path.
+        s3_key = f"{export_id}.{export_format}"
+        s3 = get_s3_client()
+        s3.upload_file(local_path, S3_BUCKET, s3_key)
+
+        try:
+            os.remove(local_path)
+        except OSError:
+            pass
 
         async with pool.acquire() as conn:
             await conn.execute(
@@ -82,7 +108,7 @@ async def run_export_tick(pool):
                     completed_at = NOW()
                 WHERE id = $4
                 """,
-                file_path,
+                s3_key,
                 file_size,
                 row_count,
                 export_id,
@@ -137,7 +163,7 @@ async def _process_export(
 
     Returns: (file_path, row_count)
     """
-    file_path = os.path.join(EXPORT_DIR, f"{export_id}.{export_format}")
+    file_path = os.path.join(tempfile.gettempdir(), f"pulse-export-{export_id}.{export_format}")
 
     async with pool.acquire() as conn:
         # Set tenant context for RLS
@@ -413,12 +439,19 @@ async def run_export_cleanup(pool):
             """
         )
 
+    s3 = None
+    if expired:
+        try:
+            s3 = get_s3_client()
+        except Exception:
+            s3 = None
+
     for row in expired:
-        file_path = row["file_path"]
-        if file_path and os.path.exists(file_path):
+        s3_key = row["file_path"]
+        if s3 and s3_key:
             try:
-                os.remove(file_path)
-            except OSError:
+                s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+            except Exception:
                 pass
 
     if expired:

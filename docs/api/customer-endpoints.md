@@ -4,6 +4,7 @@ sources:
   - services/ui_iot/routes/customer.py
   - services/ui_iot/routes/alerts.py
   - services/ui_iot/routes/devices.py
+  - services/ui_iot/routes/sensors.py
   - services/ui_iot/routes/metrics.py
   - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/escalation.py
@@ -17,12 +18,13 @@ sources:
   - services/ui_iot/routes/preferences.py
   - services/ui_iot/routes/billing.py
   - services/ui_iot/routes/carrier.py
+  - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/organization.py
   - services/ui_iot/routes/certificates.py
   - services/ui_iot/routes/analytics.py
   - services/ui_iot/routes/message_routing.py
   - services/ui_iot/routes/operator.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158]
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 168, 169]
 ---
 
 # Customer API Endpoints
@@ -51,6 +53,8 @@ Base prefix: `/api/v1/customer`
 
 - `POST /api/v1/customer/devices` — create device
   - Example: `curl -s "${H_AUTH[@]}" -X POST "$BASE/api/v1/customer/devices" -H "Content-Type: application/json" -d '{"device_id":"dev-001","site_id":"site-1"}'`
+  - Body supports optional `template_id` and `parent_device_id`
+  - When `template_id` is provided, required template metrics are auto-created as `device_sensors` and transport defaults may auto-create a `device_transports` row.
 - `GET /api/v1/customer/devices` — list devices
   - Example: `curl -s "${H_AUTH[@]}" "$BASE/api/v1/customer/devices?limit=50&offset=0"`
 - `GET /api/v1/customer/devices/summary` — fleet summary
@@ -59,6 +63,7 @@ Base prefix: `/api/v1/customer`
   - Example: `curl -s "${H_AUTH[@]}" "$BASE/api/v1/customer/devices/dev-001"`
 - `PATCH /api/v1/customer/devices/{device_id}` — update device (name/site/tags/etc.)
   - Example: `curl -s "${H_AUTH[@]}" -X PATCH "$BASE/api/v1/customer/devices/dev-001" -H "Content-Type: application/json" -d '{"name":"New Name"}'`
+  - Supports updating `template_id` (required sensors from the new template are added; existing sensors are not removed automatically).
 - `PATCH /api/v1/customer/devices/{device_id}/decommission` — decommission device
   - Example: `curl -s "${H_AUTH[@]}" -X PATCH "$BASE/api/v1/customer/devices/dev-001/decommission" -H "Content-Type: application/json" -d '{}'`
 - `DELETE /api/v1/customer/devices/{device_id}` — delete device (if supported)
@@ -118,6 +123,59 @@ Maintenance windows:
 - `POST /api/v1/customer/maintenance-windows`
 - `PATCH /api/v1/customer/maintenance-windows/{window_id}`
 - `DELETE /api/v1/customer/maintenance-windows/{window_id}`
+
+Device modules:
+
+- `GET /api/v1/customer/devices/{device_id}/modules`
+- `POST /api/v1/customer/devices/{device_id}/modules`
+- `PUT /api/v1/customer/devices/{device_id}/modules/{module_id}`
+- `DELETE /api/v1/customer/devices/{device_id}/modules/{module_id}` (soft delete: marks removed and deactivates linked sensors)
+
+Device sensors (restructured; source = required|optional|unmodeled):
+
+- `GET /api/v1/customer/devices/{device_id}/sensors`
+- `POST /api/v1/customer/devices/{device_id}/sensors`
+- `PUT /api/v1/customer/devices/{device_id}/sensors/{sensor_id}`
+- `DELETE /api/v1/customer/devices/{device_id}/sensors/{sensor_id}` (cannot delete `source=required`; deactivate instead)
+- Fleet-wide list (backward compat): `GET /api/v1/customer/sensors`
+
+Device transports (replaces legacy device_connections):
+
+- `GET /api/v1/customer/devices/{device_id}/transports`
+- `POST /api/v1/customer/devices/{device_id}/transports`
+- `PUT /api/v1/customer/devices/{device_id}/transports/{transport_id}`
+- `DELETE /api/v1/customer/devices/{device_id}/transports/{transport_id}`
+
+Deprecated:
+
+- `GET/PUT/DELETE /api/v1/customer/devices/{device_id}/connection` (deprecated; successor is `/transports`)
+
+## Device Templates
+
+Base prefix: `/api/v1/customer`
+
+- `GET /api/v1/customer/templates` — list templates visible to tenant (system + own)
+  - Query: `category`, `source`, `search`
+- `GET /api/v1/customer/templates/{template_id}` — get full template with sub-resources
+- `POST /api/v1/customer/templates` — create tenant template
+- `PUT /api/v1/customer/templates/{template_id}` — update own template (403 if locked/system)
+- `DELETE /api/v1/customer/templates/{template_id}` — delete own template (409 if devices using it)
+- `POST /api/v1/customer/templates/{template_id}/clone` — clone a template into a tenant-owned copy
+
+Sub-resources:
+
+- Metrics:
+  - `POST /api/v1/customer/templates/{template_id}/metrics`
+  - `PUT /api/v1/customer/templates/{template_id}/metrics/{metric_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/metrics/{metric_id}`
+- Commands:
+  - `POST /api/v1/customer/templates/{template_id}/commands`
+  - `PUT /api/v1/customer/templates/{template_id}/commands/{command_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/commands/{command_id}`
+- Slots:
+  - `POST /api/v1/customer/templates/{template_id}/slots`
+  - `PUT /api/v1/customer/templates/{template_id}/slots/{slot_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/slots/{slot_id}`
 
 ## Carrier
 

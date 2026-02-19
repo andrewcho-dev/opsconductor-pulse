@@ -94,3 +94,67 @@ groups:
         annotations:
           summary: "Notification delivery failures"
           description: "Notification delivery is failing on channel type {{ $labels.channel_type }}."
+
+  - name: pulse_infrastructure
+    interval: 30s
+    rules:
+      - alert: NATSConsumerLagHigh
+        expr: pulse_ingest_queue_depth > 10000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ingest consumer lag is {{ $value }} messages"
+          description: "Ingest workers are falling behind. Consider scaling up ingest pods."
+
+      - alert: NATSConsumerLagCritical
+        expr: pulse_ingest_queue_depth > 50000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ingest consumer lag critical: {{ $value }} messages"
+
+      - alert: RouteDeliveryLagHigh
+        expr: pulse_route_delivery_nats_pending > 1000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Route delivery consumer lag: {{ $value }}"
+
+      - alert: BatchWriteLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(pulse_ingest_batch_write_seconds_bucket[5m]))) > 2
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 batch write latency is {{ $value }}s"
+          description: "Database writes are slow. Check PG performance and pool utilization."
+
+      - alert: EMQXConnectionsHigh
+        expr: emqx_connections_count > 50000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EMQX has {{ $value }} active connections"
+          description: "Approaching connection limits. Consider adding EMQX cluster nodes."
+
+      - alert: DLQDepthGrowing
+        expr: increase(pulse_delivery_dlq_total[1h]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} messages sent to DLQ in the last hour"
+          description: "Check webhook destinations for failures."
+
+      - alert: DBPoolSaturated
+        expr: (1 - (pulse_db_pool_free / pulse_db_pool_size)) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB pool utilization high on {{ $labels.service }}"
+          description: "Consider increasing PG_POOL_MAX or scaling the DB instance."

@@ -1,9 +1,13 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
-phases: [88, 98, 138, 139, 142]
+  - compose/prometheus/prometheus.yml
+  - compose/emqx/emqx.conf
+  - compose/nats/nats.conf
+  - compose/nats/init-streams.sh
+phases: [88, 98, 138, 139, 142, 161, 162, 163, 164, 165]
 ---
 
 # Service Map
@@ -17,7 +21,14 @@ High-level routing:
 - Browser traffic terminates at Caddy on HTTPS (:443).
 - Caddy routes Keycloak paths (`/realms/*`, `/admin/*`, etc.) to the Keycloak service.
 - All application paths (`/app/*`, `/customer/*`, `/operator/*`, `/api/v2/*`, `/ingest/*`) route to `ui_iot`.
-- Devices publish telemetry to Mosquitto MQTT (external TLS port 8883) which feeds `ingest_iot`.
+- Devices publish telemetry to EMQX MQTT (external TLS port 8883) which is bridged into NATS JetStream and consumed by `ingest_iot`.
+- EMQX uses internal `ui_iot` endpoints for CONNECT auth and per-topic ACL enforcement (`/api/v1/internal/*`).
+
+## Kubernetes View (Phase 163)
+
+- Helm chart: `helm/pulse/`
+- Deploys first-class Deployments for app services and uses subcharts for EMQX/NATS/PostgreSQL (optional).
+- Health/readiness probes rely on `/health` and `/ready` endpoints per service.
 
 ## Port Reference
 
@@ -26,35 +37,44 @@ High-level routing:
 | ui_iot | 8000 | 443 (via Caddy) | HTTPS |
 | ingest_iot | 8080 | — | HTTP (internal) |
 | evaluator_iot | 8080 | — | HTTP (internal) |
-| ops_worker | — | — | Background only |
+| ops_worker | 8080 | — | HTTP (internal) |
 | subscription_worker | — | — | Background only |
 | provision_api | 8081 | 8081 | HTTP |
 | Keycloak | 8080 | 443 (via Caddy) | HTTPS |
 | PostgreSQL | 5432 | 5432 | TCP |
 | PgBouncer | 6432 | — | TCP |
-| Mosquitto | 1883/9001 | 8883 (TLS) | MQTT/WS |
+| EMQX | 1883/9001/18083 | 8883 (TLS), 18083 | MQTT/WS/HTTP |
+| NATS JetStream | 4222/8222 | 4222/8222 (localhost) | NATS/HTTP |
+| mqtt-nats-bridge | — | — | Background only |
+| route-delivery | 8080 | — | HTTP (internal) |
+| NATS exporter | 7777 | — | HTTP (internal) |
 | Prometheus | 9090 | 9090 | HTTP |
 | Grafana | 3000 | 3001 | HTTP |
+| MinIO | 9000/9090 | 9000/9090 (localhost) | HTTP (S3 API / console) |
 
 ## Service Dependencies
 
 | Service | Depends On | Why |
 |---------|------------|-----|
 | ui_iot | PgBouncer, Keycloak | API + auth + DB |
-| ingest_iot | Mosquitto, PgBouncer/PostgreSQL | MQTT intake + telemetry writes |
+| ingest_iot | NATS, PgBouncer/PostgreSQL | JetStream consume + telemetry writes |
+| mqtt-nats-bridge | EMQX, NATS | Bridge MQTT publishes into JetStream |
+| route-delivery | NATS, PgBouncer/PostgreSQL, EMQX | Deliver webhook/MQTT republish routes |
 | evaluator_iot | PgBouncer/PostgreSQL | Reads telemetry and writes alerts/state |
 | ops_worker | ui_iot, ingest_iot, evaluator_iot, PgBouncer/PostgreSQL | Health polling + metrics |
 | subscription_worker | PostgreSQL | Subscription lifecycle updates |
 | provision_api | PostgreSQL | Provisioning registry and activation |
 | Prometheus | ui_iot, ingest_iot, evaluator_iot, ops_worker | Scrapes health/metrics |
 | Grafana | Prometheus | Dashboards |
+| nats-exporter | NATS | Exposes NATS/JetStream metrics to Prometheus |
+| MinIO | — | Stores exports/reports in local dev |
 
 ## Core Data Flow
 
 Telemetry ingestion:
 
-1. Device → Mosquitto (MQTT/TLS) → `ingest_iot`
-2. `ingest_iot` → TimescaleDB telemetry hypertable (via asyncpg)
+1. Device → EMQX (MQTT/TLS) → `mqtt-nats-bridge` → NATS JetStream
+2. `ingest_iot` consumes from JetStream → TimescaleDB telemetry hypertable (via asyncpg)
 3. `evaluator_iot` polls telemetry → updates device state + creates/updates/closes alerts
 4. `ui_iot` serves the UI and exposes APIs to view devices/telemetry/alerts
 
@@ -62,7 +82,23 @@ Alert operations:
 
 1. Alert created/updated (evaluator or user action)
 2. Escalation tick evaluates pending escalations
-3. Notification routing engine in `ui_iot` delivers to configured channels
+3. Notification routing engine in `ui_iot` delivers to configured channels (Slack/PagerDuty/Teams/HTTP webhook)
+
+## NATS JetStream Streams
+
+Stream/subject topology (see `compose/nats/init-streams.sh`):
+
+| Stream | Subjects | Purpose | Durable Consumers |
+|--------|----------|---------|------------------|
+| `TELEMETRY` | `telemetry.>` (published as `telemetry.{tenant_id}`) | Device telemetry envelopes (from MQTT bridge and HTTP ingest) | `ingest-workers` |
+| `SHADOW` | `shadow.>` (published as `shadow.{tenant_id}`) | Shadow updates | `ingest-shadow` |
+| `COMMANDS` | `commands.>` (published as `commands.{tenant_id}`) | Command messages / acks | `ingest-commands` |
+| `ROUTES` | `routes.>` (published as `routes.{tenant_id}`) | Message route delivery jobs (webhook/MQTT republish) | `route-delivery` |
+
+Retry semantics:
+
+- Consumers are configured with `max_deliver=3` (redeliveries handled by JetStream).
+- Route delivery DLQ is application-level (PostgreSQL `dead_letter_messages`), not a separate NATS stream.
 
 ## Database Tables (by domain)
 

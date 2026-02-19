@@ -4,3 +4,4 @@ python-dotenv
 prometheus-client
 paho-mqtt>=1.6.0,<2.0
 cryptography>=42.0.0
+boto3>=1.34.0

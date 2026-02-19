@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Form
+from fastapi import Response
 from starlette.requests import Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
@@ -33,6 +34,16 @@ from db.telemetry_queries import fetch_device_telemetry, fetch_device_events
 from db.audit import log_operator_access, fetch_operator_audit_log
 from db.pool import operator_connection
 from dependencies import get_db_pool
+from routes.templates import (
+    TemplateCreate,
+    TemplateUpdate,
+    TemplateMetricCreate,
+    TemplateMetricUpdate,
+    TemplateCommandCreate,
+    TemplateCommandUpdate,
+    TemplateSlotCreate,
+    TemplateSlotUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +52,8 @@ PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 pool: asyncpg.Pool | None = None
 
@@ -158,8 +171,8 @@ async def get_pool() -> asyncpg.Pool:
             database=PG_DB,
             user=PG_USER,
             password=PG_PASS,
-            min_size=1,
-            max_size=5,
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
         )
     return pool
 
@@ -2325,6 +2338,7 @@ async def get_tenant_stats(request: Request, tenant_id: str):
 async def list_devices(
     request: Request,
     tenant_filter: str | None = Query(None),
+    template_id: int | None = Query(default=None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -2343,15 +2357,90 @@ async def list_devices(
                 rls_bypassed=True,
             )
         async with operator_connection(p) as conn:
-            if tenant_filter:
-                devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
+            if template_id is not None:
+                conditions: list[str] = []
+                params: list = []
+                idx = 1
+
+                if tenant_filter:
+                    conditions.append(f"ds.tenant_id = ${idx}")
+                    params.append(tenant_filter)
+                    idx += 1
+
+                conditions.append(f"dr.template_id = ${idx}")
+                params.append(template_id)
+                idx += 1
+
+                where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
                 total = await conn.fetchval(
-                    "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
-                    tenant_filter,
+                    f"""
+                    SELECT COUNT(*)
+                    FROM device_state ds
+                    LEFT JOIN device_registry dr
+                      ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+                    {where}
+                    """,
+                    *params,
                 )
+                rows = await conn.fetch(
+                    f"""
+                    SELECT ds.tenant_id, ds.device_id, ds.site_id, ds.status, ds.last_seen_at,
+                           state->>'battery_pct' AS battery_pct,
+                           state->>'temp_c' AS temp_c,
+                           state->>'rssi_dbm' AS rssi_dbm,
+                           state->>'snr_db' AS snr_db,
+                           dr.subscription_id,
+                           dr.template_id,
+                           dt.name AS template_name
+                    FROM device_state ds
+                    LEFT JOIN device_registry dr
+                      ON dr.tenant_id = ds.tenant_id AND dr.device_id = ds.device_id
+                    LEFT JOIN device_templates dt
+                      ON dt.id = dr.template_id
+                    {where}
+                    ORDER BY ds.tenant_id, ds.site_id, ds.device_id
+                    LIMIT ${idx} OFFSET ${idx + 1}
+                    """,
+                    *params,
+                    limit,
+                    offset,
+                )
+                devices = [dict(r) for r in rows]
             else:
-                devices = await fetch_all_devices(conn, limit=limit, offset=offset)
-                total = await conn.fetchval("SELECT COUNT(*) FROM device_state")
+                if tenant_filter:
+                    devices = await fetch_devices(conn, tenant_filter, limit=limit, offset=offset)
+                    total = await conn.fetchval(
+                        "SELECT COUNT(*) FROM device_state WHERE tenant_id = $1",
+                        tenant_filter,
+                    )
+                else:
+                    devices = await fetch_all_devices(conn, limit=limit, offset=offset)
+                    total = await conn.fetchval("SELECT COUNT(*) FROM device_state")
+
+                if devices:
+                    tenant_ids = [d["tenant_id"] for d in devices]
+                    device_ids = [d["device_id"] for d in devices]
+                    trows = await conn.fetch(
+                        """
+                        SELECT
+                            dr.tenant_id,
+                            dr.device_id,
+                            dr.template_id,
+                            dt.name AS template_name
+                        FROM device_registry dr
+                        LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                        JOIN unnest($1::text[], $2::text[]) AS u(tenant_id, device_id)
+                          ON u.tenant_id = dr.tenant_id AND u.device_id = dr.device_id
+                        """,
+                        tenant_ids,
+                        device_ids,
+                    )
+                    tmap = {(r["tenant_id"], r["device_id"]): dict(r) for r in trows}
+                    for d in devices:
+                        t = tmap.get((d.get("tenant_id"), d.get("device_id"))) or {}
+                        d["template_id"] = t.get("template_id")
+                        d["template_name"] = t.get("template_name")
     except Exception:
         logger.exception("Failed to fetch operator devices")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -2442,6 +2531,67 @@ async def view_device(
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
 
+            tpl = await conn.fetchrow(
+                """
+                SELECT
+                    dr.template_id,
+                    dr.parent_device_id,
+                    dt.id AS template_row_id,
+                    dt.name AS template_name,
+                    dt.category AS template_category,
+                    dt.source AS template_source,
+                    (SELECT count(*) FROM device_modules dm WHERE dm.tenant_id = dr.tenant_id AND dm.device_id = dr.device_id) AS module_count,
+                    (SELECT count(*) FROM device_sensors ds WHERE ds.tenant_id = dr.tenant_id AND ds.device_id = dr.device_id AND ds.status = 'active') AS sensor_count
+                FROM device_registry dr
+                LEFT JOIN device_templates dt ON dt.id = dr.template_id
+                WHERE dr.tenant_id = $1 AND dr.device_id = $2
+                """,
+                tenant_id,
+                device_id,
+            )
+            if tpl:
+                device["template_id"] = tpl["template_id"]
+                device["parent_device_id"] = tpl["parent_device_id"]
+                device["module_count"] = int(tpl["module_count"] or 0)
+                device["sensor_count"] = int(tpl["sensor_count"] or 0)
+                device["template"] = (
+                    {
+                        "id": tpl["template_row_id"],
+                        "name": tpl["template_name"],
+                        "category": tpl["template_category"],
+                        "source": tpl["template_source"],
+                    }
+                    if tpl["template_row_id"]
+                    else None
+                )
+
+            trows = await conn.fetch(
+                """
+                SELECT
+                    t.id,
+                    t.ingestion_protocol,
+                    t.physical_connectivity,
+                    t.protocol_config,
+                    t.connectivity_config,
+                    t.carrier_integration_id,
+                    ci.display_name AS carrier_display_name,
+                    t.is_primary,
+                    t.status,
+                    t.last_connected_at,
+                    t.created_at,
+                    t.updated_at
+                FROM device_transports t
+                LEFT JOIN carrier_integrations ci
+                  ON ci.id = t.carrier_integration_id
+                 AND ci.tenant_id = t.tenant_id
+                WHERE t.tenant_id = $1 AND t.device_id = $2
+                ORDER BY t.is_primary DESC, t.id
+                """,
+                tenant_id,
+                device_id,
+            )
+            device["transports"] = [dict(r) for r in trows]
+
             events = await fetch_device_events(conn, tenant_id, device_id, hours=24, limit=50)
             telemetry = await fetch_device_telemetry(conn, tenant_id, device_id, hours=6, limit=120)
     except HTTPException:
@@ -2456,6 +2606,166 @@ async def view_device(
         "events": events,
         "telemetry": telemetry,
     }
+
+
+@router.get("/devices/{device_id}/modules")
+async def operator_list_device_modules(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    dm.tenant_id,
+                    dm.device_id,
+                    dm.id,
+                    dm.slot_key,
+                    dm.bus_address,
+                    dm.module_template_id,
+                    dt.name AS module_template_name,
+                    dm.label,
+                    dm.serial_number,
+                    dm.metric_key_map,
+                    dm.status,
+                    dm.installed_at
+                FROM device_modules dm
+                LEFT JOIN device_templates dt ON dt.id = dm.module_template_id
+                WHERE dm.device_id = $1
+                ORDER BY dm.tenant_id, dm.slot_key, COALESCE(dm.bus_address, ''), dm.id
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device modules")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_modules",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "modules": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.get("/devices/{device_id}/sensors")
+async def operator_list_device_sensors(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    ds.tenant_id,
+                    ds.device_id,
+                    ds.id,
+                    ds.metric_key,
+                    ds.display_name,
+                    ds.source,
+                    ds.template_metric_id,
+                    tm.display_name AS template_metric_display_name,
+                    ds.device_module_id,
+                    dm.label AS module_label,
+                    ds.unit,
+                    ds.min_range,
+                    ds.max_range,
+                    ds.precision_digits,
+                    ds.status,
+                    ds.last_value,
+                    ds.last_value_text,
+                    ds.last_seen_at,
+                    ds.created_at,
+                    ds.updated_at
+                FROM device_sensors ds
+                LEFT JOIN template_metrics tm ON tm.id = ds.template_metric_id
+                LEFT JOIN device_modules dm ON dm.id = ds.device_module_id
+                WHERE ds.device_id = $1
+                ORDER BY ds.tenant_id, ds.metric_key
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device sensors")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_sensors",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "sensors": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.get("/devices/{device_id}/transports")
+async def operator_list_device_transports(request: Request, device_id: str):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    t.tenant_id,
+                    t.device_id,
+                    t.id,
+                    t.ingestion_protocol,
+                    t.physical_connectivity,
+                    t.protocol_config,
+                    t.connectivity_config,
+                    t.carrier_integration_id,
+                    ci.display_name AS carrier_display_name,
+                    t.is_primary,
+                    t.status,
+                    t.last_connected_at,
+                    t.created_at,
+                    t.updated_at
+                FROM device_transports t
+                LEFT JOIN carrier_integrations ci
+                  ON ci.id = t.carrier_integration_id
+                 AND ci.tenant_id = t.tenant_id
+                WHERE t.device_id = $1
+                ORDER BY t.tenant_id, t.is_primary DESC, t.id
+                """,
+                device_id,
+            )
+    except Exception:
+        logger.exception("Failed to list operator device transports")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_device_transports",
+            tenant_filter=None,
+            resource_type="device",
+            resource_id=device_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"device_id": device_id, "transports": [dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/alerts")
@@ -3031,3 +3341,769 @@ async def operator_delete_carrier_integration(
         )
 
     return {"deleted": True, "id": integration_id}
+
+
+# ── Device Templates (Phase 168) ─────────────────────────────────────────────
+
+
+@router.get("/templates")
+async def operator_list_templates(
+    request: Request,
+    category: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    tenant_id: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    where: list[str] = []
+    params: list = []
+    idx = 1
+
+    if category:
+        where.append(f"category = ${idx}")
+        params.append(category)
+        idx += 1
+    if source:
+        where.append(f"source = ${idx}")
+        params.append(source)
+        idx += 1
+    if tenant_id:
+        where.append(f"tenant_id = ${idx}")
+        params.append(tenant_id)
+        idx += 1
+    if search:
+        where.append(
+            f"(name ILIKE ${idx} OR slug ILIKE ${idx} OR COALESCE(manufacturer,'') ILIKE ${idx} OR COALESCE(model,'') ILIKE ${idx})"
+        )
+        params.append(f"%{search}%")
+        idx += 1
+
+    where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+    try:
+        async with operator_connection(pool) as conn:
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM device_templates {where_clause}",
+                *params,
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                FROM device_templates
+                {where_clause}
+                ORDER BY (tenant_id IS NULL) DESC, name ASC
+                LIMIT ${idx} OFFSET ${idx + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
+    except Exception:
+        logger.exception("Failed to list templates (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="list_templates",
+            tenant_filter=tenant_id,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return {"items": [dict(r) for r in rows], "total": int(total or 0)}
+
+
+@router.post("/templates", status_code=201)
+async def operator_create_template(
+    request: Request,
+    body: TemplateCreate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    try:
+        async with operator_connection(pool) as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO device_templates
+                    (tenant_id, name, slug, description, category,
+                     manufacturer, model, firmware_version_pattern,
+                     is_locked, source, transport_defaults, metadata, image_url)
+                VALUES
+                    (NULL,$1,$2,$3,$4,$5,$6,$7,true,'system',$8::jsonb,$9::jsonb,$10)
+                RETURNING *
+                """,
+                body.name,
+                body.slug,
+                body.description,
+                body.category,
+                body.manufacturer,
+                body.model,
+                body.firmware_version_pattern,
+                json.dumps(body.transport_defaults) if body.transport_defaults is not None else None,
+                json.dumps(body.metadata),
+                body.image_url,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Template slug already exists")
+    except Exception:
+        logger.exception("Failed to create system template (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="create_system_template",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return dict(row)
+
+
+@router.put("/templates/{template_id}")
+async def operator_update_template(
+    request: Request,
+    template_id: int,
+    body: TemplateUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    params: list = [template_id]
+    idx = 2
+
+    def add_set(col: str, val, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    for col in ("name", "description", "category", "manufacturer", "model", "firmware_version_pattern", "image_url"):
+        if col in updates:
+            add_set(col, updates[col])
+    if "transport_defaults" in updates:
+        add_set(
+            "transport_defaults",
+            json.dumps(updates["transport_defaults"]) if updates["transport_defaults"] is not None else None,
+            "jsonb",
+        )
+    if "metadata" in updates:
+        add_set(
+            "metadata",
+            json.dumps(updates["metadata"]) if updates["metadata"] is not None else None,
+            "jsonb",
+        )
+
+    sets.append("updated_at = now()")
+
+    try:
+        async with operator_connection(pool) as conn:
+            row = await conn.fetchrow(
+                f"UPDATE device_templates SET {', '.join(sets)} WHERE id = $1 RETURNING *",
+                *params,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Template slug already exists")
+    except Exception:
+        logger.exception("Failed to update template (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="update_template",
+            tenant_filter=str(row["tenant_id"]) if row["tenant_id"] else None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return dict(row)
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def operator_delete_template(
+    request: Request,
+    template_id: int,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    try:
+        async with operator_connection(pool) as conn:
+            in_use = await conn.fetchval(
+                "SELECT COUNT(*) FROM device_registry WHERE template_id = $1",
+                template_id,
+            )
+            if in_use and int(in_use) > 0:
+                raise HTTPException(status_code=409, detail="Template is in use by devices")
+            deleted = await conn.fetchval(
+                "DELETE FROM device_templates WHERE id = $1 RETURNING 1",
+                template_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete template (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="delete_template",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return Response(status_code=204)
+
+
+async def _operator_require_template(conn, template_id: int) -> asyncpg.Record:
+    tpl = await conn.fetchrow("SELECT * FROM device_templates WHERE id = $1", template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return tpl
+
+
+@router.post("/templates/{template_id}/metrics", status_code=201)
+async def operator_create_template_metric(
+    request: Request,
+    template_id: int,
+    body: TemplateMetricCreate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO template_metrics
+                    (template_id, metric_key, display_name, data_type, unit,
+                     min_value, max_value, precision_digits, is_required,
+                     description, enum_values, sort_order)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
+                RETURNING *
+                """,
+                template_id,
+                body.metric_key,
+                body.display_name,
+                body.data_type,
+                body.unit,
+                body.min_value,
+                body.max_value,
+                body.precision_digits,
+                body.is_required,
+                body.description,
+                json.dumps(body.enum_values) if body.enum_values is not None else None,
+                body.sort_order,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Metric key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create template metric (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="create_template_metric",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return dict(row)
+
+
+@router.put("/templates/{template_id}/metrics/{metric_id}")
+async def operator_update_template_metric(
+    request: Request,
+    template_id: int,
+    metric_id: int,
+    body: TemplateMetricUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    params: list = [metric_id, template_id]
+    idx = 3
+
+    def add_set(col: str, val, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    for col in ("display_name", "data_type", "unit", "min_value", "max_value", "precision_digits", "is_required", "description", "sort_order"):
+        if col in updates:
+            add_set(col, updates[col])
+    if "enum_values" in updates:
+        add_set(
+            "enum_values",
+            json.dumps(updates["enum_values"]) if updates["enum_values"] is not None else None,
+            "jsonb",
+        )
+
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                f"""
+                UPDATE template_metrics
+                SET {", ".join(sets)}
+                WHERE id = $1 AND template_id = $2
+                RETURNING *
+                """,
+                *params,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Metric key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update template metric (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Metric not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="update_template_metric",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+
+    return dict(row)
+
+
+@router.delete("/templates/{template_id}/metrics/{metric_id}", status_code=204)
+async def operator_delete_template_metric(
+    request: Request,
+    template_id: int,
+    metric_id: int,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            deleted = await conn.fetchval(
+                "DELETE FROM template_metrics WHERE id = $1 AND template_id = $2 RETURNING 1",
+                metric_id,
+                template_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete template metric (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Metric not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="delete_template_metric",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return Response(status_code=204)
+
+
+@router.post("/templates/{template_id}/commands", status_code=201)
+async def operator_create_template_command(
+    request: Request,
+    template_id: int,
+    body: TemplateCommandCreate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO template_commands
+                    (template_id, command_key, display_name, description,
+                     parameters_schema, response_schema, sort_order)
+                VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)
+                RETURNING *
+                """,
+                template_id,
+                body.command_key,
+                body.display_name,
+                body.description,
+                json.dumps(body.parameters_schema) if body.parameters_schema is not None else None,
+                json.dumps(body.response_schema) if body.response_schema is not None else None,
+                body.sort_order,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Command key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create template command (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="create_template_command",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return dict(row)
+
+
+@router.put("/templates/{template_id}/commands/{command_id}")
+async def operator_update_template_command(
+    request: Request,
+    template_id: int,
+    command_id: int,
+    body: TemplateCommandUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    params: list = [command_id, template_id]
+    idx = 3
+
+    def add_set(col: str, val, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    for col in ("display_name", "description", "sort_order"):
+        if col in updates:
+            add_set(col, updates[col])
+    if "parameters_schema" in updates:
+        add_set(
+            "parameters_schema",
+            json.dumps(updates["parameters_schema"]) if updates["parameters_schema"] is not None else None,
+            "jsonb",
+        )
+    if "response_schema" in updates:
+        add_set(
+            "response_schema",
+            json.dumps(updates["response_schema"]) if updates["response_schema"] is not None else None,
+            "jsonb",
+        )
+
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                f"""
+                UPDATE template_commands
+                SET {", ".join(sets)}
+                WHERE id = $1 AND template_id = $2
+                RETURNING *
+                """,
+                *params,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Command key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update template command (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="update_template_command",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return dict(row)
+
+
+@router.delete("/templates/{template_id}/commands/{command_id}", status_code=204)
+async def operator_delete_template_command(
+    request: Request,
+    template_id: int,
+    command_id: int,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            deleted = await conn.fetchval(
+                "DELETE FROM template_commands WHERE id = $1 AND template_id = $2 RETURNING 1",
+                command_id,
+                template_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete template command (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="delete_template_command",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return Response(status_code=204)
+
+
+@router.post("/templates/{template_id}/slots", status_code=201)
+async def operator_create_template_slot(
+    request: Request,
+    template_id: int,
+    body: TemplateSlotCreate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO template_slots
+                    (template_id, slot_key, display_name, slot_type, interface_type,
+                     max_devices, compatible_templates, is_required, description, sort_order)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::int[],$8,$9,$10)
+                RETURNING *
+                """,
+                template_id,
+                body.slot_key,
+                body.display_name,
+                body.slot_type,
+                body.interface_type,
+                body.max_devices,
+                body.compatible_templates,
+                body.is_required,
+                body.description,
+                body.sort_order,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Slot key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create template slot (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="create_template_slot",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return dict(row)
+
+
+@router.put("/templates/{template_id}/slots/{slot_id}")
+async def operator_update_template_slot(
+    request: Request,
+    template_id: int,
+    slot_id: int,
+    body: TemplateSlotUpdate,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    sets: list[str] = []
+    params: list = [slot_id, template_id]
+    idx = 3
+
+    def add_set(col: str, val, cast: str | None = None):
+        nonlocal idx
+        if cast:
+            sets.append(f"{col} = ${idx}::{cast}")
+        else:
+            sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    for col in ("display_name", "slot_type", "interface_type", "max_devices", "is_required", "description", "sort_order"):
+        if col in updates:
+            add_set(col, updates[col])
+    if "compatible_templates" in updates:
+        add_set("compatible_templates", updates["compatible_templates"], "int[]")
+
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            row = await conn.fetchrow(
+                f"""
+                UPDATE template_slots
+                SET {", ".join(sets)}
+                WHERE id = $1 AND template_id = $2
+                RETURNING *
+                """,
+                *params,
+            )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="Slot key already exists on template")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update template slot (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="update_template_slot",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return dict(row)
+
+
+@router.delete("/templates/{template_id}/slots/{slot_id}", status_code=204)
+async def operator_delete_template_slot(
+    request: Request,
+    template_id: int,
+    slot_id: int,
+    _: None = Depends(require_operator_admin),
+):
+    user = get_user()
+    ip, user_agent = get_request_metadata(request)
+    pool = await get_pool()
+    try:
+        async with operator_connection(pool) as conn:
+            await _operator_require_template(conn, template_id)
+            deleted = await conn.fetchval(
+                "DELETE FROM template_slots WHERE id = $1 AND template_id = $2 RETURNING 1",
+                slot_id,
+                template_id,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete template slot (operator)")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    async with pool.acquire() as conn:
+        await log_operator_access(
+            conn,
+            user_id=user["sub"],
+            action="delete_template_slot",
+            tenant_filter=None,
+            ip_address=ip,
+            user_agent=user_agent,
+            rls_bypassed=True,
+        )
+    return Response(status_code=204)

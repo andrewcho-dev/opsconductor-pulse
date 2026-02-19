@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pulse.fullname" . }}-nats-init
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: nats-init
+          image: natsio/nats-box:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "TODO: translate compose/nats/init-streams.sh to K8s job"
+              exit 0
+
