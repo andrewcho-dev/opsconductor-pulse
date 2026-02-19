@@ -62,17 +62,17 @@ function relativeTime(iso: string): string {
 }
 
 export function SensorListPage() {
-  const [typeFilter, setTypeFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [deviceFilter, setDeviceFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [deviceFilter, setDeviceFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["all-sensors", typeFilter, statusFilter, deviceFilter],
     queryFn: () =>
       listAllSensors({
-        sensor_type: typeFilter || undefined,
-        status: statusFilter || undefined,
-        device_id: deviceFilter || undefined,
+        sensor_type: typeFilter === "all" ? undefined : typeFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
+        device_id: deviceFilter === "all" ? undefined : deviceFilter,
         limit: 200,
       }),
   });
@@ -159,7 +159,7 @@ export function SensorListPage() {
               <SelectValue placeholder="All Types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Types</SelectItem>
+              <SelectItem value="all">All Types</SelectItem>
               {SENSOR_TYPES.map((t) => (
                 <SelectItem key={t} value={t}>
                   {t}
@@ -173,7 +173,7 @@ export function SensorListPage() {
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Status</SelectItem>
+              <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="disabled">Disabled</SelectItem>
               <SelectItem value="stale">Stale</SelectItem>
@@ -186,7 +186,7 @@ export function SensorListPage() {
               <SelectValue placeholder="All Devices" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Devices</SelectItem>
+              <SelectItem value="all">All Devices</SelectItem>
               {devicesData?.devices?.map((d) => (
                 <SelectItem key={d.device_id} value={d.device_id}>
                   {d.device_id}
