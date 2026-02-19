@@ -39,7 +39,7 @@ function ProgressBar({ percent }: { percent: number }) {
   );
 }
 
-export default function BillingPage() {
+export default function BillingPage({ embedded }: { embedded?: boolean }) {
   const { data: config } = useQuery({
     queryKey: ["billing-config"],
     queryFn: getBillingConfig,
@@ -97,10 +97,9 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Billing"
-        description="Manage account tier and billing limits."
-      />
+      {!embedded && (
+        <PageHeader title="Billing" description="Manage account tier and billing limits." />
+      )}
 
       <Card>
         <CardHeader>

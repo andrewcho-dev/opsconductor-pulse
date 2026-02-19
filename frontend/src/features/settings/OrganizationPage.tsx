@@ -34,7 +34,7 @@ const INDUSTRY_OPTIONS = [
 
 const COMPANY_SIZES = ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"] as const;
 
-export default function OrganizationPage() {
+export default function OrganizationPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["organization"],
@@ -112,10 +112,12 @@ export default function OrganizationPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Organization"
-        description="Manage your company profile, address, and billing contact info."
-      />
+      {!embedded && (
+        <PageHeader
+          title="Organization"
+          description="Manage your company profile, address, and billing contact info."
+        />
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Card>

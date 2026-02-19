@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177]
 ---
 
 # ui-iot
@@ -209,6 +209,18 @@ Phase 176 introduces a Home landing page at `/app/home` and consolidates multipl
 - `/app/team` — Team hub (replaces `/app/users` and `/app/roles`)
 
 Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
+
+## Settings Route Structure (Phase 177)
+
+Phase 177 consolidates org and user settings under `/app/settings/*`:
+
+- `/app/settings` — Settings layout (redirects to `/app/settings/general`)
+- `/app/settings/general` — Organization settings
+- `/app/settings/notifications` — Notifications hub
+- `/app/settings/integrations` — Carrier integrations
+- `/app/settings/access` — Team hub (requires `users.read`)
+- `/app/settings/billing` — Billing
+- `/app/settings/profile` — Personal settings
 
 ## Troubleshooting
 

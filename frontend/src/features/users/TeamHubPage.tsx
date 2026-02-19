@@ -5,7 +5,7 @@ import { usePermissions } from "@/services/auth";
 import UsersPage from "./UsersPage";
 import RolesPage from "@/features/roles/RolesPage";
 
-export default function TeamHubPage() {
+export default function TeamHubPage({ embedded }: { embedded?: boolean }) {
   const [params, setParams] = useSearchParams();
   const { hasPermission } = usePermissions();
   const canManageRoles = hasPermission("users.roles");
@@ -15,7 +15,9 @@ export default function TeamHubPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Team" description="Manage users and roles in your organization" />
+      {!embedded && (
+        <PageHeader title="Team" description="Manage users and roles in your organization" />
+      )}
       <Tabs value={activeTab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
         <TabsList variant="line">
           <TabsTrigger value="members">Members</TabsTrigger>

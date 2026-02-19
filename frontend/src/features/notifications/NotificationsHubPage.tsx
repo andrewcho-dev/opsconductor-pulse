@@ -5,13 +5,18 @@ import NotificationChannelsPage from "./NotificationChannelsPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import DeadLetterPage from "@/features/messaging/DeadLetterPage";
 
-export default function NotificationsHubPage() {
+export default function NotificationsHubPage({ embedded }: { embedded?: boolean }) {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") ?? "channels";
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Notifications" description="Channels, delivery tracking, and failed messages" />
+      {!embedded && (
+        <PageHeader
+          title="Notifications"
+          description="Channels, delivery tracking, and failed messages"
+        />
+      )}
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
         <TabsList variant="line">
           <TabsTrigger value="channels">Channels</TabsTrigger>

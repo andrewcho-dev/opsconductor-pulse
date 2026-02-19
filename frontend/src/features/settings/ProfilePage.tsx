@@ -18,7 +18,7 @@ import { TIMEZONE_OPTIONS } from "@/services/api/preferences";
 import { toast } from "sonner";
 import { Loader2, Save, UserCircle } from "lucide-react";
 
-export default function ProfilePage() {
+export default function ProfilePage({ embedded }: { embedded?: boolean }) {
   const { user } = useAuth();
   const { data: preferences, isLoading } = usePreferences();
   const updateMutation = useUpdatePreferences();
@@ -76,10 +76,12 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Profile"
-        description="Manage your display name, timezone, and notification preferences."
-      />
+      {!embedded && (
+        <PageHeader
+          title="Profile"
+          description="Manage your display name, timezone, and notification preferences."
+        />
+      )}
 
       <div className="grid gap-4 max-w-2xl">
         <Card>

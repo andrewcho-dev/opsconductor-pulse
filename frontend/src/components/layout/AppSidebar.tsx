@@ -10,7 +10,6 @@ import {
   Rocket,
   Shield,
   ShieldCheck,
-  Webhook,
   Activity,
   Gauge,
   Monitor,
@@ -29,7 +28,6 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { usePermissions } from "@/services/auth";
 import { fetchAlerts } from "@/services/api/alerts";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -93,8 +91,6 @@ function readSidebarOpen(key: string, defaultValue: boolean) {
 export function AppSidebar() {
   const location = useLocation();
   const { isOperator, isCustomer } = useAuth();
-  const { hasPermission } = usePermissions();
-  const canManageUsers = hasPermission("users.read");
   const [fleetSetupDismissed] = useState(() => {
     return localStorage.getItem("pulse_fleet_setup_dismissed") === "true";
   });
@@ -263,19 +259,11 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Settings section */}
+            {/* Settings — single link */}
             <SidebarGroup>
-              <SidebarGroupLabel>Settings</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {renderNavItem({ label: "Notifications", href: "/notifications", icon: Webhook })}
-                  {canManageUsers && renderNavItem({ label: "Team", href: "/team", icon: Users })}
-                  {renderNavItem({ label: "Billing", href: "/billing", icon: CreditCard })}
-                  {renderNavItem({
-                    label: "Integrations",
-                    href: "/settings/carrier",
-                    icon: Radio,
-                  })}
+                  {renderNavItem({ label: "Settings", href: "/settings", icon: Settings })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

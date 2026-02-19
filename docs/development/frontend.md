@@ -13,6 +13,7 @@ sources:
   - frontend/src/components/shared/illustrations.tsx
   - frontend/src/features/home/HomePage.tsx
   - frontend/src/features/alerts/AlertsHubPage.tsx
+  - frontend/src/components/layout/SettingsLayout.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -24,7 +25,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177]
 ---
 
 # Frontend
@@ -225,18 +226,40 @@ export default function MyHubPage() {
 }
 ```
 
-## Navigation Structure (Phase 176)
+## Navigation Structure (Phase 176 + 177)
 
 The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
 
 - **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
 - **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
 - **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub)
-- **Settings** — Notifications (hub), Team (hub), Billing, Integrations
+- **Settings** — Single link to `/settings` page with internal subcategory navigation
 
 (\* conditional — hidden when dismissed)
 
 Old standalone routes redirect to their hub page with the appropriate `?tab=` parameter.
+
+## Settings Page (Phase 177)
+
+The Settings page (`/settings`) uses a dedicated `SettingsLayout` component with a two-column layout:
+
+- **Left nav** (200px): links organized under subcategory labels
+- **Right content** (flex-1): active section rendered via `<Outlet />`
+
+### Subcategories
+
+| Category | Section | Route | Content |
+|----------|---------|-------|---------|
+| Account | General | `/settings/general` | Organization settings |
+| Account | Billing | `/settings/billing` | Billing + subscription |
+| Configuration | Notifications | `/settings/notifications` | Notifications hub (Channels/Delivery/Dead Letter tabs) |
+| Configuration | Integrations | `/settings/integrations` | Carrier integrations |
+| Access Control | Team | `/settings/access` | Team hub (Members/Roles tabs, requires `users.read`) |
+| Personal | Profile | `/settings/profile` | Personal settings |
+
+The SettingsLayout handles permission-based visibility: the "Team" nav item only appears for users with `users.read` permission.
+
+Hub pages (Notifications, Team) render with `embedded` mode inside the Settings layout — they skip their own `PageHeader` but keep their tab navigation.
 
 ## UI Pattern Conventions
 
