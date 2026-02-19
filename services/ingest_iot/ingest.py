@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import time
 import logging
 import uuid
@@ -11,7 +12,7 @@ import asyncpg
 import httpx
 import paho.mqtt.client as mqtt
 from aiohttp import web
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
@@ -47,6 +48,8 @@ PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 AUTO_PROVISION = os.getenv("AUTO_PROVISION", "0") == "1"
 REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
@@ -69,12 +72,18 @@ COUNTERS = {
     "messages_written": 0,
     "messages_rejected": 0,
     "queue_depth": 0,
+    "delivery_queue_depth": 0,
     "last_write_at": None,
 }
 INGESTOR_REF: Optional["Ingestor"] = None
 logger = logging.getLogger(__name__)
 configure_logging("ingest")
 logger = logging.getLogger("ingest")
+
+delivery_queue_depth = Gauge(
+    "pulse_ingest_delivery_queue_depth",
+    "Route delivery queue depth",
+)
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -177,7 +186,9 @@ async def health_handler(request):
         COUNTERS["messages_received"] = INGESTOR_REF.msg_received
         COUNTERS["messages_rejected"] = INGESTOR_REF.msg_dropped
         COUNTERS["queue_depth"] = INGESTOR_REF.queue.qsize()
+        COUNTERS["delivery_queue_depth"] = INGESTOR_REF._delivery_queue.qsize()
         ingest_queue_depth.set(INGESTOR_REF.queue.qsize())
+        delivery_queue_depth.set(INGESTOR_REF._delivery_queue.qsize())
         if INGESTOR_REF.batch_writer is not None:
             stats = INGESTOR_REF.batch_writer.get_stats()
             COUNTERS["messages_written"] = stats.get("records_written", 0)
@@ -190,6 +201,7 @@ async def health_handler(request):
                 "messages_written": COUNTERS["messages_written"],
                 "messages_rejected": COUNTERS["messages_rejected"],
                 "queue_depth": COUNTERS["queue_depth"],
+                "delivery_queue_depth": COUNTERS["delivery_queue_depth"],
             },
             "last_write_at": COUNTERS["last_write_at"],
         }
@@ -796,9 +808,12 @@ class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=INGEST_QUEUE_SIZE)
+        self._delivery_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
         self.loop: asyncio.AbstractEventLoop | None = None
         self._workers = []
+        self._delivery_workers: list[asyncio.Task] = []
         self._mqtt_client: mqtt.Client | None = None
+        self._shutting_down = False
 
         self.msg_received = 0
         self.msg_enqueued = 0
@@ -1037,16 +1052,16 @@ class Ingestor:
                 if DATABASE_URL:
                     self.pool = await asyncpg.create_pool(
                         dsn=DATABASE_URL,
-                        min_size=2,
-                        max_size=10,
+                        min_size=PG_POOL_MIN,
+                        max_size=PG_POOL_MAX,
                         command_timeout=30,
                         init=_init_db_connection,
                     )
                 else:
                     self.pool = await asyncpg.create_pool(
                         host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-                        min_size=2,
-                        max_size=10,
+                        min_size=PG_POOL_MIN,
+                        max_size=PG_POOL_MAX,
                         command_timeout=30,
                         init=_init_db_connection,
                     )
@@ -1119,6 +1134,7 @@ class Ingestor:
             }
             if self.batch_writer is not None:
                 batch_stats = self.batch_writer.get_stats()
+            delivery_queue_depth.set(self._delivery_queue.qsize())
             log_event(
                 logger,
                 "ingest stats",
@@ -1127,6 +1143,7 @@ class Ingestor:
                 enqueued=self.msg_enqueued,
                 dropped=self.msg_dropped,
                 queue_depth=self.queue.qsize(),
+                delivery_queue_depth=self._delivery_queue.qsize(),
                 mode=self.mode,
                 store_rejects=int(self.store_rejects),
                 mirror_rejects=int(self.mirror_rejects),
@@ -1264,6 +1281,62 @@ class Ingestor:
         self._message_routes_cache[tenant_id] = routes
         self._routes_cache_ts[tenant_id] = now
         return routes
+
+    async def _route_delivery_worker(self):
+        """Process route delivery jobs from the delivery queue."""
+        while True:
+            try:
+                job = await self._delivery_queue.get()
+            except asyncio.CancelledError:
+                break
+
+            route = job["route"]
+            topic = job["topic"]
+            payload = job["payload"]
+            tenant_id = job["tenant_id"]
+
+            try:
+                await self._deliver_to_route(route, topic, payload, tenant_id)
+                logger.debug(
+                    "route_delivered",
+                    extra={"route_id": route["id"], "destination": route["destination_type"]},
+                )
+            except Exception as route_exc:
+                # Write to dead letter queue (same logic as current inline handler)
+                try:
+                    assert self.pool is not None
+                    async with self.pool.acquire() as conn:
+                        await _set_tenant_write_context(conn, tenant_id)
+                        await conn.execute(
+                            """
+                            INSERT INTO dead_letter_messages
+                                (tenant_id, route_id, original_topic, payload,
+                                 destination_type, destination_config, error_message)
+                            VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
+                            """,
+                            tenant_id,
+                            route["id"],
+                            topic,
+                            json.dumps(payload, default=str),
+                            route["destination_type"],
+                            json.dumps(route.get("destination_config") or {}, default=str),
+                            str(route_exc)[:2000],
+                        )
+                except Exception as dlq_exc:
+                    logger.error(
+                        "dlq_write_failed",
+                        extra={"route_id": route["id"], "error": str(dlq_exc)},
+                    )
+                logger.warning(
+                    "route_delivery_failed_dlq",
+                    extra={
+                        "route_id": route["id"],
+                        "error": str(route_exc),
+                        "destination": route["destination_type"],
+                    },
+                )
+            finally:
+                self._delivery_queue.task_done()
 
     async def _deliver_to_route(self, route: dict, topic: str, payload: dict, tenant_id: str) -> None:
         """Deliver a message to a route destination."""
@@ -1529,7 +1602,7 @@ class Ingestor:
                 # Sensor auto-discovery
                 await self._ensure_sensors(tenant_id, device_id, record.metrics, ts)
 
-                # --- Message route fan-out ---
+                # --- Message route fan-out (enqueue for async delivery) ---
                 try:
                     routes = await self._get_message_routes(tenant_id)
                     for route in routes:
@@ -1545,47 +1618,25 @@ class Ingestor:
                             if route["destination_type"] == "postgresql":
                                 continue  # Already written
 
-                            await self._deliver_to_route(route, topic, payload, tenant_id)
-                            logger.debug(
-                                "route_delivered",
-                                extra={
-                                    "route_id": route["id"],
-                                    "destination": route["destination_type"],
-                                },
-                            )
-                        except Exception as route_exc:
-                            # Write to dead letter queue
+                            # Enqueue for async delivery instead of delivering inline
                             try:
-                                assert self.pool is not None
-                                async with self.pool.acquire() as conn:
-                                    await _set_tenant_write_context(conn, tenant_id)
-                                    await conn.execute(
-                                        """
-                                        INSERT INTO dead_letter_messages
-                                            (tenant_id, route_id, original_topic, payload,
-                                             destination_type, destination_config, error_message)
-                                        VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
-                                        """,
-                                        tenant_id,
-                                        route["id"],
-                                        topic,
-                                        json.dumps(payload, default=str),
-                                        route["destination_type"],
-                                        json.dumps(route.get("destination_config") or {}, default=str),
-                                        str(route_exc)[:2000],
-                                    )
-                            except Exception as dlq_exc:
-                                logger.error(
-                                    "dlq_write_failed",
-                                    extra={"route_id": route["id"], "error": str(dlq_exc)},
+                                self._delivery_queue.put_nowait(
+                                    {
+                                        "route": route,
+                                        "topic": topic,
+                                        "payload": payload,
+                                        "tenant_id": tenant_id,
+                                    }
                                 )
+                            except asyncio.QueueFull:
+                                logger.warning(
+                                    "delivery_queue_full",
+                                    extra={"route_id": route["id"], "tenant_id": tenant_id},
+                                )
+                        except Exception as route_match_exc:
                             logger.warning(
-                                "route_delivery_failed_dlq",
-                                extra={
-                                    "route_id": route["id"],
-                                    "error": str(route_exc),
-                                    "destination": route["destination_type"],
-                                },
+                                "route_match_error",
+                                extra={"route_id": route.get("id"), "error": str(route_match_exc)},
                             )
                 except Exception as route_fan_exc:
                     logger.warning("route_fanout_error", extra={"error": str(route_fan_exc)})
@@ -1803,6 +1854,8 @@ class Ingestor:
                 return
 
             def _enqueue():
+                if self._shutting_down:
+                    return
                 try:
                     self.queue.put_nowait((msg.topic, payload))
                     self.msg_enqueued += 1
@@ -1814,6 +1867,65 @@ class Ingestor:
             self.loop.call_soon_threadsafe(_enqueue)
         finally:
             trace_id_var.reset(trace_token)
+
+    async def shutdown(self):
+        """Graceful shutdown: stop accepting messages, drain queue, flush writes."""
+        logger.info("shutdown_initiated")
+        self._shutting_down = True
+
+        # 1. Stop MQTT client (stops receiving new messages)
+        if self._mqtt_client:
+            self._mqtt_client.loop_stop()
+            self._mqtt_client.disconnect()
+            logger.info("mqtt_disconnected")
+
+        # 2. Wait for main queue to drain (with timeout)
+        drain_timeout = 10  # seconds
+        start = time.time()
+        while not self.queue.empty() and (time.time() - start) < drain_timeout:
+            await asyncio.sleep(0.1)
+        remaining = self.queue.qsize()
+        if remaining:
+            logger.warning("queue_drain_timeout", extra={"remaining": remaining})
+        else:
+            logger.info("queue_drained")
+
+        # 3. Cancel ingest worker tasks and wait for in-flight work to finish
+        for task in self._workers:
+            task.cancel()
+        if self._workers:
+            await asyncio.gather(*self._workers, return_exceptions=True)
+            logger.info("workers_stopped")
+
+        # 3b. Wait for delivery queue to drain
+        drain_start = time.time()
+        while not self._delivery_queue.empty() and (time.time() - drain_start) < 5:
+            await asyncio.sleep(0.1)
+
+        # 3c. Cancel delivery workers
+        for task in self._delivery_workers:
+            task.cancel()
+        if self._delivery_workers:
+            await asyncio.gather(*self._delivery_workers, return_exceptions=True)
+            logger.info("delivery_workers_stopped")
+
+        # 4. Flush the batch writer (critical: writes buffered telemetry)
+        if self.batch_writer:
+            await self.batch_writer.stop()
+            logger.info(
+                "batch_writer_flushed",
+                extra={
+                    "records_written": self.batch_writer.records_written,
+                    "batches_flushed": self.batch_writer.batches_flushed,
+                },
+            )
+
+        # 5. Close DB pool
+        if self.pool:
+            await self.pool.close()
+            logger.info("db_pool_closed")
+
+        logger.info("shutdown_complete")
 
     async def run(self):
         await self.init_pool()
@@ -1837,6 +1949,12 @@ class Ingestor:
         for i in range(INGEST_WORKER_COUNT):
             task = asyncio.create_task(self.db_worker())
             self._workers.append(task)
+
+        # Start route delivery workers (separate from telemetry ingest workers)
+        DELIVERY_WORKER_COUNT = int(os.getenv("DELIVERY_WORKER_COUNT", "2"))
+        for i in range(DELIVERY_WORKER_COUNT):
+            task = asyncio.create_task(self._route_delivery_worker())
+            self._delivery_workers.append(task)
         asyncio.create_task(self.stats_worker())
 
         client = mqtt.Client()
@@ -1861,8 +1979,19 @@ class Ingestor:
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
         client.loop_start()
 
-        while True:
-            await asyncio.sleep(5)
+        # Wait for shutdown signal
+        shutdown_event = asyncio.Event()
+
+        def _signal_handler():
+            logger.info("signal_received")
+            shutdown_event.set()
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, _signal_handler)
+
+        await shutdown_event.wait()
+        await self.shutdown()
 
 async def main():
     ing = Ingestor()

@@ -19,6 +19,9 @@ PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 # Service URLs
 INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
@@ -38,15 +41,24 @@ class MetricsCollector:
         if self._running:
             return
         self._running = True
-        self._pool = await asyncpg.create_pool(
-            host=PG_HOST,
-            port=PG_PORT,
-            database=PG_DB,
-            user=PG_USER,
-            password=PG_PASS,
-            min_size=1,
-            max_size=3,
-        )
+        if DATABASE_URL:
+            self._pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
+                command_timeout=30,
+            )
+        else:
+            self._pool = await asyncpg.create_pool(
+                host=PG_HOST,
+                port=PG_PORT,
+                database=PG_DB,
+                user=PG_USER,
+                password=PG_PASS,
+                min_size=PG_POOL_MIN,
+                max_size=PG_POOL_MAX,
+                command_timeout=30,
+            )
         self._task = asyncio.create_task(self._collection_loop())
         logger.info("Metrics collector started (interval=%ds)", COLLECTION_INTERVAL)
 

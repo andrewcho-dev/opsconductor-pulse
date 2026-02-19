@@ -1,8 +1,8 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 139, 142]
+phases: [15, 23, 101, 139, 142, 160]
 ---
 
 # ingest
@@ -30,6 +30,7 @@ Pipeline stages (high level):
 3. Device registry validation (cache + DB fallback)
 4. Subscription status checks (block suspended/expired)
 5. Batch insert telemetry records, update device last-seen/location as needed
+6. Message route fan-out is enqueued and delivered asynchronously (webhook/MQTT republish)
 
 ## Configuration
 
@@ -50,6 +51,8 @@ Environment variables read by the service:
 | `PG_USER` | `iot` | Database user. |
 | `PG_PASS` | `iot_dev` | Database password. |
 | `DATABASE_URL` | empty | Optional DSN; when set, preferred over `PG_*`. |
+| `PG_POOL_MIN` | `2` | DB pool minimum connections. |
+| `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 | `AUTO_PROVISION` | `0` | If enabled, auto-register unknown devices when capacity allows. |
 | `REQUIRE_TOKEN` | `1` | If enabled, require `provision_token` validation. |
 | `CERT_AUTH_ENABLED` | `0` | Enables certificate-based auth behaviors (where supported). |
@@ -62,8 +65,20 @@ Environment variables read by the service:
 | `FLUSH_INTERVAL_MS` | `1000` | Max time before flushing telemetry batch. |
 | `INGEST_WORKER_COUNT` | `4` | Number of ingestion workers. |
 | `INGEST_QUEUE_SIZE` | `50000` | Queue size for ingestion events. |
+| `DELIVERY_WORKER_COUNT` | `2` | Async route delivery workers (webhooks/MQTT republish). |
 | `BUCKET_TTL_SECONDS` | `3600` | Rate limiter bucket TTL. |
 | `BUCKET_CLEANUP_INTERVAL` | `300` | Bucket cleanup interval. |
+
+## Shutdown
+
+The ingest service handles SIGTERM/SIGINT gracefully to reduce data loss during deploy/restart:
+
+- Stop accepting new MQTT messages
+- Drain the ingest queue (bounded timeout)
+- Stop ingest workers
+- Drain route delivery queue and stop delivery workers
+- Flush `TimescaleBatchWriter` (final batch flush)
+- Close the DB pool
 
 ## Health & Metrics
 

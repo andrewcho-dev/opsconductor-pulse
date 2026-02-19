@@ -7,7 +7,7 @@ sources:
   - services/ui_iot/services/carrier_sync.py
   - services/ui_iot/routes/operator.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160]
 ---
 
 # ui-iot
@@ -55,6 +55,8 @@ Database:
 | `PG_USER` | `iot` | Database user. |
 | `PG_PASS` | `iot_dev` | Database password. |
 | `DATABASE_URL` | empty | Optional DSN; when set, preferred over `PG_*`. |
+| `PG_POOL_MIN` | `2` | DB pool minimum connections. |
+| `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 
 Ingestion and batching:
 

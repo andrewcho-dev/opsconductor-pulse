@@ -41,6 +41,8 @@ PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 pool: asyncpg.Pool | None = None
 
@@ -158,8 +160,8 @@ async def get_pool() -> asyncpg.Pool:
             database=PG_DB,
             user=PG_USER,
             password=PG_PASS,
-            min_size=1,
-            max_size=5,
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
         )
     return pool
 

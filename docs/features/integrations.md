@@ -1,10 +1,11 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/notifications/senders.py
   - services/ui_iot/routes/notifications.py
   - services/ui_iot/routes/message_routing.py
-phases: [1, 2, 91, 130, 138, 142]
+  - services/ingest_iot/ingest.py
+phases: [1, 2, 91, 130, 138, 142, 160]
 ---
 
 # Integrations
@@ -44,6 +45,8 @@ Message routes match topics and forward to destinations (webhook, MQTT republish
 - Enable/disable toggles
 - Dead-letter queue for failed deliveries
 - Replay and purge operations for recovery
+
+Route delivery is processed asynchronously by the ingest service (separate from the telemetry write workers), with delivery worker concurrency configurable via `DELIVERY_WORKER_COUNT`.
 
 ## Database Schema
 

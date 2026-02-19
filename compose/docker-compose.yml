@@ -92,6 +92,9 @@ services:
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      # PG_POOL_MIN: "2"      # DB pool minimum connections (default: 2)
+      # PG_POOL_MAX: "10"     # DB pool maximum connections (default: 10)
+      # DELIVERY_WORKER_COUNT: "2"   # Async route delivery workers (default: 2)
       AUTO_PROVISION: "0"
       REQUIRE_TOKEN: "1"
       COUNTERS_ENABLED: "1"

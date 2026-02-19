@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - db/migrate.py
   - db/migrations/
-phases: [20, 21, 34, 137, 142]
+phases: [20, 21, 34, 137, 142, 160]
 ---
 
 # Database
@@ -20,6 +20,13 @@ OpsConductor-Pulse uses:
 ## Connection Pooling (PgBouncer)
 
 PgBouncer is used for connection pooling (transaction pooling mode in compose). Services typically connect via a `DATABASE_URL` pointing at PgBouncer.
+
+Services can tune their client-side pool sizes via:
+
+- `PG_POOL_MIN` (default: `2`)
+- `PG_POOL_MAX` (default: `10`)
+
+Note: PgBouncer `DEFAULT_POOL_SIZE` (server-side) is the shared ceiling across services; avoid setting per-service `PG_POOL_MAX` values such that aggregate concurrency overwhelms PgBouncer/Postgres.
 
 ## Schema Overview
 

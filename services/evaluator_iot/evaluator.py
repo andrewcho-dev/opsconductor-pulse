@@ -46,6 +46,8 @@ PG_DB   = os.getenv("PG_DB", "iotcloud")
 PG_USER = os.getenv("PG_USER", "iot")
 PG_PASS = os.getenv("PG_PASS", "iot_dev")
 DATABASE_URL = os.getenv("DATABASE_URL")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 configure_logging("evaluator")
 logger = logging.getLogger("evaluator")
 
@@ -1198,11 +1200,18 @@ async def maintain_notify_listener(channel: str, callback, stop_event: asyncio.E
 
 async def main():
     if DATABASE_URL:
-        pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
+        pool = await asyncpg.create_pool(
+            dsn=DATABASE_URL,
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
+            command_timeout=30,
+        )
     else:
         pool = await asyncpg.create_pool(
             host=PG_HOST, port=PG_PORT, database=PG_DB, user=PG_USER, password=PG_PASS,
-            min_size=2, max_size=10, command_timeout=30
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
+            command_timeout=30,
         )
 
     async with pool.acquire() as conn:

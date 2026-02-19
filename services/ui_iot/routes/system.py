@@ -22,6 +22,8 @@ POSTGRES_PORT = int(os.getenv("PG_PORT", "5432"))
 POSTGRES_DB = os.getenv("PG_DB", "iotcloud")
 POSTGRES_USER = os.getenv("PG_USER", "iot")
 POSTGRES_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
 
 KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
@@ -56,8 +58,8 @@ async def get_pool() -> asyncpg.Pool:
             database=POSTGRES_DB,
             user=POSTGRES_USER,
             password=POSTGRES_PASS,
-            min_size=1,
-            max_size=5,
+            min_size=PG_POOL_MIN,
+            max_size=PG_POOL_MAX,
             command_timeout=30,
             init=_init_db_connection,
         )
