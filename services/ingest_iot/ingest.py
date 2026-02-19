@@ -9,10 +9,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
-import httpx
-import paho.mqtt.client as mqtt
 from aiohttp import web
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
@@ -32,12 +30,7 @@ except ImportError:  # pragma: no cover
     # Script/legacy import when `services/ingest_iot` is on sys.path
     from topic_matcher import mqtt_topic_matches, evaluate_payload_filter
 
-MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
-MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-MQTT_CA_CERT = os.getenv("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
+NATS_URL = os.getenv("NATS_URL", "nats://iot-nats:4222")
 SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
 COMMAND_ACK_TOPIC = "tenant/+/device/+/commands/ack"
 COMMAND_ACK_RE = re.compile(r"^tenant/(?P<tenant_id>[^/]+)/device/(?P<device_id>[^/]+)/commands/ack$")
@@ -63,7 +56,6 @@ AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
 FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
-INGEST_QUEUE_SIZE = int(os.getenv("INGEST_QUEUE_SIZE", "50000"))
 BUCKET_TTL_SECONDS = int(os.getenv("BUCKET_TTL_SECONDS", "3600"))
 BUCKET_CLEANUP_INTERVAL = int(os.getenv("BUCKET_CLEANUP_INTERVAL", "300"))
 
@@ -71,19 +63,15 @@ COUNTERS = {
     "messages_received": 0,
     "messages_written": 0,
     "messages_rejected": 0,
-    "queue_depth": 0,
-    "delivery_queue_depth": 0,
+    "nats_telemetry_pending": 0,
+    "nats_shadow_pending": 0,
+    "nats_commands_pending": 0,
     "last_write_at": None,
 }
 INGESTOR_REF: Optional["Ingestor"] = None
 logger = logging.getLogger(__name__)
 configure_logging("ingest")
 logger = logging.getLogger("ingest")
-
-delivery_queue_depth = Gauge(
-    "pulse_ingest_delivery_queue_depth",
-    "Route delivery queue depth",
-)
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -185,10 +173,10 @@ async def health_handler(request):
     if INGESTOR_REF is not None:
         COUNTERS["messages_received"] = INGESTOR_REF.msg_received
         COUNTERS["messages_rejected"] = INGESTOR_REF.msg_dropped
-        COUNTERS["queue_depth"] = INGESTOR_REF.queue.qsize()
-        COUNTERS["delivery_queue_depth"] = INGESTOR_REF._delivery_queue.qsize()
-        ingest_queue_depth.set(INGESTOR_REF.queue.qsize())
-        delivery_queue_depth.set(INGESTOR_REF._delivery_queue.qsize())
+        COUNTERS["nats_telemetry_pending"] = getattr(INGESTOR_REF, "_nats_pending_telemetry", 0)
+        COUNTERS["nats_shadow_pending"] = getattr(INGESTOR_REF, "_nats_pending_shadow", 0)
+        COUNTERS["nats_commands_pending"] = getattr(INGESTOR_REF, "_nats_pending_commands", 0)
+        ingest_queue_depth.set(COUNTERS["nats_telemetry_pending"])
         if INGESTOR_REF.batch_writer is not None:
             stats = INGESTOR_REF.batch_writer.get_stats()
             COUNTERS["messages_written"] = stats.get("records_written", 0)
@@ -200,8 +188,9 @@ async def health_handler(request):
                 "messages_received": COUNTERS["messages_received"],
                 "messages_written": COUNTERS["messages_written"],
                 "messages_rejected": COUNTERS["messages_rejected"],
-                "queue_depth": COUNTERS["queue_depth"],
-                "delivery_queue_depth": COUNTERS["delivery_queue_depth"],
+                "nats_telemetry_pending": COUNTERS["nats_telemetry_pending"],
+                "nats_shadow_pending": COUNTERS["nats_shadow_pending"],
+                "nats_commands_pending": COUNTERS["nats_commands_pending"],
             },
             "last_write_at": COUNTERS["last_write_at"],
         }
@@ -807,13 +796,17 @@ async def _set_tenant_write_context(conn: asyncpg.Connection, tenant_id: str | N
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=INGEST_QUEUE_SIZE)
-        self._delivery_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+        self._nc = None        # NATS connection
+        self._js = None        # JetStream context
+        self._telemetry_sub = None  # Pull subscription (TELEMETRY)
+        self._shadow_sub = None     # Pull subscription (SHADOW)
+        self._commands_sub = None   # Pull subscription (COMMANDS)
         self.loop: asyncio.AbstractEventLoop | None = None
         self._workers = []
-        self._delivery_workers: list[asyncio.Task] = []
-        self._mqtt_client: mqtt.Client | None = None
         self._shutting_down = False
+        self._nats_pending_telemetry = 0
+        self._nats_pending_shadow = 0
+        self._nats_pending_commands = 0
 
         self.msg_received = 0
         self.msg_enqueued = 0
@@ -1134,7 +1127,26 @@ class Ingestor:
             }
             if self.batch_writer is not None:
                 batch_stats = self.batch_writer.get_stats()
-            delivery_queue_depth.set(self._delivery_queue.qsize())
+
+            # Best-effort: update pending counts from JetStream consumer state.
+            if self._js:
+                try:
+                    info = await self._js.consumer_info("TELEMETRY", "ingest-workers")
+                    self._nats_pending_telemetry = getattr(info, "num_pending", 0)
+                except Exception:
+                    pass
+                try:
+                    info = await self._js.consumer_info("SHADOW", "ingest-shadow")
+                    self._nats_pending_shadow = getattr(info, "num_pending", 0)
+                except Exception:
+                    pass
+                try:
+                    info = await self._js.consumer_info("COMMANDS", "ingest-commands")
+                    self._nats_pending_commands = getattr(info, "num_pending", 0)
+                except Exception:
+                    pass
+
+            ingest_queue_depth.set(self._nats_pending_telemetry)
             log_event(
                 logger,
                 "ingest stats",
@@ -1142,8 +1154,9 @@ class Ingestor:
                 received=self.msg_received,
                 enqueued=self.msg_enqueued,
                 dropped=self.msg_dropped,
-                queue_depth=self.queue.qsize(),
-                delivery_queue_depth=self._delivery_queue.qsize(),
+                nats_telemetry_pending=self._nats_pending_telemetry,
+                nats_shadow_pending=self._nats_pending_shadow,
+                nats_commands_pending=self._nats_pending_commands,
                 mode=self.mode,
                 store_rejects=int(self.store_rejects),
                 mirror_rejects=int(self.mirror_rejects),
@@ -1158,7 +1171,7 @@ class Ingestor:
                 ts_flushes=batch_stats["batches_flushed"],
                 ts_pending=batch_stats["pending_records"],
                 workers=INGEST_WORKER_COUNT,
-                queue_max=INGEST_QUEUE_SIZE,
+                nats_url=NATS_URL,
             )
 
     async def _inc_counter(self, tenant_id: str | None, reason: str):
@@ -1182,7 +1195,11 @@ class Ingestor:
         _counter_inc("messages_rejected")
         result = "rate_limited" if reason == "RATE_LIMITED" else "rejected"
         ingest_messages_total.labels(tenant_id=tenant_id or "unknown", result=result).inc()
-        await self._inc_counter(tenant_id, reason)
+        try:
+            await self._inc_counter(tenant_id, reason)
+        except Exception:
+            # Counter writes must never break ingestion.
+            logger.warning("quarantine_counter_write_failed", exc_info=True)
         log_event(
             logger,
             "message quarantined",
@@ -1202,26 +1219,32 @@ class Ingestor:
                 {"site_id": site_id, "msg_type": msg_type},
             )
 
-        if self.store_rejects:
-            assert self.pool is not None
-            async with self.pool.acquire() as conn:
-                async with conn.transaction():
-                    await _set_tenant_write_context(conn, tenant_id)
-                    await conn.execute(
-                        """
-                        INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload, envelope_version)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
-                        """,
-                        event_ts,
-                        topic,
-                        tenant_id,
-                        site_id,
-                        device_id,
-                        msg_type,
-                        reason,
-                        json.dumps(payload),
-                        str((payload or {}).get("version", "1")),
-                    )
+        # Only persist reject events when we know the tenant context; otherwise
+        # RLS will reject the insert and break ingestion.
+        if self.store_rejects and tenant_id:
+            try:
+                assert self.pool is not None
+                async with self.pool.acquire() as conn:
+                    async with conn.transaction():
+                        await _set_tenant_write_context(conn, tenant_id)
+                        await conn.execute(
+                            """
+                            INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload, envelope_version)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+                            """,
+                            event_ts,
+                            topic,
+                            tenant_id,
+                            site_id,
+                            device_id,
+                            msg_type,
+                            reason,
+                            json.dumps(payload),
+                            str((payload or {}).get("version", "1")),
+                        )
+            except Exception:
+                # Reject persistence is best-effort; do not fail processing.
+                logger.warning("quarantine_event_store_failed", exc_info=True)
 
     def _rate_limit_ok(self, tenant_id: str, device_id: str) -> bool:
         now = time.time()
@@ -1282,102 +1305,6 @@ class Ingestor:
         self._routes_cache_ts[tenant_id] = now
         return routes
 
-    async def _route_delivery_worker(self):
-        """Process route delivery jobs from the delivery queue."""
-        while True:
-            try:
-                job = await self._delivery_queue.get()
-            except asyncio.CancelledError:
-                break
-
-            route = job["route"]
-            topic = job["topic"]
-            payload = job["payload"]
-            tenant_id = job["tenant_id"]
-
-            try:
-                await self._deliver_to_route(route, topic, payload, tenant_id)
-                logger.debug(
-                    "route_delivered",
-                    extra={"route_id": route["id"], "destination": route["destination_type"]},
-                )
-            except Exception as route_exc:
-                # Write to dead letter queue (same logic as current inline handler)
-                try:
-                    assert self.pool is not None
-                    async with self.pool.acquire() as conn:
-                        await _set_tenant_write_context(conn, tenant_id)
-                        await conn.execute(
-                            """
-                            INSERT INTO dead_letter_messages
-                                (tenant_id, route_id, original_topic, payload,
-                                 destination_type, destination_config, error_message)
-                            VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
-                            """,
-                            tenant_id,
-                            route["id"],
-                            topic,
-                            json.dumps(payload, default=str),
-                            route["destination_type"],
-                            json.dumps(route.get("destination_config") or {}, default=str),
-                            str(route_exc)[:2000],
-                        )
-                except Exception as dlq_exc:
-                    logger.error(
-                        "dlq_write_failed",
-                        extra={"route_id": route["id"], "error": str(dlq_exc)},
-                    )
-                logger.warning(
-                    "route_delivery_failed_dlq",
-                    extra={
-                        "route_id": route["id"],
-                        "error": str(route_exc),
-                        "destination": route["destination_type"],
-                    },
-                )
-            finally:
-                self._delivery_queue.task_done()
-
-    async def _deliver_to_route(self, route: dict, topic: str, payload: dict, tenant_id: str) -> None:
-        """Deliver a message to a route destination."""
-        dest_type = route["destination_type"]
-        config = route.get("destination_config") or {}
-
-        if dest_type == "webhook":
-            url = config.get("url")
-            if not url:
-                return
-            method = config.get("method", "POST").upper()
-            headers = {"Content-Type": "application/json"}
-
-            body_bytes = json.dumps(payload, default=str).encode()
-            secret = config.get("secret")
-            if secret:
-                import hashlib
-                import hmac as hmac_mod
-
-                sig_hex = hmac_mod.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
-                headers["X-Signature-256"] = f"sha256={sig_hex}"
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.request(method, url, content=body_bytes, headers=headers)
-                if resp.status_code >= 400:
-                    raise Exception(f"Webhook returned HTTP {resp.status_code}")
-
-        elif dest_type == "mqtt_republish":
-            republish_topic = config.get("topic")
-            if not republish_topic:
-                return
-            republish_topic = republish_topic.replace("{tenant_id}", tenant_id)
-            republish_topic = republish_topic.replace("{device_id}", payload.get("device_id", ""))
-
-            if self._mqtt_client:
-                msg_bytes = json.dumps(payload, default=str).encode()
-                self._mqtt_client.publish(republish_topic, msg_bytes)
-
-        elif dest_type == "postgresql":
-            return  # Already written by the batch writer
-
     async def _validate_cert_auth(self, mqtt_username: str, topic_tenant: str, topic_device: str) -> bool:
         """
         Validate a certificate-authenticated device.
@@ -1419,190 +1346,252 @@ class Ingestor:
         await self.cert_auth_cache.put(mqtt_username, result)
         return result
 
-    async def db_worker(self):
-        while True:
-            topic, payload = await self.queue.get()
+    async def init_nats(self):
+        """Connect to NATS JetStream."""
+        import nats
+
+        self._nc = await nats.connect(NATS_URL)
+        self._js = self._nc.jetstream()
+        logger.info("nats_connected", extra={"url": NATS_URL})
+
+    async def _process_telemetry(
+        self,
+        topic: str,
+        payload: dict,
+        tenant_id: str,
+        device_id: str,
+        msg_type: str,
+        mqtt_username: str = "",
+    ) -> None:
+        """Process a single telemetry message through the validation pipeline."""
+        try:
+            event_ts = parse_ts(payload.get("ts"))
+
+            site_id = payload.get("site_id") or None
+            p_tenant = payload.get("tenant_id") or None
+
+            # payload size guard (DoS hardening)
             try:
-                t_tenant, t_device, msg_type = topic_extract(topic)
-                event_ts = parse_ts(payload.get("ts"))
+                payload_bytes = len(json.dumps(payload).encode("utf-8"))
+            except Exception:
+                payload_bytes = self.max_payload_bytes + 1
+            if payload_bytes > self.max_payload_bytes:
+                await self._insert_quarantine(
+                    topic,
+                    tenant_id or "unknown",
+                    site_id,
+                    device_id,
+                    msg_type,
+                    "PAYLOAD_TOO_LARGE",
+                    payload,
+                    event_ts,
+                )
+                return
 
-                tenant_id = t_tenant
-                device_id = t_device
-                site_id = payload.get("site_id") or None
-                p_tenant = payload.get("tenant_id") or None
+            if tenant_id is None or device_id is None or msg_type is None:
+                await self._insert_quarantine(
+                    topic, None, site_id, None, None, "BAD_TOPIC_FORMAT", payload, event_ts
+                )
+                return
 
-                # payload size guard (DoS hardening)
-                try:
-                    payload_bytes = len(json.dumps(payload).encode("utf-8"))
-                except Exception:
-                    payload_bytes = self.max_payload_bytes + 1
-                if payload_bytes > self.max_payload_bytes:
-                    await self._insert_quarantine(topic, tenant_id or "unknown", site_id, device_id, msg_type, "PAYLOAD_TOO_LARGE", payload, event_ts)
-                    continue
+            if not self._rate_limit_ok(tenant_id, device_id):
+                await self._insert_quarantine(
+                    topic, tenant_id, site_id, device_id, msg_type, "RATE_LIMITED", payload, event_ts
+                )
+                return
 
-                if tenant_id is None or device_id is None or msg_type is None:
-                    await self._insert_quarantine(topic, None, site_id, None, None, "BAD_TOPIC_FORMAT", payload, event_ts)
-                    continue
+            if p_tenant is not None and str(p_tenant) != str(tenant_id):
+                await self._insert_quarantine(
+                    topic,
+                    tenant_id,
+                    site_id,
+                    device_id,
+                    msg_type,
+                    "TENANT_MISMATCH_TOPIC_VS_PAYLOAD",
+                    payload,
+                    event_ts,
+                )
+                return
 
-                if not self._rate_limit_ok(tenant_id, device_id):
-                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "RATE_LIMITED", payload, event_ts)
-                    continue
+            if site_id is None:
+                await self._insert_quarantine(
+                    topic, tenant_id, None, device_id, msg_type, "MISSING_SITE_ID", payload, event_ts
+                )
+                return
 
-                if p_tenant is not None and str(p_tenant) != str(tenant_id):
-                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TENANT_MISMATCH_TOPIC_VS_PAYLOAD", payload, event_ts)
-                    continue
+            token = payload.get("provision_token") or None
+            token_hash = sha256_hex(str(token)) if token is not None else None
 
-                if site_id is None:
-                    await self._insert_quarantine(topic, tenant_id, None, device_id, msg_type, "MISSING_SITE_ID", payload, event_ts)
-                    continue
-
-                token = payload.get("provision_token") or None
-                token_hash = sha256_hex(str(token)) if token is not None else None
-
-                cached = self.auth_cache.get(tenant_id, device_id)
-                reg = None
-                if cached:
-                    reg = {
-                        "site_id": cached["site_id"],
-                        "status": cached["status"],
-                        "provision_token_hash": cached["token_hash"],
-                    }
-                else:
-                    assert self.pool is not None
-                    async with self.pool.acquire() as conn:
-                        reg = await conn.fetchrow(
-                            """
-                            SELECT site_id, status, provision_token_hash
-                            FROM device_registry
-                            WHERE tenant_id=$1 AND device_id=$2
-                            """,
-                            tenant_id, device_id
-                        )
-
-                        if reg is None:
-                            if AUTO_PROVISION:
-                                async with conn.transaction():
-                                    await _set_tenant_write_context(conn, tenant_id)
-                                    success = await auto_provision_device(
-                                        conn,
-                                        tenant_id,
-                                        device_id,
-                                        site_id,
-                                    )
-                                    if success:
-                                        self.device_subscription_cache.invalidate(tenant_id, device_id)
-                                        reg = await conn.fetchrow(
-                                            """
-                                            SELECT site_id, status, provision_token_hash
-                                            FROM device_registry
-                                            WHERE tenant_id=$1 AND device_id=$2
-                                            """,
-                                            tenant_id, device_id
-                                        )
-                                    else:
-                                        await self._insert_quarantine(
-                                            topic,
-                                            tenant_id,
-                                            site_id,
-                                            device_id,
-                                            msg_type,
-                                            "NO_SUBSCRIPTION_CAPACITY",
-                                            payload,
-                                            event_ts,
-                                        )
-                                        continue
-
-                            if reg is None:
-                                await self._insert_quarantine(
-                                    topic,
-                                    tenant_id,
-                                    site_id,
-                                    device_id,
-                                    msg_type,
-                                    "UNREGISTERED_DEVICE",
-                                    payload,
-                                    event_ts,
-                                )
-                                continue
-
-                    self.auth_cache.put(
+            cached = self.auth_cache.get(tenant_id, device_id)
+            reg = None
+            if cached:
+                reg = {
+                    "site_id": cached["site_id"],
+                    "status": cached["status"],
+                    "provision_token_hash": cached["token_hash"],
+                }
+            else:
+                assert self.pool is not None
+                async with self.pool.acquire() as conn:
+                    reg = await conn.fetchrow(
+                        """
+                        SELECT site_id, status, provision_token_hash
+                        FROM device_registry
+                        WHERE tenant_id=$1 AND device_id=$2
+                        """,
                         tenant_id,
                         device_id,
-                        reg["provision_token_hash"],
-                        reg["site_id"],
-                        reg["status"],
                     )
 
-                subscription_id, sub_status = await self._get_device_subscription_status(
-                    tenant_id, device_id
+                    if reg is None:
+                        if AUTO_PROVISION:
+                            async with conn.transaction():
+                                await _set_tenant_write_context(conn, tenant_id)
+                                success = await auto_provision_device(
+                                    conn,
+                                    tenant_id,
+                                    device_id,
+                                    site_id,
+                                )
+                                if success:
+                                    self.device_subscription_cache.invalidate(tenant_id, device_id)
+                                    reg = await conn.fetchrow(
+                                        """
+                                        SELECT site_id, status, provision_token_hash
+                                        FROM device_registry
+                                        WHERE tenant_id=$1 AND device_id=$2
+                                        """,
+                                        tenant_id,
+                                        device_id,
+                                    )
+                                else:
+                                    await self._insert_quarantine(
+                                        topic,
+                                        tenant_id,
+                                        site_id,
+                                        device_id,
+                                        msg_type,
+                                        "NO_SUBSCRIPTION_CAPACITY",
+                                        payload,
+                                        event_ts,
+                                    )
+                                    return
+
+                        if reg is None:
+                            await self._insert_quarantine(
+                                topic,
+                                tenant_id,
+                                site_id,
+                                device_id,
+                                msg_type,
+                                "UNREGISTERED_DEVICE",
+                                payload,
+                                event_ts,
+                            )
+                            return
+
+                self.auth_cache.put(
+                    tenant_id,
+                    device_id,
+                    reg["provision_token_hash"],
+                    reg["site_id"],
+                    reg["status"],
                 )
-                if subscription_id and sub_status in ("SUSPENDED", "EXPIRED"):
+
+            subscription_id, sub_status = await self._get_device_subscription_status(tenant_id, device_id)
+            if subscription_id and sub_status in ("SUSPENDED", "EXPIRED"):
+                await self._insert_quarantine(
+                    topic,
+                    tenant_id,
+                    site_id,
+                    device_id,
+                    msg_type,
+                    f"SUBSCRIPTION_{sub_status}",
+                    payload,
+                    event_ts,
+                )
+                return
+
+            if reg["status"] != "ACTIVE":
+                await self._insert_quarantine(
+                    topic, tenant_id, site_id, device_id, msg_type, "DEVICE_REVOKED", payload, event_ts
+                )
+                return
+
+            if str(reg["site_id"]) != str(site_id):
+                await self._insert_quarantine(
+                    topic,
+                    tenant_id,
+                    site_id,
+                    device_id,
+                    msg_type,
+                    "SITE_MISMATCH_REGISTRY_VS_PAYLOAD",
+                    payload,
+                    event_ts,
+                )
+                return
+
+            device_authenticated = False
+
+            # Certificate-based authentication (if enabled)
+            if CERT_AUTH_ENABLED and not device_authenticated:
+                cn = mqtt_username or f"{tenant_id}/{device_id}"
+                has_active_cert = await self._validate_cert_auth(cn, tenant_id, device_id)
+                if has_active_cert:
+                    device_authenticated = True
+
+            # Token-based authentication (fallback / legacy)
+            if REQUIRE_TOKEN and not device_authenticated:
+                expected = reg["provision_token_hash"]
+                if expected is None:
                     await self._insert_quarantine(
                         topic,
                         tenant_id,
                         site_id,
                         device_id,
                         msg_type,
-                        f"SUBSCRIPTION_{sub_status}",
+                        "TOKEN_NOT_SET_IN_REGISTRY",
                         payload,
                         event_ts,
                     )
-                    continue
+                    return
+                if token is None:
+                    await self._insert_quarantine(
+                        topic, tenant_id, site_id, device_id, msg_type, "TOKEN_MISSING", payload, event_ts
+                    )
+                    return
+                if token_hash != expected:
+                    await self._insert_quarantine(
+                        topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts
+                    )
+                    return
+                device_authenticated = True
 
-                if reg["status"] != "ACTIVE":
-                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "DEVICE_REVOKED", payload, event_ts)
-                    continue
-
-                if str(reg["site_id"]) != str(site_id):
-                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "SITE_MISMATCH_REGISTRY_VS_PAYLOAD", payload, event_ts)
-                    continue
-
-                device_authenticated = False
-
-                # Certificate-based authentication (if enabled)
-                if CERT_AUTH_ENABLED and not device_authenticated:
-                    cn = f"{tenant_id}/{device_id}"
-                    has_active_cert = await self._validate_cert_auth(cn, tenant_id, device_id)
-                    if has_active_cert:
-                        device_authenticated = True
-
-                # Token-based authentication (fallback / legacy)
-                if REQUIRE_TOKEN and not device_authenticated:
-                    expected = reg["provision_token_hash"]
-                    if expected is None:
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_NOT_SET_IN_REGISTRY", payload, event_ts)
-                        continue
-                    if token is None:
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_MISSING", payload, event_ts)
-                        continue
-                    if token_hash != expected:
-                        await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "TOKEN_INVALID", payload, event_ts)
-                        continue
-                    device_authenticated = True
-
-                # If neither cert nor token auth passed (only enforced when tokens are required)
-                if REQUIRE_TOKEN and not device_authenticated:
-                    await self._insert_quarantine(topic, tenant_id, site_id, device_id, msg_type, "AUTH_FAILED", payload, event_ts)
-                    continue
-
-                # Primary write: TimescaleDB (batched)
-                ts = event_ts or utcnow()
-                record = TelemetryRecord(
-                    time=ts,
-                    tenant_id=tenant_id,
-                    device_id=device_id,
-                    site_id=site_id or payload.get("site_id"),
-                    msg_type=msg_type,
-                    seq=payload.get("seq", 0),
-                    metrics=payload.get("metrics", {}) or {},
+            if REQUIRE_TOKEN and not device_authenticated:
+                await self._insert_quarantine(
+                    topic, tenant_id, site_id, device_id, msg_type, "AUTH_FAILED", payload, event_ts
                 )
-                COUNTERS["last_write_at"] = utcnow().isoformat()
-                await self.batch_writer.add(record)
+                return
 
-                # Sensor auto-discovery
-                await self._ensure_sensors(tenant_id, device_id, record.metrics, ts)
+            # Primary write: TimescaleDB (batched)
+            ts = event_ts or utcnow()
+            record = TelemetryRecord(
+                time=ts,
+                tenant_id=tenant_id,
+                device_id=device_id,
+                site_id=site_id or payload.get("site_id"),
+                msg_type=msg_type,
+                seq=payload.get("seq", 0),
+                metrics=payload.get("metrics", {}) or {},
+            )
+            COUNTERS["last_write_at"] = utcnow().isoformat()
+            await self.batch_writer.add(record)
 
-                # --- Message route fan-out (enqueue for async delivery) ---
+            # Sensor auto-discovery
+            await self._ensure_sensors(tenant_id, device_id, record.metrics, ts)
+
+            # Message route fan-out (publish to NATS for async delivery)
+            if self._nc:
                 try:
                     routes = await self._get_message_routes(tenant_id)
                     for route in routes:
@@ -1618,21 +1607,18 @@ class Ingestor:
                             if route["destination_type"] == "postgresql":
                                 continue  # Already written
 
-                            # Enqueue for async delivery instead of delivering inline
-                            try:
-                                self._delivery_queue.put_nowait(
+                            await self._nc.publish(
+                                f"routes.{tenant_id}",
+                                json.dumps(
                                     {
                                         "route": route,
                                         "topic": topic,
                                         "payload": payload,
                                         "tenant_id": tenant_id,
-                                    }
-                                )
-                            except asyncio.QueueFull:
-                                logger.warning(
-                                    "delivery_queue_full",
-                                    extra={"route_id": route["id"], "tenant_id": tenant_id},
-                                )
+                                    },
+                                    default=str,
+                                ).encode(),
+                            )
                         except Exception as route_match_exc:
                             logger.warning(
                                 "route_match_error",
@@ -1641,74 +1627,154 @@ class Ingestor:
                 except Exception as route_fan_exc:
                     logger.warning("route_fanout_error", extra={"error": str(route_fan_exc)})
 
-                ingest_messages_total.labels(tenant_id=tenant_id, result="accepted").inc()
-                metrics = payload.get("metrics", {}) or {}
-                log_event(
-                    logger,
-                    "telemetry accepted",
-                    tenant_id=tenant_id,
-                    device_id=device_id,
-                    msg_type=msg_type,
-                    metrics_count=len(metrics),
+            ingest_messages_total.labels(tenant_id=tenant_id, result="accepted").inc()
+            metrics = payload.get("metrics", {}) or {}
+            log_event(
+                logger,
+                "telemetry accepted",
+                tenant_id=tenant_id,
+                device_id=device_id,
+                msg_type=msg_type,
+                metrics_count=len(metrics),
+            )
+
+            lat_value = payload.get("lat")
+            if lat_value is None:
+                lat_value = payload.get("latitude")
+            lng_value = payload.get("lng")
+            if lng_value is None:
+                lng_value = payload.get("longitude")
+
+            if lat_value is not None and lng_value is not None:
+                try:
+                    lat = float(lat_value)
+                    lng = float(lng_value)
+                except (TypeError, ValueError):
+                    lat = None
+                    lng = None
+                if lat is not None and lng is not None:
+                    assert self.pool is not None
+                    async with self.pool.acquire() as conn:
+                        async with conn.transaction():
+                            await _set_tenant_write_context(conn, tenant_id)
+                            await conn.execute(
+                                """
+                                UPDATE device_registry
+                                SET latitude = $3,
+                                    longitude = $4,
+                                    location_source = COALESCE(location_source, 'auto')
+                                WHERE tenant_id = $1 AND device_id = $2
+                                  AND (location_source = 'auto' OR location_source IS NULL)
+                                """,
+                                tenant_id,
+                                device_id,
+                                lat,
+                                lng,
+                            )
+            audit = get_audit_logger()
+            if audit:
+                audit.device_telemetry(
+                    tenant_id,
+                    device_id,
+                    msg_type,
+                    list(metrics.keys()),
                 )
 
-                lat_value = payload.get("lat")
-                if lat_value is None:
-                    lat_value = payload.get("latitude")
-                lng_value = payload.get("lng")
-                if lng_value is None:
-                    lng_value = payload.get("longitude")
+        except Exception as e:
+            await self._insert_quarantine(
+                topic,
+                tenant_id,
+                payload.get("site_id") if isinstance(payload, dict) else None,
+                device_id,
+                msg_type,
+                f"INGEST_EXCEPTION:{type(e).__name__}",
+                {"error": str(e), "payload": payload},
+                None,
+            )
 
-                if lat_value is not None and lng_value is not None:
-                    try:
-                        lat = float(lat_value)
-                        lng = float(lng_value)
-                    except (TypeError, ValueError):
-                        lat = None
-                        lng = None
-                    if lat is not None and lng is not None:
-                        assert self.pool is not None
-                        async with self.pool.acquire() as conn:
-                            async with conn.transaction():
-                                await _set_tenant_write_context(conn, tenant_id)
-                                await conn.execute(
-                                    """
-                                    UPDATE device_registry
-                                    SET latitude = $3,
-                                        longitude = $4,
-                                        location_source = COALESCE(location_source, 'auto')
-                                    WHERE tenant_id = $1 AND device_id = $2
-                                      AND (location_source = 'auto' OR location_source IS NULL)
-                                    """,
-                                    tenant_id,
-                                    device_id,
-                                    lat,
-                                    lng,
-                                )
-                audit = get_audit_logger()
-                if audit:
-                    audit.device_telemetry(
-                        tenant_id,
-                        device_id,
-                        msg_type,
-                        list(metrics.keys()),
+    async def _nats_telemetry_worker(self, worker_id: int):
+        """Pull messages from NATS TELEMETRY stream and process them."""
+        logger.info("nats_worker_started", extra={"worker_id": worker_id})
+        while not self._shutting_down:
+            try:
+                msgs = await self._telemetry_sub.fetch(batch=50, timeout=1.0)
+            except Exception as fetch_err:
+                if "timeout" in str(fetch_err).lower():
+                    continue
+                logger.warning("nats_fetch_error", extra={"error": str(fetch_err)})
+                await asyncio.sleep(0.5)
+                continue
+
+            for msg in msgs:
+                try:
+                    self.msg_received += 1
+                    envelope = json.loads(msg.data.decode())
+                    topic = envelope.get("topic", "")
+                    payload = envelope.get("payload", {}) or {}
+                    mqtt_username = envelope.get("username", "") or ""
+                    if isinstance(payload, str):
+                        payload = json.loads(payload)
+
+                    t_tenant, t_device, msg_type = topic_extract(topic)
+                    if t_tenant is None or t_device is None or msg_type is None:
+                        await self._insert_quarantine(
+                            topic, None, None, None, None, "BAD_TOPIC_FORMAT", payload, None
+                        )
+                        await msg.ack()
+                        continue
+
+                    await self._process_telemetry(
+                        topic, payload, t_tenant, t_device, msg_type, mqtt_username
                     )
+                    await msg.ack()
+                except Exception as proc_err:
+                    logger.error(
+                        "nats_process_error",
+                        extra={"error": str(proc_err), "worker_id": worker_id},
+                    )
+                    await msg.nak()
 
-            except Exception as e:
-                await self._insert_quarantine(
-                    topic, None, None, None, None,
-                    f"INGEST_EXCEPTION:{type(e).__name__}",
-                    {"error": str(e), "payload": payload},
-                    None
-                )
-            finally:
-                self.queue.task_done()
+    async def _nats_shadow_worker(self):
+        """Process shadow/reported updates from NATS."""
+        while not self._shutting_down:
+            try:
+                msgs = await self._shadow_sub.fetch(batch=20, timeout=1.0)
+            except Exception:
+                await asyncio.sleep(0.5)
+                continue
+            for msg in msgs:
+                try:
+                    envelope = json.loads(msg.data.decode())
+                    topic = envelope.get("topic", "")
+                    payload = envelope.get("payload", {}) or {}
+                    if isinstance(payload, str):
+                        payload = json.loads(payload)
+                    await self.handle_shadow_reported(topic, payload)
+                    await msg.ack()
+                except Exception as e:
+                    logger.error("shadow_process_error", extra={"error": str(e)})
+                    await msg.nak()
 
-    def on_connect(self, client, userdata, flags, rc):
-        log_event(logger, "mqtt connected", rc=rc, topic=MQTT_TOPIC)
-        client.subscribe(MQTT_TOPIC)
-        client.subscribe(SHADOW_REPORTED_TOPIC)
-        client.subscribe(COMMAND_ACK_TOPIC)
+    async def _nats_commands_worker(self):
+        """Process command ack updates from NATS."""
+        while not self._shutting_down:
+            try:
+                msgs = await self._commands_sub.fetch(batch=20, timeout=1.0)
+            except Exception:
+                await asyncio.sleep(0.5)
+                continue
+            for msg in msgs:
+                try:
+                    envelope = json.loads(msg.data.decode())
+                    topic = envelope.get("topic", "")
+                    payload = envelope.get("payload", {}) or {}
+                    if isinstance(payload, str):
+                        payload = json.loads(payload)
+                    await self.handle_command_ack(topic, payload)
+                    await msg.ack()
+                except Exception as e:
+                    logger.error("commands_process_error", extra={"error": str(e)})
+                    await msg.nak()
 
     async def handle_shadow_reported(self, topic: str, payload: dict) -> None:
         trace_token = trace_id_var.set(str(uuid.uuid4()))
@@ -1814,102 +1880,19 @@ class Ingestor:
         finally:
             trace_id_var.reset(trace_token)
 
-    def on_message(self, client, userdata, msg):
-        trace_token = trace_id_var.set(str(uuid.uuid4()))
-        try:
-            self.msg_received += 1
-            _counter_inc("messages_received")
-            try:
-                payload = json.loads(msg.payload.decode("utf-8"))
-                if "ts" not in payload:
-                    payload["ts"] = utcnow().isoformat()
-            except json.JSONDecodeError as exc:
-                logger.warning("Invalid JSON in MQTT message: %s", exc)
-                self.msg_dropped += 1
-                _counter_inc("messages_rejected")
-                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-                return
-            except UnicodeDecodeError as exc:
-                logger.warning("Invalid encoding in MQTT message: %s", exc)
-                self.msg_dropped += 1
-                _counter_inc("messages_rejected")
-                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-                return
-
-            if self.loop is None:
-                self.msg_dropped += 1
-                _counter_inc("messages_rejected")
-                ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-                return
-
-            if msg.topic.endswith("/shadow/reported"):
-                self.loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(self.handle_shadow_reported(msg.topic, payload))
-                )
-                return
-            if COMMAND_ACK_RE.match(msg.topic):
-                self.loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(self.handle_command_ack(msg.topic, payload))
-                )
-                return
-
-            def _enqueue():
-                if self._shutting_down:
-                    return
-                try:
-                    self.queue.put_nowait((msg.topic, payload))
-                    self.msg_enqueued += 1
-                except asyncio.QueueFull:
-                    self.msg_dropped += 1
-                    _counter_inc("messages_rejected")
-                    ingest_messages_total.labels(tenant_id="unknown", result="rejected").inc()
-
-            self.loop.call_soon_threadsafe(_enqueue)
-        finally:
-            trace_id_var.reset(trace_token)
-
     async def shutdown(self):
-        """Graceful shutdown: stop accepting messages, drain queue, flush writes."""
+        """Graceful shutdown: stop workers, flush writes, close connections."""
         logger.info("shutdown_initiated")
         self._shutting_down = True
 
-        # 1. Stop MQTT client (stops receiving new messages)
-        if self._mqtt_client:
-            self._mqtt_client.loop_stop()
-            self._mqtt_client.disconnect()
-            logger.info("mqtt_disconnected")
-
-        # 2. Wait for main queue to drain (with timeout)
-        drain_timeout = 10  # seconds
-        start = time.time()
-        while not self.queue.empty() and (time.time() - start) < drain_timeout:
-            await asyncio.sleep(0.1)
-        remaining = self.queue.qsize()
-        if remaining:
-            logger.warning("queue_drain_timeout", extra={"remaining": remaining})
-        else:
-            logger.info("queue_drained")
-
-        # 3. Cancel ingest worker tasks and wait for in-flight work to finish
+        # 1. Cancel worker tasks and wait for in-flight work to finish
         for task in self._workers:
             task.cancel()
         if self._workers:
             await asyncio.gather(*self._workers, return_exceptions=True)
             logger.info("workers_stopped")
 
-        # 3b. Wait for delivery queue to drain
-        drain_start = time.time()
-        while not self._delivery_queue.empty() and (time.time() - drain_start) < 5:
-            await asyncio.sleep(0.1)
-
-        # 3c. Cancel delivery workers
-        for task in self._delivery_workers:
-            task.cancel()
-        if self._delivery_workers:
-            await asyncio.gather(*self._delivery_workers, return_exceptions=True)
-            logger.info("delivery_workers_stopped")
-
-        # 4. Flush the batch writer (critical: writes buffered telemetry)
+        # 2. Flush the batch writer (critical: writes buffered telemetry)
         if self.batch_writer:
             await self.batch_writer.stop()
             logger.info(
@@ -1920,7 +1903,15 @@ class Ingestor:
                 },
             )
 
-        # 5. Close DB pool
+        # 3. Close NATS connection
+        if self._nc:
+            try:
+                await self._nc.drain()
+            except Exception:
+                pass
+            logger.info("nats_connection_closed")
+
+        # 4. Close DB pool
         if self.pool:
             await self.pool.close()
             logger.info("db_pool_closed")
@@ -1945,39 +1936,32 @@ class Ingestor:
         await audit.start()
 
         asyncio.create_task(self.settings_worker())
+
+        # Connect to NATS + JetStream and start consumer workers.
+        await self.init_nats()
+        self._telemetry_sub = await self._js.pull_subscribe(
+            subject="telemetry.>",
+            durable="ingest-workers",
+            stream="TELEMETRY",
+        )
+        self._shadow_sub = await self._js.pull_subscribe(
+            subject="shadow.>",
+            durable="ingest-shadow",
+            stream="SHADOW",
+        )
+        self._commands_sub = await self._js.pull_subscribe(
+            subject="commands.>",
+            durable="ingest-commands",
+            stream="COMMANDS",
+        )
+
         self._workers = []
         for i in range(INGEST_WORKER_COUNT):
-            task = asyncio.create_task(self.db_worker())
-            self._workers.append(task)
+            self._workers.append(asyncio.create_task(self._nats_telemetry_worker(i)))
+        self._workers.append(asyncio.create_task(self._nats_shadow_worker()))
+        self._workers.append(asyncio.create_task(self._nats_commands_worker()))
 
-        # Start route delivery workers (separate from telemetry ingest workers)
-        DELIVERY_WORKER_COUNT = int(os.getenv("DELIVERY_WORKER_COUNT", "2"))
-        for i in range(DELIVERY_WORKER_COUNT):
-            task = asyncio.create_task(self._route_delivery_worker())
-            self._delivery_workers.append(task)
         asyncio.create_task(self.stats_worker())
-
-        client = mqtt.Client()
-        self._mqtt_client = client
-        if MQTT_USERNAME and MQTT_PASSWORD:
-            client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-
-        # Enable TLS for internal MQTT connection
-        if os.path.exists(MQTT_CA_CERT):
-            import ssl
-
-            client.tls_set(
-                ca_certs=MQTT_CA_CERT,
-                tls_version=ssl.PROTOCOL_TLSv1_2,
-            )
-            # For internal Docker network: server cert CN may not match hostname
-            mqtt_tls_insecure = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
-            if mqtt_tls_insecure:
-                client.tls_insecure_set(True)
-        client.on_connect = self.on_connect
-        client.on_message = self.on_message
-        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
-        client.loop_start()
 
         # Wait for shutdown signal
         shutdown_event = asyncio.Event()

@@ -2,16 +2,16 @@
 last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 139, 142, 160, 161]
+phases: [15, 23, 101, 139, 142, 160, 161, 162]
 ---
 
 # ingest
 
-> MQTT + HTTP telemetry ingestion service.
+> NATS JetStream telemetry ingestion service.
 
 ## Overview
 
-`ingest_iot` subscribes to device MQTT topics, validates and rate-limits telemetry, and writes time-series records to TimescaleDB in batches.
+`ingest_iot` consumes telemetry from NATS JetStream, validates and rate-limits telemetry, and writes time-series records to TimescaleDB in batches.
 
 Key responsibilities:
 
@@ -25,12 +25,12 @@ Key responsibilities:
 
 Pipeline stages (high level):
 
-1. MQTT receive → parse topic → extract tenant/device/msg_type
+1. JetStream consume → parse topic → extract tenant/device/msg_type
 2. Validate required fields (`site_id`, timestamp), payload size, metric constraints
 3. Device registry validation (cache + DB fallback)
 4. Subscription status checks (block suspended/expired)
 5. Batch insert telemetry records, update device last-seen/location as needed
-6. Message route fan-out is enqueued and delivered asynchronously (webhook/MQTT republish)
+6. Message route fan-out is published to NATS and delivered asynchronously by the `route-delivery` service (webhook/MQTT republish)
 
 ## Configuration
 
@@ -38,13 +38,7 @@ Environment variables read by the service:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MQTT_HOST` | `iot-mqtt` | MQTT broker host. |
-| `MQTT_PORT` | `1883` | MQTT broker port (internal, compose). |
-| `MQTT_TOPIC` | `tenant/+/device/+/+` | Subscription topic filter. |
-| `MQTT_USERNAME` | empty | MQTT username for broker auth (optional). |
-| `MQTT_PASSWORD` | empty | MQTT password for broker auth (optional). |
-| `MQTT_CA_CERT` | `/mosquitto/certs/ca.crt` | CA certificate path for TLS. |
-| `MQTT_TLS_INSECURE` | `false` | If true, disables strict TLS verification. |
+| `NATS_URL` | `nats://iot-nats:4222` | NATS server URL. |
 | `PG_HOST` | `iot-postgres` | PostgreSQL host (used when `DATABASE_URL` is not set). |
 | `PG_PORT` | `5432` | PostgreSQL port. |
 | `PG_DB` | `iotcloud` | Database name. |

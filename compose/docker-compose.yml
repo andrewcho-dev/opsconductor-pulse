@@ -68,6 +68,57 @@ services:
       retries: 3
     restart: unless-stopped
 
+  nats:
+    image: nats:2.10-alpine
+    container_name: iot-nats
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "127.0.0.1:4222:4222"   # NATS client
+      - "127.0.0.1:8222:8222"   # HTTP monitoring
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  nats-init:
+    image: natsio/nats-box:latest
+    container_name: iot-nats-init
+    entrypoint: ["/bin/sh", "/scripts/init-streams.sh"]
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+    volumes:
+      - ./nats/init-streams.sh:/scripts/init-streams.sh:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: "no"
+
+  mqtt-nats-bridge:
+    build:
+      context: ../services
+      dockerfile: mqtt_nats_bridge/Dockerfile
+    container_name: iot-mqtt-nats-bridge
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_TLS: "false"
+      MQTT_TOPIC: "tenant/+/device/+/+"
+    depends_on:
+      nats:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+
   migrator:
     build:
       context: ../db
@@ -88,13 +139,7 @@ services:
     container_name: iot-ingest
     environment:
       SERVICE_NAME: ingest_iot
-      MQTT_HOST: iot-mqtt
-      MQTT_PORT: "1883"
-      MQTT_USERNAME: "service_pulse"
-      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
-      MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
-      MQTT_TLS_INSECURE: "true"
-      MQTT_TOPIC: "tenant/+/device/+/+"
+      NATS_URL: "nats://iot-nats:4222"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -114,10 +159,7 @@ services:
       BATCH_SIZE: "${BATCH_SIZE:-1000}"
       FLUSH_INTERVAL_MS: "${FLUSH_INTERVAL_MS:-500}"
       INGEST_WORKER_COUNT: "${INGEST_WORKER_COUNT:-8}"
-      INGEST_QUEUE_SIZE: "${INGEST_QUEUE_SIZE:-100000}"
       CERT_AUTH_ENABLED: "1"
-    volumes:
-      - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
     expose:
       - "8080"
     healthcheck:
@@ -127,14 +169,36 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      mqtt:
-        condition: service_started
+      nats:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  route-delivery:
+    build:
+      context: ../services
+      dockerfile: route_delivery/Dockerfile
+    container_name: iot-route-delivery
+    environment:
+      NATS_URL: "nats://iot-nats:4222"
+      DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      MQTT_HOST: iot-mqtt
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: "service_pulse"
+      MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
+      MQTT_TLS: "false"
+      DELIVERY_WORKER_COUNT: "4"
+      WEBHOOK_TIMEOUT_SECONDS: "10"
+    depends_on:
+      nats:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     restart: unless-stopped
 
   evaluator:
@@ -313,6 +377,7 @@ services:
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      NATS_URL: "nats://iot-nats:4222"
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
       PROVISION_ADMIN_KEY: ${PROVISION_ADMIN_KEY}
@@ -356,6 +421,8 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
+      nats:
+        condition: service_healthy
       api:
         condition: service_started
       keycloak:
@@ -587,6 +654,7 @@ volumes:
   caddy_config:
   emqx-data:
   export-data:
+  nats-data:
   mosquitto-data:
   mosquitto-passwd:
   prometheus_data:

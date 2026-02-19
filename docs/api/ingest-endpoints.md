@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/routes/ingest.py
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 142]
+phases: [15, 23, 101, 142, 162]
 ---
 
 # Ingestion Endpoints
@@ -14,10 +14,10 @@ phases: [15, 23, 101, 142]
 
 There are two ingestion paths:
 
-- MQTT ingestion (primary): devices publish to Mosquitto; `ingest_iot` consumes and writes telemetry.
-- HTTP ingestion (alternate): devices send telemetry to `ui_iot` under `/ingest/v1/*`.
+- MQTT ingestion (primary): devices publish to EMQX; messages are bridged into NATS JetStream.
+- HTTP ingestion (alternate): devices send telemetry to `ui_iot` under `/ingest/v1/*`, which publishes to NATS.
 
-Both paths validate device registration, enforce rate limits, and quarantine invalid messages.
+Both paths flow through the same async pipeline: NATS -> `ingest_iot` validation/quarantine -> TimescaleDB batch writer.
 
 ## HTTP Ingestion (ui_iot)
 
@@ -25,7 +25,7 @@ Base prefix: `/ingest/v1`
 
 Auth:
 
-- `X-Provision-Token: <token>` (required; validated against device registry hash)
+- `X-Provision-Token: <token>` (required)
 
 ### POST /ingest/v1/tenant/{tenant_id}/device/{device_id}/{msg_type}
 
@@ -41,8 +41,8 @@ Ingest a single telemetry or heartbeat message.
 
 Response:
 
-- `202 Accepted` on success
-- `4xx` on validation/auth/rate-limit rejection
+- `202 Accepted` means "accepted into the queue" (published to NATS), not "written to DB"
+- Validation/auth/quarantine happens asynchronously in `ingest_iot`
 
 Example:
 

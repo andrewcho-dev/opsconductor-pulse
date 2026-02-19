@@ -5,7 +5,7 @@ sources:
   - services/ui_iot/routes/notifications.py
   - services/ui_iot/routes/message_routing.py
   - services/ingest_iot/ingest.py
-phases: [1, 2, 91, 130, 138, 142, 160]
+phases: [1, 2, 91, 130, 138, 142, 160, 162]
 ---
 
 # Integrations
@@ -46,7 +46,12 @@ Message routes match topics and forward to destinations (webhook, MQTT republish
 - Dead-letter queue for failed deliveries
 - Replay and purge operations for recovery
 
-Route delivery is processed asynchronously by the ingest service (separate from the telemetry write workers), with delivery worker concurrency configurable via `DELIVERY_WORKER_COUNT`.
+Route delivery is processed asynchronously via NATS JetStream (subject `routes.{tenant_id}`) by the dedicated `route-delivery` service.
+
+Retry behavior:
+
+- JetStream consumer `max_deliver=3` retries failed deliveries up to 3 times
+- On the final failure, the message is written to DLQ (`dead_letter_messages`) and terminated
 
 ## Database Schema
 

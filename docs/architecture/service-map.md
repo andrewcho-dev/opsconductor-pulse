@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
-phases: [88, 98, 138, 139, 142, 161]
+phases: [88, 98, 138, 139, 142, 161, 162]
 ---
 
 # Service Map
@@ -17,7 +17,7 @@ High-level routing:
 - Browser traffic terminates at Caddy on HTTPS (:443).
 - Caddy routes Keycloak paths (`/realms/*`, `/admin/*`, etc.) to the Keycloak service.
 - All application paths (`/app/*`, `/customer/*`, `/operator/*`, `/api/v2/*`, `/ingest/*`) route to `ui_iot`.
-- Devices publish telemetry to EMQX MQTT (external TLS port 8883) which feeds `ingest_iot`.
+- Devices publish telemetry to EMQX MQTT (external TLS port 8883) which is bridged into NATS JetStream and consumed by `ingest_iot`.
 - EMQX uses internal `ui_iot` endpoints for CONNECT auth and per-topic ACL enforcement (`/api/v1/internal/*`).
 
 ## Port Reference
@@ -34,6 +34,9 @@ High-level routing:
 | PostgreSQL | 5432 | 5432 | TCP |
 | PgBouncer | 6432 | — | TCP |
 | EMQX | 1883/9001/18083 | 8883 (TLS), 18083 | MQTT/WS/HTTP |
+| NATS JetStream | 4222/8222 | 4222/8222 (localhost) | NATS/HTTP |
+| mqtt-nats-bridge | — | — | Background only |
+| route-delivery | — | — | Background only |
 | Prometheus | 9090 | 9090 | HTTP |
 | Grafana | 3000 | 3001 | HTTP |
 
@@ -42,7 +45,9 @@ High-level routing:
 | Service | Depends On | Why |
 |---------|------------|-----|
 | ui_iot | PgBouncer, Keycloak | API + auth + DB |
-| ingest_iot | EMQX, PgBouncer/PostgreSQL | MQTT intake + telemetry writes |
+| ingest_iot | NATS, PgBouncer/PostgreSQL | JetStream consume + telemetry writes |
+| mqtt-nats-bridge | EMQX, NATS | Bridge MQTT publishes into JetStream |
+| route-delivery | NATS, PgBouncer/PostgreSQL, EMQX | Deliver webhook/MQTT republish routes |
 | evaluator_iot | PgBouncer/PostgreSQL | Reads telemetry and writes alerts/state |
 | ops_worker | ui_iot, ingest_iot, evaluator_iot, PgBouncer/PostgreSQL | Health polling + metrics |
 | subscription_worker | PostgreSQL | Subscription lifecycle updates |

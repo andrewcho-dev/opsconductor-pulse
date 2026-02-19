@@ -522,6 +522,21 @@ def generate_pkce_pair() -> tuple[str, str]:
 def generate_state() -> str:
     return secrets.token_urlsafe(32)
 
+
+_nats_client = None
+
+
+async def get_nats():
+    """Get or create a shared NATS connection for publishing ingest messages."""
+    global _nats_client
+    if _nats_client is None or not _nats_client.is_connected:
+        import nats
+
+        nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+        _nats_client = await nats.connect(nats_url)
+    return _nats_client
+
+
 async def get_pool():
     global pool
     if pool is None:
@@ -551,6 +566,7 @@ async def startup():
 
     # Initialize HTTP ingest infrastructure
     app.state.get_pool = get_pool
+    app.state.get_nats = get_nats
     app.state.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL)
     pool = await get_pool()
     app.state.pool = pool
@@ -611,10 +627,16 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    global _nats_client
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
         await app.state.audit.stop()
+    try:
+        if _nats_client:
+            await _nats_client.drain()
+    except Exception:
+        pass
     try:
         cache = get_jwks_cache()
         if cache is not None:
