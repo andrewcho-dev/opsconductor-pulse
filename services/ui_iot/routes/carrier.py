@@ -1,5 +1,6 @@
 """Carrier integration routes (MVNO/IoT connectivity platforms)."""
 
+import json
 import logging
 from typing import Any, Literal
 
@@ -157,7 +158,7 @@ async def create_carrier_integration(body: CarrierIntegrationCreate, pool=Depend
                 body.api_secret,
                 body.api_base_url,
                 body.account_id,
-                body.config,
+                json.dumps(body.config),
                 body.sync_enabled,
                 body.sync_interval_minutes,
             )
@@ -222,7 +223,7 @@ async def update_carrier_integration(
         add_set("sync_interval_minutes", body.sync_interval_minutes)
     if body.config is not None:
         sets.append(f"config = ${idx}::jsonb")
-        params.append(body.config)
+        params.append(json.dumps(body.config))
         idx += 1
 
     if not sets:

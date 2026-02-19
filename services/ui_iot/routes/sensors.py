@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -13,11 +14,11 @@ from dependencies import get_db_pool
 logger = logging.getLogger(__name__)
 
 HEALTH_RANGES = {
-    "1h": "1 hour",
-    "6h": "6 hours",
-    "24h": "1 day",
-    "7d": "7 days",
-    "30d": "30 days",
+    "1h": timedelta(hours=1),
+    "6h": timedelta(hours=6),
+    "24h": timedelta(days=1),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
 }
 
 
@@ -570,7 +571,7 @@ async def get_device_health(
                 FROM device_health_telemetry
                 WHERE tenant_id = $1
                   AND device_id = $2
-                  AND time > now() - $3::INTERVAL
+                  AND time > now() - $3::interval
                 ORDER BY time DESC
                 LIMIT $4
                 """,

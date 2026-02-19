@@ -11,7 +11,7 @@ export function useDeviceAlerts(deviceId: string, status = "OPEN", limit = 20) {
     queryKey: ["device-alerts", deviceId, status, limit],
     queryFn: () =>
       apiGet<AlertListResponse>(
-        `/api/v2/alerts?status=${status}&limit=${limit}`
+        `/api/v1/customer/alerts?status=${encodeURIComponent(status)}&limit=${limit}&offset=0`
       ).then((resp) => ({
         ...resp,
         alerts: resp.alerts.filter((a) => a.device_id === deviceId),
