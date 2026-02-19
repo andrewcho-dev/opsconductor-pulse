@@ -24,6 +24,7 @@ import {
   Layers,
   Radio,
   LayoutGrid,
+  LayoutTemplate,
   CalendarOff,
   MapPin,
   ChevronRight,
@@ -58,6 +59,7 @@ type NavItem = {
 };
 
 const customerFleetNav: NavItem[] = [
+  { label: "Device Templates", href: "/templates", icon: LayoutTemplate },
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Sensors", href: "/sensors", icon: Activity },
   { label: "Device Groups", href: "/device-groups", icon: Layers },

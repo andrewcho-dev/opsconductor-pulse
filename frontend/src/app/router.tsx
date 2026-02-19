@@ -41,6 +41,8 @@ import UsersPage from "@/features/users/UsersPage";
 import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
+import TemplateListPage from "@/features/templates/TemplateListPage";
+import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import DeadLetterPage from "@/features/messaging/DeadLetterPage";
 import ReportsPage from "@/features/reports/ReportsPage";
@@ -100,6 +102,8 @@ export const router = createBrowserRouter(
             { path: "dashboard", element: <DashboardPage /> },
             { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
+            { path: "templates", element: <TemplateListPage /> },
+            { path: "templates/:templateId", element: <TemplateDetailPage /> },
             { path: "devices", element: <DeviceListPage /> },
             { path: "devices/import", element: <BulkImportPage /> },
             { path: "devices/wizard", element: <SetupWizard /> },

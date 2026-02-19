@@ -1,15 +1,17 @@
 ---
-last-verified: 2026-02-18
+last-verified: 2026-02-19
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
   - frontend/src/app/
   - frontend/src/components/
   - frontend/src/features/
+  - frontend/src/features/templates/
   - frontend/src/hooks/
   - frontend/src/services/
+  - frontend/src/services/api/templates.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170]
 ---
 
 # Frontend
@@ -57,6 +59,7 @@ Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 - `ota/` — firmware versions and OTA campaigns
 - `sites/` — site pages
 - `subscription/` — subscription pages and renewal flows
+- `templates/` — device template management (list + detail tabs)
 - `settings/` — profile/org/billing settings pages
 - `operator/` — operator dashboards, tenants, users, subscriptions, NOC views
 - `messaging/` — dead-letter/replay tooling

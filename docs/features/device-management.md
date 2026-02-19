@@ -12,7 +12,10 @@ sources:
   - services/ui_iot/routes/operator.py
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169]
+  - frontend/src/features/templates/TemplateListPage.tsx
+  - frontend/src/features/templates/TemplateDetailPage.tsx
+  - frontend/src/services/api/templates.ts
+phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170]
 ---
 
 # Device Management
@@ -53,6 +56,18 @@ Key behaviors:
 - Template changes do not delete sensors automatically; they only add missing required sensors from the new template.
 - Module assignment validates slot compatibility (slot exists in the device template; optional `compatible_templates` checks; `max_devices` slot enforcement).
 - Transport configuration uses `device_transports` (replacing the legacy `device_connections` model). Legacy connection endpoints remain temporarily but are deprecated in favor of transports.
+
+## Template Management UI (Phase 170)
+
+The customer UI includes a dedicated template management experience:
+
+- Template list page (`/app/templates`): filter by category/source and search by name/slug; actions include add, clone (system templates), and delete (tenant templates).
+- Template detail page (`/app/templates/:templateId`): tabbed view:
+  - Overview (identity + config)
+  - Metrics
+  - Commands
+  - Slots
+- System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
 
 ### Telemetry and state
 
