@@ -1713,6 +1713,16 @@ async def get_telemetry_history(
     lookback, bucket = VALID_TELEMETRY_RANGES[range]
 
     async with tenant_connection(pool, tenant_id) as conn:
+        sensor = await conn.fetchrow(
+            """
+            SELECT unit, min_range, max_range, precision_digits
+            FROM device_sensors
+            WHERE tenant_id = $1 AND device_id = $2 AND metric_key = $3
+            """,
+            tenant_id,
+            device_id,
+            metric,
+        )
         rows = await conn.fetch(
             """
             SELECT
@@ -1741,6 +1751,10 @@ async def get_telemetry_history(
         "metric": metric,
         "range": range,
         "bucket_size": bucket,
+        "unit": sensor["unit"] if sensor else None,
+        "min_range": float(sensor["min_range"]) if sensor and sensor["min_range"] is not None else None,
+        "max_range": float(sensor["max_range"]) if sensor and sensor["max_range"] is not None else None,
+        "precision_digits": int(sensor["precision_digits"]) if sensor else 2,
         "points": [
             {
                 "time": row["bucket"].isoformat(),
@@ -1751,6 +1765,41 @@ async def get_telemetry_history(
             }
             for row in rows
         ],
+    }
+
+
+@router.get("/devices/{device_id}/telemetry/metrics", dependencies=[Depends(require_customer)])
+async def list_device_telemetry_metrics(
+    device_id: str,
+    pool=Depends(get_db_pool),
+):
+    """List available metrics for telemetry charts — sourced from device_sensors."""
+    tenant_id = get_tenant_id()
+    async with tenant_connection(pool, tenant_id) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT metric_key, display_name, unit, min_range, max_range, precision_digits
+            FROM device_sensors
+            WHERE tenant_id = $1 AND device_id = $2 AND status = 'active'
+            ORDER BY metric_key
+            """,
+            tenant_id,
+            device_id,
+        )
+    return {
+        "device_id": device_id,
+        "metrics": [
+            {
+                "metric_key": r["metric_key"],
+                "display_name": r["display_name"],
+                "unit": r["unit"],
+                "min_range": float(r["min_range"]) if r["min_range"] is not None else None,
+                "max_range": float(r["max_range"]) if r["max_range"] is not None else None,
+                "precision_digits": int(r["precision_digits"] or 2),
+            }
+            for r in rows
+        ],
+        "total": len(rows),
     }
 
 

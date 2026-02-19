@@ -2,25 +2,15 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared";
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
 import { useDeviceAlerts } from "@/hooks/use-device-alerts";
-import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
 import { DeviceInfoCard } from "./DeviceInfoCard";
 import { DeviceMapCard } from "./DeviceMapCard";
 import { DeviceEditModal } from "./DeviceEditModal";
-import { TelemetryChartsSection } from "./TelemetryChartsSection";
-import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
-import { DeviceSensorsPanel } from "./DeviceSensorsPanel";
-import { DeviceConnectionPanel } from "./DeviceConnectionPanel";
-import { DeviceCarrierPanel } from "./DeviceCarrierPanel";
-import { DeviceHealthPanel } from "./DeviceHealthPanel";
-import { DeviceCertificatesTab } from "./DeviceCertificatesTab";
-import { DeviceUptimePanel } from "./DeviceUptimePanel";
-import { DeviceTwinPanel } from "./DeviceTwinPanel";
-import { DeviceConnectivityPanel } from "./DeviceConnectivityPanel";
-import { DeviceCommandPanel } from "./DeviceCommandPanel";
 import { DevicePlanPanel } from "./DevicePlanPanel";
 import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 import {
@@ -28,9 +18,13 @@ import {
   setDeviceTags,
   updateDevice,
 } from "@/services/api/devices";
-import { getLatestValue } from "@/lib/charts/transforms";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
+import { DeviceSensorsDataTab } from "./DeviceSensorsDataTab";
+import { DeviceTransportTab } from "./DeviceTransportTab";
+import { DeviceHealthTab } from "./DeviceHealthTab";
+import { DeviceTwinCommandsTab } from "./DeviceTwinCommandsTab";
+import { DeviceSecurityTab } from "./DeviceSecurityTab";
 
 export default function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -114,12 +108,6 @@ export default function DeviceDetailPage() {
     setNotesValue(value);
   }
 
-  function formatMetricValue(metricName: string) {
-    const value = getLatestValue(points, metricName);
-    if (value == null || Number.isNaN(value)) return "—";
-    return String(value);
-  }
-
   async function handleSaveTags(tags: string[]) {
     if (!deviceId) return;
     setTagsSaving(true);
@@ -163,106 +151,121 @@ export default function DeviceDetailPage() {
           { label: "Devices", href: "/devices" },
           { label: device?.device_id ?? "..." },
         ]}
+        action={
+          <div className="flex items-center gap-2">
+            {device?.template ? (
+              <Badge variant="outline">
+                <Link to={`/templates/${device.template.id}`}>{device.template.name}</Link>
+              </Badge>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={() => setEditModalOpen(true)}>
+              Edit
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setCreateJobOpen(true)}>
+              Create Job
+            </Button>
+          </div>
+        }
       />
 
-      <div className="grid grid-cols-2 gap-4">
-        <DeviceInfoCard
-          device={device}
-          isLoading={deviceLoading}
-          tags={deviceTags}
-          onTagsChange={(next) => {
-            setDeviceTagsState(next);
-            void handleSaveTags(next);
-          }}
-          notesValue={notesValue}
-          onNotesChange={handleNotesChange}
-          onNotesBlur={handleSaveNotes}
-          onEdit={() => setEditModalOpen(true)}
-        />
-        <div className="relative">
-          <DeviceMapCard
-            latitude={pendingLocation?.lat ?? device?.latitude}
-            longitude={pendingLocation?.lng ?? device?.longitude}
-            address={device?.address}
-            editable
-            onLocationChange={handleMapLocationChange}
-          />
-          {pendingLocation && (
-            <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
-              <Button size="sm" className="h-8" onClick={handleSaveLocation}>
-                Save Location
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                onClick={() => setPendingLocation(null)}
-              >
-                Cancel
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="sensors">Sensors & Data</TabsTrigger>
+          <TabsTrigger value="transport">Transport</TabsTrigger>
+          <TabsTrigger value="health">Health</TabsTrigger>
+          <TabsTrigger value="twin">Twin & Commands</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
+        </TabsList>
 
-      {deviceId && <DevicePlanPanel deviceId={deviceId} />}
-
-      {deviceId && <DeviceSensorsPanel deviceId={deviceId} />}
-      {deviceId && <DeviceConnectionPanel deviceId={deviceId} />}
-      {deviceId && <DeviceCarrierPanel deviceId={deviceId} />}
-      {deviceId && <DeviceHealthPanel deviceId={deviceId} />}
-      {deviceId && <DeviceApiTokensPanel deviceId={deviceId} />}
-      {deviceId && <DeviceCertificatesTab deviceId={deviceId} />}
-      {deviceId && <DeviceUptimePanel deviceId={deviceId} />}
-      {deviceId && <DeviceTwinPanel deviceId={deviceId} />}
-      {deviceId && <DeviceConnectivityPanel deviceId={deviceId} />}
-      {deviceId && <DeviceCommandPanel deviceId={deviceId} />}
-      <div>
-        <Button size="sm" variant="outline" onClick={() => setCreateJobOpen(true)}>
-          Create Job
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-2">
-        {metrics.slice(0, 8).map((metricName) => (
-          <div key={metricName} className="border rounded p-1 text-center">
-            <div className="text-sm text-muted-foreground truncate">
-              {metricName}
-            </div>
-            <div className="text-sm font-semibold">
-              {formatMetricValue(metricName)}
+        <TabsContent value="overview" className="pt-2 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <DeviceInfoCard
+              device={device}
+              isLoading={deviceLoading}
+              tags={deviceTags}
+              onTagsChange={(next) => {
+                setDeviceTagsState(next);
+                void handleSaveTags(next);
+              }}
+              notesValue={notesValue}
+              onNotesChange={handleNotesChange}
+              onNotesBlur={handleSaveNotes}
+              onEdit={() => setEditModalOpen(true)}
+            />
+            <div className="relative">
+              <DeviceMapCard
+                latitude={pendingLocation?.lat ?? device?.latitude}
+                longitude={pendingLocation?.lng ?? device?.longitude}
+                address={device?.address}
+                editable
+                onLocationChange={handleMapLocationChange}
+              />
+              {pendingLocation && (
+                <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
+                  <Button size="sm" className="h-8" onClick={handleSaveLocation}>
+                    Save Location
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => setPendingLocation(null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
-        ))}
-      </div>
 
-      <WidgetErrorBoundary widgetName="Telemetry Charts">
-        <div className="h-[calc(100vh-320px)]">
-          <TelemetryChartsSection
-            deviceId={deviceId || ""}
-            metrics={metrics}
-            points={points}
-            isLoading={telemetryLoading}
-            isLive={isLive}
-            liveCount={liveCount}
-            timeRange={timeRange}
-            onTimeRangeChange={setTimeRange}
-          />
-        </div>
-      </WidgetErrorBoundary>
+          {deviceId && <DevicePlanPanel deviceId={deviceId} />}
 
-      {notesSaving && (
-        <div className="text-sm text-muted-foreground">Saving notes...</div>
-      )}
-      {tagsSaving && (
-        <div className="text-sm text-muted-foreground">Saving tags...</div>
-      )}
+          {notesSaving && <div className="text-sm text-muted-foreground">Saving notes...</div>}
+          {tagsSaving && <div className="text-sm text-muted-foreground">Saving tags...</div>}
+          {openAlertCount > 0 && (
+            <Link to="/alerts" className="text-sm text-primary hover:underline">
+              View {openAlertCount} alerts
+            </Link>
+          )}
+        </TabsContent>
 
-      {openAlertCount > 0 && (
-        <Link to="/alerts" className="text-sm text-primary hover:underline">
-          View {openAlertCount} alerts
-        </Link>
-      )}
+        <TabsContent value="sensors">
+          {deviceId ? (
+            <DeviceSensorsDataTab
+              deviceId={deviceId}
+              templateId={device?.template_id ?? null}
+              telemetry={{
+                points,
+                metrics,
+                isLoading: telemetryLoading,
+                isLive,
+                liveCount,
+                timeRange,
+                onTimeRangeChange: setTimeRange,
+              }}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="transport">
+          {deviceId ? <DeviceTransportTab deviceId={deviceId} /> : null}
+        </TabsContent>
+
+        <TabsContent value="health">
+          {deviceId ? <DeviceHealthTab deviceId={deviceId} /> : null}
+        </TabsContent>
+
+        <TabsContent value="twin">
+          {deviceId ? (
+            <DeviceTwinCommandsTab deviceId={deviceId} templateId={device?.template_id ?? null} />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="security">
+          {deviceId ? <DeviceSecurityTab deviceId={deviceId} /> : null}
+        </TabsContent>
+      </Tabs>
 
       {device && (
         <DeviceEditModal

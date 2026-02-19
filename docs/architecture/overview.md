@@ -5,6 +5,9 @@ sources:
   - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/internal.py
   - services/ui_iot/routes/templates.py
+  - frontend/src/features/templates/TemplateListPage.tsx
+  - frontend/src/features/templates/TemplateDetailPage.tsx
+  - frontend/src/features/devices/DeviceDetailPage.tsx
   - services/evaluator_iot/evaluator.py
   - services/ingest_iot/ingest.py
   - services/ops_worker/main.py
@@ -19,7 +22,7 @@ sources:
   - db/migrations/111_device_modules.sql
   - db/migrations/112_device_sensors_transports.sql
   - db/migrations/113_device_registry_template_fk.sql
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168]
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173]
 ---
 
 # System Architecture
@@ -33,6 +36,7 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
 - Devices send telemetry via MQTT (EMQX broker, mTLS) or HTTP (`ui_iot` ingest endpoints).
 - Both paths publish envelopes into NATS JetStream using PubAck (`js.publish()`).
 - `ingest_iot` consumes from JetStream as a horizontally-scalable worker group and batch-writes telemetry to TimescaleDB.
+- Telemetry keys are normalized (raw -> semantic) using `device_modules.metric_key_map` before storage (Phase 172).
 - `evaluator_iot` evaluates telemetry for device state + alerts.
 - Message route delivery is decoupled: `ingest_iot` publishes delivery jobs to JetStream and `route_delivery` executes webhook/MQTT republish asynchronously.
 - Export artifacts are stored in S3-compatible object storage (MinIO in compose; AWS S3 in production).
@@ -80,6 +84,7 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
                                       ┌───────────────────────┐
                                       │ ingest_iot             │
                                       │ - validate + rate limit│
+                                      │ - normalize keys       │
                                       │ - batch write telemetry│
                                       └──────────┬────────────┘
                                                  │ asyncpg via PgBouncer
@@ -116,6 +121,7 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
 Primary platform API service. Responsibilities:
 
 - Serves the React SPA bundle (behind Caddy `/app/*` routing).
+- Customer UI includes template management pages and a tabbed device detail view (Phases 170–171).
 - Customer APIs (`/api/v1/customer/*`) and operator APIs (`/api/v1/operator/*`).
 - Legacy v2 endpoints (`/api/v2/*`) and real-time protocols (WebSocket/SSE).
 - HTTP ingestion endpoints (`/ingest/*`) that publish envelopes to JetStream (`telemetry.{tenant_id}`).

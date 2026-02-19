@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import DashboardPage from "@/features/dashboard/DashboardPage";
+import GettingStartedPage from "@/features/fleet/GettingStartedPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
@@ -41,6 +42,8 @@ import UsersPage from "@/features/users/UsersPage";
 import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
+import TemplateListPage from "@/features/templates/TemplateListPage";
+import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
 import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
 import DeadLetterPage from "@/features/messaging/DeadLetterPage";
 import ReportsPage from "@/features/reports/ReportsPage";
@@ -98,8 +101,11 @@ export const router = createBrowserRouter(
           element: <RequireCustomer />,
           children: [
             { path: "dashboard", element: <DashboardPage /> },
+            { path: "fleet/getting-started", element: <GettingStartedPage /> },
             { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
+            { path: "templates", element: <TemplateListPage /> },
+            { path: "templates/:templateId", element: <TemplateDetailPage /> },
             { path: "devices", element: <DeviceListPage /> },
             { path: "devices/import", element: <BulkImportPage /> },
             { path: "devices/wizard", element: <SetupWizard /> },

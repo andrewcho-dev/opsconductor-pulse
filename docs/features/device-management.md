@@ -8,11 +8,22 @@ sources:
   - services/ui_iot/routes/jobs.py
   - services/ui_iot/routes/ota.py
   - services/ui_iot/routes/certificates.py
-  - frontend/src/features/devices/DeviceCarrierPanel.tsx
+  - frontend/src/features/devices/DeviceDetailPage.tsx
+  - frontend/src/features/devices/DeviceSensorsDataTab.tsx
+  - frontend/src/features/devices/DeviceTransportTab.tsx
+  - frontend/src/features/devices/DeviceHealthTab.tsx
+  - frontend/src/features/devices/DeviceTwinCommandsTab.tsx
+  - frontend/src/features/devices/DeviceSecurityTab.tsx
   - services/ui_iot/routes/operator.py
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169]
+  - services/ui_iot/routes/ingest.py
+  - frontend/src/features/templates/TemplateListPage.tsx
+  - frontend/src/features/templates/TemplateDetailPage.tsx
+  - frontend/src/services/api/templates.ts
+  - frontend/src/features/fleet/GettingStartedPage.tsx
+  - frontend/src/components/layout/AppSidebar.tsx
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174]
 ---
 
 # Device Management
@@ -53,6 +64,62 @@ Key behaviors:
 - Template changes do not delete sensors automatically; they only add missing required sensors from the new template.
 - Module assignment validates slot compatibility (slot exists in the device template; optional `compatible_templates` checks; `max_devices` slot enforcement).
 - Transport configuration uses `device_transports` (replacing the legacy `device_connections` model). Legacy connection endpoints remain temporarily but are deprecated in favor of transports.
+
+## Template Management UI (Phase 170)
+
+The customer UI includes a dedicated template management experience:
+
+- Template list page (`/app/templates`): filter by category/source and search by name/slug; actions include add, clone (system templates), and delete (tenant templates).
+- Template detail page (`/app/templates/:templateId`): tabbed view:
+  - Overview (identity + config)
+  - Metrics
+  - Commands
+  - Slots
+- System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
+
+## Device Detail UI (Phase 171)
+
+The customer UI restructures the device detail page into a 6-tab layout to keep all instance management in one place:
+
+- Overview: identity, map/location, plan/tier info, template badge link, notes/tags editing.
+- Sensors & Data: module assignment (template slots), sensor management, telemetry charts.
+- Transport: per-device transport configuration (protocol + physical connectivity) and carrier integration linking.
+- Health: device health telemetry and uptime.
+- Twin & Commands: desired/reported state management and command dispatch/history.
+- Security: API tokens and mTLS certificates.
+
+## Fleet Navigation & Getting Started (Phase 174)
+
+The Fleet sidebar is organized into workflow-oriented sub-groups:
+
+- **Setup**: Sites, Device Templates, Devices — the fundamental configuration workflow.
+- **Monitor**: Fleet Map, Device Groups — observability and logical grouping.
+- **Maintain**: OTA Updates, Firmware — ongoing fleet maintenance.
+
+A "Getting Started" page (`/app/fleet/getting-started`) guides new customers through 5 setup steps with live completion detection:
+
+1. Create a site
+2. Set up a device template
+3. Add your first device
+4. Verify data is flowing (device online)
+5. Configure alerts
+
+Each step auto-detects completion via API queries. The page is accessible from the Fleet sidebar and auto-dismisses (via localStorage) when dismissed or complete.
+
+The fleet-wide Sensors page is no longer linked in the sidebar (per-device sensors management is now in the Device Detail Sensors & Data tab from Phase 171). The route remains accessible via direct URL with a deprecation tip banner.
+
+The Device List page includes a health summary strip showing online/stale/offline device counts above the device list.
+
+## Telemetry Key Normalization (Phase 172)
+
+Telemetry is stored using *semantic* metric keys to keep charting and alerting stable across firmware versions and port assignments.
+
+- Devices may publish raw firmware keys (e.g. `port_3_temp`).
+- Assigned expansion modules can provide a `metric_key_map` (`device_modules.metric_key_map`) that translates raw keys to semantic keys (e.g. `port_3_temp` → `temperature`).
+- Ingest applies this translation before writing to TimescaleDB; unmapped keys pass through unchanged.
+- `device_sensors.last_value` / `last_seen_at` are updated from ingested telemetry for fast UI display.
+
+Known limitation: historical telemetry ingested before normalization retains raw keys in storage; charting uses the requested semantic key and may show gaps for older raw-key-only data.
 
 ### Telemetry and state
 

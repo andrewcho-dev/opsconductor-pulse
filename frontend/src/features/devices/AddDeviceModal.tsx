@@ -26,10 +26,13 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
+import { useQuery } from "@tanstack/react-query";
+import { listTemplates } from "@/services/api/templates";
 
 const addDeviceSchema = z.object({
   name: z.string().min(1, "Device name is required").max(100),
   deviceType: z.string().min(1, "Device type is required").max(50),
+  templateId: z.string().optional().or(z.literal("")),
   siteId: z.string().optional(),
   tags: z.string().optional(),
 });
@@ -49,8 +52,15 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
 
   const form = useForm<AddDeviceFormValues>({
     resolver: zodResolver(addDeviceSchema),
-    defaultValues: { name: "", deviceType: "", siteId: "", tags: "" },
+    defaultValues: { name: "", deviceType: "", templateId: "", siteId: "", tags: "" },
   });
+
+  const templatesQuery = useQuery({
+    queryKey: ["templates", "add-device"],
+    queryFn: () => listTemplates(),
+    enabled: open,
+  });
+  const templates = templatesQuery.data ?? [];
 
   const reset = () => {
     form.reset();
@@ -81,6 +91,7 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
         device_type: values.deviceType.trim(),
         site_id: values.siteId?.trim() || undefined,
         tags: tags.length > 0 ? tags : undefined,
+        template_id: values.templateId?.trim() ? Number(values.templateId.trim()) : undefined,
       });
       await onCreated();
       setCredentials(result);
@@ -126,6 +137,33 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
                     <FormLabel>Device Type *</FormLabel>
                     <FormControl>
                       <Input placeholder="Device Type" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="templateId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Template (optional)</FormLabel>
+                    <FormControl>
+                      <select
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.value)}
+                      >
+                        <option value="">None</option>
+                        {templates
+                          .slice()
+                          .sort((a, b) => (a.source === b.source ? a.name.localeCompare(b.name) : a.source === "system" ? -1 : 1))
+                          .map((t) => (
+                            <option key={t.id} value={String(t.id)}>
+                              {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
+                            </option>
+                          ))}
+                      </select>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

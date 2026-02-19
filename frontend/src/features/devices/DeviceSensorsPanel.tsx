@@ -72,7 +72,7 @@ function parseOptionalNumber(value: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function statusBadgeClass(status: Sensor["status"]): string {
+function statusBadgeClass(status: string): string {
   switch (status) {
     case "active":
       return "bg-status-online/10 text-status-online";
@@ -90,8 +90,10 @@ function statusBadgeClass(status: Sensor["status"]): string {
 export function DeviceSensorsPanel({ deviceId }: DeviceSensorsPanelProps) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
-  const [editSensorTarget, setEditSensorTarget] = useState<Sensor | null>(null);
-  const [deleteSensorTarget, setDeleteSensorTarget] = useState<Sensor | null>(null);
+  // Legacy panel retained for backwards compatibility; the device detail page uses Phase 171 tabs.
+  // `device_sensors` response shape differs from the original `sensors` shape, so we keep this loose.
+  const [editSensorTarget, setEditSensorTarget] = useState<any | null>(null);
+  const [deleteSensorTarget, setDeleteSensorTarget] = useState<any | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["device-sensors", deviceId],
@@ -136,7 +138,7 @@ export function DeviceSensorsPanel({ deviceId }: DeviceSensorsPanelProps) {
     },
   });
 
-  const columns: ColumnDef<Sensor>[] = useMemo(
+  const columns: ColumnDef<any>[] = useMemo(
     () => [
       {
         accessorKey: "metric_name",

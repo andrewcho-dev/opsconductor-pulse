@@ -266,9 +266,9 @@ export function WidgetConfigDialog({
           <SelectContent>
             {hasSensorMetrics
               ? sensorMetrics.map((s) => (
-                  <SelectItem key={s.sensor_id} value={s.metric_name}>
+                  <SelectItem key={s.sensor_id ?? s.id} value={s.metric_name ?? s.metric_key}>
                     <span className="flex items-center justify-between gap-2">
-                      <span>{s.label || s.metric_name}</span>
+                      <span>{s.label || s.metric_name || s.metric_key}</span>
                       <span className="text-xs text-muted-foreground">
                         ({s.sensor_type}
                         {s.unit ? `, ${s.unit}` : ""})
@@ -544,8 +544,8 @@ export function WidgetConfigDialog({
                 <SelectContent>
                   {hasSensorMetrics
                     ? sensorMetrics.map((s) => (
-                        <SelectItem key={s.sensor_id} value={s.metric_name}>
-                          {s.label || s.metric_name}
+                        <SelectItem key={s.sensor_id ?? s.id} value={s.metric_name ?? s.metric_key}>
+                          {s.label || s.metric_name || s.metric_key}
                         </SelectItem>
                       ))
                     : METRICS.map((m) => (
@@ -568,8 +568,8 @@ export function WidgetConfigDialog({
                 <SelectContent>
                   {hasSensorMetrics
                     ? sensorMetrics.map((s) => (
-                        <SelectItem key={s.sensor_id} value={s.metric_name}>
-                          {s.label || s.metric_name}
+                        <SelectItem key={s.sensor_id ?? s.id} value={s.metric_name ?? s.metric_key}>
+                          {s.label || s.metric_name || s.metric_key}
                         </SelectItem>
                       ))
                     : METRICS.map((m) => (

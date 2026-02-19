@@ -7,6 +7,12 @@ import type {
   DeviceUpdate,
   DeviceTagsResponse,
   AllTagsResponse,
+  DeviceModule,
+  ModuleCreatePayload,
+  ModuleUpdatePayload,
+  DeviceTransport,
+  TransportCreatePayload,
+  TransportUpdatePayload,
 } from "./types";
 
 export interface DeviceListParams {
@@ -25,6 +31,7 @@ export interface ProvisionDeviceRequest {
   device_type: string;
   site_id?: string;
   tags?: string[];
+  template_id?: number;
 }
 
 export interface ProvisionDeviceResponse {
@@ -127,6 +134,75 @@ export async function updateDevice(
   return apiPatch(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}`, update);
 }
 
+// ─── Device Modules (Phase 169+) ──────────────────────
+
+export async function listDeviceModules(deviceId: string): Promise<DeviceModule[]> {
+  const res = await apiGet<{ modules: DeviceModule[] }>(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/modules`
+  );
+  return res.modules ?? [];
+}
+
+export async function createDeviceModule(
+  deviceId: string,
+  data: ModuleCreatePayload
+): Promise<DeviceModule> {
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/modules`, data);
+}
+
+export async function updateDeviceModule(
+  deviceId: string,
+  moduleId: number,
+  data: ModuleUpdatePayload
+): Promise<DeviceModule> {
+  return apiPut(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/modules/${moduleId}`,
+    data
+  );
+}
+
+export async function deleteDeviceModule(deviceId: string, moduleId: number): Promise<void> {
+  await apiDelete(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/modules/${moduleId}`
+  );
+}
+
+// ─── Device Transports (Phase 169+) ───────────────────
+
+export async function listDeviceTransports(deviceId: string): Promise<DeviceTransport[]> {
+  const res = await apiGet<{ transports: DeviceTransport[] }>(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/transports`
+  );
+  return res.transports ?? [];
+}
+
+export async function createDeviceTransport(
+  deviceId: string,
+  data: TransportCreatePayload
+): Promise<DeviceTransport> {
+  return apiPost(`/api/v1/customer/devices/${encodeURIComponent(deviceId)}/transports`, data);
+}
+
+export async function updateDeviceTransport(
+  deviceId: string,
+  transportId: number,
+  data: TransportUpdatePayload
+): Promise<DeviceTransport> {
+  return apiPut(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/transports/${transportId}`,
+    data
+  );
+}
+
+export async function deleteDeviceTransport(
+  deviceId: string,
+  transportId: number
+): Promise<void> {
+  await apiDelete(
+    `/api/v1/customer/devices/${encodeURIComponent(deviceId)}/transports/${transportId}`
+  );
+}
+
 export async function provisionDevice(
   req: ProvisionDeviceRequest
 ): Promise<ProvisionDeviceResponse> {
@@ -136,6 +212,7 @@ export async function provisionDevice(
     {
       device_id: deviceId,
       site_id: req.site_id || "default-site",
+      template_id: req.template_id ?? null,
     }
   );
 

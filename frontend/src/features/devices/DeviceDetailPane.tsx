@@ -17,13 +17,13 @@ import {
 import { useDevice } from "@/hooks/use-devices";
 import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
 import { useDeviceAlerts } from "@/hooks/use-device-alerts";
-import { decommissionDevice, getDeviceTags } from "@/services/api/devices";
+import { decommissionDevice, getDeviceTags, updateDevice } from "@/services/api/devices";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
 import { DeviceApiTokensPanel } from "./DeviceApiTokensPanel";
 import { DeviceUptimePanel } from "./DeviceUptimePanel";
 import { DeviceTwinPanel } from "./DeviceTwinPanel";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
-import { EditDeviceModal } from "./EditDeviceModal";
+import { DeviceEditModal } from "./DeviceEditModal";
 
 interface DeviceDetailPaneProps {
   deviceId: string;
@@ -283,11 +283,14 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
         </Tabs>
       </div>
 
-      <EditDeviceModal
+      <DeviceEditModal
         open={editOpen}
         device={device}
         onClose={() => setEditOpen(false)}
-        onSaved={refresh}
+        onSave={async (update) => {
+          await updateDevice(deviceId, update);
+          await refresh();
+        }}
       />
 
       <AlertDialog open={!!confirmDecommission} onOpenChange={(open) => !open && setConfirmDecommission(null)}>

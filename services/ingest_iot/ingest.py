@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
 from aiohttp import web
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Histogram
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Histogram
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
@@ -59,12 +59,31 @@ INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
 BUCKET_TTL_SECONDS = int(os.getenv("BUCKET_TTL_SECONDS", "3600"))
 BUCKET_CLEANUP_INTERVAL = int(os.getenv("BUCKET_CLEANUP_INTERVAL", "300"))
 
+# Phase 172: Metric key map cache (raw -> semantic normalization)
+METRIC_MAP_CACHE_TTL = int(os.getenv("METRIC_MAP_CACHE_TTL", "300"))
+METRIC_MAP_CACHE_SIZE = int(os.getenv("METRIC_MAP_CACHE_SIZE", "10000"))
+
 # Operational metrics (Phase 164)
 ingest_batch_write_seconds = Histogram(
     "pulse_ingest_batch_write_seconds",
     "Batch write latency (flush duration) in seconds",
     ["tenant_id"],
     buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
+)
+
+# Phase 172: normalization metrics
+ingest_metric_keys_normalized_total = Counter(
+    "ingest_metric_keys_normalized_total",
+    "Number of telemetry keys that were normalized via metric_key_map",
+    ["tenant_id"],
+)
+ingest_metric_key_map_cache_hits_total = Counter(
+    "ingest_metric_key_map_cache_hits_total",
+    "Cache hits for metric_key_map lookups",
+)
+ingest_metric_key_map_cache_misses_total = Counter(
+    "ingest_metric_key_map_cache_misses_total",
+    "Cache misses for metric_key_map lookups",
 )
 
 COUNTERS = {
@@ -752,6 +771,78 @@ class CertificateAuthCache:
         self._cache.pop(cn, None)
 
 
+class MetricKeyMapCache:
+    """Cache of merged metric_key_map per device.
+
+    Merges all active device_modules' metric_key_maps into a single
+    {raw_key: semantic_key} dict per device.
+    """
+
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 10000):
+        self._cache: dict[str, tuple[float, dict[str, str]]] = {}
+        self._ttl = ttl_seconds
+        self._max_size = max_size
+
+    async def get(self, pool: asyncpg.Pool, tenant_id: str, device_id: str) -> dict[str, str]:
+        """Get merged metric_key_map for a device. Returns empty dict if no mappings."""
+        cache_key = f"{tenant_id}:{device_id}"
+        now = time.time()
+
+        if cache_key in self._cache:
+            ts, mapping = self._cache[cache_key]
+            if now - ts < self._ttl:
+                ingest_metric_key_map_cache_hits_total.inc()
+                return mapping
+
+        ingest_metric_key_map_cache_misses_total.inc()
+        mapping = await self._load_from_db(pool, tenant_id, device_id)
+
+        # Evict if cache too large (simple oldest-first eviction).
+        if len(self._cache) >= self._max_size:
+            oldest = sorted(self._cache.items(), key=lambda x: x[1][0])[: max(1, self._max_size // 4)]
+            for k, _ in oldest:
+                self._cache.pop(k, None)
+
+        self._cache[cache_key] = (now, mapping)
+        return mapping
+
+    async def _load_from_db(
+        self, pool: asyncpg.Pool, tenant_id: str, device_id: str
+    ) -> dict[str, str]:
+        """Load and merge all active device_modules' metric_key_maps."""
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await _set_tenant_write_context(conn, tenant_id)
+                rows = await conn.fetch(
+                    """
+                    SELECT metric_key_map
+                    FROM device_modules
+                    WHERE tenant_id = $1
+                      AND device_id = $2
+                      AND status = 'active'
+                      AND metric_key_map != '{}'::jsonb
+                    """,
+                    tenant_id,
+                    device_id,
+                )
+
+        merged: dict[str, str] = {}
+        for row in rows:
+            mkm = row["metric_key_map"]
+            if isinstance(mkm, str):
+                try:
+                    mkm = json.loads(mkm)
+                except Exception:
+                    mkm = {}
+            if isinstance(mkm, dict):
+                merged.update({str(k): str(v) for k, v in mkm.items()})
+        return merged
+
+    def invalidate(self, tenant_id: str, device_id: str) -> None:
+        """Invalidate cache entry when modules change."""
+        self._cache.pop(f"{tenant_id}:{device_id}", None)
+
+
 async def auto_provision_device(
     conn: asyncpg.Connection,
     tenant_id: str,
@@ -862,13 +953,46 @@ class Ingestor:
         self.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL, max_size=AUTH_CACHE_MAX_SIZE)
         self.device_subscription_cache = DeviceSubscriptionCache(ttl_seconds=60, max_size=50000)
         self.cert_auth_cache = CertificateAuthCache(ttl_seconds=300, max_size=50000)
+        self.metric_key_map_cache = MetricKeyMapCache(
+            ttl_seconds=METRIC_MAP_CACHE_TTL,
+            max_size=METRIC_MAP_CACHE_SIZE,
+        )
         self.batch_writer: TimescaleBatchWriter | None = None
         self._message_routes_cache: dict[str, list] = {}  # tenant_id -> [route_rows]
         self._routes_cache_ts: dict[str, float] = {}  # tenant_id -> last_refresh_time
         self._routes_cache_ttl = 30  # seconds
-        # Sensor auto-discovery cache: set of (tenant_id, device_id, metric_name) tuples
+        # Sensor auto-discovery cache: set of (tenant_id, device_id, metric_key) tuples
         # that are known to exist. Avoids DB lookup on every telemetry message.
         self._known_sensors: set[tuple[str, str, str]] = set()
+
+    async def _normalize_metric_keys(
+        self,
+        tenant_id: str,
+        device_id: str,
+        metrics: dict,
+    ) -> dict:
+        """Translate raw firmware keys to semantic metric names using metric_key_map."""
+        if not metrics:
+            return metrics
+        if not isinstance(metrics, dict):
+            return {}
+
+        assert self.pool is not None
+        mapping = await self.metric_key_map_cache.get(self.pool, tenant_id, device_id)
+        if not mapping:
+            return metrics
+
+        normalized: dict = {}
+        normalized_count = 0
+        for key, value in metrics.items():
+            semantic_key = mapping.get(str(key), str(key))
+            if semantic_key != str(key):
+                normalized_count += 1
+            normalized[semantic_key] = value
+
+        if normalized_count > 0:
+            ingest_metric_keys_normalized_total.labels(tenant_id=tenant_id).inc(normalized_count)
+        return normalized
 
     async def _ensure_sensors(self, tenant_id: str, device_id: str, metrics: dict, ts):
         """Auto-discover sensors from telemetry metric keys.
@@ -894,19 +1018,24 @@ class Ingestor:
                         await _set_tenant_write_context(conn, tenant_id)
                         for key in metrics:
                             value = metrics[key]
-                            if isinstance(value, (int, float)):
-                                await conn.execute(
-                                    """
-                                    UPDATE sensors
-                                    SET last_value = $1, last_seen_at = $2, updated_at = now()
-                                    WHERE tenant_id = $3 AND device_id = $4 AND metric_name = $5
-                                    """,
-                                    float(value),
-                                    ts,
-                                    tenant_id,
-                                    device_id,
-                                    key,
-                                )
+                            last_value = float(value) if isinstance(value, (int, float)) else None
+                            last_value_text = None if last_value is not None else str(value)
+                            await conn.execute(
+                                """
+                                UPDATE device_sensors
+                                SET last_value = $1,
+                                    last_value_text = $2,
+                                    last_seen_at = $3,
+                                    updated_at = now()
+                                WHERE tenant_id = $4 AND device_id = $5 AND metric_key = $6
+                                """,
+                                last_value,
+                                last_value_text,
+                                ts,
+                                tenant_id,
+                                device_id,
+                                key,
+                            )
             except Exception as e:
                 logger.debug("sensor_last_value_update_failed: %s", e)
             return
@@ -920,11 +1049,11 @@ class Ingestor:
 
                     # Fetch all existing sensors for this device
                     existing = await conn.fetch(
-                        "SELECT metric_name FROM sensors WHERE tenant_id = $1 AND device_id = $2",
+                        "SELECT metric_key FROM device_sensors WHERE tenant_id = $1 AND device_id = $2",
                         tenant_id,
                         device_id,
                     )
-                    existing_names = {row["metric_name"] for row in existing}
+                    existing_names = {row["metric_key"] for row in existing}
 
                     # Cache all existing
                     for name in existing_names:
@@ -970,25 +1099,33 @@ class Ingestor:
                                 sensor_type = _infer_sensor_type(key)
                                 unit = _infer_unit(key, sensor_type)
                                 value = metrics.get(key)
-                                numeric_value = (
-                                    float(value) if isinstance(value, (int, float)) else None
-                                )
+                                numeric_value = float(value) if isinstance(value, (int, float)) else None
+                                text_value = None if numeric_value is not None else str(value)
 
                                 await conn.execute(
                                     """
-                                    INSERT INTO sensors (
-                                        tenant_id, device_id, metric_name, sensor_type,
-                                        label, unit, auto_discovered, last_value, last_seen_at, status
-                                    ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, 'active')
-                                    ON CONFLICT (tenant_id, device_id, metric_name) DO NOTHING
+                                    INSERT INTO device_sensors (
+                                        tenant_id,
+                                        device_id,
+                                        metric_key,
+                                        display_name,
+                                        unit,
+                                        precision_digits,
+                                        status,
+                                        source,
+                                        last_value,
+                                        last_value_text,
+                                        last_seen_at
+                                    ) VALUES ($1, $2, $3, $4, $5, 2, 'active', 'unmodeled', $6, $7, $8)
+                                    ON CONFLICT (tenant_id, device_id, metric_key) DO NOTHING
                                     """,
                                     tenant_id,
                                     device_id,
                                     key,
-                                    sensor_type,
                                     _humanize_metric_name(key),
                                     unit,
                                     numeric_value,
+                                    text_value,
                                     ts,
                                 )
                                 self._known_sensors.add((tenant_id, device_id, key))
@@ -997,8 +1134,7 @@ class Ingestor:
                                     extra={
                                         "tenant_id": tenant_id,
                                         "device_id": device_id,
-                                        "metric_name": key,
-                                        "sensor_type": sensor_type,
+                                        "metric_key": key,
                                     },
                                 )
 
@@ -1016,19 +1152,24 @@ class Ingestor:
                     # Update last_value for all known sensors
                     for key in metrics:
                         value = metrics[key]
-                        if isinstance(value, (int, float)):
-                            await conn.execute(
-                                """
-                                UPDATE sensors
-                                SET last_value = $1, last_seen_at = $2, updated_at = now()
-                                WHERE tenant_id = $3 AND device_id = $4 AND metric_name = $5
-                                """,
-                                float(value),
-                                ts,
-                                tenant_id,
-                                device_id,
-                                key,
-                            )
+                        last_value = float(value) if isinstance(value, (int, float)) else None
+                        last_value_text = None if last_value is not None else str(value)
+                        await conn.execute(
+                            """
+                            UPDATE device_sensors
+                            SET last_value = $1,
+                                last_value_text = $2,
+                                last_seen_at = $3,
+                                updated_at = now()
+                            WHERE tenant_id = $4 AND device_id = $5 AND metric_key = $6
+                            """,
+                            last_value,
+                            last_value_text,
+                            ts,
+                            tenant_id,
+                            device_id,
+                            key,
+                        )
 
         except Exception as e:
             # Sensor auto-discovery failure should NOT block telemetry ingestion
@@ -1619,6 +1760,10 @@ class Ingestor:
 
             # Primary write: TimescaleDB (batched)
             ts = event_ts or utcnow()
+            metrics = payload.get("metrics", {}) or {}
+            if msg_type == "telemetry":
+                metrics = await self._normalize_metric_keys(tenant_id, device_id, metrics)
+                payload["metrics"] = metrics
             record = TelemetryRecord(
                 time=ts,
                 tenant_id=tenant_id,
@@ -1626,7 +1771,7 @@ class Ingestor:
                 site_id=site_id or payload.get("site_id"),
                 msg_type=msg_type,
                 seq=payload.get("seq", 0),
-                metrics=payload.get("metrics", {}) or {},
+                metrics=metrics,
             )
             COUNTERS["last_write_at"] = utcnow().isoformat()
             await self.batch_writer.add(record)
@@ -1675,7 +1820,6 @@ class Ingestor:
                     logger.warning("route_fanout_error", extra={"error": str(route_fan_exc)})
 
             ingest_messages_total.labels(tenant_id=tenant_id, result="accepted").inc()
-            metrics = payload.get("metrics", {}) or {}
             log_event(
                 logger,
                 "telemetry accepted",

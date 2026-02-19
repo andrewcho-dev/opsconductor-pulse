@@ -80,6 +80,15 @@ export default function DeviceListPage() {
     }
     return counts;
   }, [openAlertsData?.alerts]);
+  const statusCounts = useMemo(() => {
+    const counts = { online: 0, stale: 0, offline: 0 };
+    for (const d of devices) {
+      if (d.status === "ONLINE") counts.online++;
+      else if (d.status === "STALE") counts.stale++;
+      else counts.offline++;
+    }
+    return counts;
+  }, [devices]);
 
   const onDeviceClick = (device: Device) => {
     if (window.innerWidth < 1024) {
@@ -113,6 +122,25 @@ export default function DeviceListPage() {
         onClose={() => setAddOpen(false)}
         onCreated={async () => {}}
       />
+
+      {!isLoading && devices.length > 0 && (
+        <div className="flex items-center gap-4 rounded-md border border-border px-3 py-2 text-sm">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-status-online" />
+            <span>{statusCounts.online} Online</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-status-stale" />
+            <span>{statusCounts.stale} Stale</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-status-offline" />
+            <span>{statusCounts.offline} Offline</span>
+          </div>
+          <span className="text-muted-foreground">|</span>
+          <span className="text-muted-foreground">{totalCount} total devices</span>
+        </div>
+      )}
 
       {error ? (
         <div className="text-destructive">
@@ -206,7 +234,13 @@ export default function DeviceListPage() {
                     <div className="mt-1 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground">
-                          {device.model || "unknown-type"}
+                          {(
+                            device.template?.name ??
+                            device.template_name ??
+                            (device as any).device_type ??
+                            device.model ??
+                            "—"
+                          )}
                         </span>
                         {device.plan_id ? (
                           <Badge variant="outline" className="h-5 text-xs">

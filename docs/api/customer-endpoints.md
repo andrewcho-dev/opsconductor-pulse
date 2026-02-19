@@ -5,6 +5,7 @@ sources:
   - services/ui_iot/routes/alerts.py
   - services/ui_iot/routes/devices.py
   - services/ui_iot/routes/sensors.py
+  - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/metrics.py
   - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/escalation.py
@@ -24,7 +25,8 @@ sources:
   - services/ui_iot/routes/analytics.py
   - services/ui_iot/routes/message_routing.py
   - services/ui_iot/routes/operator.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 168, 169]
+  - services/ingest_iot/ingest.py
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 166, 167, 168, 169, 170, 171, 172, 173]
 ---
 
 # Customer API Endpoints
@@ -85,7 +87,9 @@ Telemetry and twin:
 
 - `GET /api/v1/customer/devices/{device_id}/telemetry`
 - `GET /api/v1/customer/devices/{device_id}/telemetry/latest`
+- `GET /api/v1/customer/devices/{device_id}/telemetry/metrics` — list available chart metrics (from `device_sensors`)
 - `GET /api/v1/customer/devices/{device_id}/telemetry/history`
+  - Response includes sensor metadata (`unit`, `min_range`, `max_range`, `precision_digits`) when available.
 - `GET /api/v1/customer/devices/{device_id}/telemetry/export`
 - `GET /api/v1/customer/devices/{device_id}/twin`
 - `PATCH /api/v1/customer/devices/{device_id}/twin/desired`
