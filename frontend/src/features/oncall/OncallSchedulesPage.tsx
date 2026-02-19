@@ -51,7 +51,7 @@ function ScheduleCard({ schedule }: { schedule: OncallSchedule }) {
   );
 }
 
-export default function OncallSchedulesPage() {
+export default function OncallSchedulesPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OncallSchedule | null>(null);
@@ -94,22 +94,28 @@ export default function OncallSchedulesPage() {
 
   const schedules = schedulesQuery.data?.schedules ?? [];
 
+  const actions = (
+    <Button
+      onClick={() => {
+        setEditing(null);
+        setModalOpen(true);
+      }}
+    >
+      New Schedule
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="On-Call Schedules"
-        description="Configure rotation layers and temporary overrides."
-        action={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setModalOpen(true);
-            }}
-          >
-            New Schedule
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="On-Call Schedules"
+          description="Configure rotation layers and temporary overrides."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <div className="space-y-3">
         {schedules.map((schedule) => (

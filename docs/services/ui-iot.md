@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176]
 ---
 
 # ui-iot
@@ -198,6 +198,17 @@ Phase 169 updates device management APIs to use the instance-level template mode
 ## Fleet Navigation (Phase 174)
 
 The frontend Fleet sidebar is restructured into Setup / Monitor / Maintain sub-groups. A Getting Started page is served at `/app/fleet/getting-started` with 5-step onboarding and live completion detection. The fleet-wide Sensors page (`/app/sensors`) is removed from sidebar navigation but the route is preserved for backward compatibility.
+
+## Navigation & Hub Pages (Phase 176)
+
+Phase 176 introduces a Home landing page at `/app/home` and consolidates multiple standalone pages into hub pages (tabbed navigation with `?tab=` deep links). Key hub routes:
+
+- `/app/alerts` — Alerts hub (rules/escalation/on-call/maintenance are tabs)
+- `/app/analytics` — Analytics hub (reports are a tab)
+- `/app/updates` — Updates hub (replaces `/app/ota/campaigns` and `/app/ota/firmware`)
+- `/app/team` — Team hub (replaces `/app/users` and `/app/roles`)
+
+Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
 
 ## Troubleshooting
 

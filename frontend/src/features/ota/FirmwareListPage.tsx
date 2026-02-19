@@ -18,7 +18,7 @@ function formatFileSize(bytes: number | null): string {
   return `${mb.toFixed(1)} MB`;
 }
 
-export default function FirmwareListPage() {
+export default function FirmwareListPage({ embedded }: { embedded?: boolean }) {
   const { data, isLoading } = useFirmwareVersions();
   const createMut = useCreateFirmware();
   const [showUpload, setShowUpload] = useState(false);
@@ -104,18 +104,24 @@ export default function FirmwareListPage() {
     }
   }
 
+  const actions = (
+    <Button onClick={() => setShowUpload(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      Add Firmware
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Firmware Versions"
-        description="Registered firmware binaries available for OTA deployment."
-        action={
-          <Button onClick={() => setShowUpload(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add Firmware
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Firmware Versions"
+          description="Registered firmware binaries available for OTA deployment."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <DataTable
         columns={columns}

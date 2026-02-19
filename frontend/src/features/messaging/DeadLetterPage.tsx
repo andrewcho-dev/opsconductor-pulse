@@ -47,7 +47,7 @@ function statusVariant(status: string): "secondary" | "destructive" | "default" 
   return "secondary";
 }
 
-export default function DeadLetterPage() {
+export default function DeadLetterPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("FAILED");
   const [offset, setOffset] = useState(0);
@@ -129,7 +129,7 @@ export default function DeadLetterPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Dead Letter Queue" description={`${total} messages`} />
+      {!embedded && <PageHeader title="Dead Letter Queue" description={`${total} messages`} />}
 
       <div className="flex items-center gap-2 flex-wrap">
         <Select

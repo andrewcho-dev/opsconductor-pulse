@@ -61,7 +61,7 @@ function RoleRow({
   );
 }
 
-export default function RolesPage() {
+export default function RolesPage({ embedded }: { embedded?: boolean }) {
   const { hasPermission } = usePermissions();
   const { data, isLoading, error, refetch } = useRoles();
   const deleteMutation = useDeleteRole();
@@ -91,18 +91,24 @@ export default function RolesPage() {
     setConfirmDeleteRole(role);
   };
 
+  const actions = (
+    <Button onClick={() => setCreateDialogOpen(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      Add Role
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Roles & Permissions"
-        description="Manage role bundles for your organization"
-        action={
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add Role
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Roles & Permissions"
+          description="Manage role bundles for your organization"
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       {error ? (
         <div className="text-destructive">Failed to load roles: {(error as Error).message}</div>

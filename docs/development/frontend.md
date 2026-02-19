@@ -11,6 +11,8 @@ sources:
   - frontend/src/index.css
   - frontend/src/components/shared/KpiCard.tsx
   - frontend/src/components/shared/illustrations.tsx
+  - frontend/src/features/home/HomePage.tsx
+  - frontend/src/features/alerts/AlertsHubPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -22,7 +24,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176]
 ---
 
 # Frontend
@@ -168,6 +170,74 @@ The `EmptyState` component now renders an SVG illustration by default instead of
 
 Hub pages (Alerts, Analytics, Updates, etc.) should use `variant="line"` for their tab navigation.
 
+## Hub Pages (Phase 176)
+
+Hub pages consolidate related standalone pages into a single page with tabbed navigation. Each hub:
+
+- Renders a `PageHeader` with the hub title
+- Uses `TabsList variant="line"` for primary-colored underline tabs
+- Stores active tab in URL via `useSearchParams` (`?tab=value`) for deep linking
+- Renders existing page components in `TabsContent` panels with the `embedded` prop
+
+### Hub page inventory
+
+| Hub | Route | Tabs |
+|-----|-------|------|
+| Alerts | `/alerts` | Inbox, Rules, Escalation, On-Call, Maintenance |
+| Analytics | `/analytics` | Explorer, Reports |
+| Updates | `/updates` | Campaigns, Firmware |
+| Notifications | `/notifications` | Channels, Delivery Log, Dead Letter |
+| Team | `/team` | Members, Roles |
+
+### `embedded` prop convention
+
+Page components that can be rendered inside a hub tab accept an optional `embedded?: boolean` prop. When `true`:
+
+- The page skips its own `PageHeader`
+- Action buttons render in a simple flex container instead
+- All other content (queries, tables, modals) remains unchanged
+
+### Creating a new hub page
+
+```tsx
+import { useSearchParams } from "react-router-dom";
+import { PageHeader } from "@/components/shared";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+export default function MyHubPage() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") ?? "default";
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Hub Title" description="Hub description" />
+      <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
+        <TabsList variant="line">
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1" className="mt-4">
+          <ExistingPage embedded />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+```
+
+## Navigation Structure (Phase 176)
+
+The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
+
+- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
+- **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
+- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub)
+- **Settings** — Notifications (hub), Team (hub), Billing, Integrations
+
+(\* conditional — hidden when dismissed)
+
+Old standalone routes redirect to their hub page with the appropriate `?tab=` parameter.
+
 ## UI Pattern Conventions
 
 Phase 145 standardizes UI usage patterns across the app. These are conventions (how components are used), not a restyling.
@@ -226,6 +296,8 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - Standalone "Back" buttons (use breadcrumbs).
 - "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
 - Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
+- Standalone sidebar items for pages that belong in a hub (use the hub's tab instead).
+- Rendering PageHeader when `embedded` prop is true (use conditional rendering).
 
 ## Mutation Feedback Conventions
 

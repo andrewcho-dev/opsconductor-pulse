@@ -85,7 +85,7 @@ function formatDuration(from: string, now: number) {
   return `${seconds}s`;
 }
 
-export default function AlertListPage() {
+export default function AlertListPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabKey>("ALL");
   const [search, setSearch] = useState("");
@@ -173,21 +173,25 @@ export default function AlertListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Alerts"
-        description="Professional inbox for real-time alert triage"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/alert-rules">Rules</Link>
-            </Button>
-          </div>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Alerts"
+          description="Professional inbox for real-time alert triage"
+          action={
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw
+                  className={`mr-1 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/alert-rules">Rules</Link>
+              </Button>
+            </div>
+          }
+        />
+      )}
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((item) => (

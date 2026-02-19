@@ -100,7 +100,7 @@ function makeColumns(
   ];
 }
 
-export default function AlertRulesPage() {
+export default function AlertRulesPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "customer_admin";
@@ -212,34 +212,34 @@ export default function AlertRulesPage() {
     return `${seconds}s`;
   }
 
+  const actions = isAdmin ? (
+    <>
+      <Button variant="outline" disabled={applyingDefaults} onClick={handleAddAllDefaults}>
+        {applyingDefaults ? "Applying..." : "Add All Defaults"}
+      </Button>
+      <Button
+        onClick={() => {
+          setEditingRule(null);
+          setDialogOpen(true);
+        }}
+      >
+        <Plus className="mr-1 h-4 w-4" />
+        Add Rule
+      </Button>
+    </>
+  ) : null;
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Alert Rules"
-        description={description}
-        action={
-          isAdmin ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                disabled={applyingDefaults}
-                onClick={handleAddAllDefaults}
-              >
-                {applyingDefaults ? "Applying..." : "Add All Defaults"}
-              </Button>
-              <Button
-                onClick={() => {
-                  setEditingRule(null);
-                  setDialogOpen(true);
-                }}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Add Rule
-              </Button>
-            </div>
-          ) : undefined
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Alert Rules"
+          description={description}
+          action={actions ? <div className="flex items-center gap-2">{actions}</div> : undefined}
+        />
+      ) : actions ? (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      ) : null}
 
       {error ? (
         <div className="text-destructive">

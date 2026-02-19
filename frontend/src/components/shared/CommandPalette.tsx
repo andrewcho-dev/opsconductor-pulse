@@ -11,18 +11,15 @@ import {
 } from "@/components/ui/command";
 import {
   Activity,
+  Home,
   Bell,
   Building2,
-  CalendarOff,
   Clock,
   Cpu,
   CreditCard,
   Gauge,
   Layers,
   LayoutDashboard,
-  ScrollText,
-  Shield,
-  ShieldAlert,
   Users,
   Webhook,
 } from "lucide-react";
@@ -137,7 +134,7 @@ export function CommandPalette() {
 
   const pages = useMemo(
     () => [
-      { label: "Home", href: "/", icon: LayoutDashboard },
+      { label: "Home", href: "/home", icon: Home },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Devices", href: "/devices", icon: Cpu },
       { label: "Sites", href: "/sites", icon: Building2 },
@@ -145,22 +142,13 @@ export function CommandPalette() {
       { label: "Fleet Map", href: "/map", icon: Layers },
       { label: "Device Groups", href: "/device-groups", icon: Layers },
       { label: "Alerts", href: "/alerts", icon: Bell },
-      { label: "Alert Rules", href: "/alert-rules", icon: ShieldAlert },
-      { label: "Escalation Policies", href: "/escalation-policies", icon: ShieldAlert },
       { label: "Notifications", href: "/notifications", icon: Webhook },
-      { label: "On-Call", href: "/oncall", icon: Users },
-      { label: "Maintenance Windows", href: "/maintenance-windows", icon: CalendarOff },
       { label: "Analytics", href: "/analytics", icon: Gauge },
-      { label: "Reports", href: "/reports", icon: ScrollText },
-      { label: "OTA Campaigns", href: "/ota/campaigns", icon: Activity },
-      { label: "Firmware", href: "/ota/firmware", icon: Activity },
-      { label: "Delivery Log", href: "/delivery-log", icon: Activity },
-      { label: "Subscription", href: "/subscription", icon: CreditCard },
+      { label: "Updates", href: "/updates", icon: Activity },
       { label: "Billing", href: "/billing", icon: CreditCard },
       { label: "Profile", href: "/settings/profile", icon: Users },
       { label: "Organization", href: "/settings/organization", icon: Building2 },
-      { label: "Users", href: "/users", icon: Users },
-      { label: "Roles", href: "/roles", icon: Shield },
+      { label: "Team", href: "/team", icon: Users },
       { label: "Getting Started", href: "/fleet/getting-started", icon: Activity },
     ],
     []

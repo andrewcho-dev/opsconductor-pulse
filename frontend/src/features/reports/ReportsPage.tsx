@@ -24,7 +24,7 @@ function formatDuration(start: string, end: string | null): string {
   return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
 
-export default function ReportsPage() {
+export default function ReportsPage({ embedded }: { embedded?: boolean }) {
   const [exportingDevices, setExportingDevices] = useState(false);
   const [exportingAlerts, setExportingAlerts] = useState(false);
 
@@ -103,7 +103,9 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Reports" description="Exports, SLA summaries, and report history." />
+      {!embedded && (
+        <PageHeader title="Reports" description="Exports, SLA summaries, and report history." />
+      )}
 
       <Card>
         <CardHeader>

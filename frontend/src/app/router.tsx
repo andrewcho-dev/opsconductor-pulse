@@ -3,6 +3,12 @@ import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import GettingStartedPage from "@/features/fleet/GettingStartedPage";
+import HomePage from "@/features/home/HomePage";
+import AlertsHubPage from "@/features/alerts/AlertsHubPage";
+import AnalyticsHubPage from "@/features/analytics/AnalyticsHubPage";
+import UpdatesHubPage from "@/features/ota/UpdatesHubPage";
+import NotificationsHubPage from "@/features/notifications/NotificationsHubPage";
+import TeamHubPage from "@/features/users/TeamHubPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
@@ -10,15 +16,8 @@ import { SensorListPage } from "@/features/devices/SensorListPage";
 import FleetMapPage from "@/features/map/FleetMapPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
-import AlertListPage from "@/features/alerts/AlertListPage";
-import AlertRulesPage from "@/features/alerts/AlertRulesPage";
-import MaintenanceWindowsPage from "@/features/alerts/MaintenanceWindowsPage";
-import EscalationPoliciesPage from "@/features/escalation/EscalationPoliciesPage";
-import NotificationChannelsPage from "@/features/notifications/NotificationChannelsPage";
-import OncallSchedulesPage from "@/features/oncall/OncallSchedulesPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
-import SubscriptionPage from "@/features/subscription/SubscriptionPage";
 import RenewalPage from "@/features/subscription/RenewalPage";
 import OperatorDashboard from "@/features/operator/OperatorDashboard";
 import OperatorDevices from "@/features/operator/OperatorDevices";
@@ -38,31 +37,23 @@ import NOCPage from "@/features/operator/noc/NOCPage";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
 import CertificateOverviewPage from "@/features/operator/CertificateOverviewPage";
-import UsersPage from "@/features/users/UsersPage";
-import RolesPage from "@/features/roles/RolesPage";
 import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
 import TemplateListPage from "@/features/templates/TemplateListPage";
 import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
-import DeliveryLogPage from "@/features/delivery/DeliveryLogPage";
-import DeadLetterPage from "@/features/messaging/DeadLetterPage";
-import ReportsPage from "@/features/reports/ReportsPage";
 import JobsPage from "@/features/jobs/JobsPage";
-import OtaCampaignsPage from "@/features/ota/OtaCampaignsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
-import FirmwareListPage from "@/features/ota/FirmwareListPage";
 import ProfilePage from "@/features/settings/ProfilePage";
 import OrganizationPage from "@/features/settings/OrganizationPage";
 import BillingPage from "@/features/settings/BillingPage";
 import CarrierIntegrationsPage from "@/features/settings/CarrierIntegrationsPage";
-import AnalyticsPage from "@/features/analytics/AnalyticsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { usePermissions } from "@/services/auth";
 
 function HomeRedirect() {
   const { isOperator } = useAuth();
-  return <Navigate to={isOperator ? "/operator" : "/dashboard"} replace />;
+  return <Navigate to={isOperator ? "/operator" : "/home"} replace />;
 }
 
 function RequireOperator() {
@@ -100,7 +91,12 @@ export const router = createBrowserRouter(
         {
           element: <RequireCustomer />,
           children: [
+            { path: "home", element: <HomePage /> },
             { path: "dashboard", element: <DashboardPage /> },
+            { path: "alerts", element: <AlertsHubPage /> },
+            { path: "analytics", element: <AnalyticsHubPage /> },
+            { path: "updates", element: <UpdatesHubPage /> },
+            { path: "notifications", element: <NotificationsHubPage /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
             { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
@@ -114,27 +110,24 @@ export const router = createBrowserRouter(
             { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <FleetMapPage /> },
-            { path: "alerts", element: <AlertListPage /> },
-            { path: "alert-rules", element: <AlertRulesPage /> },
-            { path: "maintenance-windows", element: <MaintenanceWindowsPage /> },
-            { path: "escalation-policies", element: <EscalationPoliciesPage /> },
-            { path: "notifications", element: <NotificationChannelsPage /> },
-            { path: "oncall", element: <OncallSchedulesPage /> },
+            { path: "alert-rules", element: <Navigate to="/alerts?tab=rules" replace /> },
+            { path: "escalation-policies", element: <Navigate to="/alerts?tab=escalation" replace /> },
+            { path: "oncall", element: <Navigate to="/alerts?tab=oncall" replace /> },
+            { path: "maintenance-windows", element: <Navigate to="/alerts?tab=maintenance" replace /> },
             { path: "integrations", element: <Navigate to="/notifications" replace /> },
             { path: "integrations/*", element: <Navigate to="/notifications" replace /> },
             { path: "customer/integrations", element: <Navigate to="/notifications" replace /> },
             { path: "customer/integrations/*", element: <Navigate to="/notifications" replace /> },
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
-            { path: "delivery-log", element: <DeliveryLogPage /> },
-            { path: "dead-letter", element: <DeadLetterPage /> },
+            { path: "delivery-log", element: <Navigate to="/notifications?tab=delivery" replace /> },
+            { path: "dead-letter", element: <Navigate to="/notifications?tab=dead-letter" replace /> },
             { path: "jobs", element: <JobsPage /> },
-            { path: "ota/campaigns", element: <OtaCampaignsPage /> },
+            { path: "ota/campaigns", element: <Navigate to="/updates?tab=campaigns" replace /> },
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
-            { path: "ota/firmware", element: <FirmwareListPage /> },
-            { path: "reports", element: <ReportsPage /> },
-            { path: "analytics", element: <AnalyticsPage /> },
-            { path: "subscription", element: <SubscriptionPage /> },
+            { path: "ota/firmware", element: <Navigate to="/updates?tab=firmware" replace /> },
+            { path: "reports", element: <Navigate to="/analytics?tab=reports" replace /> },
+            { path: "subscription", element: <Navigate to="/billing" replace /> },
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "settings/profile", element: <ProfilePage /> },
             { path: "settings/organization", element: <OrganizationPage /> },
@@ -144,11 +137,11 @@ export const router = createBrowserRouter(
         },
         {
           element: <RequirePermission permission="users.read" />,
-          children: [{ path: "users", element: <UsersPage /> }],
-        },
-        {
-          element: <RequirePermission permission="users.roles" />,
-          children: [{ path: "roles", element: <RolesPage /> }],
+          children: [
+            { path: "team", element: <TeamHubPage /> },
+            { path: "users", element: <Navigate to="/team" replace /> },
+            { path: "roles", element: <Navigate to="/team?tab=roles" replace /> },
+          ],
         },
         // Operator routes
         {

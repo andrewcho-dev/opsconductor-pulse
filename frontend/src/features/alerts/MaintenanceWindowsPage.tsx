@@ -77,7 +77,7 @@ function toFormState(window?: MaintenanceWindow | null): FormState {
   };
 }
 
-export default function MaintenanceWindowsPage() {
+export default function MaintenanceWindowsPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ["maintenance-windows"],
@@ -173,13 +173,19 @@ export default function MaintenanceWindowsPage() {
     }
   }
 
+  const actions = <Button onClick={handleOpenCreate}>Add Window</Button>;
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Maintenance Windows"
-        description="Suppress alerts during planned maintenance."
-        action={<Button onClick={handleOpenCreate}>Add Window</Button>}
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Maintenance Windows"
+          description="Suppress alerts during planned maintenance."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <Card>
         <CardContent className="pt-6">
