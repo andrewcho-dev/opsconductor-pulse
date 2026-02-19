@@ -31,6 +31,7 @@ export interface ProvisionDeviceRequest {
   device_type: string;
   site_id?: string;
   tags?: string[];
+  template_id?: number;
 }
 
 export interface ProvisionDeviceResponse {
@@ -211,6 +212,7 @@ export async function provisionDevice(
     {
       device_id: deviceId,
       site_id: req.site_id || "default-site",
+      template_id: req.template_id ?? null,
     }
   );
 

@@ -23,6 +23,7 @@ export function Step3Provision({ deviceData, onSuccess, onBack }: Step3Provision
       const creds = await provisionDevice({
         name: deviceData.name,
         device_type: deviceData.device_type,
+        template_id: deviceData.template_id,
         site_id: deviceData.site_id,
         tags: deviceData.tags,
       });

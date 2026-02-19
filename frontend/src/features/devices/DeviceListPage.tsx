@@ -206,7 +206,13 @@ export default function DeviceListPage() {
                     <div className="mt-1 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground">
-                          {device.model || "unknown-type"}
+                          {(
+                            device.template?.name ??
+                            device.template_name ??
+                            (device as any).device_type ??
+                            device.model ??
+                            "—"
+                          )}
                         </span>
                         {device.plan_id ? (
                           <Badge variant="outline" className="h-5 text-xs">

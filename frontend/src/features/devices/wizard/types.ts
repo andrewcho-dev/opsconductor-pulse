@@ -1,6 +1,7 @@
 export type DeviceDetailsData = {
   name: string;
   device_type: string;
+  template_id?: number;
   site_id?: string;
 };
 

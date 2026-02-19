@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
   - compose/nats/init-streams.sh
-phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165, 172]
+phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165, 172, 173]
 ---
 
 # ingest

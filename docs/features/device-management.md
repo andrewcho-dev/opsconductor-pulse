@@ -21,7 +21,7 @@ sources:
   - frontend/src/features/templates/TemplateListPage.tsx
   - frontend/src/features/templates/TemplateDetailPage.tsx
   - frontend/src/services/api/templates.ts
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170, 171, 172]
+phases: [166, 167, 168, 169, 170, 171, 172, 173]
 ---
 
 # Device Management

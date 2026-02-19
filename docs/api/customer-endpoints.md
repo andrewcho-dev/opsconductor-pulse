@@ -26,7 +26,7 @@ sources:
   - services/ui_iot/routes/message_routing.py
   - services/ui_iot/routes/operator.py
   - services/ingest_iot/ingest.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 168, 169, 172]
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 166, 167, 168, 169, 170, 171, 172, 173]
 ---
 
 # Customer API Endpoints

@@ -22,7 +22,7 @@ sources:
   - db/migrations/111_device_modules.sql
   - db/migrations/112_device_sensors_transports.sql
   - db/migrations/113_device_registry_template_fk.sql
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172]
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173]
 ---
 
 # System Architecture

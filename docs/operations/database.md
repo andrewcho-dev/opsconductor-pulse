@@ -8,7 +8,9 @@ sources:
   - db/migrations/111_device_modules.sql
   - db/migrations/112_device_sensors_transports.sql
   - db/migrations/113_device_registry_template_fk.sql
-phases: [20, 21, 34, 137, 142, 160, 163, 165, 166, 167]
+  - db/migrations/114_migrate_existing_devices.sql
+  - db/migrations/115_deprecate_legacy_tables.sql
+phases: [20, 21, 34, 137, 142, 160, 163, 165, 166, 167, 173]
 ---
 
 # Database
@@ -60,7 +62,7 @@ High-level table groupings:
 
 - `telemetry` hypertable (time-series)
 - `quarantine_events`
-- Supporting telemetry catalog/normalization tables (metric catalog/mappings)
+- Supporting telemetry catalog/normalization tables (legacy metric catalog/mappings; deprecated in Phase 173)
 
 ### Subscription & Billing Tables
 
@@ -144,7 +146,12 @@ psql "$DATABASE_URL" -f db/migrations/NNN_name.sql
 
 ### Migration Index
 
-There are 84 migration files in `db/migrations/`:
+`db/migrate.py` applies all `db/migrations/*.sql` in numeric order. Recent migrations for the unified device template model:
+
+- `109`–`110`: template tables + seeds
+- `111`–`113`: device instance tables + registry FKs
+- `114`: catch-up data migration (legacy sensors/connections + template assignment)
+- `115`: legacy table deprecation via `_deprecated_*` renames + backward-compat views
 
 | Version | Filename |
 |---------|----------|
