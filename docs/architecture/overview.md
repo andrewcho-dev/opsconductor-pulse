@@ -13,7 +13,9 @@ sources:
   - compose/emqx/emqx.conf
   - compose/nats/nats.conf
   - compose/nats/init-streams.sh
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165]
+  - db/migrations/109_device_templates.sql
+  - db/migrations/110_seed_device_templates.sql
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166]
 ---
 
 # System Architecture
@@ -166,6 +168,26 @@ Lifecycle process for subscriptions (renewal notifications and state transitions
 ### provision_api (Device Provisioning)
 
 Standalone provisioning API (separate FastAPI service) for device registration and activation flows.
+
+## Device Template Model (Phase 166)
+
+Templates define device *capability*; instances define device *reality*.
+
+- System templates: `tenant_id IS NULL`, `is_locked = true`, `source = 'system'`
+  - Visible to all tenants
+  - Not editable by tenant-scoped application roles (enforced by RLS)
+- Tenant templates: `tenant_id = <tenant>`, `source = 'tenant'`
+  - Private to the owning tenant
+
+Template hierarchy:
+
+- `device_templates` — device type definition
+- `template_metrics` — what this device type can measure
+- `template_commands` — what commands this device type accepts
+- `template_slots` — expansion ports / bus interfaces for module assignment
+  - `compatible_templates` constrains which expansion module templates can be assigned to a slot
+
+Both MQTT and HTTP ingestion flows use the same backend pipeline regardless of whether a device's template is system-defined or tenant-defined.
 
 ## Infrastructure
 

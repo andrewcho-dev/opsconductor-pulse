@@ -3,7 +3,9 @@ last-verified: 2026-02-19
 sources:
   - db/migrate.py
   - db/migrations/
-phases: [20, 21, 34, 137, 142, 160, 163, 165]
+  - db/migrations/109_device_templates.sql
+  - db/migrations/110_seed_device_templates.sql
+phases: [20, 21, 34, 137, 142, 160, 163, 165, 166]
 ---
 
 # Database
@@ -68,6 +70,28 @@ High-level table groupings:
 - Notification routing tables (`notification_channels`, `notification_routing_rules`, `notification_log`)
 - Message routing and DLQ tables
 - Legacy delivery retention tables (no longer used for active delivery)
+
+### Device Template Tables (Phase 166)
+
+Unified device template model tables:
+
+- `device_templates` — device type definitions (system or tenant-owned).
+  - `tenant_id` is nullable. `NULL` means system template visible to all tenants.
+  - `is_locked=true` indicates system templates are not editable by tenants.
+  - `source` is `system` or `tenant`.
+  - `category` distinguishes gateways vs expansion modules vs other device types.
+- `template_metrics` — metric definitions per template (what the device type can measure).
+  - `is_required` can be used to auto-create instance sensors at provisioning time (Phase 167+).
+- `template_commands` — command definitions per template (what the device type can accept).
+  - `parameters_schema` supports JSON Schema for parameters.
+- `template_slots` — expansion ports / bus interfaces per template.
+  - `interface_type` covers wired (analog, rs485, i2c, spi, 1-wire, gpio, usb) and wireless (fsk, ble, lora).
+  - `compatible_templates` constrains which expansion module templates can be assigned to a slot.
+
+RLS note:
+
+- `device_templates` has a special RLS policy to allow tenant reads of system templates (`tenant_id IS NULL`) in addition to tenant-owned templates.
+- Child tables (`template_metrics`, `template_commands`, `template_slots`) use `EXISTS (...)` subqueries joining through `device_templates` since RLS does not cascade across FKs.
 
 ### User & Auth Tables
 
@@ -188,6 +212,8 @@ There are 84 migration files in `db/migrations/`:
 | 096 | 096_tenant_profile.sql |
 | 097 | 097_device_tiers.sql |
 | 098 | 098_fix_customer_viewer_bootstrap.sql |
+| 109 | 109_device_templates.sql |
+| 110 | 110_seed_device_templates.sql |
 
 ## TimescaleDB
 
