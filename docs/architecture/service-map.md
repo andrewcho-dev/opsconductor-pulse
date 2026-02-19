@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
-phases: [88, 98, 138, 139, 142, 161, 162]
+phases: [88, 98, 138, 139, 142, 161, 162, 163]
 ---
 
 # Service Map
@@ -19,6 +19,12 @@ High-level routing:
 - All application paths (`/app/*`, `/customer/*`, `/operator/*`, `/api/v2/*`, `/ingest/*`) route to `ui_iot`.
 - Devices publish telemetry to EMQX MQTT (external TLS port 8883) which is bridged into NATS JetStream and consumed by `ingest_iot`.
 - EMQX uses internal `ui_iot` endpoints for CONNECT auth and per-topic ACL enforcement (`/api/v1/internal/*`).
+
+## Kubernetes View (Phase 163)
+
+- Helm chart: `helm/pulse/`
+- Deploys first-class Deployments for app services and uses subcharts for EMQX/NATS/PostgreSQL (optional).
+- Health/readiness probes rely on `/health` and `/ready` endpoints per service.
 
 ## Port Reference
 
@@ -59,8 +65,8 @@ High-level routing:
 
 Telemetry ingestion:
 
-1. Device → EMQX (MQTT/TLS) → `ingest_iot`
-2. `ingest_iot` → TimescaleDB telemetry hypertable (via asyncpg)
+1. Device → EMQX (MQTT/TLS) → `mqtt-nats-bridge` → NATS JetStream
+2. `ingest_iot` consumes from JetStream → TimescaleDB telemetry hypertable (via asyncpg)
 3. `evaluator_iot` polls telemetry → updates device state + creates/updates/closes alerts
 4. `ui_iot` serves the UI and exposes APIs to view devices/telemetry/alerts
 

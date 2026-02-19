@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pulse.fullname" . }}-route-delivery
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: route-delivery
+spec:
+  replicas: {{ .Values.routeDelivery.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: route-delivery
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: route-delivery
+    spec:
+      containers:
+        - name: route-delivery
+          image: "{{ .Values.routeDelivery.image.repository }}:{{ .Values.routeDelivery.image.tag }}"
+          env:
+            - name: NATS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "pulse.fullname" . }}-config
+                  key: NATS_URL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pulse-db-secret
+                  key: url
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            {{- toYaml .Values.routeDelivery.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+

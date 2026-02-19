@@ -63,6 +63,8 @@ COUNTERS = {
     "last_evaluation_at": None,
 }
 
+_POOL_READY = False
+
 # In-memory sliding window buffer for WINDOW rules.
 # Key: (device_id, rule_id) -> deque of (timestamp: float, value: float)
 _window_buffers: dict[tuple[str, str], deque] = {}
@@ -94,6 +96,12 @@ async def health_handler(request):
     )
 
 
+async def ready_handler(_request):
+    if _POOL_READY:
+        return web.json_response({"status": "ready"})
+    return web.json_response({"status": "not_ready"}, status=503)
+
+
 async def metrics_handler(_request):
     return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
 
@@ -101,6 +109,7 @@ async def metrics_handler(_request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
     app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
@@ -169,6 +178,7 @@ async def health_handler(request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
     app.router.add_get("/metrics", metrics_handler)
     runner = web.AppRunner(app)
     await runner.setup()
@@ -1216,6 +1226,8 @@ async def main():
 
     async with pool.acquire() as conn:
         await ensure_schema(conn)
+    global _POOL_READY
+    _POOL_READY = True
     await start_health_server()
     audit = init_audit_logger(pool, "evaluator")
     await audit.start()

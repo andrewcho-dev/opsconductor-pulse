@@ -1,11 +1,11 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/.env
   - compose/.env.example
   - compose/caddy/Caddyfile
-phases: [114, 115, 139, 142]
+phases: [114, 115, 139, 142, 161, 162, 163]
 ---
 
 # Deployment
@@ -33,9 +33,10 @@ Access:
 
 Key services in `compose/docker-compose.yml`:
 
-- Edge: `caddy`, `mqtt` (Mosquitto)
+- Edge: `caddy`, `mqtt` (EMQX)
 - Identity: `keycloak`, `keycloak-db-init`
 - Data: `postgres` (TimescaleDB), `pgbouncer`, `migrator`
+- Messaging: `nats` (JetStream), `mqtt-nats-bridge`, `route-delivery`
 - Core services: `ui`, `ingest`, `evaluator`, `ops_worker`, `subscription-worker`, `api` (provision_api)
 - Observability: `prometheus`, `grafana`
 - Dev helper: `mailpit` (profile `dev`)
@@ -78,6 +79,22 @@ Source of truth for required `.env` keys is `compose/.env.example`.
 | `GRAFANA_ADMIN_PASSWORD` | Grafana admin password. |
 
 ## TLS Configuration
+
+## Kubernetes (Helm)
+
+The Kubernetes deployment artifacts live under `helm/pulse/`. Docker Compose is still the recommended local dev environment.
+
+```bash
+helm dependency update helm/pulse
+helm upgrade --install pulse helm/pulse \
+  --namespace pulse --create-namespace \
+  -f helm/pulse/values.yaml
+```
+
+See:
+
+- `docs/operations/kubernetes.md`
+- `docs/operations/managed-postgres.md`
 
 Caddy terminates TLS for both the UI/API and Keycloak using an internal/self-signed CA by default.
 

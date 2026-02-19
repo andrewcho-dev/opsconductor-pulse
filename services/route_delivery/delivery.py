@@ -15,6 +15,7 @@ import hmac as hmac_mod
 import httpx
 import nats
 import asyncpg
+from aiohttp import web
 
 logger = logging.getLogger("route_delivery")
 logging.basicConfig(
@@ -244,10 +245,31 @@ class RouteDeliveryService:
             extra={"delivered": self.delivered, "failed": self.failed},
         )
 
+    async def _start_health_server(self):
+        app = web.Application()
+
+        async def health_handler(_request):
+            return web.json_response(
+                {"status": "ok", "delivered": self.delivered, "failed": self.failed}
+            )
+
+        async def ready_handler(_request):
+            if self._nc and self._nc.is_connected and self._pool:
+                return web.json_response({"status": "ready"})
+            return web.json_response({"status": "not_ready"}, status=503)
+
+        app.router.add_get("/health", health_handler)
+        app.router.add_get("/ready", ready_handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", 8080)
+        await site.start()
+
     async def run(self):
         await self.init_db()
         await self.init_nats()
         await self.init_mqtt()
+        await self._start_health_server()
 
         self._workers = []
         for i in range(WORKER_COUNT):

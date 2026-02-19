@@ -1,7 +1,7 @@
 ---
-last-verified: 2026-02-18
+last-verified: 2026-02-19
 sources: []
-phases: [142, 143, 144, 145, 146, 147, 148]
+phases: [142, 143, 144, 145, 146, 147, 148, 163]
 ---
 
 # OpsConductor-Pulse Documentation
@@ -45,6 +45,8 @@ phases: [142, 143, 144, 145, 146, 147, 148]
 ## Operations
 
 - [Deployment](operations/deployment.md) — Docker Compose setup, env vars, production checklist
+- [Kubernetes](operations/kubernetes.md) — Helm chart deployment guide
+- [Managed PostgreSQL](operations/managed-postgres.md) — Managed DB migration path
 - [Runbook](operations/runbook.md) — Troubleshooting, common issues, recovery procedures
 - [Database](operations/database.md) — Migrations, schema overview, backup/restore
 - [Monitoring](operations/monitoring.md) — Prometheus, Grafana, health endpoints, dashboards

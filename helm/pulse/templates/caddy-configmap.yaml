@@ -1,0 +1,14 @@
+{{- if .Values.caddy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pulse.fullname" . }}-caddy
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+data:
+  Caddyfile: |
+    :443 {
+      reverse_proxy {{ include "pulse.fullname" . }}-ui:80
+    }
+{{- end }}
+

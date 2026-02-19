@@ -197,6 +197,23 @@ async def health_handler(request):
     )
 
 
+async def ready_handler(_request):
+    """
+    Readiness check.
+    Returns 200 only when NATS + DB pool + batch writer are initialized.
+    """
+    ing = INGESTOR_REF
+    if ing is None:
+        return web.json_response({"status": "not_ready"}, status=503)
+    if not (getattr(ing, "_nc", None) and ing._nc.is_connected):
+        return web.json_response({"status": "not_ready", "reason": "nats"}, status=503)
+    if ing.pool is None:
+        return web.json_response({"status": "not_ready", "reason": "db_pool"}, status=503)
+    if ing.batch_writer is None:
+        return web.json_response({"status": "not_ready", "reason": "batch_writer"}, status=503)
+    return web.json_response({"status": "ready"})
+
+
 async def metrics_handler(_request):
     return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
 
@@ -628,6 +645,7 @@ async def device_get_job_execution(request: web.Request):
 async def start_health_server():
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/ready", ready_handler)
     app.router.add_get("/metrics", metrics_handler)
     app.router.add_get("/device/v1/shadow", device_get_shadow)
     app.router.add_post("/device/v1/shadow/reported", device_report_shadow)
