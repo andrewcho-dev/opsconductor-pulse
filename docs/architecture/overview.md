@@ -4,6 +4,7 @@ sources:
   - services/ui_iot/app.py
   - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/internal.py
+  - services/ui_iot/routes/templates.py
   - services/evaluator_iot/evaluator.py
   - services/ingest_iot/ingest.py
   - services/ops_worker/main.py
@@ -18,7 +19,7 @@ sources:
   - db/migrations/111_device_modules.sql
   - db/migrations/112_device_sensors_transports.sql
   - db/migrations/113_device_registry_template_fk.sql
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167]
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165, 166, 167, 168]
 ---
 
 # System Architecture
@@ -181,6 +182,12 @@ Templates define device *capability*; instances define device *reality*.
   - Not editable by tenant-scoped application roles (enforced by RLS)
 - Tenant templates: `tenant_id = <tenant>`, `source = 'tenant'`
   - Private to the owning tenant
+
+API access control (Phase 168):
+
+- Tenants can create/update/delete their own templates via `/api/v1/customer/templates`, but cannot modify system templates.
+- Operators can manage templates cross-tenant via `/api/v1/operator/templates` (RLS bypass via `operator_connection()`), including locked system templates.
+- Tenants can clone templates into an editable tenant-owned copy via `POST /api/v1/customer/templates/{template_id}/clone`.
 
 Template hierarchy:
 

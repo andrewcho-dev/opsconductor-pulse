@@ -31,6 +31,7 @@ from routes.operator import router as operator_router
 from routes.dashboards import router as dashboards_router
 from routes.sensors import router as sensors_router
 from routes.carrier import router as carrier_router
+from routes.templates import router as templates_router
 from routes.analytics import router as analytics_router
 from routes.internal import router as internal_router
 from routes.system import (
@@ -362,6 +363,7 @@ app.include_router(customer_router)
 app.include_router(dashboards_router)
 app.include_router(sensors_router)
 app.include_router(carrier_router)
+app.include_router(templates_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(analytics_router)

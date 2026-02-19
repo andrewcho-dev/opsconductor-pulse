@@ -8,9 +8,10 @@ sources:
   - services/ui_iot/routes/ingest.py
   - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/operator.py
+  - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168]
 ---
 
 # ui-iot
@@ -174,6 +175,13 @@ Sync worker notes:
 
 - The carrier sync worker updates `device_connections.data_used_mb` and also syncs `sim_status` and `network_status` when device info is available.
 - Bulk usage optimization is supported via `CarrierProvider.get_bulk_usage()`. For Hologram this uses a single org-level call and aggregates usage per device.
+
+## Template Management
+
+Device template CRUD and sub-resource management is implemented in:
+
+- Customer routes: `services/ui_iot/routes/templates.py`
+- Router registration: `services/ui_iot/app.py` (`app.include_router(templates_router)`)
 
 ## Troubleshooting
 

@@ -44,13 +44,13 @@ services:
   minio:
     image: minio/minio:latest
     container_name: iot-minio
-    command: server /data --console-address ":9090"
+    command: server /data --console-address ":9091"
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
     ports:
       - "127.0.0.1:9000:9000"   # S3 API
-      - "127.0.0.1:9090:9090"   # Console
+      - "127.0.0.1:9091:9091"   # Console (9091 to avoid conflict with Prometheus on 9090)
     volumes:
       - minio-data:/data
     healthcheck:

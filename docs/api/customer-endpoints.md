@@ -17,12 +17,13 @@ sources:
   - services/ui_iot/routes/preferences.py
   - services/ui_iot/routes/billing.py
   - services/ui_iot/routes/carrier.py
+  - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/organization.py
   - services/ui_iot/routes/certificates.py
   - services/ui_iot/routes/analytics.py
   - services/ui_iot/routes/message_routing.py
   - services/ui_iot/routes/operator.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158]
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158, 168]
 ---
 
 # Customer API Endpoints
@@ -118,6 +119,33 @@ Maintenance windows:
 - `POST /api/v1/customer/maintenance-windows`
 - `PATCH /api/v1/customer/maintenance-windows/{window_id}`
 - `DELETE /api/v1/customer/maintenance-windows/{window_id}`
+
+## Device Templates
+
+Base prefix: `/api/v1/customer`
+
+- `GET /api/v1/customer/templates` — list templates visible to tenant (system + own)
+  - Query: `category`, `source`, `search`
+- `GET /api/v1/customer/templates/{template_id}` — get full template with sub-resources
+- `POST /api/v1/customer/templates` — create tenant template
+- `PUT /api/v1/customer/templates/{template_id}` — update own template (403 if locked/system)
+- `DELETE /api/v1/customer/templates/{template_id}` — delete own template (409 if devices using it)
+- `POST /api/v1/customer/templates/{template_id}/clone` — clone a template into a tenant-owned copy
+
+Sub-resources:
+
+- Metrics:
+  - `POST /api/v1/customer/templates/{template_id}/metrics`
+  - `PUT /api/v1/customer/templates/{template_id}/metrics/{metric_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/metrics/{metric_id}`
+- Commands:
+  - `POST /api/v1/customer/templates/{template_id}/commands`
+  - `PUT /api/v1/customer/templates/{template_id}/commands/{command_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/commands/{command_id}`
+- Slots:
+  - `POST /api/v1/customer/templates/{template_id}/slots`
+  - `PUT /api/v1/customer/templates/{template_id}/slots/{slot_id}`
+  - `DELETE /api/v1/customer/templates/{template_id}/slots/{slot_id}`
 
 ## Carrier
 
