@@ -47,12 +47,14 @@ def topic_extract(topic: str) -> tuple[str | None, str | None, str | None]:
 class Bridge:
     def __init__(self):
         self._nc = None
+        self._js = None
         self._loop = None
         self._shutdown = asyncio.Event()
         self._mqtt = None
 
     async def init_nats(self):
         self._nc = await nats.connect(NATS_URL)
+        self._js = self._nc.jetstream()
         logger.info("nats_connected", extra={"url": NATS_URL})
 
     def _on_connect(self, client, userdata, flags, rc):
@@ -91,8 +93,15 @@ class Bridge:
         }
 
         if self._loop:
+            if not self._js:
+                logger.warning("jetstream_not_ready")
+                return
             asyncio.run_coroutine_threadsafe(
-                self._nc.publish(subject, json.dumps(envelope, default=str).encode()),
+                self._js.publish(
+                    subject,
+                    json.dumps(envelope, default=str).encode(),
+                    timeout=1.0,
+                ),
                 self._loop,
             )
 

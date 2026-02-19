@@ -98,7 +98,11 @@ async def ingest_single(
 
     if not hasattr(request.app.state, "get_nats"):
         raise HTTPException(status_code=503, detail="NATS not configured")
-    nc = await request.app.state.get_nats()
+    try:
+        nc = await request.app.state.get_nats()
+    except Exception as e:
+        logger.error("nats_connect_error", extra={"error": str(e)})
+        raise HTTPException(status_code=503, detail="Ingestion temporarily unavailable")
     if nc is None:
         raise HTTPException(status_code=503, detail="NATS unavailable")
 
@@ -117,7 +121,12 @@ async def ingest_single(
     ).encode()
 
     try:
-        await nc.publish(f"telemetry.{tenant_id}", envelope)
+        js = nc.jetstream()
+        await js.publish(
+            f"telemetry.{tenant_id}",
+            envelope,
+            timeout=1.0,
+        )
     except Exception as e:
         logger.error("nats_publish_error", extra={"error": str(e)})
         raise HTTPException(status_code=503, detail="Ingestion temporarily unavailable")
@@ -148,7 +157,11 @@ async def ingest_batch(request: Request, batch: BatchRequest):
 
     if not hasattr(request.app.state, "get_nats"):
         raise HTTPException(status_code=503, detail="NATS not configured")
-    nc = await request.app.state.get_nats()
+    try:
+        nc = await request.app.state.get_nats()
+    except Exception as e:
+        logger.error("nats_connect_error", extra={"error": str(e)})
+        raise HTTPException(status_code=503, detail="Ingestion temporarily unavailable")
     if nc is None:
         raise HTTPException(status_code=503, detail="NATS unavailable")
 
@@ -184,7 +197,12 @@ async def ingest_batch(request: Request, batch: BatchRequest):
         ).encode()
 
         try:
-            await nc.publish(f"telemetry.{msg.tenant_id}", envelope)
+            js = nc.jetstream()
+            await js.publish(
+                f"telemetry.{msg.tenant_id}",
+                envelope,
+                timeout=1.0,
+            )
             accepted += 1
             results.append(
                 BatchResultItem(index=idx, status="accepted", device_id=msg.device_id)

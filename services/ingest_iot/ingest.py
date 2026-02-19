@@ -793,6 +793,16 @@ async def _set_tenant_write_context(conn: asyncpg.Connection, tenant_id: str | N
     )
 
 
+async def _set_service_write_context(conn: asyncpg.Connection) -> None:
+    """
+    Set DB role for internal service writes.
+
+    Some debug/audit tables (e.g. quarantine) have RLS policies that only allow
+    writes from the service role.
+    """
+    await conn.execute("SET LOCAL ROLE iot")
+
+
 class Ingestor:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
@@ -1180,7 +1190,7 @@ class Ingestor:
         assert self.pool is not None
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                await _set_tenant_write_context(conn, tenant_id)
+                await _set_service_write_context(conn)
                 await conn.execute(
                     """
                     INSERT INTO quarantine_counters_minute (bucket_minute, tenant_id, reason, cnt)
@@ -1226,7 +1236,7 @@ class Ingestor:
                 assert self.pool is not None
                 async with self.pool.acquire() as conn:
                     async with conn.transaction():
-                        await _set_tenant_write_context(conn, tenant_id)
+                        await _set_service_write_context(conn)
                         await conn.execute(
                             """
                             INSERT INTO quarantine_events (event_ts, topic, tenant_id, site_id, device_id, msg_type, reason, payload, envelope_version)
@@ -1607,7 +1617,9 @@ class Ingestor:
                             if route["destination_type"] == "postgresql":
                                 continue  # Already written
 
-                            await self._nc.publish(
+                            if self._js is None:
+                                raise RuntimeError("JetStream not initialized")
+                            await self._js.publish(
                                 f"routes.{tenant_id}",
                                 json.dumps(
                                     {
@@ -1618,6 +1630,7 @@ class Ingestor:
                                     },
                                     default=str,
                                 ).encode(),
+                                timeout=1.0,
                             )
                         except Exception as route_match_exc:
                             logger.warning(
