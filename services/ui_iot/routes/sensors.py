@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, require_customer
+from middleware.entitlements import check_sensor_limit, get_device_usage
 from db.pool import tenant_connection
 from dependencies import get_db_pool
 
@@ -74,24 +75,6 @@ class ConnectionUpsert(BaseModel):
     billing_cycle_start: int | None = Field(default=None, ge=1, le=28)
     ip_address: str | None = Field(default=None, max_length=45)
     msisdn: str | None = Field(default=None, max_length=20)
-
-
-async def _get_effective_sensor_limit(conn, tenant_id: str, device_id: str) -> int:
-    """Get effective sensor limit (device override > tier default > 20)."""
-    row = await conn.fetchrow(
-        """
-        SELECT dr.sensor_limit, dt.default_sensor_limit
-        FROM device_registry dr
-        LEFT JOIN device_tiers dt ON dt.tier_id = dr.tier_id
-        WHERE dr.tenant_id = $1 AND dr.device_id = $2
-        """,
-        tenant_id,
-        device_id,
-    )
-    if not row:
-        return 20
-    # NOTE: dr.sensor_limit may be NULL or 0; treat 0 as "unset"/fallback.
-    return row["sensor_limit"] or row["default_sensor_limit"] or 20
 
 
 def _serialize_time(value):
@@ -163,7 +146,8 @@ async def list_device_sensors(
                 *args,
             )
 
-            sensor_limit = await _get_effective_sensor_limit(conn, tenant_id, device_id)
+            usage = await get_device_usage(conn, tenant_id, device_id)
+            sensor_limit = (usage.get("limits") or {}).get("sensors")
 
     except HTTPException:
         raise
@@ -259,17 +243,9 @@ async def create_sensor(device_id: str, payload: SensorCreate, pool=Depends(get_
             if not exists:
                 raise HTTPException(status_code=404, detail="Device not found")
 
-            sensor_limit = await _get_effective_sensor_limit(conn, tenant_id, device_id)
-            current = await conn.fetchval(
-                "SELECT COUNT(*) FROM sensors WHERE tenant_id = $1 AND device_id = $2",
-                tenant_id,
-                device_id,
-            )
-            if int(current or 0) >= sensor_limit:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Sensor limit reached for this device ({int(current or 0)}/{sensor_limit})",
-                )
+            result = await check_sensor_limit(conn, tenant_id, device_id)
+            if not result["allowed"]:
+                raise HTTPException(status_code=result["status_code"], detail=result["message"])
 
             dup = await conn.fetchval(
                 """

@@ -48,6 +48,7 @@ import {
   listCarrierIntegrations,
   updateCarrierIntegration,
 } from "@/services/api/carrier";
+import { getEntitlements } from "@/services/api/billing";
 import type {
   CarrierIntegration,
   CarrierIntegrationCreate,
@@ -68,6 +69,12 @@ export default function CarrierIntegrationsPage() {
     queryKey: ["carrier-integrations"],
     queryFn: listCarrierIntegrations,
   });
+
+  const entitlements = useQuery({
+    queryKey: ["entitlements"],
+    queryFn: getEntitlements,
+  });
+  const isSelfService = entitlements.data?.features?.carrier_self_service ?? false;
 
   const integrations = data?.integrations ?? [];
 
@@ -108,11 +115,24 @@ export default function CarrierIntegrationsPage() {
         title="Carrier Integrations"
         description="Connect your IoT carrier accounts for diagnostics and usage"
         action={
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1 h-3 w-3" /> Add Carrier
-          </Button>
+          isSelfService ? (
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-1 h-3 w-3" /> Add Carrier
+            </Button>
+          ) : null
         }
       />
+
+      {!isSelfService && (
+        <Card className="border-muted">
+          <CardContent className="p-4 text-sm flex items-start gap-2">
+            <TriangleAlert className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div className="text-muted-foreground">
+              Carrier integrations are managed by your service provider. Contact support to make changes.
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <Card>
@@ -147,17 +167,21 @@ export default function CarrierIntegrationsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditTarget(i)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive"
-                    onClick={() => setDeleteTarget(i)}
-                  >
-                    Delete
-                  </Button>
+                  {isSelfService ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setEditTarget(i)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => setDeleteTarget(i)}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">

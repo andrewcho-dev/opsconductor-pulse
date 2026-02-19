@@ -11,6 +11,7 @@ from db.pool import tenant_connection
 from middleware.auth import JWTBearer
 from middleware.tenant import get_tenant_id, inject_tenant_context, require_customer
 from middleware.permissions import require_permission
+from middleware.entitlements import check_notification_channel_limit
 from routes.customer import limiter
 from notifications.senders import (
     send_email,
@@ -143,6 +144,10 @@ async def create_channel(request: Request, response: Response, body: ChannelIn, 
     validate_channel_config(body.channel_type, body.config)
     tenant_id = get_tenant_id()
     async with tenant_connection(pool, tenant_id) as conn:
+        result = await check_notification_channel_limit(conn, tenant_id)
+        if not result["allowed"]:
+            raise HTTPException(status_code=result["status_code"], detail=result["message"])
+
         row = await conn.fetchrow(
             """
             INSERT INTO notification_channels (tenant_id, name, channel_type, config, is_enabled)

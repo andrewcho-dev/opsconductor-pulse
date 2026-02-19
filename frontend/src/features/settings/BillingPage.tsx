@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CreditCard, ExternalLink, Loader2, Plus } from "lucide-react";
-import { PageHeader, StatusBadge } from "@/components/shared";
+import { PageHeader } from "@/components/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,22 +15,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
-  createAddonCheckoutSession,
   createCheckoutSession,
   createPortalSession,
   getBillingConfig,
   getBillingStatus,
   getEntitlements,
 } from "@/services/api/billing";
-
-function TypeBadge({ type }: { type: string }) {
-  const variants: Record<string, string> = {
-    MAIN: "bg-blue-100 text-blue-800",
-    ADDON: "bg-purple-100 text-purple-800",
-    TRIAL: "bg-yellow-100 text-yellow-800",
-  };
-  return <Badge className={variants[type] || "bg-gray-100"}>{type}</Badge>;
-}
 
 function usageColor(pct: number) {
   if (pct > 90) return "bg-status-critical";
@@ -47,16 +37,6 @@ function ProgressBar({ percent }: { percent: number }) {
       />
     </div>
   );
-}
-
-function formatTerm(term: string | null | undefined) {
-  if (!term) return "—";
-  try {
-    const d = new Date(term);
-    return d.toLocaleDateString();
-  } catch {
-    return term;
-  }
 }
 
 export default function BillingPage() {
@@ -93,46 +73,15 @@ export default function BillingPage() {
     onError: (err: any) => toast.error(err?.message || "Failed to start checkout"),
   });
 
-  const addonMutation = useMutation({
-    mutationFn: async (opts: { parent_subscription_id: string; price_id: string }) => {
-      const resp = await createAddonCheckoutSession({
-        parent_subscription_id: opts.parent_subscription_id,
-        price_id: opts.price_id,
-        success_url: `${window.location.origin}/app/billing?success=true`,
-        cancel_url: `${window.location.origin}/app/billing`,
-      });
-      window.location.href = resp.url;
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to start add-on checkout"),
-  });
-
-  const subscriptions = status?.subscriptions ?? [];
-  const tierAllocations = status?.tier_allocations ?? [];
-
-  const tierRows = useMemo(() => {
-    return tierAllocations.map((a) => {
-      const pct =
-        a.slot_limit > 0 ? Math.round((a.slots_used / a.slot_limit) * 100) : 0;
-      return { ...a, percent_used: pct };
-    });
-  }, [tierAllocations]);
+  const devicePlans = status?.device_plans ?? [];
 
   const usageRows = useMemo(() => {
     if (!entitlements) return [];
-    const e = entitlements.usage;
-    const items: { label: string; current: number; limit: number }[] = [
-      { label: "Alert Rules", current: e.alert_rules.current, limit: e.alert_rules.limit },
-      {
-        label: "Channels",
-        current: e.notification_channels.current,
-        limit: e.notification_channels.limit,
-      },
-      { label: "Users", current: e.users.current, limit: e.users.limit },
-    ];
-    return items.map((it) => ({
-      ...it,
-      percent_used: it.limit > 0 ? Math.round((it.current / it.limit) * 100) : 0,
-    }));
+    return Object.entries(entitlements.usage ?? {}).map(([key, { current, limit }]) => {
+      const label = key.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+      const pct = limit && limit > 0 ? Math.round((current / limit) * 100) : 0;
+      return { key, label, current, limit: limit ?? null, percent_used: pct };
+    });
   }, [entitlements]);
 
   if (statusLoading) {
@@ -150,8 +99,27 @@ export default function BillingPage() {
     <div className="space-y-4">
       <PageHeader
         title="Billing"
-        description="Manage subscriptions, tier allocations, and plan limits."
+        description="Manage account tier and billing limits."
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account Tier</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">
+              {entitlements?.tier_name ?? "Unassigned"}
+            </Badge>
+            <span className="text-muted-foreground">
+              Support: {entitlements?.support?.level ?? "—"}
+              {entitlements?.support?.sla_uptime_pct != null
+                ? ` · SLA: ${entitlements.support.sla_uptime_pct}%`
+                : ""}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -196,109 +164,42 @@ export default function BillingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {subscriptions.length === 0 ? (
+          {devicePlans.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No active subscriptions found.
+              No active device subscriptions found.
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
                   <TableHead>Plan</TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead>Devices</TableHead>
-                  <TableHead>Term</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Monthly</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {subscriptions.map((s) => (
-                  <TableRow key={s.subscription_id}>
+                {devicePlans.map((p) => (
+                  <TableRow key={p.plan_id}>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <TypeBadge type={s.subscription_type} />
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {s.subscription_id}
-                        </span>
-                      </div>
-                      {s.parent_subscription_id && (
-                        <div className="text-sm text-muted-foreground">
-                          Parent: {s.parent_subscription_id}
-                        </div>
-                      )}
+                      <Badge variant="outline">{p.plan_name}</Badge>
+                      <div className="text-xs text-muted-foreground">{p.plan_id}</div>
                     </TableCell>
-                    <TableCell>{s.plan_id ?? "—"}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={s.status} variant="subscription" />
-                    </TableCell>
-                    <TableCell>
-                      {s.active_device_count} / {s.device_limit}
-                    </TableCell>
-                    <TableCell>
-                      {formatTerm(s.term_start)} → {formatTerm(s.term_end)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {s.subscription_type === "MAIN" && s.status === "ACTIVE" && canManageBilling && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            const priceId = window.prompt("Enter Stripe add-on price_id:");
-                            if (!priceId) return;
-                            addonMutation.mutate({
-                              parent_subscription_id: s.subscription_id,
-                              price_id: priceId,
-                            });
-                          }}
-                          disabled={addonMutation.isPending}
-                        >
-                          Add Capacity
-                        </Button>
-                      )}
-                    </TableCell>
+                    <TableCell>{p.device_count}</TableCell>
+                    <TableCell>${(p.total_monthly_price_cents / 100).toFixed(2)}</TableCell>
                   </TableRow>
                 ))}
+                <TableRow>
+                  <TableCell className="font-medium">Total</TableCell>
+                  <TableCell />
+                  <TableCell className="font-medium">
+                    ${((status?.total_monthly_price_cents ?? 0) / 100).toFixed(2)}
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
-
-      {tierRows.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Device Tier Allocations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tier</TableHead>
-                  <TableHead>Usage</TableHead>
-                  <TableHead className="w-[220px]">Progress</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tierRows.map((a) => (
-                  <TableRow key={`${a.subscription_id}-${a.tier_id}`}>
-                    <TableCell>{a.tier_display_name}</TableCell>
-                    <TableCell>
-                      {a.slots_used} / {a.slot_limit}{" "}
-                      <span className="text-sm text-muted-foreground">
-                        ({a.percent_used}%)
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <ProgressBar percent={a.percent_used} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
@@ -321,7 +222,7 @@ export default function BillingPage() {
               </TableHeader>
               <TableBody>
                 {usageRows.map((r) => (
-                  <TableRow key={r.label}>
+                  <TableRow key={r.key}>
                     <TableCell>{r.label}</TableCell>
                     <TableCell>{r.current}</TableCell>
                     <TableCell>{r.limit}</TableCell>
@@ -339,6 +240,26 @@ export default function BillingPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Features</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {Object.entries(entitlements?.features ?? {}).length === 0 ? (
+            <div className="text-sm text-muted-foreground">No feature data available.</div>
+          ) : (
+            Object.entries(entitlements?.features ?? {}).map(([key, enabled]) => (
+              <div key={key} className="flex items-center justify-between">
+                <span className="text-muted-foreground">{key}</span>
+                <Badge variant={enabled ? "default" : "outline"}>
+                  {enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>

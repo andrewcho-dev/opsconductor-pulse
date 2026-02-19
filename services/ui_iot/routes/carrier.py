@@ -17,6 +17,8 @@ from routes.customer import (  # noqa: F401
     tenant_connection,
 )
 from middleware.permissions import require_permission
+from middleware.entitlements import check_account_feature
+from middleware.tenant import is_operator
 from services.carrier_service import get_carrier_provider
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,11 @@ async def list_carrier_integrations(pool=Depends(get_db_pool)):
 )
 async def create_carrier_integration(body: CarrierIntegrationCreate, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
+    if not is_operator():
+        async with tenant_connection(pool, tenant_id) as conn:
+            gate = await check_account_feature(conn, tenant_id, "carrier_self_service")
+            if not gate["allowed"]:
+                raise HTTPException(status_code=403, detail=gate["message"])
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             row = await conn.fetchrow(
@@ -182,6 +189,11 @@ async def update_carrier_integration(
     integration_id: int, body: CarrierIntegrationUpdate, pool=Depends(get_db_pool)
 ):
     tenant_id = get_tenant_id()
+    if not is_operator():
+        async with tenant_connection(pool, tenant_id) as conn:
+            gate = await check_account_feature(conn, tenant_id, "carrier_self_service")
+            if not gate["allowed"]:
+                raise HTTPException(status_code=403, detail=gate["message"])
     sets: list[str] = []
     params: list[Any] = [tenant_id, integration_id]
     idx = 3
@@ -261,6 +273,11 @@ async def update_carrier_integration(
 )
 async def delete_carrier_integration(integration_id: int, pool=Depends(get_db_pool)):
     tenant_id = get_tenant_id()
+    if not is_operator():
+        async with tenant_connection(pool, tenant_id) as conn:
+            gate = await check_account_feature(conn, tenant_id, "carrier_self_service")
+            if not gate["allowed"]:
+                raise HTTPException(status_code=403, detail=gate["message"])
     try:
         async with tenant_connection(pool, tenant_id) as conn:
             async with conn.transaction():

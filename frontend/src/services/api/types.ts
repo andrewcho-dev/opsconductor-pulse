@@ -16,6 +16,7 @@ export interface Device {
   last_heartbeat_at: string | null;
   last_telemetry_at: string | null;
   state: DeviceState | null;
+  plan_id?: string | null;
   subscription_id?: string | null;
   subscription_type?: string | null;
   subscription_status?: string | null;
@@ -265,6 +266,95 @@ export interface CarrierActionResult {
 export interface CarrierLinkRequest {
   carrier_integration_id: number;
   carrier_device_id: string;
+}
+
+// ─── Subscription Package Architecture (Phase 156) ───────────────
+
+export interface AccountTier {
+  tier_id: string;
+  name: string;
+  description: string;
+  limits: {
+    users?: number;
+    alert_rules?: number;
+    notification_channels?: number;
+    dashboards_per_user?: number;
+    device_groups?: number;
+    api_requests_per_minute?: number;
+  };
+  features: {
+    sso?: boolean;
+    custom_branding?: boolean;
+    audit_log_export?: boolean;
+    bulk_device_import?: boolean;
+    carrier_self_service?: boolean;
+    alert_escalation?: boolean;
+    oncall_scheduling?: boolean;
+    maintenance_windows?: boolean;
+  };
+  support: {
+    level?: string;
+    sla_uptime_pct?: number | null;
+    response_time_hours?: number | null;
+    dedicated_csm?: boolean;
+  };
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface DevicePlan {
+  plan_id: string;
+  name: string;
+  description: string;
+  limits: {
+    sensors?: number;
+    data_retention_days?: number;
+    telemetry_rate_per_minute?: number;
+    health_telemetry_interval_seconds?: number;
+  };
+  features: {
+    ota_updates?: boolean;
+    advanced_analytics?: boolean;
+    streaming_export?: boolean;
+    x509_auth?: boolean;
+    message_routing?: boolean;
+    device_commands?: boolean;
+    device_twin?: boolean;
+    carrier_diagnostics?: boolean;
+  };
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface DeviceSubscription {
+  subscription_id: string;
+  tenant_id: string;
+  device_id: string;
+  plan_id: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED" | "CANCELLED";
+  term_start: string;
+  term_end: string | null;
+  grace_end: string | null;
+  stripe_subscription_id: string | null;
+  created_at: string;
+}
+
+export interface AccountEntitlements {
+  tier_id: string | null;
+  tier_name: string | null;
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+  support: {
+    level?: string;
+    sla_uptime_pct?: number | null;
+    response_time_hours?: number | null;
+    dedicated_csm?: boolean;
+  };
+  usage: Record<string, { current: number; limit: number | null }>;
 }
 
 export interface SubscriptionDevice {

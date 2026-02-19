@@ -370,6 +370,10 @@ async def apply_alert_rule_templates(
     skipped = []
 
     async with tenant_connection(pool, tenant_id) as conn:
+        result = await check_alert_rule_limit(conn, tenant_id)
+        if not result["allowed"]:
+            raise HTTPException(status_code=result["status_code"], detail=result["message"])
+
         for tmpl in requested:
             existing = await conn.fetchval(
                 "SELECT id FROM alert_rules WHERE tenant_id = $1 AND name = $2",

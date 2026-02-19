@@ -204,9 +204,18 @@ export default function DeviceListPage() {
                       </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        {device.model || "unknown-type"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {device.model || "unknown-type"}
+                        </span>
+                        {device.plan_id ? (
+                          <Badge variant="outline" className="h-5 text-xs">
+                            {device.plan_id}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
                       {openAlerts > 0 && (
                         <Badge variant="destructive" className="h-5 min-w-5 text-xs">
                           {openAlerts}

@@ -1,147 +1,314 @@
-"""Entitlement enforcement helpers for subscription limits.
+"""
+Entitlement checks for the two-tier subscription model.
 
-All plan limits are read from the subscription_plans table — never hardcoded.
-If a plan has no limits JSONB entry, we default to 0 (deny by default).
+- Account Tier (per tenant): shared resource limits + account-level features
+- Device Plan (per device): per-device capability limits + device-level features
+
+All plan limits are read from the DB — never hardcoded.
 """
 
 import json
 import logging
+from typing import Any
 
-logger = logging.getLogger("pulse.entitlements")
-
-DEFAULT_LIMITS = {"alert_rules": 0, "notification_channels": 0, "users": 0}
+logger = logging.getLogger(__name__)
 
 
-async def _get_plan_limits(conn, plan_id: str) -> dict:
-    """Look up plan limits from subscription_plans table."""
-    if not plan_id:
-        return DEFAULT_LIMITS
+# ─── Account Tier Checks (tenant-level) ──────────────────────────
+
+async def get_account_tier(conn, tenant_id: str) -> dict | None:
+    """Load the tenant's account tier definition."""
     row = await conn.fetchrow(
-        "SELECT limits, device_limit FROM subscription_plans WHERE plan_id = $1 AND is_active = true",
-        plan_id,
-    )
-    if not row:
-        logger.warning("Unknown or inactive plan_id '%s', using default limits", plan_id)
-        return DEFAULT_LIMITS
-    limits = row["limits"]
-    # PgBouncer compatibility: limits may be a string
-    if isinstance(limits, str):
-        limits = json.loads(limits)
-    return {**DEFAULT_LIMITS, **limits}
-
-
-async def check_device_limit(conn, tenant_id: str) -> dict:
-    """Check if tenant can create another device."""
-    sub = await conn.fetchrow(
         """
-        SELECT subscription_id, device_limit, active_device_count, plan_id, status
-        FROM subscriptions
-        WHERE tenant_id = $1 AND subscription_type = 'MAIN'
-          AND status IN ('ACTIVE', 'TRIAL')
-        ORDER BY created_at DESC LIMIT 1
+        SELECT at.*
+        FROM tenants t
+        JOIN account_tiers at ON at.tier_id = t.account_tier_id
+        WHERE t.tenant_id = $1 AND at.is_active = true
         """,
         tenant_id,
     )
+    if not row:
+        return None
+    result = dict(row)
+    # Handle PgBouncer JSONB-as-string
+    for col in ("limits", "features", "support"):
+        if isinstance(result.get(col), str):
+            result[col] = json.loads(result[col])
+    return result
 
-    if not sub:
+
+async def check_account_limit(conn, tenant_id: str, resource: str, current_count: int) -> dict:
+    """
+    Check if tenant is at or over their account tier limit for a shared resource.
+
+    resource: one of 'users', 'alert_rules', 'notification_channels', etc.
+    current_count: current number of that resource the tenant has.
+
+    Returns: {"allowed": bool, "current": int, "limit": int, "message": str, "status_code": int}
+    """
+    tier = await get_account_tier(conn, tenant_id)
+    if not tier:
         return {
             "allowed": False,
-            "current": 0,
+            "current": current_count,
             "limit": 0,
-            "message": "No active subscription. Please subscribe to a plan.",
+            "message": "No account tier assigned. Contact support.",
             "status_code": 403,
         }
 
-    if sub["active_device_count"] >= sub["device_limit"]:
+    limits = tier.get("limits", {})
+    limit_value = limits.get(resource)
+
+    if limit_value is None:
+        # No limit defined for this resource — allow by default
+        return {"allowed": True, "current": current_count, "limit": None, "message": "", "status_code": 200}
+
+    limit_value = int(limit_value)
+    if current_count >= limit_value:
+        tier_name = tier.get("name", tier.get("tier_id", "unknown"))
         return {
             "allowed": False,
-            "current": sub["active_device_count"],
-            "limit": sub["device_limit"],
-            "message": f"Device limit reached. Current: {sub['active_device_count']}/{sub['device_limit']}. Upgrade your plan.",
+            "current": current_count,
+            "limit": limit_value,
+            "message": f"{resource.replace('_', ' ').title()} limit reached ({current_count}/{limit_value}). Upgrade your account tier to add more.",
             "status_code": 402,
         }
 
-    return {
-        "allowed": True,
-        "current": sub["active_device_count"],
-        "limit": sub["device_limit"],
-        "subscription_id": sub["subscription_id"],
-    }
+    return {"allowed": True, "current": current_count, "limit": limit_value, "message": "", "status_code": 200}
 
+
+async def check_account_feature(conn, tenant_id: str, feature: str) -> dict:
+    """
+    Check if tenant's account tier includes a specific feature.
+
+    feature: one of 'sso', 'carrier_self_service', 'bulk_device_import', etc.
+
+    Returns: {"allowed": bool, "message": str}
+    """
+    tier = await get_account_tier(conn, tenant_id)
+    if not tier:
+        return {"allowed": False, "message": "No account tier assigned. Contact support."}
+
+    features = tier.get("features", {})
+    allowed = bool(features.get(feature, False))
+
+    if not allowed:
+        tier_name = tier.get("name", tier.get("tier_id", "unknown"))
+        return {
+            "allowed": False,
+            "message": f"This feature requires an upgraded account tier. Current tier: {tier_name}.",
+        }
+
+    return {"allowed": True, "message": ""}
+
+
+# ─── Convenience: Specific Account Limit Checks ─────────────────
 
 async def check_alert_rule_limit(conn, tenant_id: str) -> dict:
     """Check if tenant can create another alert rule."""
-    sub = await conn.fetchrow(
-        """
-        SELECT plan_id FROM subscriptions
-        WHERE tenant_id = $1 AND subscription_type = 'MAIN'
-          AND status IN ('ACTIVE', 'TRIAL')
-        ORDER BY created_at DESC LIMIT 1
-        """,
-        tenant_id,
-    )
-
-    plan_id = sub["plan_id"] if sub else None
-    limits = await _get_plan_limits(conn, plan_id)
-    max_rules = limits["alert_rules"]
-
     count = await conn.fetchval(
-        "SELECT COUNT(*) FROM alert_rules WHERE tenant_id = $1",
+        "SELECT COUNT(*) FROM alert_rules WHERE tenant_id = $1", tenant_id
+    )
+    return await check_account_limit(conn, tenant_id, "alert_rules", count)
+
+
+async def check_notification_channel_limit(conn, tenant_id: str) -> dict:
+    """Check if tenant can create another notification channel."""
+    count = await conn.fetchval(
+        "SELECT COUNT(*) FROM notification_channels WHERE tenant_id = $1", tenant_id
+    )
+    return await check_account_limit(conn, tenant_id, "notification_channels", count)
+
+
+async def check_user_limit(conn, tenant_id: str) -> dict:
+    """Check if tenant can invite another user."""
+    count = await conn.fetchval(
+        "SELECT COUNT(DISTINCT user_id) FROM user_role_assignments WHERE tenant_id = $1",
         tenant_id,
     )
+    return await check_account_limit(conn, tenant_id, "users", count)
 
-    if count >= max_rules:
+
+# ─── Device Plan Checks (per-device) ────────────────────────────
+
+async def get_device_plan(conn, device_id: str) -> dict | None:
+    """Load the device's plan definition."""
+    row = await conn.fetchrow(
+        """
+        SELECT dp.*
+        FROM device_registry dr
+        JOIN device_plans dp ON dp.plan_id = dr.plan_id
+        WHERE dr.device_id = $1 AND dp.is_active = true
+        """,
+        device_id,
+    )
+    if not row:
+        return None
+    result = dict(row)
+    for col in ("limits", "features"):
+        if isinstance(result.get(col), str):
+            result[col] = json.loads(result[col])
+    return result
+
+
+async def check_device_limit(conn, device_id: str, resource: str, current_count: int) -> dict:
+    """
+    Check if device is at or over its plan limit for a resource.
+
+    resource: one of 'sensors', etc.
+    current_count: current number of that resource on this device.
+    """
+    plan = await get_device_plan(conn, device_id)
+    if not plan:
         return {
             "allowed": False,
-            "current": count,
-            "limit": max_rules,
-            "message": f"Alert rule limit reached. Current: {count}/{max_rules}. Upgrade your plan.",
+            "current": current_count,
+            "limit": 0,
+            "message": "No device plan assigned. Assign a plan to this device.",
+            "status_code": 403,
+        }
+
+    limits = plan.get("limits", {})
+    limit_value = limits.get(resource)
+
+    if limit_value is None:
+        return {"allowed": True, "current": current_count, "limit": None, "message": "", "status_code": 200}
+
+    limit_value = int(limit_value)
+    if current_count >= limit_value:
+        plan_name = plan.get("name", plan.get("plan_id", "unknown"))
+        return {
+            "allowed": False,
+            "current": current_count,
+            "limit": limit_value,
+            "message": f"Sensor limit reached ({current_count}/{limit_value}). Upgrade this device's plan to add more.",
             "status_code": 402,
         }
 
-    return {"allowed": True, "current": count, "limit": max_rules}
+    return {"allowed": True, "current": current_count, "limit": limit_value, "message": "", "status_code": 200}
 
 
-async def get_plan_usage(conn, tenant_id: str) -> dict:
-    """Get all plan limits and current usage for a tenant."""
-    sub = await conn.fetchrow(
-        """
-        SELECT plan_id FROM subscriptions
-        WHERE tenant_id = $1 AND subscription_type = 'MAIN'
-          AND status IN ('ACTIVE', 'TRIAL')
-        ORDER BY created_at DESC LIMIT 1
-        """,
-        tenant_id,
+async def check_device_feature(conn, device_id: str, feature: str) -> dict:
+    """
+    Check if device's plan includes a specific feature.
+
+    feature: one of 'ota_updates', 'x509_auth', 'streaming_export', etc.
+    """
+    plan = await get_device_plan(conn, device_id)
+    if not plan:
+        return {"allowed": False, "message": "No device plan assigned."}
+
+    features = plan.get("features", {})
+    allowed = bool(features.get(feature, False))
+
+    if not allowed:
+        plan_name = plan.get("name", plan.get("plan_id", "unknown"))
+        return {
+            "allowed": False,
+            "message": f"This feature requires an upgraded device plan. Current plan: {plan_name}.",
+        }
+
+    return {"allowed": True, "message": ""}
+
+
+async def check_sensor_limit(conn, tenant_id: str, device_id: str) -> dict:
+    """Check if device can add another sensor (convenience wrapper)."""
+    count = await conn.fetchval(
+        "SELECT COUNT(*) FROM sensors WHERE tenant_id = $1 AND device_id = $2",
+        tenant_id, device_id,
     )
+    return await check_device_limit(conn, device_id, "sensors", count)
 
-    plan_id = sub["plan_id"] if sub else None
-    limits = await _get_plan_limits(conn, plan_id)
 
-    device_count = await conn.fetchval(
-        "SELECT COUNT(*) FROM device_registry WHERE tenant_id = $1", tenant_id
-    )
-    rule_count = await conn.fetchval(
+# ─── Usage Reporting (for billing/entitlements UI) ───────────────
+
+async def get_account_usage(conn, tenant_id: str) -> dict:
+    """
+    Get current usage vs limits for the tenant's account tier.
+    Used by GET /billing/entitlements.
+    """
+    tier = await get_account_tier(conn, tenant_id)
+    if not tier:
+        return {
+            "tier_id": None,
+            "tier_name": None,
+            "limits": {},
+            "features": {},
+            "support": {},
+            "usage": {},
+        }
+
+    limits = tier.get("limits", {})
+
+    # Count current usage for each limited resource
+    alert_count = await conn.fetchval(
         "SELECT COUNT(*) FROM alert_rules WHERE tenant_id = $1", tenant_id
     )
     channel_count = await conn.fetchval(
         "SELECT COUNT(*) FROM notification_channels WHERE tenant_id = $1", tenant_id
     )
-    # No tenant_users table; count distinct assigned users for this tenant.
     user_count = await conn.fetchval(
         "SELECT COUNT(DISTINCT user_id) FROM user_role_assignments WHERE tenant_id = $1",
         tenant_id,
     )
+    device_count = await conn.fetchval(
+        "SELECT COUNT(*) FROM device_registry WHERE tenant_id = $1 AND status = 'ACTIVE'", tenant_id
+    )
+
+    usage: dict[str, Any] = {}
+    for key, count in [
+        ("alert_rules", alert_count),
+        ("notification_channels", channel_count),
+        ("users", user_count),
+    ]:
+        limit = limits.get(key)
+        usage[key] = {
+            "current": count,
+            "limit": int(limit) if limit is not None else None,
+        }
+
+    # Device count isn't an account-tier limit anymore (each device has its own subscription)
+    # but we include it for display
+    usage["devices"] = {"current": device_count, "limit": None}
 
     return {
-        "plan_id": plan_id,
-        "usage": {
-            "alert_rules": {"current": rule_count, "limit": limits["alert_rules"]},
-            "notification_channels": {
-                "current": channel_count,
-                "limit": limits["notification_channels"],
-            },
-            "users": {"current": user_count, "limit": limits["users"]},
-            "devices": {"current": device_count, "limit": None},  # device limit is per-subscription
+        "tier_id": tier["tier_id"],
+        "tier_name": tier["name"],
+        "limits": limits,
+        "features": tier.get("features", {}),
+        "support": tier.get("support", {}),
+        "usage": usage,
+    }
+
+
+async def get_device_usage(conn, tenant_id: str, device_id: str) -> dict:
+    """
+    Get current usage vs limits for a specific device's plan.
+    Used by device detail pages.
+    """
+    plan = await get_device_plan(conn, device_id)
+    if not plan:
+        return {"plan_id": None, "plan_name": None, "limits": {}, "features": {}, "usage": {}}
+
+    limits = plan.get("limits", {})
+
+    sensor_count = await conn.fetchval(
+        "SELECT COUNT(*) FROM sensors WHERE tenant_id = $1 AND device_id = $2",
+        tenant_id, device_id,
+    )
+
+    usage = {
+        "sensors": {
+            "current": sensor_count,
+            "limit": int(limits["sensors"]) if "sensors" in limits else None,
         },
+    }
+
+    return {
+        "plan_id": plan["plan_id"],
+        "plan_name": plan["name"],
+        "limits": limits,
+        "features": plan.get("features", {}),
+        "usage": usage,
     }
 
