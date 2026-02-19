@@ -157,7 +157,7 @@ export default function SubscriptionPage() {
             </div>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link to="/app/subscription/renew">Change Tier</Link>
+            <Link to="/subscription/renew">Change Tier</Link>
           </Button>
         </CardHeader>
       </Card>

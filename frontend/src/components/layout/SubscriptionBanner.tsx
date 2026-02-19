@@ -88,7 +88,7 @@ export function SubscriptionBanner() {
           variant="outline"
           size="sm"
           className="border-orange-500 text-orange-700 hover:bg-orange-100"
-          onClick={() => navigate("/app/subscription/renew")}
+          onClick={() => navigate("/subscription/renew")}
         >
           Renew Now
         </Button>
@@ -124,7 +124,7 @@ export function SubscriptionBanner() {
           variant="outline"
           size="sm"
           className="border-yellow-500 text-yellow-700 hover:bg-yellow-100"
-          onClick={() => navigate("/app/subscription/renew")}
+          onClick={() => navigate("/subscription/renew")}
         >
           Renew Now
         </Button>

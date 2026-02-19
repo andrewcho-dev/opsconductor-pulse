@@ -179,7 +179,7 @@ export default function RenewalPage() {
       </Card>
 
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => navigate("/app/subscription")}>
+        <Button variant="outline" onClick={() => navigate("/subscription")}>
           Back
         </Button>
       </div>
