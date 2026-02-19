@@ -8,6 +8,9 @@ sources:
   - frontend/src/features/
   - frontend/src/features/templates/
   - frontend/src/features/fleet/GettingStartedPage.tsx
+  - frontend/src/index.css
+  - frontend/src/components/shared/KpiCard.tsx
+  - frontend/src/components/shared/illustrations.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -19,7 +22,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175]
 ---
 
 # Frontend
@@ -97,8 +100,8 @@ Forms use:
 
 Phases 143–144 establish a baseline visual system to keep the UI consistent and readable in a data-dense console.
 
-- Spacing: AppShell `<main>` uses `p-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
-- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-8`) frames the bottom and shows version + year.
+- Spacing: AppShell `<main>` uses `px-6 py-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
+- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-7`) frames the bottom and shows version + year.
 - Typography hierarchy:
 
 | Role | Tailwind |
@@ -116,6 +119,54 @@ Phases 143–144 establish a baseline visual system to keep the UI consistent an
 - Empty states: cap empty/loading padding at `py-8`; prefer the shared `EmptyState` component.
 - Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
 - Cards/backgrounds/status colors: border-based containment (no shadow); light mode uses a light gray page background with white cards (tokens in `src/index.css`); use semantic status token utilities (e.g. `text-status-online`, `bg-status-critical`), not Tailwind color literals.
+
+## Color System (Phase 175)
+
+The application uses a violet/purple primary color (`--primary: 262 83% 58%` in light mode, `262 83% 72%` in dark mode). All semantic tokens (ring, sidebar-primary, chart-1) derive from this primary.
+
+Status colors remain independent of the primary: `--status-online` (green), `--status-stale` (amber), `--status-offline` (gray), `--status-critical` (red).
+
+Color tokens are defined in `frontend/src/index.css` using CSS custom properties consumed by Tailwind v4's `@theme inline` block.
+
+## Sidebar (Phase 175)
+
+The sidebar uses shadcn/ui's `collapsible="icon"` mode:
+
+- Expanded: full-width (16rem) with text labels
+- Collapsed: icon-only strip (3rem) with hover tooltips
+- Toggle: Cmd+B keyboard shortcut, SidebarTrigger button, or SidebarRail drag edge
+- State persists via cookie (`sidebar_state`)
+
+All `SidebarMenuButton` instances must include the `tooltip` prop for accessible icon-mode behavior.
+
+## Header (Phase 175)
+
+The AppHeader renders a compact (h-12) top bar:
+
+- Left: SidebarTrigger + auto-derived breadcrumbs (from URL path)
+- Right: Search (Cmd+K) + ConnectionStatus + Notification bell (alert count badge) + User avatar dropdown
+
+The user avatar dropdown contains: Profile, Organization, Theme toggle, and Log out.
+
+Breadcrumbs are no longer rendered by `PageHeader` — they are auto-derived in the header from the URL path.
+
+## Shared Components (Phase 175)
+
+New shared components:
+
+- `components/ui/progress.tsx` — Radix Progress bar (used for quota/usage visualization)
+- `components/ui/avatar.tsx` — Radix Avatar with fallback initials
+- `components/shared/KpiCard.tsx` — KPI display card: label + big number + optional progress bar + optional description
+- `components/shared/illustrations.tsx` — SVG illustration components (IllustrationEmpty, IllustrationSetup, IllustrationError, IllustrationNotFound)
+
+The `EmptyState` component now renders an SVG illustration by default instead of a plain icon.
+
+## Tab Conventions (Phase 175)
+
+- `variant="line"` (underline with primary-colored active indicator): Use for hub page navigation tabs
+- `variant="default"` (pill/muted background): Use for filter toggles and small control groups
+
+Hub pages (Alerts, Analytics, Updates, etc.) should use `variant="line"` for their tab navigation.
 
 ## UI Pattern Conventions
 
@@ -153,9 +204,8 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 
 ### Breadcrumbs
 
-- ALL detail pages MUST provide breadcrumbs via the `PageHeader` `breadcrumbs` prop.
-- Format: `[{ label: "Parent", href: "/parent" }, { label: itemName }]`.
-- No standalone "Back" buttons; breadcrumbs replace that navigation pattern.
+- Breadcrumbs are derived from the URL path and rendered in the AppHeader (Phase 175).
+- Pages may still pass `breadcrumbs` to `PageHeader` for backward compatibility, but they are not rendered.
 
 ### Modals & Dialogs
 
@@ -175,6 +225,7 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - Custom page header layouts (use `<PageHeader>`).
 - Standalone "Back" buttons (use breadcrumbs).
 - "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
+- Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
 
 ## Mutation Feedback Conventions
 

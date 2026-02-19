@@ -49,6 +49,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarRail,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
@@ -185,10 +186,16 @@ export function AppSidebar() {
 
   function renderNavItem(item: NavItem) {
     const Icon = item.icon;
+    const active = isActive(item.href);
     const showAlertBadge = item.href === "/alerts" && openAlertCount > 0;
     return (
       <SidebarMenuItem key={item.href}>
-        <SidebarMenuButton asChild isActive={isActive(item.href)}>
+        <SidebarMenuButton
+          asChild
+          isActive={active}
+          tooltip={item.label}
+          className={active ? "border-l-2 border-l-primary" : ""}
+        >
           <Link to={item.href}>
             {showAlertBadge ? (
               <div className="flex w-full items-center justify-between">
@@ -231,7 +238,7 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <Link
           to={isOperator ? "/operator" : "/dashboard"}
@@ -240,9 +247,9 @@ export function AppSidebar() {
           <img
             src="/app/opsconductor_logo_clean_PROPER.svg"
             alt="OpsConductor Pulse"
-            className="h-8 w-8"
+            className="h-8 w-8 shrink-0"
           />
-          <div>
+          <div className="group-data-[collapsible=icon]:hidden">
             <div className="text-sm font-semibold text-sidebar-foreground">OpsConductor</div>
             <div className="text-sm text-muted-foreground">Pulse</div>
           </div>
@@ -282,7 +289,14 @@ export function AppSidebar() {
                     {/* Getting Started — hidden once dismissed */}
                     {!fleetSetupDismissed && (
                       <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={isActive("/fleet/getting-started")}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive("/fleet/getting-started")}
+                          tooltip="Getting Started"
+                          className={
+                            isActive("/fleet/getting-started") ? "border-l-2 border-l-primary" : ""
+                          }
+                        >
                           <Link to="/fleet/getting-started">
                             <Rocket className="h-4 w-4" />
                             <span>Getting Started</span>
@@ -292,7 +306,7 @@ export function AppSidebar() {
                     )}
 
                     {/* Setup section */}
-                    <div className="px-2 pt-3 pb-1">
+                    <div className="px-2 pt-3 pb-1 group-data-[collapsible=icon]:hidden">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Setup
                       </span>
@@ -306,7 +320,7 @@ export function AppSidebar() {
                     {renderNavItem({ label: "Devices", href: "/devices", icon: Cpu })}
 
                     {/* Monitor section */}
-                    <div className="px-2 pt-3 pb-1">
+                    <div className="px-2 pt-3 pb-1 group-data-[collapsible=icon]:hidden">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Monitor
                       </span>
@@ -315,7 +329,7 @@ export function AppSidebar() {
                     {renderNavItem({ label: "Device Groups", href: "/device-groups", icon: Layers })}
 
                     {/* Maintain section */}
-                    <div className="px-2 pt-3 pb-1">
+                    <div className="px-2 pt-3 pb-1 group-data-[collapsible=icon]:hidden">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Maintain
                       </span>
@@ -520,6 +534,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-2" />
+      <SidebarRail />
     </Sidebar>
   );
 }
