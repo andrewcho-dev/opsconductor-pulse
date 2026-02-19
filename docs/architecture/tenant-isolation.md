@@ -5,7 +5,11 @@ sources:
   - services/ui_iot/middleware/tenant.py
   - services/ui_iot/db/pool.py
   - services/ui_iot/routes/internal.py
-phases: [4, 36, 43, 96, 97, 142, 161]
+  - services/ingest_iot/ingest.py
+  - compose/emqx/emqx.conf
+  - compose/nats/nats.conf
+  - compose/nats/init-streams.sh
+phases: [4, 36, 43, 96, 97, 142, 161, 162, 165]
 ---
 
 # Tenant Isolation
@@ -127,6 +131,19 @@ EMQX enforces per-device publish/subscribe ACLs at the broker level via internal
 - `POST /api/v1/internal/mqtt-acl` (PUBLISH/SUBSCRIBE authorization)
 
 These checks close the previous "read-side ACL gap" where a device could subscribe to another tenant's topics if application-layer validation was bypassed.
+
+## NATS Subject Scoping (Internal Bus)
+
+NATS JetStream is an internal message backbone; devices never connect to NATS directly.
+
+Subject conventions:
+
+- Telemetry envelopes are published to `telemetry.{tenant_id}` (stream `TELEMETRY`, subject filter `telemetry.>`).
+- Shadow updates are published to `shadow.{tenant_id}` (stream `SHADOW`).
+- Command messages are published to `commands.{tenant_id}` (stream `COMMANDS`).
+- Route delivery jobs are published to `routes.{tenant_id}` (stream `ROUTES`).
+
+These subjects provide an additional isolation boundary between tenants at the messaging layer (and allow future per-tenant consumer filtering if required). Device identity (`device_id`) is carried in the envelope payload and re-validated by consumers (e.g., `ingest_iot` auth cache + DB lookup fallback).
 
 ## Rate Limiting
 

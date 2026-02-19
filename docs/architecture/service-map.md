@@ -4,7 +4,10 @@ sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
   - compose/prometheus/prometheus.yml
-phases: [88, 98, 138, 139, 142, 161, 162, 163, 164]
+  - compose/emqx/emqx.conf
+  - compose/nats/nats.conf
+  - compose/nats/init-streams.sh
+phases: [88, 98, 138, 139, 142, 161, 162, 163, 164, 165]
 ---
 
 # Service Map
@@ -79,7 +82,23 @@ Alert operations:
 
 1. Alert created/updated (evaluator or user action)
 2. Escalation tick evaluates pending escalations
-3. Notification routing engine in `ui_iot` delivers to configured channels
+3. Notification routing engine in `ui_iot` delivers to configured channels (Slack/PagerDuty/Teams/HTTP webhook)
+
+## NATS JetStream Streams
+
+Stream/subject topology (see `compose/nats/init-streams.sh`):
+
+| Stream | Subjects | Purpose | Durable Consumers |
+|--------|----------|---------|------------------|
+| `TELEMETRY` | `telemetry.>` (published as `telemetry.{tenant_id}`) | Device telemetry envelopes (from MQTT bridge and HTTP ingest) | `ingest-workers` |
+| `SHADOW` | `shadow.>` (published as `shadow.{tenant_id}`) | Shadow updates | `ingest-shadow` |
+| `COMMANDS` | `commands.>` (published as `commands.{tenant_id}`) | Command messages / acks | `ingest-commands` |
+| `ROUTES` | `routes.>` (published as `routes.{tenant_id}`) | Message route delivery jobs (webhook/MQTT republish) | `route-delivery` |
+
+Retry semantics:
+
+- Consumers are configured with `max_deliver=3` (redeliveries handled by JetStream).
+- Route delivery DLQ is application-level (PostgreSQL `dead_letter_messages`), not a separate NATS stream.
 
 ## Database Tables (by domain)
 

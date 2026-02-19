@@ -2,7 +2,8 @@
 last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 139, 142, 160, 161, 162, 164]
+  - compose/nats/init-streams.sh
+phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165]
 ---
 
 # ingest
@@ -15,7 +16,7 @@ phases: [15, 23, 101, 139, 142, 160, 161, 162, 164]
 
 Key responsibilities:
 
-- Topic parsing: `tenant/{tenant_id}/device/{device_id}/{msg_type}`
+- Envelope topic parsing: `tenant/{tenant_id}/device/{device_id}/{msg_type}` (carried in message envelope)
 - Auth cache: avoids per-message DB lookups
 - Rate limiting: token bucket per (tenant, device)
 - Batch writing: high-throughput inserts into `telemetry`
@@ -25,7 +26,7 @@ Key responsibilities:
 
 Pipeline stages (high level):
 
-1. JetStream consume → parse topic → extract tenant/device/msg_type
+1. JetStream consume (`telemetry.{tenant_id}` subject) → parse envelope topic → extract tenant/device/msg_type
 2. Validate required fields (`site_id`, timestamp), payload size, metric constraints
 3. Device registry validation (cache + DB fallback)
 4. Subscription status checks (block suspended/expired)
@@ -83,19 +84,19 @@ Key Prometheus metrics:
 
 ## Dependencies
 
-- EMQX MQTT broker
+- NATS JetStream
 - PostgreSQL + TimescaleDB (telemetry + registry tables)
 - PgBouncer (in compose) for pooling
 
 ## Troubleshooting
 
 - Quarantine growth: inspect quarantine tables and rejection reasons (token invalid, site mismatch, payload size, rate limiting).
-- Backpressure: tune `INGEST_WORKER_COUNT`, `INGEST_QUEUE_SIZE`, `BATCH_SIZE`, and `FLUSH_INTERVAL_MS`.
-- MQTT TLS failures: verify `MQTT_CA_CERT` mount and broker certificate chain.
+- Backpressure: tune `INGEST_WORKER_COUNT`, `BATCH_SIZE`, and `FLUSH_INTERVAL_MS`. Watch `pulse_ingest_queue_depth`.
 
 ## See Also
 
 - [Ingestion Endpoints](../api/ingest-endpoints.md)
 - [System Overview](../architecture/overview.md)
+- [route-delivery](route-delivery.md)
 - [Database](../operations/database.md)
 

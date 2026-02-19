@@ -5,7 +5,7 @@ sources:
   - compose/prometheus/alert_rules.yml
   - compose/grafana/provisioning/
   - compose/grafana/dashboards/
-phases: [58, 102, 139, 142, 164]
+phases: [58, 102, 139, 142, 164, 165]
 ---
 
 # Monitoring

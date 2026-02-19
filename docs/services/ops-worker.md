@@ -6,7 +6,7 @@ sources:
   - services/ops_worker/metrics_collector.py
   - services/ops_worker/workers/
   - services/ops_worker/workers/export_worker.py
-phases: [43, 58, 88, 139, 142, 164]
+phases: [43, 58, 88, 139, 142, 160, 163, 164, 165]
 ---
 
 # ops-worker
@@ -55,6 +55,8 @@ Database:
 | `PG_USER` | `iot` | Database user. |
 | `PG_PASS` | `iot_dev` | Database password. |
 | `DATABASE_URL` | empty | Optional DSN; when set, preferred over `PG_*`. |
+| `PG_POOL_MIN` | `2` | DB pool minimum connections. |
+| `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 
 Health monitor:
 
@@ -73,10 +75,13 @@ Metrics collector:
 
 ## Health & Metrics
 
-`ops_worker` is background-only (no HTTP server). It contributes:
+`ops_worker` runs background tasks and also serves a small HTTP server for probes and metrics:
 
-- System metrics written to DB (`system_metrics`) for dashboards
-- Prometheus-scraped metrics where applicable (depends on worker implementation)
+- `GET :8080/health` — liveness check
+- `GET :8080/ready` — readiness check (DB pool connectivity)
+- `GET :8080/metrics` — Prometheus metrics
+
+It also writes system metrics to TimescaleDB (`system_metrics`) for dashboards.
 
 ## Dependencies
 

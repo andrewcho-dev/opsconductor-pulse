@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - db/migrate.py
   - db/migrations/
-phases: [20, 21, 34, 137, 142, 160]
+phases: [20, 21, 34, 137, 142, 160, 163, 165]
 ---
 
 # Database
@@ -27,6 +27,13 @@ Services can tune their client-side pool sizes via:
 - `PG_POOL_MAX` (default: `10`)
 
 Note: PgBouncer `DEFAULT_POOL_SIZE` (server-side) is the shared ceiling across services; avoid setting per-service `PG_POOL_MAX` values such that aggregate concurrency overwhelms PgBouncer/Postgres.
+
+## Managed PostgreSQL (Kubernetes / Production)
+
+For production deployments, consider using a managed PostgreSQL offering (and optionally removing PgBouncer if your platform provides pooling):
+
+- See `docs/operations/managed-postgres.md` for chart configuration and requirements.
+- TimescaleDB must be available on the target database (extension support varies by provider).
 
 ## Schema Overview
 

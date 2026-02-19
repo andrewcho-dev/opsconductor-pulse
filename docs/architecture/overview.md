@@ -1,12 +1,19 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/app.py
+  - services/ui_iot/routes/ingest.py
+  - services/ui_iot/routes/internal.py
   - services/evaluator_iot/evaluator.py
   - services/ingest_iot/ingest.py
   - services/ops_worker/main.py
+  - services/mqtt_nats_bridge/bridge.py
+  - services/route_delivery/delivery.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142]
+  - compose/emqx/emqx.conf
+  - compose/nats/nats.conf
+  - compose/nats/init-streams.sh
+phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142, 160, 161, 162, 163, 164, 165]
 ---
 
 # System Architecture
@@ -17,12 +24,13 @@ phases: [1, 23, 43, 88, 98, 99, 122, 128, 138, 142]
 
 OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platform:
 
-- Devices send telemetry via MQTT (primary) or HTTP (alternate).
-- Telemetry is written to TimescaleDB (PostgreSQL + TimescaleDB hypertables).
-- A rules engine evaluates telemetry to maintain device state and open/close alerts.
-- The UI/API service exposes customer and operator APIs plus real-time streams.
-- Notifications are delivered by the Phase 91+ routing engine inside `ui_iot` (no legacy separate routing/delivery services).
-- Prometheus scrapes health/metrics and Grafana provides dashboards.
+- Devices send telemetry via MQTT (EMQX broker, mTLS) or HTTP (`ui_iot` ingest endpoints).
+- Both paths publish envelopes into NATS JetStream using PubAck (`js.publish()`).
+- `ingest_iot` consumes from JetStream as a horizontally-scalable worker group and batch-writes telemetry to TimescaleDB.
+- `evaluator_iot` evaluates telemetry for device state + alerts.
+- Message route delivery is decoupled: `ingest_iot` publishes delivery jobs to JetStream and `route_delivery` executes webhook/MQTT republish asynchronously.
+- Export artifacts are stored in S3-compatible object storage (MinIO in compose; AWS S3 in production).
+- Prometheus + Grafana provide operational metrics and dashboards (including NATS/JetStream metrics via `nats-exporter`).
 
 ## Architecture Diagram
 
@@ -30,13 +38,12 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │                                External Actors                                │
 │                                                                               │
-│  IoT Devices (MQTT/HTTP)           Browser SPA (customers/operators)           │
+│  IoT Devices (MQTT/TLS)            Browser SPA (customers/operators)           │
 │                                                                               │
 └───────────────┬───────────────────────────────┬───────────────────────────────┘
                 │                               │
           MQTT/TLS (:8883)                 HTTPS (:443)
           MQTT/WS  (:9001)                       │
-          HTTP (internal)                         │
                 │                               ▼
                 │                    ┌──────────────────────┐
                 │                    │ Caddy (TLS proxy)    │
@@ -49,41 +56,43 @@ OpsConductor-Pulse is a multi-tenant IoT fleet management and operations platfor
                 │                    └──────────┬───────────┘
                 │                               │
                 ▼                               ▼
-      ┌──────────────────┐             ┌───────────────────────┐
-      │ Mosquitto (MQTT) │             │ ui_iot (FastAPI)       │
-      │                  │             │ - REST + WS/SSE        │
-      └──────────┬───────┘             │ - SPA static serving   │
-                 │                     │ - notification engine  │
-                 │                     └──────────┬────────────┘
-                 │                                │
-                 │                         asyncpg via PgBouncer
-                 │                                │
+      ┌──────────────────┐             ┌────────────────────────┐
+      │ EMQX (MQTT 5.0)  │             │ ui_iot (FastAPI)        │
+      │ broker + ACL     │             │ - REST + WS/SSE         │
+      └──────────┬───────┘             │ - HTTP ingest → NATS    │
+                 │                     └──────────┬─────────────┘
+                 │                                │ js.publish() PubAck
                  ▼                                ▼
-      ┌──────────────────┐             ┌───────────────────────┐
-      │ ingest_iot        │             │ PgBouncer             │
-      │ (MQTT + HTTP)     │             └──────────┬────────────┘
-      └──────────┬───────┘                        │
-                 │                                ▼
-                 │                     ┌───────────────────────┐
-                 └────────────────────►│ PostgreSQL + Timescale │
-                                       │ - telemetry hypertable │
-                                       │ - transactional tables │
-                                       └──────────┬────────────┘
-                                                  │
-                                                  ▼
-                                       ┌───────────────────────┐
-                                       │ evaluator_iot          │
-                                       │ - device state         │
-                                       │ - alert generation     │
-                                       └──────────┬────────────┘
-                                                  │
-                                                  ▼
-                                       ┌───────────────────────┐
-                                       │ ops_worker             │
-                                       │ - health monitor       │
-                                       │ - metrics collector    │
-                                       │ - background jobs      │
-                                       └───────────────────────┘
+        ┌──────────────────────┐          ┌──────────────────────┐
+        │ mqtt_nats_bridge      │          │ NATS JetStream        │
+        │ (custom OSS bridge)   │─────────►│ Streams: TELEMETRY,   │
+        └──────────────────────┘          │ SHADOW, COMMANDS,      │
+                                         │ ROUTES                │
+                                         └──────────┬───────────┘
+                                                    │ pull consumers (max_deliver=3)
+                                                    ▼
+                                      ┌───────────────────────┐
+                                      │ ingest_iot             │
+                                      │ - validate + rate limit│
+                                      │ - batch write telemetry│
+                                      └──────────┬────────────┘
+                                                 │ asyncpg via PgBouncer
+                                                 ▼
+                                      ┌───────────────────────┐
+                                      │ PostgreSQL + Timescale │
+                                      │ - telemetry hypertable │
+                                      │ - dead_letter_messages │
+                                      └──────────┬────────────┘
+                                                 │
+                                                 ▼
+                                      ┌───────────────────────┐
+                                      │ evaluator_iot          │
+                                      └──────────┬────────────┘
+                                                 ▼
+                                      ┌───────────────────────┐
+                                      │ ops_worker             │
+                                      │ - exports → MinIO/S3   │
+                                      └───────────────────────┘
 
       ┌───────────────────────┐        ┌───────────────────────┐
       │ Prometheus (:9090)     │◄───────│ /metrics + /health     │
@@ -103,17 +112,28 @@ Primary platform API service. Responsibilities:
 - Serves the React SPA bundle (behind Caddy `/app/*` routing).
 - Customer APIs (`/api/v1/customer/*`) and operator APIs (`/api/v1/operator/*`).
 - Legacy v2 endpoints (`/api/v2/*`) and real-time protocols (WebSocket/SSE).
-- HTTP ingestion endpoints (`/ingest/*`) that share telemetry writing logic with a batch writer.
+- HTTP ingestion endpoints (`/ingest/*`) that publish envelopes to JetStream (`telemetry.{tenant_id}`).
 - Notification routing + delivery engine (Phase 91+) for Slack/PagerDuty/Teams/HTTP.
 - Request-context audit logging (async buffered flush).
 
 ### ingest_iot (Telemetry Ingestion)
 
-Device telemetry ingestion service (MQTT subscriber + aiohttp HTTP server):
+Telemetry ingestion service consuming from NATS JetStream (aiohttp health server):
 
+- Pull consumer: durable `ingest-workers` on stream `TELEMETRY` (subject filter `telemetry.>`).
 - Validates device authorization via an in-memory auth cache to avoid per-message DB hits.
 - Enforces per-device and per-tenant rate limiting (token bucket).
 - Writes to TimescaleDB in batches and quarantines invalid messages for later inspection.
+
+### mqtt_nats_bridge (MQTT to NATS Bridge)
+
+Custom bridge service required for EMQX OSS (no native NATS bridge):
+
+- Subscribes to EMQX MQTT topics (`tenant/{tenant_id}/device/{device_id}/{msg_type}`).
+- Republishes messages into JetStream with PubAck (`js.publish()`), using subjects:
+  - `telemetry.{tenant_id}`
+  - `shadow.{tenant_id}`
+  - `commands.{tenant_id}`
 
 ### evaluator_iot (Alert Rule Engine)
 
@@ -130,6 +150,14 @@ Background worker process that runs periodic tasks that are independent of HTTP 
 - Health monitoring and service status alerts.
 - Metrics collection to `system_metrics` hypertable.
 - Operational jobs (OTA, certificate maintenance, exports, report generation, job expiry).
+
+### route_delivery (Asynchronous Route Delivery)
+
+Dedicated service consuming delivery jobs from JetStream `ROUTES` stream (subjects `routes.>`):
+
+- Retries are handled by JetStream redelivery (`max_deliver=3` configured by `compose/nats/init-streams.sh`).
+- On final failure, the service writes a DLQ record to PostgreSQL (`dead_letter_messages`).
+- Exposes Prometheus metrics on `:8080/metrics`.
 
 ### subscription_worker (Subscription Lifecycle)
 
@@ -156,9 +184,26 @@ Connection pooler used by services to reduce connection churn and enforce poolin
 
 OIDC identity provider (realm `pulse`) used by the SPA and API services for authentication and roles.
 
-### Mosquitto (MQTT)
+### EMQX (MQTT Broker)
 
-MQTT broker for device telemetry and command topics. Production/dev uses TLS on external port 8883.
+MQTT broker for device telemetry and command topics:
+
+- External mTLS listener on port 8883.
+- Uses internal HTTP auth/ACL endpoints in `ui_iot` (`/api/v1/internal/mqtt-auth`, `/api/v1/internal/mqtt-acl`).
+
+### NATS JetStream
+
+Durable message backbone for ingestion and delivery:
+
+- Streams: `TELEMETRY`, `SHADOW`, `COMMANDS`, `ROUTES`.
+- Publications use PubAck via `js.publish()` (not core `nc.publish()`).
+
+### MinIO (S3-compatible Object Storage)
+
+Stores exports and reports in local dev (replace with AWS S3 in production):
+
+- `ops_worker` uploads export artifacts and stores an S3 key in the export job record.
+- `ui_iot` generates pre-signed URLs for direct client downloads (default expiry: 1 hour).
 
 ### Caddy (Reverse Proxy)
 
@@ -172,10 +217,11 @@ Prometheus scrapes service health/metrics; Grafana provides pre-provisioned dash
 
 ### Telemetry Ingestion Pipeline
 
-1. Device publishes MQTT messages (or sends HTTP POST for ingestion).
-2. `ingest_iot` validates the device, rate-limits, and writes telemetry (batched).
-3. Telemetry is stored in the TimescaleDB hypertable.
-4. Invalid messages are written to quarantine tables for troubleshooting.
+1. Device publishes MQTT messages to EMQX.
+2. `mqtt_nats_bridge` republishes MQTT messages into JetStream (`telemetry.{tenant_id}` / `shadow.{tenant_id}` / `commands.{tenant_id}`).
+3. `ui_iot` HTTP ingest also publishes to JetStream (`telemetry.{tenant_id}`), unifying the pipeline.
+4. `ingest_iot` consumes from JetStream, validates/rate-limits, and batch-writes to TimescaleDB.
+5. Invalid messages are quarantined in database tables for troubleshooting.
 
 ### Alert Evaluation Loop
 
@@ -188,11 +234,9 @@ Prometheus scrapes service health/metrics; Grafana provides pre-provisioned dash
 When an alert is opened/escalated:
 
 1. `ui_iot` routing engine matches routing rules (severity/type/throttle).
-2. Delivery occurs via one of the supported senders:
-   - Slack incoming webhook
-   - PagerDuty Events API v2
-   - Microsoft Teams webhook (MessageCard)
-   - Generic HTTP webhook (HMAC signed)
+2. `ui_iot` delivers notifications using the configured channel senders (Slack/PagerDuty/Teams/HTTP webhook).
+
+Message route delivery (webhook/MQTT republish) is handled separately by `route_delivery` via JetStream `ROUTES`.
 
 ### Escalation Flow
 
@@ -205,7 +249,6 @@ When an alert is opened/escalated:
 Background work is split between:
 
 - `ui_iot` request-coupled background tasks:
-  - Telemetry batch writer (flush interval + batch size thresholds).
   - Request-context audit logger (buffered flush loop).
 - `ops_worker` periodic operational tasks:
   - Service health monitor.
@@ -227,19 +270,24 @@ Background work is split between:
 | Backend | FastAPI (Python) + asyncpg |
 | Database | PostgreSQL 15 + TimescaleDB |
 | Connection pooling | PgBouncer |
-| MQTT broker | Eclipse Mosquitto |
+| MQTT broker | EMQX |
+| Message backbone | NATS JetStream |
+| Object storage | MinIO (dev) / S3-compatible |
 | Identity provider | Keycloak |
 | Reverse proxy | Caddy |
-| Container runtime | Docker Compose |
+| Container runtime | Docker Compose (dev) / Kubernetes + Helm (prod) |
 
 ## Configuration
 
 Operational knobs are controlled by environment variables read by the services at startup. Examples:
 
 - Database connectivity: `PG_*` and/or `DATABASE_URL`
-- Ingest throughput: `BATCH_SIZE`, `FLUSH_INTERVAL_MS`, worker count/queue sizing
+- NATS: `NATS_URL`
+- Ingest throughput: `BATCH_SIZE`, `FLUSH_INTERVAL_MS`, worker count
 - Evaluator cadence: `POLL_SECONDS`, `HEARTBEAT_STALE_SECONDS`
 - Auth behavior: Keycloak URLs, JWKS cache TTL, token requirements
+- DB pools: `PG_POOL_MIN`, `PG_POOL_MAX`
+- S3/MinIO: `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`
 
 For complete per-service configuration, see the service docs.
 

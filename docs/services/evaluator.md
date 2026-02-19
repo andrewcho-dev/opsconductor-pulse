@@ -1,8 +1,8 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/evaluator_iot/evaluator.py
-phases: [1, 23, 43, 88, 142]
+phases: [1, 23, 43, 88, 142, 160, 163, 165]
 ---
 
 # evaluator
@@ -38,6 +38,8 @@ Environment variables read by the service:
 | `PG_PASS` | `iot_dev` | Database password. |
 | `DATABASE_URL` | empty | Optional DSN; when set, preferred over `PG_*`. |
 | `NOTIFY_DATABASE_URL` | falls back to `DATABASE_URL` | DSN used for LISTEN/NOTIFY paths (when enabled). |
+| `PG_POOL_MIN` | `2` | DB pool minimum connections. |
+| `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 | `POLL_SECONDS` | `5` | Main evaluation loop interval. |
 | `HEARTBEAT_STALE_SECONDS` | `30` | Heartbeat staleness threshold. |
 | `FALLBACK_POLL_SECONDS` | `POLL_SECONDS` | Fallback poll interval for degraded conditions. |

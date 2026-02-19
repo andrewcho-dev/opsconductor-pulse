@@ -5,7 +5,7 @@ sources:
   - compose/.env
   - compose/.env.example
   - compose/caddy/Caddyfile
-phases: [114, 115, 139, 142, 161, 162, 163, 164]
+phases: [114, 115, 139, 142, 161, 162, 163, 164, 165]
 ---
 
 # Deployment
@@ -62,6 +62,9 @@ Source of truth for required `.env` keys is `compose/.env.example`.
 | `KC_DB_USER_PASSWORD` | Password for Keycloak DB user in Postgres. |
 | `KC_HOSTNAME` | Keycloak hostname config. |
 | `MQTT_ADMIN_PASSWORD` | MQTT broker admin/service account password. |
+| `NATS_URL` | NATS JetStream URL for internal services. |
+| `PG_POOL_MIN` | Asyncpg pool min size for services. |
+| `PG_POOL_MAX` | Asyncpg pool max size for services. |
 | `SMTP_HOST` | SMTP host (Keycloak email flows; optional). |
 | `SMTP_PORT` | SMTP port. |
 | `SMTP_USERNAME` | SMTP user. |
@@ -128,7 +131,7 @@ docker compose --profile dev up -d
 Compose mounts persist data via volumes/bind mounts:
 
 - Postgres data: `../data/postgres` (bind mount)
-- Mosquitto data/passwd: named volumes
+- EMQX data: named volume (`emqx-data`)
 - Prometheus/Grafana data: named volumes
 - MinIO data: named volume (`minio-data`)
 

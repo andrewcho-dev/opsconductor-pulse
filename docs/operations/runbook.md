@@ -1,8 +1,10 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
-phases: [45, 114, 142]
+  - compose/emqx/emqx.conf
+  - compose/nats/init-streams.sh
+phases: [45, 114, 142, 161, 162, 163, 164, 165]
 ---
 
 # Runbook
@@ -24,7 +26,12 @@ Service health endpoints (where applicable):
 - ui_iot: `http://ui:8080/health`
 - ingest_iot: `http://ingest:8080/health`
 - evaluator_iot: `http://evaluator:8080/health`
+- ops_worker: `http://ops_worker:8080/health`
+- route_delivery: `http://route-delivery:8080/health`
 - provision_api: `http://api:8081/health`
+- EMQX (broker health): `http://mqtt:18083/api/v5/status`
+- NATS (health): `http://nats:8222/healthz`
+- MinIO (health): `http://minio:9000/minio/health/live`
 - Prometheus: `http://prometheus:9090/-/healthy`
 - Grafana: `http://grafana:3001/api/health`
 
@@ -35,6 +42,10 @@ docker compose logs -f ui
 docker compose logs -f ingest
 docker compose logs -f evaluator
 docker compose logs -f ops_worker
+docker compose logs -f route-delivery
+docker compose logs -f mqtt
+docker compose logs -f nats
+docker compose logs -f minio
 docker compose logs -f keycloak
 ```
 
@@ -50,15 +61,30 @@ docker compose logs -f keycloak
 - Password auth failures: verify `.env` values (`POSTGRES_PASSWORD`, `PG_PASS`) match compose usage.
 - Pool exhaustion: check Prometheus alert `DBPoolExhausted`; tune pool size or reduce concurrency.
 
-### MQTT Broker
+### EMQX (MQTT Broker)
 
-- TLS failures: verify `compose/mosquitto/certs` mounts and CA chain; check mosquitto logs.
-- Topic access problems: confirm ACL rules and ingest-side topic validation.
+- Dashboard not loading: verify EMQX is healthy and port `18083` is reachable.
+- Device connect/auth failures: check `ui_iot` internal auth endpoints (`/api/v1/internal/mqtt-auth`, `/api/v1/internal/mqtt-acl`) and `MQTT_INTERNAL_AUTH_SECRET`.
+- TLS failures (device mTLS): verify `compose/mosquitto/certs` mounts and CA chain; check EMQX logs.
+  - Note: the internal compose listener on `1883` is plain TCP; external devices use `8883` mTLS.
+
+### NATS JetStream
+
+- NATS down: ingestion and async route delivery stop; after recovery, JetStream consumers resume from durable state.
+- Consumer lag high: check `pulse_ingest_queue_depth` and `pulse_route_delivery_nats_pending`. Scale workers or tune batch settings.
+- Streams/consumers missing: verify `nats-init` ran successfully (creates streams and consumers).
 
 ### Ingestion Pipeline
 
-- Backpressure: watch ingest queue depth metrics; tune `INGEST_WORKER_COUNT`, `INGEST_QUEUE_SIZE`, `BATCH_SIZE`, `FLUSH_INTERVAL_MS`.
+- Backpressure: watch ingest queue depth metrics; tune `INGEST_WORKER_COUNT`, `BATCH_SIZE`, `FLUSH_INTERVAL_MS`.
 - Quarantine spikes: inspect quarantine reasons (token invalid, site mismatch, payload too large, rate limit).
+
+### Route Delivery (Message Routes)
+
+`route_delivery` handles message routes (webhook + MQTT republish) asynchronously via JetStream `ROUTES` stream.
+
+- DLQ growing: check webhook endpoints for failures; inspect `dead_letter_messages` in PostgreSQL.
+- High latency: check destination response times; tune `WEBHOOK_TIMEOUT_SECONDS`.
 
 ### Evaluator
 
@@ -73,6 +99,15 @@ docker compose logs -f keycloak
 ### Migrations
 
 - API errors after deploy: verify migrator ran and migrations are up-to-date; run `python db/migrate.py` against the target DB.
+
+## Kubernetes Operations (Helm)
+
+If running on Kubernetes (Phase 163 Helm chart):
+
+- Pod not starting: check `kubectl describe pod ...` for image pull errors, env var config, and probe failures.
+- HPA not scaling: confirm `metrics-server` is installed and HPA targets are configured.
+
+See `docs/operations/kubernetes.md` for the full guide.
 
 ## Restart Procedures
 
@@ -92,9 +127,9 @@ docker compose up -d --build
 
 Common knobs:
 
-- Ingest throughput: `INGEST_WORKER_COUNT`, `INGEST_QUEUE_SIZE`, `BATCH_SIZE`, `FLUSH_INTERVAL_MS`
+- Ingest throughput: `INGEST_WORKER_COUNT`, `BATCH_SIZE`, `FLUSH_INTERVAL_MS`
 - Evaluator cadence: `POLL_SECONDS`, `HEARTBEAT_STALE_SECONDS`
-- DB pooling: PgBouncer pool sizing and max client connections
+- DB pooling: `PG_POOL_MIN`/`PG_POOL_MAX` per service + PgBouncer pool sizing and max client connections
 
 ## Emergency Procedures
 

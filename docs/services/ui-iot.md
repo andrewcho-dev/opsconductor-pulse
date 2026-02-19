@@ -5,10 +5,12 @@ sources:
   - services/ui_iot/Dockerfile
   - services/ui_iot/services/carrier_service.py
   - services/ui_iot/services/carrier_sync.py
+  - services/ui_iot/routes/ingest.py
+  - services/ui_iot/routes/exports.py
   - services/ui_iot/routes/operator.py
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165]
 ---
 
 # ui-iot
@@ -26,6 +28,23 @@ phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161]
 - Runs the Phase 91+ notification routing engine for outbound alert delivery.
 - Emits request-context audit events to the audit log.
 
+## HTTP Ingest (JetStream)
+
+`ui_iot` provides HTTP ingest endpoints under `/ingest/v1/*`. These endpoints do fast validation, then publish an ingestion envelope to NATS JetStream using PubAck:
+
+- Subject: `telemetry.{tenant_id}`
+- Publish API: `js.publish(..., timeout=1.0)` (durable PubAck)
+
+This unifies HTTP and MQTT ingestion: both ultimately flow through the same `ingest_iot` JetStream consumers.
+
+## Message Route Delivery (JetStream)
+
+Message routes (webhook / MQTT republish / postgresql destinations) are delivered asynchronously by `route_delivery` consuming from JetStream `ROUTES` (`routes.>`). This is separate from the alert notification routing engine in `ui_iot` (Slack/PagerDuty/Teams).
+
+## Exports (S3/MinIO)
+
+Export artifacts are stored in S3-compatible storage (MinIO in compose). Download endpoints return a pre-signed URL redirect so the client downloads directly from S3/MinIO.
+
 ## Architecture
 
 Primary packages:
@@ -39,8 +58,8 @@ Primary packages:
 
 Background tasks (documented in `app.py`):
 
-- Batch writer (telemetry buffering/flush for HTTP ingest)
 - Audit logger (async buffered audit flush)
+- NATS client lifecycle (lazy connection + drain on shutdown)
 
 ## Configuration
 
@@ -59,14 +78,24 @@ Database:
 | `PG_POOL_MIN` | `2` | DB pool minimum connections. |
 | `PG_POOL_MAX` | `10` | DB pool maximum connections. |
 
-Ingestion and batching:
+Ingestion and messaging:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_CACHE_TTL_SECONDS` | `60` | Auth cache TTL (shared ingest/auth caching behaviors). |
-| `BATCH_SIZE` | `500` | Batch size threshold for HTTP ingest buffering. |
-| `FLUSH_INTERVAL_MS` | `1000` | Max time before flushing telemetry batch. |
 | `REQUIRE_TOKEN` | `1` | When enabled, ingestion paths require device tokens. |
+| `NATS_URL` | `nats://iot-nats:4222` | NATS JetStream endpoint used by HTTP ingest and internal publishers. |
+
+Exports (S3/MinIO):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `S3_ENDPOINT` | `http://iot-minio:9000` | Internal S3 endpoint (MinIO in compose). |
+| `S3_PUBLIC_ENDPOINT` | empty | Optional base URL rewrite for browser-facing pre-signed URLs. |
+| `S3_BUCKET` | `exports` | Bucket used for export artifacts. |
+| `S3_ACCESS_KEY` | `minioadmin` | S3/MinIO access key. |
+| `S3_SECRET_KEY` | `minioadmin` | S3/MinIO secret key. |
+| `S3_REGION` | `us-east-1` | S3 region. |
 
 UI / request handling:
 

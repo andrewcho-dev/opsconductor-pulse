@@ -4,7 +4,7 @@ sources:
   - services/ui_iot/middleware/auth.py
   - compose/emqx/emqx.conf
   - compose/caddy/Caddyfile
-phases: [36, 97, 110, 112, 113, 114, 115, 120, 131, 142, 161]
+phases: [36, 97, 110, 112, 113, 114, 115, 120, 131, 142, 161, 162, 165]
 ---
 
 # Security
@@ -46,8 +46,8 @@ Caddy terminates TLS on `:443` and routes:
 
 EMQX config (`compose/emqx/emqx.conf`) enforces TLS on listeners:
 
-- Internal TLS listener: 1883
-- External TLS listener: 8883
+- Internal TCP listener: 1883 (compose internal network)
+- External TLS listener: 8883 (device mTLS)
 - WebSocket listener: 9001
 
 TLS uses CA + server cert/key mounted under `compose/mosquitto/certs/` (reused for EMQX via `/certs` mount).
@@ -86,6 +86,12 @@ EMQX enforces per-device topic ACLs at the broker level via internal HTTP endpoi
 - `/api/v1/internal/mqtt-acl`
 
 These endpoints are protected by the `MQTT_INTERNAL_AUTH_SECRET` shared secret and are blocked from external access by Caddy (`/api/v1/internal/*` responds 404).
+
+### NATS (Internal Bus)
+
+Devices never connect directly to NATS. NATS JetStream is used for internal service-to-service messaging (ingest + route delivery).
+
+In docker-compose the NATS server is only published on `127.0.0.1` for the host (and is otherwise internal to the compose network). For production/Kubernetes, enable NATS authentication/authorization per your environment requirements.
 
 ## API Security
 

@@ -1,7 +1,7 @@
 ---
 last-verified: 2026-02-19
 sources: []
-phases: [142, 143, 144, 145, 146, 147, 148, 163]
+phases: [142, 143, 144, 145, 146, 147, 148, 163, 165]
 ---
 
 # OpsConductor-Pulse Documentation
@@ -27,7 +27,8 @@ phases: [142, 143, 144, 145, 146, 147, 148, 163]
 
 - [ui-iot](services/ui-iot.md) — Main API gateway and UI backend
 - [evaluator](services/evaluator.md) — Alert rule evaluation engine
-- [ingest](services/ingest.md) — MQTT + HTTP telemetry ingestion
+- [ingest](services/ingest.md) — NATS JetStream telemetry ingestion
+- [route-delivery](services/route-delivery.md) — Asynchronous webhook + MQTT republish delivery
 - [ops-worker](services/ops-worker.md) — Health monitoring and background jobs
 - [subscription-worker](services/subscription-worker.md) — Subscription lifecycle
 - [provision-api](services/provision-api.md) — Device provisioning service
