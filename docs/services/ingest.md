@@ -2,7 +2,7 @@
 last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 139, 142, 160, 161, 162]
+phases: [15, 23, 101, 139, 142, 160, 161, 162, 164]
 ---
 
 # ingest
@@ -58,8 +58,6 @@ Environment variables read by the service:
 | `BATCH_SIZE` | `500` | Telemetry batch size before flush. |
 | `FLUSH_INTERVAL_MS` | `1000` | Max time before flushing telemetry batch. |
 | `INGEST_WORKER_COUNT` | `4` | Number of ingestion workers. |
-| `INGEST_QUEUE_SIZE` | `50000` | Queue size for ingestion events. |
-| `DELIVERY_WORKER_COUNT` | `2` | Async route delivery workers (webhooks/MQTT republish). |
 | `BUCKET_TTL_SECONDS` | `3600` | Rate limiter bucket TTL. |
 | `BUCKET_CLEANUP_INTERVAL` | `300` | Bucket cleanup interval. |
 
@@ -67,10 +65,8 @@ Environment variables read by the service:
 
 The ingest service handles SIGTERM/SIGINT gracefully to reduce data loss during deploy/restart:
 
-- Stop accepting new MQTT messages
-- Drain the ingest queue (bounded timeout)
+- Stop NATS consumer loops
 - Stop ingest workers
-- Drain route delivery queue and stop delivery workers
 - Flush `TimescaleBatchWriter` (final batch flush)
 - Close the DB pool
 
@@ -78,6 +74,12 @@ The ingest service handles SIGTERM/SIGINT gracefully to reduce data loss during 
 
 - Health endpoint: `GET http://<container>:8080/health`
 - Metrics endpoint: `GET http://<container>:8080/metrics` (Prometheus format)
+
+Key Prometheus metrics:
+
+- `pulse_ingest_messages_total{tenant_id, result}` — accepted/rejected/rate_limited counts
+- `pulse_ingest_queue_depth` — JetStream consumer pending (telemetry)
+- `pulse_ingest_batch_write_seconds_bucket` — batch flush latency histogram (recorded under `tenant_id="__all__"`)
 
 ## Dependencies
 

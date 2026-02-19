@@ -30,6 +30,24 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 15s
 
+  - job_name: "route_delivery"
+    static_configs:
+      - targets: ["route-delivery:8080"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: "emqx"
+    static_configs:
+      - targets: ["mqtt:18083"]
+    metrics_path: /api/v5/prometheus/stats
+    scrape_interval: 15s
+
+  - job_name: "nats"
+    static_configs:
+      - targets: ["nats-exporter:7777"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]

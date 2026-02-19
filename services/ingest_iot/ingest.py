@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
 from aiohttp import web
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Histogram
 from shared.ingest_core import (
     parse_ts,
     sha256_hex,
@@ -58,6 +58,14 @@ FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
 INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
 BUCKET_TTL_SECONDS = int(os.getenv("BUCKET_TTL_SECONDS", "3600"))
 BUCKET_CLEANUP_INTERVAL = int(os.getenv("BUCKET_CLEANUP_INTERVAL", "300"))
+
+# Operational metrics (Phase 164)
+ingest_batch_write_seconds = Histogram(
+    "pulse_ingest_batch_write_seconds",
+    "Batch write latency (flush duration) in seconds",
+    ["tenant_id"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
+)
 
 COUNTERS = {
     "messages_received": 0,
@@ -1155,6 +1163,14 @@ class Ingestor:
             }
             if self.batch_writer is not None:
                 batch_stats = self.batch_writer.get_stats()
+                try:
+                    # We don't have per-tenant flush timing without touching the batch writer internals.
+                    # Record under a synthetic tenant id so alerting/dashboards can still track p95.
+                    ingest_batch_write_seconds.labels(tenant_id="__all__").observe(
+                        max(0.0, float(batch_stats.get("last_flush_latency_ms", 0.0)) / 1000.0)
+                    )
+                except Exception:
+                    pass
 
             # Best-effort: update pending counts from JetStream consumer state.
             if self._js:

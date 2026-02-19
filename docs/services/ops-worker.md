@@ -1,11 +1,12 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ops_worker/main.py
   - services/ops_worker/health_monitor.py
   - services/ops_worker/metrics_collector.py
   - services/ops_worker/workers/
-phases: [43, 58, 88, 139, 142]
+  - services/ops_worker/workers/export_worker.py
+phases: [43, 58, 88, 139, 142, 164]
 ---
 
 # ops-worker
@@ -29,6 +30,16 @@ Key components:
 - `health_monitor.py`: HTTP polling of service health endpoints.
 - `metrics_collector.py`: periodic aggregation writes to TimescaleDB.
 - `workers/`: task-specific workers invoked on their schedules.
+
+## Exports (S3/MinIO)
+
+The async export pipeline stores export artifacts in S3-compatible object storage (MinIO in local compose).
+
+- `export_worker.py` writes the export to a local temp file, uploads it to `s3://$S3_BUCKET/{export_id}.{format}`, then deletes the temp file.
+- The `export_jobs.file_path` field stores the S3 object key (not a local filesystem path).
+- Expired exports are cleaned up by deleting the S3 object when the DB record expires.
+
+For downloads, the UI API (`ui_iot`) generates a pre-signed URL and redirects the browser to download directly from S3/MinIO.
 
 ## Configuration
 

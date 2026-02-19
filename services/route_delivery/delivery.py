@@ -11,11 +11,13 @@ import asyncio
 import signal
 import hashlib
 import hmac as hmac_mod
+import time
 
 import httpx
 import nats
 import asyncpg
 from aiohttp import web
+from prometheus_client import Counter, Gauge, Histogram, CONTENT_TYPE_LATEST, generate_latest
 
 logger = logging.getLogger("route_delivery")
 logging.basicConfig(
@@ -40,6 +42,28 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 MQTT_TLS = os.getenv("MQTT_TLS", "true").lower() == "true"
 MQTT_TLS_INSECURE = os.getenv("MQTT_TLS_INSECURE", "true").lower() == "true"
 
+# Prometheus metrics
+delivery_total = Counter(
+    "pulse_delivery_total",
+    "Route deliveries",
+    ["tenant_id", "destination_type", "result"],  # success | failed
+)
+delivery_latency_seconds = Histogram(
+    "pulse_delivery_seconds",
+    "Route delivery latency in seconds",
+    ["destination_type"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
+)
+delivery_dlq_total = Counter(
+    "pulse_delivery_dlq_total",
+    "Dead-letter queue writes",
+    ["tenant_id"],
+)
+route_delivery_nats_pending = Gauge(
+    "pulse_route_delivery_nats_pending",
+    "Pending messages for the route-delivery JetStream consumer",
+)
+
 
 class RouteDeliveryService:
     def __init__(self):
@@ -50,6 +74,7 @@ class RouteDeliveryService:
         self._mqtt_client = None
         self._shutting_down = False
         self._workers = []
+        self._metrics_task = None
         self.delivered = 0
         self.failed = 0
 
@@ -114,41 +139,51 @@ class RouteDeliveryService:
         dest_type = route["destination_type"]
         config = route.get("destination_config") or {}
 
-        if dest_type == "webhook":
-            url = config.get("url")
-            if not url:
-                return
-            method = config.get("method", "POST").upper()
-            headers = {"Content-Type": "application/json"}
+        start = time.monotonic()
+        try:
+            if dest_type == "webhook":
+                url = config.get("url")
+                if not url:
+                    return
+                method = config.get("method", "POST").upper()
+                headers = {"Content-Type": "application/json"}
 
-            body_bytes = json.dumps(payload, default=str).encode()
-            secret = config.get("secret")
-            if secret:
-                sig_hex = hmac_mod.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
-                headers["X-Signature-256"] = f"sha256={sig_hex}"
+                body_bytes = json.dumps(payload, default=str).encode()
+                secret = config.get("secret")
+                if secret:
+                    sig_hex = hmac_mod.new(
+                        secret.encode(), body_bytes, hashlib.sha256
+                    ).hexdigest()
+                    headers["X-Signature-256"] = f"sha256={sig_hex}"
 
-            async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT) as client:
-                resp = await client.request(method, url, content=body_bytes, headers=headers)
-                if resp.status_code >= 400:
-                    raise Exception(f"Webhook returned HTTP {resp.status_code}")
+                async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT) as client:
+                    resp = await client.request(
+                        method, url, content=body_bytes, headers=headers
+                    )
+                    if resp.status_code >= 400:
+                        raise Exception(f"Webhook returned HTTP {resp.status_code}")
 
-        elif dest_type == "mqtt_republish":
-            republish_topic = config.get("topic")
-            if not republish_topic:
-                return
-            republish_topic = republish_topic.replace("{tenant_id}", tenant_id)
-            republish_topic = republish_topic.replace(
-                "{device_id}", payload.get("device_id", "")
+            elif dest_type == "mqtt_republish":
+                republish_topic = config.get("topic")
+                if not republish_topic:
+                    return
+                republish_topic = republish_topic.replace("{tenant_id}", tenant_id)
+                republish_topic = republish_topic.replace(
+                    "{device_id}", payload.get("device_id", "")
+                )
+
+                if self._mqtt_client:
+                    msg_bytes = json.dumps(payload, default=str).encode()
+                    self._mqtt_client.publish(republish_topic, msg_bytes)
+                else:
+                    raise Exception("MQTT client not available for republish")
+
+            elif dest_type == "postgresql":
+                return  # Already written by ingest worker
+        finally:
+            delivery_latency_seconds.labels(destination_type=dest_type).observe(
+                max(0.0, time.monotonic() - start)
             )
-
-            if self._mqtt_client:
-                msg_bytes = json.dumps(payload, default=str).encode()
-                self._mqtt_client.publish(republish_topic, msg_bytes)
-            else:
-                raise Exception("MQTT client not available for republish")
-
-        elif dest_type == "postgresql":
-            return  # Already written by ingest worker
 
     async def write_dlq(self, job: dict, error: str):
         """Write failed delivery to dead letter queue."""
@@ -178,6 +213,7 @@ class RouteDeliveryService:
                         json.dumps(route.get("destination_config") or {}, default=str),
                         error[:2000],
                     )
+            delivery_dlq_total.labels(tenant_id=job["tenant_id"]).inc()
         except Exception as dlq_err:
             logger.error("dlq_write_failed", extra={"error": str(dlq_err)})
 
@@ -202,6 +238,11 @@ class RouteDeliveryService:
                     await self.deliver(job)
                     await msg.ack()
                     self.delivered += 1
+                    delivery_total.labels(
+                        tenant_id=job.get("tenant_id", "unknown"),
+                        destination_type=(job.get("route") or {}).get("destination_type", "unknown"),
+                        result="success",
+                    ).inc()
                 except Exception as e:
                     route_id = None
                     try:
@@ -213,6 +254,11 @@ class RouteDeliveryService:
                         extra={"error": str(e), "route_id": route_id},
                     )
                     self.failed += 1
+                    delivery_total.labels(
+                        tenant_id=(job or {}).get("tenant_id", "unknown"),
+                        destination_type=(job or {}).get("route", {}).get("destination_type", "unknown"),
+                        result="failed",
+                    ).inc()
 
                     metadata = msg.metadata
                     if metadata and metadata.num_delivered >= 3:
@@ -222,10 +268,24 @@ class RouteDeliveryService:
                     else:
                         await msg.nak()
 
+    async def _metrics_poll_worker(self):
+        while not self._shutting_down:
+            try:
+                if self._js:
+                    info = await self._js.consumer_info("ROUTES", "route-delivery")
+                    route_delivery_nats_pending.set(getattr(info, "num_pending", 0) or 0)
+            except Exception:
+                pass
+            await asyncio.sleep(5.0)
+
     async def shutdown(self):
         """Graceful shutdown."""
         logger.info("shutdown_initiated")
         self._shutting_down = True
+
+        if self._metrics_task:
+            self._metrics_task.cancel()
+            await asyncio.gather(self._metrics_task, return_exceptions=True)
 
         for task in self._workers:
             task.cancel()
@@ -258,8 +318,13 @@ class RouteDeliveryService:
                 return web.json_response({"status": "ready"})
             return web.json_response({"status": "not_ready"}, status=503)
 
+        async def metrics_handler(_request):
+            payload = generate_latest()
+            return web.Response(body=payload, headers={"Content-Type": CONTENT_TYPE_LATEST})
+
         app.router.add_get("/health", health_handler)
         app.router.add_get("/ready", ready_handler)
+        app.router.add_get("/metrics", metrics_handler)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -270,6 +335,7 @@ class RouteDeliveryService:
         await self.init_nats()
         await self.init_mqtt()
         await self._start_health_server()
+        self._metrics_task = asyncio.create_task(self._metrics_poll_worker())
 
         self._workers = []
         for i in range(WORKER_COUNT):

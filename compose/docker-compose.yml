@@ -41,6 +41,39 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    container_name: iot-minio
+    command: server /data --console-address ":9090"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9090:9090"   # Console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: iot-minio-init
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set pulse http://iot-minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb --ignore-existing pulse/exports;
+      mc mb --ignore-existing pulse/reports;
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+
   pgbouncer:
     image: edoburu/pgbouncer@sha256:85d1e38593617af1b5f7f285e97d407e56c29939683cc7cfe4c8f6dc19f1268b
     container_name: iot-pgbouncer
@@ -98,6 +131,25 @@ services:
       nats:
         condition: service_healthy
     restart: "no"
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: iot-nats-exporter
+    command:
+      [
+        "-varz",
+        "-connz",
+        "-healthz",
+        "-jsz",
+        "streams,consumers",
+        "http://nats:8222",
+      ]
+    expose:
+      - "7777"
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
 
   mqtt-nats-bridge:
     build:
@@ -252,6 +304,11 @@ services:
       PG_USER: iot
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
+      S3_ENDPOINT: "http://iot-minio:9000"
+      S3_BUCKET: "exports"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
       HEALTH_CHECK_INTERVAL: "60"
       SYSTEM_ALERT_ENABLED: "true"
       METRICS_COLLECTION_INTERVAL: "5"
@@ -266,7 +323,6 @@ services:
       CERT_EXPIRY_WARNING_DAYS: "30"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
-      - export-data:/tmp/pulse-exports
       - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/certs:/certs
     depends_on:
@@ -275,6 +331,10 @@ services:
       pgbouncer:
         condition: service_healthy
       migrator:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
       ingest:
         condition: service_started
@@ -368,7 +428,6 @@ services:
       - ../frontend/dist:/app/spa:ro
       - ../services/shared:/app/shared:ro
       - ./mosquitto/certs:/mosquitto/certs:ro
-      - export-data:/tmp/pulse-exports
     environment:
       SERVICE_NAME: ui_iot
       PG_HOST: iot-pgbouncer
@@ -378,6 +437,13 @@ services:
       PG_PASS: ${PG_PASS}
       DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-pgbouncer:5432/iotcloud"
       NATS_URL: "nats://iot-nats:4222"
+      S3_ENDPOINT: "http://iot-minio:9000"
+      # When returning pre-signed URLs to the browser, rewrite to a reachable base.
+      S3_PUBLIC_ENDPOINT: "${S3_PUBLIC_ENDPOINT:-http://localhost:9000}"
+      S3_BUCKET: "exports"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
       UI_REFRESH_SECONDS: "5"
       PROVISION_API_URL: "http://iot-api:8081"
       PROVISION_ADMIN_KEY: ${PROVISION_ADMIN_KEY}
@@ -423,6 +489,10 @@ services:
         condition: service_completed_successfully
       nats:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
       api:
         condition: service_started
       keycloak:
@@ -653,7 +723,7 @@ volumes:
   caddy_data:
   caddy_config:
   emqx-data:
-  export-data:
+  minio-data:
   nats-data:
   mosquitto-data:
   mosquitto-passwd:

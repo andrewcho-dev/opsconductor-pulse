@@ -5,7 +5,7 @@ sources:
   - compose/.env
   - compose/.env.example
   - compose/caddy/Caddyfile
-phases: [114, 115, 139, 142, 161, 162, 163]
+phases: [114, 115, 139, 142, 161, 162, 163, 164]
 ---
 
 # Deployment
@@ -36,9 +36,10 @@ Key services in `compose/docker-compose.yml`:
 - Edge: `caddy`, `mqtt` (EMQX)
 - Identity: `keycloak`, `keycloak-db-init`
 - Data: `postgres` (TimescaleDB), `pgbouncer`, `migrator`
-- Messaging: `nats` (JetStream), `mqtt-nats-bridge`, `route-delivery`
+- Messaging: `nats` (JetStream), `nats-exporter`, `mqtt-nats-bridge`, `route-delivery`
 - Core services: `ui`, `ingest`, `evaluator`, `ops_worker`, `subscription-worker`, `api` (provision_api)
 - Observability: `prometheus`, `grafana`
+- Object storage (local dev): `minio`, `minio-init`
 - Dev helper: `mailpit` (profile `dev`)
 - Simulator: `device_sim` (profile `simulator`)
 
@@ -77,6 +78,14 @@ Source of truth for required `.env` keys is `compose/.env.example`.
 | `GRAFANA_PORT` | Grafana external port (default 3001). |
 | `GRAFANA_ADMIN_USER` | Grafana admin user. |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana admin password. |
+| `MINIO_ROOT_USER` | MinIO root user (local dev). |
+| `MINIO_ROOT_PASSWORD` | MinIO root password (local dev). |
+| `S3_PUBLIC_ENDPOINT` | Base URL used for browser downloads (pre-signed URL rewrite in local dev). |
+| `S3_ENDPOINT` | Internal S3 endpoint (MinIO in compose). |
+| `S3_BUCKET` | Export bucket name (default `exports`). |
+| `S3_ACCESS_KEY` | S3 access key (MinIO root user in local dev). |
+| `S3_SECRET_KEY` | S3 secret key (MinIO root password in local dev). |
+| `S3_REGION` | S3 region (default `us-east-1`). |
 
 ## TLS Configuration
 
@@ -121,6 +130,7 @@ Compose mounts persist data via volumes/bind mounts:
 - Postgres data: `../data/postgres` (bind mount)
 - Mosquitto data/passwd: named volumes
 - Prometheus/Grafana data: named volumes
+- MinIO data: named volume (`minio-data`)
 
 ## Rebuilding After Changes
 

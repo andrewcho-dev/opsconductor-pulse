@@ -3,7 +3,8 @@ last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
-phases: [88, 98, 138, 139, 142, 161, 162, 163]
+  - compose/prometheus/prometheus.yml
+phases: [88, 98, 138, 139, 142, 161, 162, 163, 164]
 ---
 
 # Service Map
@@ -33,7 +34,7 @@ High-level routing:
 | ui_iot | 8000 | 443 (via Caddy) | HTTPS |
 | ingest_iot | 8080 | — | HTTP (internal) |
 | evaluator_iot | 8080 | — | HTTP (internal) |
-| ops_worker | — | — | Background only |
+| ops_worker | 8080 | — | HTTP (internal) |
 | subscription_worker | — | — | Background only |
 | provision_api | 8081 | 8081 | HTTP |
 | Keycloak | 8080 | 443 (via Caddy) | HTTPS |
@@ -42,9 +43,11 @@ High-level routing:
 | EMQX | 1883/9001/18083 | 8883 (TLS), 18083 | MQTT/WS/HTTP |
 | NATS JetStream | 4222/8222 | 4222/8222 (localhost) | NATS/HTTP |
 | mqtt-nats-bridge | — | — | Background only |
-| route-delivery | — | — | Background only |
+| route-delivery | 8080 | — | HTTP (internal) |
+| NATS exporter | 7777 | — | HTTP (internal) |
 | Prometheus | 9090 | 9090 | HTTP |
 | Grafana | 3000 | 3001 | HTTP |
+| MinIO | 9000/9090 | 9000/9090 (localhost) | HTTP (S3 API / console) |
 
 ## Service Dependencies
 
@@ -60,6 +63,8 @@ High-level routing:
 | provision_api | PostgreSQL | Provisioning registry and activation |
 | Prometheus | ui_iot, ingest_iot, evaluator_iot, ops_worker | Scrapes health/metrics |
 | Grafana | Prometheus | Dashboards |
+| nats-exporter | NATS | Exposes NATS/JetStream metrics to Prometheus |
+| MinIO | — | Stores exports/reports in local dev |
 
 ## Core Data Flow
 
