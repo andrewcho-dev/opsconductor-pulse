@@ -97,7 +97,8 @@ const operatorTenantNav: NavItem[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Health Matrix", href: "/operator/tenant-matrix", icon: LayoutGrid },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
-  { label: "Device Tiers", href: "/operator/device-tiers", icon: Layers },
+  { label: "Device Plans", href: "/operator/device-plans", icon: Layers },
+  { label: "Account Tiers", href: "/operator/account-tiers", icon: Shield },
 ];
 
 const operatorUsersAuditNav: NavItem[] = [

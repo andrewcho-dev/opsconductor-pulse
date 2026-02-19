@@ -16,17 +16,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/shared";
 import { apiPatch } from "@/services/api/client";
-import type { SubscriptionDetail } from "@/services/api/types";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
+import type { DeviceSubscriptionRow } from "@/services/api/operator";
 
 interface StatusChangeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  subscription: SubscriptionDetail;
+  subscription: DeviceSubscriptionRow;
   onUpdated: () => void;
 }
 
@@ -37,14 +36,13 @@ export function StatusChangeDialog({
   onUpdated,
 }: StatusChangeDialogProps) {
   const [newStatus, setNewStatus] = useState<string>(subscription.status);
-  const [notes, setNotes] = useState("");
 
   const mutation = useMutation({
     mutationFn: () =>
-      apiPatch(`/operator/subscriptions/${subscription.subscription_id}`, {
-        status: newStatus,
-        notes,
-      }),
+      apiPatch(
+        `/api/v1/operator/device-subscriptions/${encodeURIComponent(subscription.subscription_id)}`,
+        { status: newStatus }
+      ),
     onSuccess: () => {
       onUpdated();
       toast.success("Status updated");
@@ -95,15 +93,6 @@ export function StatusChangeDialog({
               </p>
             </div>
           )}
-          <div className="space-y-2">
-            <Label>Notes (required for audit)</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Reason for status change..."
-              rows={2}
-            />
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -111,7 +100,7 @@ export function StatusChangeDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!notes || newStatus === subscription.status || mutation.isPending}
+            disabled={newStatus === subscription.status || mutation.isPending}
             variant={newStatus === "SUSPENDED" ? "destructive" : "default"}
           >
             {mutation.isPending ? "Updating..." : `Set to ${newStatus}`}

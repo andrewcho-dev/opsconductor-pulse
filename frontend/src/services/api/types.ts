@@ -374,21 +374,15 @@ export interface ChildSubscription {
 export interface SubscriptionDetail {
   subscription_id: string;
   tenant_id: string;
-  tenant_name: string;
-  subscription_type: "MAIN" | "ADDON" | "TRIAL" | "TEMPORARY";
-  parent_subscription_id: string | null;
-  device_limit: number;
-  active_device_count: number;
+  device_id: string;
+  plan_id: string;
+  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED" | "CANCELLED";
   term_start: string;
-  term_end: string;
-  status: "TRIAL" | "ACTIVE" | "GRACE" | "SUSPENDED" | "EXPIRED";
+  term_end: string | null;
   grace_end: string | null;
-  plan_id: string | null;
-  description: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
   updated_at: string;
-  devices: SubscriptionDevice[];
-  child_subscriptions: ChildSubscription[];
 }
 
 export interface DeviceTagsResponse {

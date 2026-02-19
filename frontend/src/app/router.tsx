@@ -27,6 +27,7 @@ import TenantDetailPage from "@/features/operator/TenantDetailPage";
 import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
 import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
 import DeviceTiersPage from "@/features/operator/DeviceTiersPage";
+import AccountTiersPage from "@/features/operator/AccountTiersPage";
 import OperatorUsersPage from "@/features/operator/OperatorUsersPage";
 import UserDetailPage from "@/features/operator/UserDetailPage";
 import { SystemDashboard } from "@/features/operator/SystemDashboard";
@@ -156,7 +157,8 @@ export const router = createBrowserRouter(
             { path: "users/:userId", element: <UserDetailPage /> },
             { path: "subscriptions", element: <SubscriptionsPage /> },
             { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
-            { path: "device-tiers", element: <DeviceTiersPage /> },
+            { path: "device-plans", element: <DeviceTiersPage /> },
+            { path: "account-tiers", element: <AccountTiersPage /> },
             { path: "certificates", element: <CertificateOverviewPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "system-metrics", element: <SystemMetricsPage /> },
