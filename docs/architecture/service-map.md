@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - compose/docker-compose.yml
   - compose/caddy/Caddyfile
-phases: [88, 98, 138, 139, 142]
+phases: [88, 98, 138, 139, 142, 161]
 ---
 
 # Service Map
@@ -17,7 +17,8 @@ High-level routing:
 - Browser traffic terminates at Caddy on HTTPS (:443).
 - Caddy routes Keycloak paths (`/realms/*`, `/admin/*`, etc.) to the Keycloak service.
 - All application paths (`/app/*`, `/customer/*`, `/operator/*`, `/api/v2/*`, `/ingest/*`) route to `ui_iot`.
-- Devices publish telemetry to Mosquitto MQTT (external TLS port 8883) which feeds `ingest_iot`.
+- Devices publish telemetry to EMQX MQTT (external TLS port 8883) which feeds `ingest_iot`.
+- EMQX uses internal `ui_iot` endpoints for CONNECT auth and per-topic ACL enforcement (`/api/v1/internal/*`).
 
 ## Port Reference
 
@@ -32,7 +33,7 @@ High-level routing:
 | Keycloak | 8080 | 443 (via Caddy) | HTTPS |
 | PostgreSQL | 5432 | 5432 | TCP |
 | PgBouncer | 6432 | — | TCP |
-| Mosquitto | 1883/9001 | 8883 (TLS) | MQTT/WS |
+| EMQX | 1883/9001/18083 | 8883 (TLS), 18083 | MQTT/WS/HTTP |
 | Prometheus | 9090 | 9090 | HTTP |
 | Grafana | 3000 | 3001 | HTTP |
 
@@ -41,7 +42,7 @@ High-level routing:
 | Service | Depends On | Why |
 |---------|------------|-----|
 | ui_iot | PgBouncer, Keycloak | API + auth + DB |
-| ingest_iot | Mosquitto, PgBouncer/PostgreSQL | MQTT intake + telemetry writes |
+| ingest_iot | EMQX, PgBouncer/PostgreSQL | MQTT intake + telemetry writes |
 | evaluator_iot | PgBouncer/PostgreSQL | Reads telemetry and writes alerts/state |
 | ops_worker | ui_iot, ingest_iot, evaluator_iot, PgBouncer/PostgreSQL | Health polling + metrics |
 | subscription_worker | PostgreSQL | Subscription lifecycle updates |
@@ -53,7 +54,7 @@ High-level routing:
 
 Telemetry ingestion:
 
-1. Device → Mosquitto (MQTT/TLS) → `ingest_iot`
+1. Device → EMQX (MQTT/TLS) → `ingest_iot`
 2. `ingest_iot` → TimescaleDB telemetry hypertable (via asyncpg)
 3. `evaluator_iot` polls telemetry → updates device state + creates/updates/closes alerts
 4. `ui_iot` serves the UI and exposes APIs to view devices/telemetry/alerts

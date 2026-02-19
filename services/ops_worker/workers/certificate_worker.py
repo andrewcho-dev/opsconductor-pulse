@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 DEVICE_CA_CERT_PATH = os.getenv("DEVICE_CA_CERT_PATH", "/mosquitto/certs/device-ca.crt")
 DEVICE_CA_KEY_PATH = os.getenv("DEVICE_CA_KEY_PATH", "/mosquitto/certs/device-ca.key")
-CRL_OUTPUT_PATH = os.getenv("CRL_OUTPUT_PATH", "/mosquitto/certs/device-crl.pem")
+CRL_OUTPUT_PATH = os.getenv("CRL_OUTPUT_PATH", "/certs/device-crl.pem")
 CERT_EXPIRY_WARNING_DAYS = int(os.getenv("CERT_EXPIRY_WARNING_DAYS", "30"))
 
 
@@ -33,6 +33,31 @@ def _load_device_ca() -> tuple[object, x509.Certificate]:
     )
     ca_cert = x509.load_pem_x509_certificate(ca_cert_pem, default_backend())
     return ca_key, ca_cert
+
+
+async def _notify_broker_crl_update() -> None:
+    """Notify EMQX to reload TLS configuration after CRL update."""
+    emqx_api_url = os.getenv("EMQX_API_URL", "http://iot-mqtt:18083")
+    emqx_api_user = os.getenv("EMQX_API_USER", "admin")
+    emqx_api_pass = os.getenv("EMQX_DASHBOARD_PASSWORD", "admin123")
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.put(
+                f"{emqx_api_url}/api/v5/listeners/ssl:default/restart",
+                auth=(emqx_api_user, emqx_api_pass),
+            )
+            if resp.status_code < 300:
+                logger.info("emqx_crl_reload_success")
+            else:
+                logger.warning(
+                    "emqx_crl_reload_failed",
+                    extra={"status": resp.status_code, "body": resp.text[:200]},
+                )
+    except Exception as e:
+        logger.warning("emqx_crl_reload_error", extra={"error": str(e)})
 
 
 async def regenerate_crl(pool: asyncpg.Pool) -> None:
@@ -93,11 +118,7 @@ async def regenerate_crl(pool: asyncpg.Pool) -> None:
         logger.error("Failed to write CRL file: %s", e)
         return
 
-    # NOTE: Mosquitto does not auto-reload CRL files.
-    # In production, send SIGHUP to Mosquitto after CRL update:
-    #   docker kill --signal=SIGHUP iot-mqtt
-    # Or use a sidecar container that watches the CRL file and signals Mosquitto.
-    logger.info("CRL file updated -- Mosquitto may need SIGHUP to reload", extra={"path": CRL_OUTPUT_PATH})
+    await _notify_broker_crl_update()
 
 
 async def check_expired_certificates(pool: asyncpg.Pool) -> None:

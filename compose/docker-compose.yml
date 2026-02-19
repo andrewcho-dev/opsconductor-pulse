@@ -1,16 +1,25 @@
 services:
   mqtt:
-    image: eclipse-mosquitto@sha256:e011726bdfa757011bc8b8716e03b7c35d2c3f623d9f658c2c6bf66e909ea42e
+    image: emqx/emqx:5.8
     container_name: iot-mqtt
+    environment:
+      EMQX_NODE_COOKIE: "${EMQX_NODE_COOKIE:-emqx_pulse_secret}"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
     ports:
       - "8883:8883"
       - "9001:9001"
+      - "18083:18083"
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/acl.conf:/mosquitto/config/acl.conf
-      - ./mosquitto/certs:/mosquitto/certs
-      - mosquitto-passwd:/mosquitto/passwd
-      - mosquitto-data:/mosquitto/data
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./mosquitto/certs:/certs:ro
+      - emqx-data:/opt/emqx/data
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: unless-stopped
 
   postgres:
@@ -186,12 +195,16 @@ services:
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       DEVICE_CA_CERT_PATH: "/mosquitto/certs/device-ca.crt"
       DEVICE_CA_KEY_PATH: "/mosquitto/certs/device-ca.key"
-      CRL_OUTPUT_PATH: "/mosquitto/certs/device-crl.pem"
+      CRL_OUTPUT_PATH: "/certs/device-crl.pem"
+      EMQX_API_URL: "http://iot-mqtt:18083"
+      EMQX_API_USER: "admin"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
       CERT_EXPIRY_WARNING_DAYS: "30"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
       - export-data:/tmp/pulse-exports
       - ./mosquitto/certs:/mosquitto/certs
+      - ./mosquitto/certs:/certs
     depends_on:
       postgres:
         condition: service_healthy
@@ -319,6 +332,7 @@ services:
       MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
       MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
       MQTT_TLS_INSECURE: "true"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       METRICS_COLLECTION_INTERVAL: "5"
@@ -571,6 +585,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  emqx-data:
   export-data:
   mosquitto-data:
   mosquitto-passwd:

@@ -32,6 +32,7 @@ from routes.dashboards import router as dashboards_router
 from routes.sensors import router as sensors_router
 from routes.carrier import router as carrier_router
 from routes.analytics import router as analytics_router
+from routes.internal import router as internal_router
 from routes.system import (
     router as system_router,
 )
@@ -364,6 +365,7 @@ app.include_router(carrier_router)
 app.include_router(operator_router)
 app.include_router(system_router)
 app.include_router(analytics_router)
+app.include_router(internal_router)
 app.include_router(api_v2_ws_router)
 app.include_router(ingest_router)
 app.include_router(users_router)
@@ -468,6 +470,7 @@ CSRF_EXEMPT_PATHS = (
     "/metrics",
     "/webhook/",
     "/.well-known/",
+    "/api/v1/internal/",
     # Legacy paths are redirected to /api/v1/*; exempt them so CSRF doesn't block the redirect.
     "/customer/",
     "/operator/",

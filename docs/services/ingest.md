@@ -2,7 +2,7 @@
 last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
-phases: [15, 23, 101, 139, 142, 160]
+phases: [15, 23, 101, 139, 142, 160, 161]
 ---
 
 # ingest
@@ -87,7 +87,7 @@ The ingest service handles SIGTERM/SIGINT gracefully to reduce data loss during 
 
 ## Dependencies
 
-- Mosquitto MQTT broker
+- EMQX MQTT broker
 - PostgreSQL + TimescaleDB (telemetry + registry tables)
 - PgBouncer (in compose) for pooling
 

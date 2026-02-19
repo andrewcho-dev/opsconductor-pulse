@@ -1,10 +1,11 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-19
 sources:
   - services/ui_iot/middleware/auth.py
   - services/ui_iot/middleware/tenant.py
   - services/ui_iot/db/pool.py
-phases: [4, 36, 43, 96, 97, 142]
+  - services/ui_iot/routes/internal.py
+phases: [4, 36, 43, 96, 97, 142, 161]
 ---
 
 # Tenant Isolation
@@ -19,6 +20,7 @@ Tenant isolation is enforced as defense-in-depth:
 2. Tenant context is derived from the authenticated token (never from request parameters).
 3. Database access uses connection wrappers that set tenant context for Row-Level Security (RLS).
 4. Operator access uses a separate DB role that bypasses RLS and is audited.
+5. Device plane isolation is enforced at the MQTT broker via per-device topic ACL checks (EMQX HTTP ACL backend).
 
 ## Authentication Model
 
@@ -116,6 +118,15 @@ Device identity is always tenant-scoped:
 
 - In telemetry topics and DB records, devices belong to a tenant.
 - Authorization checks must prevent cross-tenant device access.
+
+## Broker-Level MQTT ACLs (EMQX)
+
+EMQX enforces per-device publish/subscribe ACLs at the broker level via internal HTTP endpoints:
+
+- `POST /api/v1/internal/mqtt-auth` (CONNECT auth)
+- `POST /api/v1/internal/mqtt-acl` (PUBLISH/SUBSCRIBE authorization)
+
+These checks close the previous "read-side ACL gap" where a device could subscribe to another tenant's topics if application-layer validation was bypassed.
 
 ## Rate Limiting
 

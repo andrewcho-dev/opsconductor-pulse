@@ -25,6 +25,11 @@
 		reverse_proxy pulse-keycloak:8080
 	}
 
+	# Block internal endpoints from external access
+	handle /api/v1/internal/* {
+		respond 404
+	}
+
 	# Everything else → UI (FastAPI + SPA)
 	handle {
 		reverse_proxy iot-ui:8080

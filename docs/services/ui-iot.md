@@ -6,8 +6,9 @@ sources:
   - services/ui_iot/services/carrier_service.py
   - services/ui_iot/services/carrier_sync.py
   - services/ui_iot/routes/operator.py
+  - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161]
 ---
 
 # ui-iot
@@ -106,6 +107,15 @@ Prometheus metrics may be exposed depending on the component (see `shared/metric
 - Keycloak (OIDC/JWT auth)
 - Caddy reverse proxy (TLS termination + routing)
 - Optional: external notification endpoints (Slack/PagerDuty/Teams/webhooks)
+
+## Internal MQTT Auth (EMQX)
+
+EMQX calls internal-only endpoints in `ui_iot` for MQTT CONNECT authentication and per-topic ACL checks:
+
+- `POST /api/v1/internal/mqtt-auth`
+- `POST /api/v1/internal/mqtt-acl`
+
+These endpoints require the `X-Internal-Auth` header to match `MQTT_INTERNAL_AUTH_SECRET` and should never be exposed externally.
 
 ## Carrier Integration
 
