@@ -21,7 +21,8 @@ sources:
   - services/ui_iot/routes/certificates.py
   - services/ui_iot/routes/analytics.py
   - services/ui_iot/routes/message_routing.py
-phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157]
+  - services/ui_iot/routes/operator.py
+phases: [23, 96, 122, 123, 125, 126, 127, 134, 142, 157, 158]
 ---
 
 # Customer API Endpoints
@@ -157,6 +158,17 @@ List available data plans from the carrier.
 - Permission: none (read-only)
 - Response: `{ plans: [{ id, name, ... }], carrier_name }`
 - Note: returns empty array for carriers that don't support plan listing (e.g., 1NCE).
+
+## Operator — Carrier Management
+
+Operator endpoints are cross-tenant (RLS bypass via `operator_connection()`), and all access is audited via `log_operator_access()`.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/operator/carrier-integrations` | Operator | List all integrations cross-tenant. Query: `tenant_id`, `carrier_name`, `limit`, `offset` |
+| POST | `/api/v1/operator/carrier-integrations` | Operator Admin | Create integration for a tenant. Body requires `tenant_id` |
+| PUT | `/api/v1/operator/carrier-integrations/{id}` | Operator Admin | Update any integration |
+| DELETE | `/api/v1/operator/carrier-integrations/{id}` | Operator Admin | Delete integration + unlink devices |
 
 ## Alerts
 

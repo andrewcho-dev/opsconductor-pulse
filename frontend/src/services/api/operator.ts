@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPatch } from "./client";
+import { apiDelete, apiGet, apiPost, apiPatch, apiPut } from "./client";
 import type {
   OperatorDevicesResponse,
   OperatorAlertsResponse,
@@ -375,4 +375,73 @@ export async function updateTenant(
   data: Partial<Tenant>
 ): Promise<Tenant> {
   return apiPatch(`/api/v1/operator/tenants/${encodeURIComponent(tenantId)}`, data);
+}
+
+export interface OperatorCarrierIntegration {
+  id: number;
+  tenant_id: string;
+  carrier_name: string;
+  display_name: string;
+  enabled: boolean;
+  account_id: string | null;
+  api_key_masked: string | null;
+  sync_enabled: boolean;
+  sync_interval_minutes: number;
+  last_sync_at: string | null;
+  last_sync_status: string;
+  last_sync_error: string | null;
+  created_at: string;
+}
+
+export async function fetchOperatorCarrierIntegrations(params?: {
+  tenant_id?: string;
+  carrier_name?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ integrations: OperatorCarrierIntegration[]; total: number; limit: number; offset: number }> {
+  const sp = new URLSearchParams();
+  if (params?.tenant_id) sp.set("tenant_id", params.tenant_id);
+  if (params?.carrier_name) sp.set("carrier_name", params.carrier_name);
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  return apiGet(
+    `/api/v1/operator/carrier-integrations${sp.toString() ? `?${sp.toString()}` : ""}`
+  );
+}
+
+export async function createOperatorCarrierIntegration(data: {
+  tenant_id: string;
+  carrier_name: string;
+  display_name: string;
+  enabled?: boolean;
+  api_key?: string | null;
+  api_secret?: string | null;
+  api_base_url?: string | null;
+  account_id?: string | null;
+  sync_enabled?: boolean;
+  sync_interval_minutes?: number;
+  config?: Record<string, unknown>;
+}): Promise<OperatorCarrierIntegration> {
+  return apiPost("/api/v1/operator/carrier-integrations", data);
+}
+
+export async function updateOperatorCarrierIntegration(
+  integrationId: number,
+  data: {
+    display_name?: string;
+    enabled?: boolean;
+    api_key?: string | null;
+    api_secret?: string | null;
+    api_base_url?: string | null;
+    account_id?: string | null;
+    sync_enabled?: boolean;
+    sync_interval_minutes?: number;
+    config?: Record<string, unknown>;
+  }
+): Promise<OperatorCarrierIntegration> {
+  return apiPut(`/api/v1/operator/carrier-integrations/${integrationId}`, data);
+}
+
+export async function deleteOperatorCarrierIntegration(integrationId: number): Promise<void> {
+  await apiDelete(`/api/v1/operator/carrier-integrations/${integrationId}`);
 }

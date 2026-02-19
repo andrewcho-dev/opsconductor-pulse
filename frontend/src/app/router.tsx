@@ -28,6 +28,7 @@ import SubscriptionsPage from "@/features/operator/SubscriptionsPage";
 import SubscriptionDetailPage from "@/features/operator/SubscriptionDetailPage";
 import DeviceTiersPage from "@/features/operator/DeviceTiersPage";
 import AccountTiersPage from "@/features/operator/AccountTiersPage";
+import OperatorCarriersPage from "@/features/operator/OperatorCarriersPage";
 import OperatorUsersPage from "@/features/operator/OperatorUsersPage";
 import UserDetailPage from "@/features/operator/UserDetailPage";
 import { SystemDashboard } from "@/features/operator/SystemDashboard";
@@ -159,6 +160,7 @@ export const router = createBrowserRouter(
             { path: "subscriptions/:subscriptionId", element: <SubscriptionDetailPage /> },
             { path: "device-plans", element: <DeviceTiersPage /> },
             { path: "account-tiers", element: <AccountTiersPage /> },
+            { path: "carriers", element: <OperatorCarriersPage /> },
             { path: "certificates", element: <CertificateOverviewPage /> },
             { path: "system", element: <SystemDashboard /> },
             { path: "system-metrics", element: <SystemMetricsPage /> },

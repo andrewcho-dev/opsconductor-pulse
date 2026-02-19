@@ -5,8 +5,9 @@ sources:
   - services/ui_iot/Dockerfile
   - services/ui_iot/services/carrier_service.py
   - services/ui_iot/services/carrier_sync.py
+  - services/ui_iot/routes/operator.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158]
 ---
 
 # ui-iot
@@ -111,6 +112,13 @@ Carrier integrations are implemented in:
 - Provider implementations: `services/ui_iot/services/carrier_service.py`
 - Customer routes: `services/ui_iot/routes/carrier.py`
 - Background sync worker: `services/ui_iot/services/carrier_sync.py`
+
+Operator carrier management:
+
+- Operators can manage carrier integrations across all tenants via `/api/v1/operator/carrier-integrations`.
+- These endpoints bypass RLS using `operator_connection()` and audit access via `log_operator_access()`.
+- Write operations (create/update/delete) require `require_operator_admin`.
+- Operator UI route: `/operator/carriers`.
 
 Provider notes:
 
