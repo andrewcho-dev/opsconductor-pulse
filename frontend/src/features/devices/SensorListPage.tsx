@@ -152,6 +152,11 @@ export function SensorListPage() {
         description="Manage and monitor all sensors across your device fleet"
       />
 
+      <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30 p-3 text-sm">
+        <strong>Tip:</strong> You can now manage sensors per-device on the{" "}
+        <strong>Sensors & Data</strong> tab of each device's detail page.
+      </div>
+
       <div className="rounded-md border border-border p-3 space-y-3">
         <div className="flex gap-3 flex-wrap">
           <Select value={typeFilter} onValueChange={setTypeFilter}>

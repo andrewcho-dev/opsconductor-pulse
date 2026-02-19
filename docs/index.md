@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - docs/development/frontend.md
   - docs/features/device-management.md
-phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173]
+phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174]
 ---
 
 # OpsConductor-Pulse Documentation
@@ -40,7 +40,7 @@ phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173]
 
 - [Alerting](features/alerting.md) — Rules, escalation, notification channels, on-call
 - [Integrations](features/integrations.md) — Webhook, SNMP, email, MQTT delivery
-- [Device Management](features/device-management.md) — Provisioning, templates, modules/sensors/transports, twin, commands, OTA
+- [Device Management](features/device-management.md) — Provisioning, templates, modules/sensors/transports, twin, commands, OTA, Getting Started guide
 - [Dashboards](features/dashboards.md) — Dashboard system, widgets, TV/NOC mode
 - [Billing](features/billing.md) — Subscriptions, metering, device limits
 - [Reporting](features/reporting.md) — SLA reports, CSV exports

@@ -6,6 +6,7 @@ import {
   Cpu,
   Bell,
   BarChart3,
+  Rocket,
   Shield,
   ShieldCheck,
   ShieldAlert,
@@ -57,17 +58,6 @@ type NavItem = {
   href: string;
   icon: typeof LayoutDashboard;
 };
-
-const customerFleetNav: NavItem[] = [
-  { label: "Device Templates", href: "/templates", icon: LayoutTemplate },
-  { label: "Devices", href: "/devices", icon: Cpu },
-  { label: "Sensors", href: "/sensors", icon: Activity },
-  { label: "Device Groups", href: "/device-groups", icon: Layers },
-  { label: "Fleet Map", href: "/map", icon: MapPin },
-  { label: "OTA Updates", href: "/ota/campaigns", icon: Radio },
-  { label: "Firmware", href: "/ota/firmware", icon: Radio },
-  { label: "Sites", href: "/sites", icon: Building2 },
-];
 
 const customerMonitoringNav: NavItem[] = [
   { label: "Alerts", href: "/alerts", icon: Bell },
@@ -130,6 +120,9 @@ export function AppSidebar() {
   const [fleetOpen, setFleetOpen] = useState(() =>
     readSidebarOpen("sidebar-fleet", true)
   );
+  const [fleetSetupDismissed] = useState(() => {
+    return localStorage.getItem("pulse_fleet_setup_dismissed") === "true";
+  });
   const [monitoringOpen, setMonitoringOpen] = useState(() =>
     readSidebarOpen("sidebar-monitoring", true)
   );
@@ -285,7 +278,51 @@ export function AppSidebar() {
               </SidebarGroupLabel>
               <CollapsibleContent>
                 <SidebarGroupContent>
-                  <SidebarMenu>{customerFleetNav.map((item) => renderNavItem(item))}</SidebarMenu>
+                  <SidebarMenu>
+                    {/* Getting Started — hidden once dismissed */}
+                    {!fleetSetupDismissed && (
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={isActive("/fleet/getting-started")}>
+                          <Link to="/fleet/getting-started">
+                            <Rocket className="h-4 w-4" />
+                            <span>Getting Started</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
+
+                    {/* Setup section */}
+                    <div className="px-2 pt-3 pb-1">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Setup
+                      </span>
+                    </div>
+                    {renderNavItem({ label: "Sites", href: "/sites", icon: Building2 })}
+                    {renderNavItem({
+                      label: "Device Templates",
+                      href: "/templates",
+                      icon: LayoutTemplate,
+                    })}
+                    {renderNavItem({ label: "Devices", href: "/devices", icon: Cpu })}
+
+                    {/* Monitor section */}
+                    <div className="px-2 pt-3 pb-1">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Monitor
+                      </span>
+                    </div>
+                    {renderNavItem({ label: "Fleet Map", href: "/map", icon: MapPin })}
+                    {renderNavItem({ label: "Device Groups", href: "/device-groups", icon: Layers })}
+
+                    {/* Maintain section */}
+                    <div className="px-2 pt-3 pb-1">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Maintain
+                      </span>
+                    </div>
+                    {renderNavItem({ label: "OTA Updates", href: "/ota/campaigns", icon: Radio })}
+                    {renderNavItem({ label: "Firmware", href: "/ota/firmware", icon: Radio })}
+                  </SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>
             </Collapsible>

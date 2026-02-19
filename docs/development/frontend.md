@@ -7,6 +7,7 @@ sources:
   - frontend/src/components/
   - frontend/src/features/
   - frontend/src/features/templates/
+  - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -18,7 +19,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174]
 ---
 
 # Frontend
@@ -59,6 +60,7 @@ Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 - `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands (Phase 171: tabbed device detail)
 - `alerts/` — alert inbox and rule dialogs
 - `escalation/` — escalation policies UI
+- `fleet/` — fleet-level pages (Getting Started onboarding guide)
 - `notifications/` — channels and routing rules UI
 - `oncall/` — schedules, layers, overrides, timeline
 - `reports/` — reports and export UI

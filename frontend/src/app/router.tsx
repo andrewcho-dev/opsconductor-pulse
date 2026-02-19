@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import DashboardPage from "@/features/dashboard/DashboardPage";
+import GettingStartedPage from "@/features/fleet/GettingStartedPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
@@ -100,6 +101,7 @@ export const router = createBrowserRouter(
           element: <RequireCustomer />,
           children: [
             { path: "dashboard", element: <DashboardPage /> },
+            { path: "fleet/getting-started", element: <GettingStartedPage /> },
             { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
             { path: "templates", element: <TemplateListPage /> },

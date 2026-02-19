@@ -13,7 +13,8 @@ sources:
   - services/ui_iot/routes/templates.py
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173]
+  - frontend/src/features/fleet/GettingStartedPage.tsx
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174]
 ---
 
 # ui-iot
@@ -193,6 +194,10 @@ Phase 169 updates device management APIs to use the instance-level template mode
 - Module assignment endpoints live in `services/ui_iot/routes/devices.py` (`/devices/{device_id}/modules`).
 - Sensor endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_sensors` and keep the fleet-wide `/sensors` endpoint for backward compatibility.
 - Transport endpoints in `services/ui_iot/routes/sensors.py` are backed by `device_transports`. Legacy `/devices/{device_id}/connection` remains temporarily but is marked deprecated.
+
+## Fleet Navigation (Phase 174)
+
+The frontend Fleet sidebar is restructured into Setup / Monitor / Maintain sub-groups. A Getting Started page is served at `/app/fleet/getting-started` with 5-step onboarding and live completion detection. The fleet-wide Sensors page (`/app/sensors`) is removed from sidebar navigation but the route is preserved for backward compatibility.
 
 ## Troubleshooting
 

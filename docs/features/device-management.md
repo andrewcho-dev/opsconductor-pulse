@@ -21,7 +21,9 @@ sources:
   - frontend/src/features/templates/TemplateListPage.tsx
   - frontend/src/features/templates/TemplateDetailPage.tsx
   - frontend/src/services/api/templates.ts
-phases: [166, 167, 168, 169, 170, 171, 172, 173]
+  - frontend/src/features/fleet/GettingStartedPage.tsx
+  - frontend/src/components/layout/AppSidebar.tsx
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174]
 ---
 
 # Device Management
@@ -85,6 +87,28 @@ The customer UI restructures the device detail page into a 6-tab layout to keep 
 - Health: device health telemetry and uptime.
 - Twin & Commands: desired/reported state management and command dispatch/history.
 - Security: API tokens and mTLS certificates.
+
+## Fleet Navigation & Getting Started (Phase 174)
+
+The Fleet sidebar is organized into workflow-oriented sub-groups:
+
+- **Setup**: Sites, Device Templates, Devices — the fundamental configuration workflow.
+- **Monitor**: Fleet Map, Device Groups — observability and logical grouping.
+- **Maintain**: OTA Updates, Firmware — ongoing fleet maintenance.
+
+A "Getting Started" page (`/app/fleet/getting-started`) guides new customers through 5 setup steps with live completion detection:
+
+1. Create a site
+2. Set up a device template
+3. Add your first device
+4. Verify data is flowing (device online)
+5. Configure alerts
+
+Each step auto-detects completion via API queries. The page is accessible from the Fleet sidebar and auto-dismisses (via localStorage) when dismissed or complete.
+
+The fleet-wide Sensors page is no longer linked in the sidebar (per-device sensors management is now in the Device Detail Sensors & Data tab from Phase 171). The route remains accessible via direct URL with a deprecation tip banner.
+
+The Device List page includes a health summary strip showing online/stale/offline device counts above the device list.
 
 ## Telemetry Key Normalization (Phase 172)
 
