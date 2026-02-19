@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, Plus, RefreshCcw } from "lucide-react";
+import { Activity, AlertTriangle, RefreshCcw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -11,15 +11,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
-import { useAuth } from "@/services/auth/AuthProvider";
 import { useMetricReference } from "@/hooks/use-metrics";
 import type { NormalizedMetricReference } from "@/services/api/types";
 import NormalizedMetricDialog from "./NormalizedMetricDialog";
 import MapMetricDialog from "./MapMetricDialog";
 
 export default function MetricsPage() {
-  const { user } = useAuth();
-  const canEdit = user?.role === "customer_admin";
+  // Phase 172: this page is deprecated in favor of template-driven metric definitions.
+  const canEdit = false;
   const { data, isLoading, error, refetch, isFetching } = useMetricReference();
   const [selectedNormalized, setSelectedNormalized] =
     useState<NormalizedMetricReference | null>(null);
@@ -46,6 +45,20 @@ export default function MetricsPage() {
             : `${normalizedMetrics.length} normalized metrics configured`
         }
       />
+      <div className="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-950">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+          <h3 className="font-semibold text-yellow-800 dark:text-yellow-200">Legacy Page</h3>
+        </div>
+        <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+          Metric definitions are now managed through{" "}
+          <a href="/app/templates" className="underline font-medium">
+            Device Templates
+          </a>
+          . This page shows legacy metric catalog and normalized metrics for reference only. No new
+          entries should be created here.
+        </p>
+      </div>
       {error ? (
         <div className="text-destructive">
           Failed to load metrics: {(error as Error).message}
@@ -66,12 +79,7 @@ export default function MetricsPage() {
                   Canonical metrics used in alert rules.
                 </p>
               </div>
-              {canEdit && (
-                <Button size="sm" onClick={() => setCreateNormalizedOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create New
-                </Button>
-              )}
+              <span className="text-xs text-muted-foreground">Read-only</span>
             </div>
             {normalizedMetrics.length === 0 ? (
               <EmptyState

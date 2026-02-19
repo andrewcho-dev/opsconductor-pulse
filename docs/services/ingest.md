@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - services/ingest_iot/ingest.py
   - compose/nats/init-streams.sh
-phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165]
+phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165, 172]
 ---
 
 # ingest
@@ -30,8 +30,10 @@ Pipeline stages (high level):
 2. Validate required fields (`site_id`, timestamp), payload size, metric constraints
 3. Device registry validation (cache + DB fallback)
 4. Subscription status checks (block suspended/expired)
-5. Batch insert telemetry records, update device last-seen/location as needed
-6. Message route fan-out is published to NATS and delivered asynchronously by the `route-delivery` service (webhook/MQTT republish)
+5. Normalize telemetry keys using `device_modules.metric_key_map` (Phase 172): raw firmware keys are translated to semantic metric keys (unmapped keys pass through unchanged)
+6. Batch insert telemetry records, update device last-seen/location as needed
+7. Update `device_sensors.last_value` / `last_seen_at` from the ingested telemetry (Phase 172)
+8. Message route fan-out is published to NATS and delivered asynchronously by the `route-delivery` service (webhook/MQTT republish)
 
 ## Configuration
 
@@ -61,6 +63,8 @@ Environment variables read by the service:
 | `INGEST_WORKER_COUNT` | `4` | Number of ingestion workers. |
 | `BUCKET_TTL_SECONDS` | `3600` | Rate limiter bucket TTL. |
 | `BUCKET_CLEANUP_INTERVAL` | `300` | Bucket cleanup interval. |
+| `METRIC_MAP_CACHE_TTL` | `300` | TTL (seconds) for merged per-device metric key map cache. |
+| `METRIC_MAP_CACHE_SIZE` | `10000` | Max entries in the metric key map cache (evicts oldest). |
 
 ## Shutdown
 
@@ -81,6 +85,8 @@ Key Prometheus metrics:
 - `pulse_ingest_messages_total{tenant_id, result}` — accepted/rejected/rate_limited counts
 - `pulse_ingest_queue_depth` — JetStream consumer pending (telemetry)
 - `pulse_ingest_batch_write_seconds_bucket` — batch flush latency histogram (recorded under `tenant_id="__all__"`)
+- `ingest_metric_keys_normalized_total{tenant_id}` — number of telemetry keys translated via `metric_key_map`
+- `ingest_metric_key_map_cache_hits_total` / `ingest_metric_key_map_cache_misses_total` — cache behavior for metric map lookups
 
 ## Dependencies
 

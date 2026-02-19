@@ -17,10 +17,11 @@ sources:
   - services/ui_iot/routes/operator.py
   - services/provision_api/app.py
   - services/ingest_iot/ingest.py
+  - services/ui_iot/routes/ingest.py
   - frontend/src/features/templates/TemplateListPage.tsx
   - frontend/src/features/templates/TemplateDetailPage.tsx
   - frontend/src/services/api/templates.ts
-phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170, 171]
+phases: [37, 48, 52, 66, 74, 76, 107, 108, 109, 125, 131, 142, 157, 158, 169, 170, 171, 172]
 ---
 
 # Device Management
@@ -84,6 +85,17 @@ The customer UI restructures the device detail page into a 6-tab layout to keep 
 - Health: device health telemetry and uptime.
 - Twin & Commands: desired/reported state management and command dispatch/history.
 - Security: API tokens and mTLS certificates.
+
+## Telemetry Key Normalization (Phase 172)
+
+Telemetry is stored using *semantic* metric keys to keep charting and alerting stable across firmware versions and port assignments.
+
+- Devices may publish raw firmware keys (e.g. `port_3_temp`).
+- Assigned expansion modules can provide a `metric_key_map` (`device_modules.metric_key_map`) that translates raw keys to semantic keys (e.g. `port_3_temp` → `temperature`).
+- Ingest applies this translation before writing to TimescaleDB; unmapped keys pass through unchanged.
+- `device_sensors.last_value` / `last_seen_at` are updated from ingested telemetry for fast UI display.
+
+Known limitation: historical telemetry ingested before normalization retains raw keys in storage; charting uses the requested semantic key and may show gaps for older raw-key-only data.
 
 ### Telemetry and state
 
