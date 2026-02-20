@@ -116,7 +116,7 @@ export default function HomePage() {
         <CardContent>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/devices/wizard">
+              <Link to="/devices">
                 <Plus className="mr-1 h-4 w-4" />
                 Add Device
               </Link>
