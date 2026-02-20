@@ -9,7 +9,7 @@ import FirmwareListPage from "@/features/ota/FirmwareListPage";
 
 export default function DevicesHubPage() {
   const [params, setParams] = useSearchParams();
-  const validTabs = ["list", "templates", "map", "campaigns", "firmware"];
+  const validTabs = ["list", "templates", "map", "updates"];
   const rawTab = params.get("tab") ?? "list";
   const tab = validTabs.includes(rawTab) ? rawTab : "list";
 
@@ -21,8 +21,7 @@ export default function DevicesHubPage() {
           <TabsTrigger value="list">Devices</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="map">Map</TabsTrigger>
-          <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-          <TabsTrigger value="firmware">Firmware</TabsTrigger>
+          <TabsTrigger value="updates">Updates</TabsTrigger>
         </TabsList>
         <TabsContent value="list" className="mt-4">
           <DeviceListPage embedded />
@@ -33,11 +32,17 @@ export default function DevicesHubPage() {
         <TabsContent value="map" className="mt-4">
           <FleetMapPage embedded />
         </TabsContent>
-        <TabsContent value="campaigns" className="mt-4">
-          <OtaCampaignsPage embedded />
-        </TabsContent>
-        <TabsContent value="firmware" className="mt-4">
-          <FirmwareListPage embedded />
+        <TabsContent value="updates" className="mt-4">
+          <div className="space-y-8">
+            <section>
+              <h3 className="mb-3 text-lg font-semibold">OTA Campaigns</h3>
+              <OtaCampaignsPage embedded />
+            </section>
+            <section>
+              <h3 className="mb-3 text-lg font-semibold">Firmware Library</h3>
+              <FirmwareListPage embedded />
+            </section>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

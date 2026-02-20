@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186]
 ---
 
 # ui-iot
@@ -205,7 +205,7 @@ Phase 176 introduces a Home landing page at `/app/home` and consolidates multipl
 
 - `/app/alerts` — Alert inbox (simplified in Phase 180)
 - `/app/analytics` — Analytics hub (Explorer, Reports tabs)
-- `/app/devices` — Devices hub with 9 flat tabs (Phase 182)
+- `/app/devices` — Devices hub with 4 tabs (Devices, Templates, Map, Updates)
 - `/app/settings` — Settings hub with 9 flat tabs (Phase 182)
 
 Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
@@ -244,14 +244,15 @@ Old tab-based URLs (`/alerts?tab=rules`, `/alerts?tab=escalation`, etc.) redirec
 
 All sub-page navigation uses flat single-level tabs. No nested hubs, no left-nav, no button-link rows.
 
-- `/app/devices` — Devices hub with 5 tabs: Devices, Templates, Map, Campaigns, Firmware
+- `/app/devices` — Devices hub with 4 tabs: Devices, Templates, Map, Updates
 - `/app/settings` — Settings hub with 9 tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile
 
 Old standalone routes redirect to the appropriate hub tab:
 - `/app/sites` — Sites overview (standalone page)
 - `/app/templates` -> `/app/devices?tab=templates`
-- `/app/updates` -> `/app/devices?tab=campaigns`
-- `/app/ota/firmware` -> `/app/devices?tab=firmware`
+- `/app/updates` -> `/app/devices?tab=updates`
+- `/app/ota/campaigns` -> `/app/devices?tab=updates`
+- `/app/ota/firmware` -> `/app/devices?tab=updates`
 - `/app/fleet/tools` — Connection guide (standalone page)
 - `/app/fleet/mqtt-client` — MQTT test client (standalone page)
 - `/app/device-groups` — Device groups management (standalone page)

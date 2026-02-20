@@ -32,7 +32,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186]
 ---
 
 # Frontend
@@ -191,12 +191,13 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 | Hub | Route | Tabs |
 |-----|-------|------|
-| Devices | `/devices` | Devices, Templates, Map, Campaigns, Firmware |
+| Devices | `/devices` | Devices, Templates, Map, Updates |
 | Settings | `/settings` | General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile |
 | Rules | `/rules` | Alert Rules, Escalation, On-Call, Maintenance |
 | Analytics | `/analytics` | Explorer, Reports |
 
 Sites, Device Groups, Connection Guide, and MQTT Test Client are standalone pages at `/sites`, `/device-groups`, `/fleet/tools`, and `/fleet/mqtt-client` respectively (Phase 185).
+The device list (`/devices`) uses a full-width `DataTable` with sortable columns (Status, Device ID, Template, Site, Last Seen, Firmware, Alerts), server-side pagination, and row-click navigation to `/devices/:deviceId`. The old master-detail split layout (`DeviceDetailPane`) was removed in Phase 186.
 
 ### `embedded` prop convention
 

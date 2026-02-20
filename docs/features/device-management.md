@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186]
 ---
 
 # Device Management
@@ -109,6 +109,8 @@ Each step auto-detects completion via API queries. The page is accessible from t
 The fleet-wide Sensors page is no longer linked in the sidebar (per-device sensors management is now in the Device Detail Sensors & Data tab from Phase 171). The route remains accessible via direct URL with a deprecation tip banner.
 
 The Device List page includes a health summary strip showing online/stale/offline device counts above the device list.
+Phase 186 replaces the old split master-detail device list with a full-width DataTable, sortable columns, server-side pagination, and row-click navigation to the full device detail page (`/devices/:deviceId`). `DeviceDetailPane` was removed, leaving `DeviceDetailPage` as the single detail experience.
+OTA Campaigns and Firmware views are merged under a single "Updates" tab in the Devices hub.
 
 ## Telemetry Key Normalization (Phase 172)
 
