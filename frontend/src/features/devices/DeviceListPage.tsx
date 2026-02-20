@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useDevices } from "@/hooks/use-devices";
-import { ChevronLeft, ChevronRight, Cpu } from "lucide-react";
+import {
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  Layers,
+  LayoutTemplate,
+  MapPin,
+  Radio,
+  Wrench,
+} from "lucide-react";
 import { fetchSites } from "@/services/api/sites";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +33,15 @@ interface DeviceListFilters {
   q: string;
   site_id?: string;
 }
+
+const FLEET_LINKS = [
+  { label: "Sites", href: "/sites", icon: Building2 },
+  { label: "Templates", href: "/templates", icon: LayoutTemplate },
+  { label: "Groups", href: "/device-groups", icon: Layers },
+  { label: "Map", href: "/map", icon: MapPin },
+  { label: "Updates", href: "/updates", icon: Radio },
+  { label: "Tools", href: "/fleet/tools", icon: Wrench },
+] as const;
 
 function statusDot(status: string) {
   if (status === "ONLINE") return "bg-status-online";
@@ -124,6 +143,19 @@ export default function DeviceListPage() {
         onClose={() => setAddOpen(false)}
         onCreated={async () => {}}
       />
+      <div className="flex flex-wrap gap-1.5">
+        {FLEET_LINKS.map((link) => {
+          const Icon = link.icon;
+          return (
+            <Button key={link.href} variant="outline" size="sm" asChild className="h-7 text-xs">
+              <Link to={link.href}>
+                <Icon className="mr-1 h-3 w-3" />
+                {link.label}
+              </Link>
+            </Button>
+          );
+        })}
+      </div>
 
       {!isLoading && devices.length > 0 && (
         <div className="flex items-center gap-4 rounded-md border border-border px-3 py-2 text-sm">

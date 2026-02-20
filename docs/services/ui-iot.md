@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180]
 ---
 
 # ui-iot
@@ -230,6 +230,16 @@ Phase 178 adds a Tools hub page at `/app/fleet/tools` with two tabs:
 - **MQTT Test Client** (`?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
 
 The Home page (`/app/home`) also gains a "Resource Usage" section displaying quota KPI cards from the entitlements API (`GET /api/v1/customer/billing/entitlements`). The Billing page (`/app/settings/billing`) is refactored to use `KpiCard` components instead of custom progress bars for usage display.
+
+## Navigation Simplification (Phase 180)
+
+Phase 180 simplifies the sidebar to 7 items and introduces a Rules hub:
+
+- `/app/rules` — Rules hub with tabs: Alert Rules, Escalation, On-Call, Maintenance
+- `/app/alerts` — Simplified to alert inbox only (rules/escalation/oncall/maintenance moved to Rules hub)
+- `/app/devices` — Gains a fleet quick-links row for accessing Sites, Templates, Groups, Map, Updates, Tools
+
+Old tab-based URLs (`/alerts?tab=rules`, `/alerts?tab=escalation`, etc.) redirect to the corresponding Rules hub tab.
 
 ## Troubleshooting
 

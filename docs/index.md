@@ -3,7 +3,7 @@ last-verified: 2026-02-20
 sources:
   - docs/development/frontend.md
   - docs/features/device-management.md
-phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177, 178, 179]
+phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177, 178, 179, 180]
 ---
 
 # OpsConductor-Pulse Documentation
@@ -42,8 +42,8 @@ phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 1
 - [Integrations](features/integrations.md) — Webhook, SNMP, email, MQTT delivery
 - [Device Management](features/device-management.md) — Provisioning, templates, modules/sensors/transports, twin, commands, OTA, Getting Started guide
 - Home landing page with fleet health overview
-- Hub pages: Alerts, Analytics, Updates, Notifications, Team
-- Flat sidebar navigation with section labels
+- Hub pages: Rules, Analytics, Updates, Notifications, Team, Tools
+- Minimal sidebar navigation (7 items) with fleet quick-links on the Devices page
 - Settings page with subcategory navigation (Account, Configuration, Access Control)
 - Connection tools: Connection Guide (code snippets for Python/Node.js/curl/Arduino) and MQTT Test Client
 - Resource usage/quota KPI visualization on Home page

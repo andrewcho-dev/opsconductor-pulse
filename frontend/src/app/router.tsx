@@ -10,6 +10,7 @@ import AlertsHubPage from "@/features/alerts/AlertsHubPage";
 import AnalyticsHubPage from "@/features/analytics/AnalyticsHubPage";
 import UpdatesHubPage from "@/features/ota/UpdatesHubPage";
 import NotificationsHubPage from "@/features/notifications/NotificationsHubPage";
+import RulesHubPage from "@/features/rules/RulesHubPage";
 import TeamHubPage from "@/features/users/TeamHubPage";
 import DeviceListPage from "@/features/devices/DeviceListPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
@@ -97,6 +98,7 @@ export const router = createBrowserRouter(
             { path: "dashboard", element: <DashboardPage /> },
             { path: "alerts", element: <AlertsHubPage /> },
             { path: "analytics", element: <AnalyticsHubPage /> },
+            { path: "rules", element: <RulesHubPage /> },
             { path: "updates", element: <UpdatesHubPage /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
             { path: "fleet/tools", element: <ToolsHubPage /> },
@@ -112,10 +114,10 @@ export const router = createBrowserRouter(
             { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <FleetMapPage /> },
-            { path: "alert-rules", element: <Navigate to="/alerts?tab=rules" replace /> },
-            { path: "escalation-policies", element: <Navigate to="/alerts?tab=escalation" replace /> },
-            { path: "oncall", element: <Navigate to="/alerts?tab=oncall" replace /> },
-            { path: "maintenance-windows", element: <Navigate to="/alerts?tab=maintenance" replace /> },
+            { path: "alert-rules", element: <Navigate to="/rules?tab=alert-rules" replace /> },
+            { path: "escalation-policies", element: <Navigate to="/rules?tab=escalation" replace /> },
+            { path: "oncall", element: <Navigate to="/rules?tab=oncall" replace /> },
+            { path: "maintenance-windows", element: <Navigate to="/rules?tab=maintenance" replace /> },
             { path: "integrations", element: <Navigate to="/settings/notifications" replace /> },
             { path: "integrations/*", element: <Navigate to="/settings/notifications" replace /> },
             { path: "customer/integrations", element: <Navigate to="/settings/notifications" replace /> },

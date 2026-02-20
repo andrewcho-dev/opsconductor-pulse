@@ -39,6 +39,7 @@ function useBreadcrumbs(): { label: string; href?: string }[] {
     map: "Fleet Map",
     "device-groups": "Device Groups",
     alerts: "Alerts",
+    rules: "Rules",
     "alert-rules": "Alert Rules",
     "escalation-policies": "Escalation Policies",
     oncall: "On-Call",

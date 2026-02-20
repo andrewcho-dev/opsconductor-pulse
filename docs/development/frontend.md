@@ -15,6 +15,7 @@ sources:
   - frontend/src/features/alerts/AlertsHubPage.tsx
   - frontend/src/components/layout/SettingsLayout.tsx
   - frontend/src/features/fleet/ToolsHubPage.tsx
+  - frontend/src/features/rules/RulesHubPage.tsx
   - frontend/src/features/fleet/ConnectionGuidePage.tsx
   - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
@@ -28,7 +29,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180]
 ---
 
 # Frontend
@@ -187,12 +188,16 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 | Hub | Route | Tabs |
 |-----|-------|------|
-| Alerts | `/alerts` | Inbox, Rules, Escalation, On-Call, Maintenance |
+| Rules | `/rules` | Alert Rules, Escalation, On-Call, Maintenance |
 | Analytics | `/analytics` | Explorer, Reports |
 | Updates | `/updates` | Campaigns, Firmware |
-| Notifications | `/notifications` | Channels, Delivery Log, Dead Letter |
-| Team | `/team` | Members, Roles |
+| Notifications | `/settings/notifications` | Channels, Delivery Log, Dead Letter |
+| Team | `/settings/access` | Members, Roles |
 | Tools | `/fleet/tools` | Connection Guide, MQTT Test Client |
+
+### Devices page fleet links
+
+The Devices page (`/devices`) includes a compact quick-links row below the page header with navigation to fleet management pages not in the sidebar: Sites, Templates, Groups, Map, Updates, Tools. These link to the existing pages at their standard routes.
 
 ### `embedded` prop convention
 
@@ -242,18 +247,16 @@ Key implementation details:
 - Message buffer capped at 200 messages
 - Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
 
-## Navigation Structure (Phase 176 + 177)
+## Navigation Structure (Phase 180)
 
-The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
+The customer sidebar uses a flat layout with 7 items in 2 section labels:
 
-- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
-- **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
-- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub), Tools (hub)
+- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts, onboarding checklist
+- **Monitoring** — Dashboard, Alerts (inbox only), Analytics (hub)
+- **Fleet** — Devices, Rules (hub)
 - **Settings** — Single link to `/settings` page with internal subcategory navigation
 
-(\* conditional — hidden when dismissed)
-
-Old standalone routes redirect to their hub page with the appropriate `?tab=` parameter.
+Fleet management pages not in the sidebar (Sites, Templates, Device Groups, Fleet Map, Updates, Tools) are accessible via a fleet quick-links row on the Devices page, and always findable via the Command Palette (Cmd+K).
 
 ## Settings Page (Phase 177)
 
