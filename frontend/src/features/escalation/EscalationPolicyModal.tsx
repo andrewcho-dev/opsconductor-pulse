@@ -140,22 +140,22 @@ export function EscalationPolicyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{initialPolicy ? "Edit Escalation Policy" : "New Escalation Policy"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Name</label>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2 sm:col-span-2">
+              <label className="text-sm font-medium">Policy Name</label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder="Default Escalation Policy"
               />
             </div>
-            <div className="flex items-center gap-2 pt-7">
+            <div className="flex items-end gap-2 pb-1">
               <Checkbox
                 checked={form.is_default}
                 onCheckedChange={(checked) =>
@@ -164,7 +164,7 @@ export function EscalationPolicyModal({
                 id="is-default-policy"
               />
               <label htmlFor="is-default-policy" className="text-sm">
-                Make this the default policy for new alert rules
+                Default policy for new alert rules
               </label>
             </div>
           </div>
@@ -188,66 +188,66 @@ export function EscalationPolicyModal({
               )}
             </div>
             {form.levels.map((level, idx) => (
-              <div key={idx} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-12">
-                <div className="md:col-span-1">
-                  <div className="text-sm text-muted-foreground">Level</div>
-                  <div className="text-sm font-medium">{idx + 1}</div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-muted-foreground">Delay (minutes)</div>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={level.delay_minutes}
-                    onChange={(e) => updateLevel(idx, { delay_minutes: Number(e.target.value || 1) })}
-                  />
-                </div>
-                <div className="md:col-span-3">
-                  <div className="text-sm text-muted-foreground">Email</div>
-                  <Input
-                    placeholder="notify@example.com"
-                    value={level.notify_email ?? ""}
-                    onChange={(e) => updateLevel(idx, { notify_email: e.target.value })}
-                  />
-                </div>
-                <div className="md:col-span-3">
-                  <div className="text-sm text-muted-foreground">Webhook</div>
-                  <Input
-                    placeholder="https://..."
-                    value={level.notify_webhook ?? ""}
-                    onChange={(e) => updateLevel(idx, { notify_webhook: e.target.value })}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-muted-foreground">On-Call Schedule</div>
-                  <Select
-                    value={level.oncall_schedule_id != null ? String(level.oncall_schedule_id) : "none"}
-                    onValueChange={(v) =>
-                      updateLevel(idx, { oncall_schedule_id: v === "none" ? undefined : Number(v) })
-                    }
-                  >
-                    <SelectTrigger className="h-9 w-full">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {(schedulesQuery.data?.schedules ?? []).map((schedule) => (
-                        <SelectItem key={schedule.schedule_id} value={String(schedule.schedule_id)}>
-                          {schedule.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end justify-end md:col-span-1">
+              <div key={idx} className="rounded-md border border-border p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-sm font-medium">Level {idx + 1}</div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => removeLevel(idx)}
                     disabled={form.levels.length <= 1}
+                    className="h-7 text-muted-foreground"
                   >
-                    x
+                    Remove
                   </Button>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Delay (min)</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={level.delay_minutes}
+                      onChange={(e) => updateLevel(idx, { delay_minutes: Number(e.target.value || 1) })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Notify Email</label>
+                    <Input
+                      placeholder="notify@example.com"
+                      value={level.notify_email ?? ""}
+                      onChange={(e) => updateLevel(idx, { notify_email: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
+                    <Input
+                      placeholder="https://..."
+                      value={level.notify_webhook ?? ""}
+                      onChange={(e) => updateLevel(idx, { notify_webhook: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">On-Call Schedule</label>
+                    <Select
+                      value={level.oncall_schedule_id != null ? String(level.oncall_schedule_id) : "none"}
+                      onValueChange={(v) =>
+                        updateLevel(idx, { oncall_schedule_id: v === "none" ? undefined : Number(v) })
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {(schedulesQuery.data?.schedules ?? []).map((schedule) => (
+                          <SelectItem key={schedule.schedule_id} value={String(schedule.schedule_id)}>
+                            {schedule.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             ))}

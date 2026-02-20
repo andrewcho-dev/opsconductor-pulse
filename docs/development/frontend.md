@@ -18,6 +18,7 @@ sources:
   - frontend/src/features/ota/OtaCampaignsPage.tsx
   - frontend/src/features/ota/FirmwareListPage.tsx
   - frontend/src/features/rules/RulesHubPage.tsx
+  - frontend/src/features/alerts/AlertRuleDialog.tsx
   - frontend/src/features/fleet/ConnectionGuidePage.tsx
   - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
@@ -31,7 +32,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185]
 ---
 
 # Frontend
@@ -190,10 +191,12 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 | Hub | Route | Tabs |
 |-----|-------|------|
-| Devices | `/devices` | Devices, Sites, Templates, Groups, Map, Campaigns, Firmware, Guide, MQTT |
+| Devices | `/devices` | Devices, Templates, Map, Campaigns, Firmware |
 | Settings | `/settings` | General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile |
 | Rules | `/rules` | Alert Rules, Escalation, On-Call, Maintenance |
 | Analytics | `/analytics` | Explorer, Reports |
+
+Sites, Device Groups, Connection Guide, and MQTT Test Client are standalone pages at `/sites`, `/device-groups`, `/fleet/tools`, and `/fleet/mqtt-client` respectively (Phase 185).
 
 ### `embedded` prop convention
 
@@ -233,7 +236,7 @@ export default function MyHubPage() {
 
 ## MQTT Test Client (Phase 178)
 
-The MQTT Test Client (`/devices?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
+The MQTT Test Client (`/fleet/mqtt-client`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
 
 Key implementation details:
 
@@ -309,6 +312,27 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - All form modals should use `useFormDirtyGuard` to protect against losing unsaved changes.
 - Destructive confirms: use `<AlertDialog>`; never `window.confirm()`.
 
+### Modal Sizing (Phases 183-184)
+
+The default `DialogContent` width is `sm:max-w-xl` (640px). Override with an explicit class when needed:
+
+| Tier | Class | Width | Use for |
+|------|-------|-------|---------|
+| S | `sm:max-w-sm` | 384px | Confirmations, 1-field dialogs |
+| M | `sm:max-w-md` | 448px | Simple forms (2-3 fields), assign/change dialogs |
+| L | (default) | 640px | Standard forms (4-8 fields) |
+| XL | `sm:max-w-2xl` | 672px | Forms with tables or 10+ fields |
+| 2XL | `sm:max-w-3xl` | 768px | Complex multi-section forms (e.g., AlertRuleDialog) |
+
+#### Layout rules
+
+- **Multi-column grids:** Use `grid gap-4 sm:grid-cols-2` to put related short fields side by side (Severity + Duration, Operator + Threshold, First Name + Last Name).
+- **No scroll when avoidable:** Wider dialog + 2-column layout should eliminate scrolling for most forms. Only add `max-h-[85vh] overflow-y-auto` when content is truly unbounded (e.g., multi-condition rules with user-added rows).
+- **Full-width fields:** Description, textarea, toggles, and fields with long help text should span full width.
+- **Fieldset grouping:** For 8+ fields, group related inputs into fieldsets using `<fieldset className="space-y-3 rounded-md border p-4">` with `<legend>` labels.
+- **Fieldset 2-column grid:** When a dialog has 2+ fieldsets, place them side-by-side using `grid gap-4 sm:grid-cols-2` to reduce vertical height.
+- **Repeating sections as cards:** For user-addable rows (escalation levels, schedule layers), render each row as a bordered card with a header (title + remove button) and labeled grid fields.
+
 ### Prohibited Patterns
 
 - Raw `<button>` elements (use `<Button>`).
@@ -322,6 +346,11 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
 - Standalone sidebar items for pages that belong in a hub (use the hub's tab instead).
 - Rendering PageHeader when `embedded` prop is true (use conditional rendering).
+- Leaving default dialog width for forms with 6+ fields (use a wider tier or 2-column layout).
+- Single-column layout for forms where fields naturally pair (use `sm:grid-cols-2`).
+- Raw `<input>` elements in dialogs (use `Input` component - Phase 179).
+- Unlabeled number inputs in compact grids (every field must have a label).
+- Stacking 3+ simple header controls (Name/Type/Enabled) on separate rows instead of a single grid row.
 
 ## Form Primitives (Phase 179)
 

@@ -12,6 +12,9 @@ import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
 import { SensorListPage } from "@/features/devices/SensorListPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
+import SitesPage from "@/features/sites/SitesPage";
+import ConnectionGuidePage from "@/features/fleet/ConnectionGuidePage";
+import MqttTestClientPage from "@/features/fleet/MqttTestClientPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
 import RenewalPage from "@/features/subscription/RenewalPage";
@@ -78,8 +81,9 @@ export const router = createBrowserRouter(
             { path: "devices", element: <DevicesHubPage /> },
             { path: "updates", element: <Navigate to="/devices?tab=campaigns" replace /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
-            { path: "fleet/tools", element: <Navigate to="/devices?tab=guide" replace /> },
-            { path: "sites", element: <Navigate to="/devices?tab=sites" replace /> },
+            { path: "fleet/tools", element: <ConnectionGuidePage /> },
+            { path: "fleet/mqtt-client", element: <MqttTestClientPage /> },
+            { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
             { path: "templates", element: <Navigate to="/devices?tab=templates" replace /> },
             { path: "templates/:templateId", element: <TemplateDetailPage /> },
@@ -87,7 +91,7 @@ export const router = createBrowserRouter(
             { path: "devices/wizard", element: <SetupWizard /> },
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
             { path: "sensors", element: <SensorListPage /> },
-            { path: "device-groups", element: <Navigate to="/devices?tab=groups" replace /> },
+            { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <Navigate to="/devices?tab=map" replace /> },
             { path: "alert-rules", element: <Navigate to="/rules?tab=alert-rules" replace /> },

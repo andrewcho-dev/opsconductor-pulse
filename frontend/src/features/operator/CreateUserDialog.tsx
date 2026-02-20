@@ -124,7 +124,7 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDi
           else onOpenChange(true);
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create User</DialogTitle>
           </DialogHeader>

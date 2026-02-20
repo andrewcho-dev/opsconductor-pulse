@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/routes/devices.py
   - services/ui_iot/routes/sensors.py
@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185]
 ---
 
 # Device Management
@@ -92,8 +92,8 @@ The customer UI restructures the device detail page into a 6-tab layout to keep 
 
 The Fleet sidebar is organized into workflow-oriented sub-groups:
 
-- **Setup**: Sites, Device Templates, Devices — the fundamental configuration workflow.
-- **Monitor**: Fleet Map, Device Groups — observability and logical grouping.
+- **Setup**: Device Templates, Devices — the fundamental configuration workflow. Sites is a standalone page (`/sites`).
+- **Monitor**: Fleet Map — geographic device view. Device Groups is a standalone page (`/device-groups`).
 - **Maintain**: OTA Updates, Firmware — ongoing fleet maintenance.
 
 A "Getting Started" page (`/app/fleet/getting-started`) guides new customers through 5 setup steps with live completion detection:

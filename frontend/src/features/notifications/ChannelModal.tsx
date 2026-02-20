@@ -107,109 +107,125 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
         </DialogHeader>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-sm text-muted-foreground">Name</label>
-            <Input
-              value={draft.name}
-              onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">Channel Type</label>
-            <Select
-              value={draft.channel_type}
-              onValueChange={(v) =>
-                setDraft((prev) => ({ ...prev, channel_type: v as ChannelType, config: {} }))
-              }
-            >
-              <SelectTrigger className="h-9 w-full">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="slack">Slack</SelectItem>
-                <SelectItem value="pagerduty">PagerDuty</SelectItem>
-                <SelectItem value="teams">Teams</SelectItem>
-                <SelectItem value="webhook">Webhook</SelectItem>
-                <SelectItem value="email">Email (SMTP)</SelectItem>
-                <SelectItem value="snmp">SNMP Trap</SelectItem>
-                <SelectItem value="mqtt">MQTT</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="channel-enabled" className="text-sm">
-              Enabled
-            </Label>
-            <Switch
-              id="channel-enabled"
-              checked={draft.is_enabled}
-              onCheckedChange={(next) => setDraft((prev) => ({ ...prev, is_enabled: next }))}
-            />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                value={draft.name}
+                onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Channel name"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Channel Type</label>
+              <Select
+                value={draft.channel_type}
+                onValueChange={(v) =>
+                  setDraft((prev) => ({ ...prev, channel_type: v as ChannelType, config: {} }))
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="slack">Slack</SelectItem>
+                  <SelectItem value="pagerduty">PagerDuty</SelectItem>
+                  <SelectItem value="teams">Teams</SelectItem>
+                  <SelectItem value="webhook">Webhook</SelectItem>
+                  <SelectItem value="email">Email (SMTP)</SelectItem>
+                  <SelectItem value="snmp">SNMP Trap</SelectItem>
+                  <SelectItem value="mqtt">MQTT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end gap-2 pb-2">
+              <Switch
+                id="channel-enabled"
+                checked={draft.is_enabled}
+                onCheckedChange={(next) => setDraft((prev) => ({ ...prev, is_enabled: next }))}
+              />
+              <Label htmlFor="channel-enabled" className="text-sm">
+                Enabled
+              </Label>
+            </div>
           </div>
 
           {draft.channel_type === "slack" && (
-            <div>
-              <label className="text-sm text-muted-foreground">Webhook URL</label>
-              <Input
-                placeholder="https://hooks.slack.com/services/..."
-                value={cfgValue("webhook_url")}
-                onChange={(e) => setCfg("webhook_url", e.target.value)}
-              />
-            </div>
-          )}
-          {draft.channel_type === "pagerduty" && (
-            <div>
-              <label className="text-sm text-muted-foreground">Integration Key</label>
-              <Input
-                placeholder="32-char key from PD service"
-                value={cfgValue("integration_key")}
-                onChange={(e) => setCfg("integration_key", e.target.value)}
-              />
-            </div>
-          )}
-          {draft.channel_type === "teams" && (
-            <div>
-              <label className="text-sm text-muted-foreground">Webhook URL</label>
-              <Input
-                placeholder="https://outlook.office.com/webhook/..."
-                value={cfgValue("webhook_url")}
-                onChange={(e) => setCfg("webhook_url", e.target.value)}
-              />
-            </div>
-          )}
-          {draft.channel_type === "webhook" && (
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="text-sm text-muted-foreground">URL</label>
-                <Input value={cfgValue("url")} onChange={(e) => setCfg("url", e.target.value)} />
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Method</label>
-                <Select value={cfgValue("method") || "POST"} onValueChange={(v) => setCfg("method", v)}>
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue placeholder="Select method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="POST">POST</SelectItem>
-                    <SelectItem value="PUT">PUT</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Signing Secret</label>
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">Slack Configuration</legend>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
                 <Input
-                  type="password"
-                  value={cfgValue("secret")}
-                  onChange={(e) => setCfg("secret", e.target.value)}
+                  placeholder="https://hooks.slack.com/services/..."
+                  value={cfgValue("webhook_url")}
+                  onChange={(e) => setCfg("webhook_url", e.target.value)}
                 />
               </div>
-            </div>
+            </fieldset>
+          )}
+          {draft.channel_type === "pagerduty" && (
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">PagerDuty Configuration</legend>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Integration Key</label>
+                <Input
+                  placeholder="32-char key from PD service"
+                  value={cfgValue("integration_key")}
+                  onChange={(e) => setCfg("integration_key", e.target.value)}
+                />
+              </div>
+            </fieldset>
+          )}
+          {draft.channel_type === "teams" && (
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">Teams Configuration</legend>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
+                <Input
+                  placeholder="https://outlook.office.com/webhook/..."
+                  value={cfgValue("webhook_url")}
+                  onChange={(e) => setCfg("webhook_url", e.target.value)}
+                />
+              </div>
+            </fieldset>
+          )}
+          {draft.channel_type === "webhook" && (
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">Webhook Configuration</legend>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground">URL</label>
+                  <Input value={cfgValue("url")} onChange={(e) => setCfg("url", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Method</label>
+                  <Select value={cfgValue("method") || "POST"} onValueChange={(v) => setCfg("method", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="POST">POST</SelectItem>
+                      <SelectItem value="PUT">PUT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Signing Secret</label>
+                  <Input
+                    type="password"
+                    value={cfgValue("secret")}
+                    onChange={(e) => setCfg("secret", e.target.value)}
+                  />
+                </div>
+              </div>
+            </fieldset>
           )}
           {draft.channel_type === "email" && (
-            <div className="space-y-2">
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <label className="text-sm text-muted-foreground">SMTP Host</label>
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">SMTP Configuration</legend>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="space-y-1 sm:col-span-3">
+                  <label className="text-xs font-medium text-muted-foreground">SMTP Host</label>
                   <Input
                     placeholder="smtp.example.com"
                     value={
@@ -227,8 +243,8 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                     }
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">SMTP Port</label>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Port</label>
                   <Input
                     type="number"
                     placeholder="587"
@@ -247,8 +263,10 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                     }
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Username</label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Username</label>
                   <Input
                     placeholder="noreply@example.com"
                     value={
@@ -266,8 +284,8 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                     }
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-muted-foreground">Password</label>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Password</label>
                   <Input
                     type="password"
                     placeholder="••••••••"
@@ -286,7 +304,7 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                     }
                   />
                 </div>
-                <div className="flex items-center gap-2 pt-4">
+                <div className="flex items-end gap-2 pb-2">
                   <Switch
                     id="smtp-use-tls"
                     checked={
@@ -303,13 +321,15 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                       })
                     }
                   />
-                  <Label htmlFor="smtp-use-tls" className="text-sm text-muted-foreground">
+                  <Label htmlFor="smtp-use-tls" className="text-sm">
                     Use TLS
                   </Label>
                 </div>
               </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Recipients (comma separated)</label>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Recipients (comma separated)
+                </label>
                 <Input
                   placeholder="ops@example.com, noc@example.com"
                   value={cfgValue("to")}
@@ -323,42 +343,44 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                   }}
                 />
               </div>
-            </div>
+            </fieldset>
           )}
           {draft.channel_type === "snmp" && (
-            <div className="grid gap-2 md:grid-cols-2">
+            <fieldset className="grid gap-2 rounded-md border p-4 md:grid-cols-2">
+              <legend className="px-1 text-sm font-medium">SNMP Configuration</legend>
               <div>
-                <label className="text-sm text-muted-foreground">Host</label>
+                <label className="text-xs font-medium text-muted-foreground">Host</label>
                 <Input value={cfgValue("host")} onChange={(e) => setCfg("host", e.target.value)} />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Port</label>
+                <label className="text-xs font-medium text-muted-foreground">Port</label>
                 <Input
                   type="number"
                   value={cfgValue("port") || "162"}
                   onChange={(e) => setCfg("port", e.target.value)}
                 />
               </div>
-            </div>
+            </fieldset>
           )}
           {draft.channel_type === "mqtt" && (
-            <div className="grid gap-2 md:grid-cols-2">
+            <fieldset className="grid gap-2 rounded-md border p-4 md:grid-cols-2">
+              <legend className="px-1 text-sm font-medium">MQTT Configuration</legend>
               <div>
-                <label className="text-sm text-muted-foreground">Broker Host</label>
+                <label className="text-xs font-medium text-muted-foreground">Broker Host</label>
                 <Input
                   value={cfgValue("broker_host")}
                   onChange={(e) => setCfg("broker_host", e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Topic</label>
+                <label className="text-xs font-medium text-muted-foreground">Topic</label>
                 <Input value={cfgValue("topic")} onChange={(e) => setCfg("topic", e.target.value)} />
               </div>
-            </div>
+            </fieldset>
           )}
           {(draft.channel_type === "webhook" || draft.channel_type === "http") && (
-            <div>
-              <label className="text-sm text-muted-foreground">Headers (JSON)</label>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Headers (JSON)</label>
               <Textarea
                 rows={3}
                 placeholder='{"X-Token":"value"}'

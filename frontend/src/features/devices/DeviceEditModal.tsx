@@ -220,25 +220,24 @@ export function DeviceEditModal({
           if (!openState) handleClose();
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Edit Device</DialogTitle>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 text-sm">
               <FormField
                 control={form.control}
                 name="template_id"
                 render={({ field }) => (
-                  <FormItem className="col-span-2">
-                    <FormLabel className="text-sm">Template</FormLabel>
+                  <FormItem>
+                    <FormLabel className="text-sm">Device Template</FormLabel>
                     <FormControl>
                       <Select
                         value={(field.value ?? "") || "none"}
                         onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
                       >
-                        <SelectTrigger className="h-8 w-full">
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="(none)" />
                         </SelectTrigger>
                         <SelectContent>
@@ -260,193 +259,196 @@ export function DeviceEditModal({
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="model"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">Model</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="manufacturer"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">Manufacturer</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="serial_number"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">Serial</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="mac_address"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">MAC</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" placeholder="AA:BB:CC:DD:EE:FF" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="imei"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">IMEI</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="iccid"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">SIM/ICCID</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="hw_revision"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">HW Rev</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fw_version"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm">FW Ver</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="h-8 text-sm" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Hardware</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="model"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">Model</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="manufacturer"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">Manufacturer</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="serial_number"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">Serial</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="mac_address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">MAC</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" placeholder="AA:BB:CC:DD:EE:FF" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="hw_revision"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">HW Rev</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fw_version"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">FW Ver</FormLabel>
+                        <FormControl>
+                          <Input {...field} className="h-8 text-sm" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </fieldset>
 
-            <div className="border-t pt-2 mt-2">
-              <div className="text-sm text-muted-foreground mb-2">
-                Location — GPS coordinates preferred (auto-detected from telemetry).
-                Address is optional fallback.
-              </div>
+              <div className="space-y-4">
+                <fieldset className="space-y-3 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Network</legend>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="imei"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm">IMEI</FormLabel>
+                          <FormControl>
+                            <Input {...field} className="h-8 text-sm" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="iccid"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm">SIM/ICCID</FormLabel>
+                          <FormControl>
+                            <Input {...field} className="h-8 text-sm" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </fieldset>
 
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <FormField
-                  control={form.control}
-                  name="latitude"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm text-muted-foreground">Latitude</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          placeholder="e.g. 37.7749"
-                          className="h-8 text-sm"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="longitude"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm text-muted-foreground">Longitude</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          placeholder="e.g. -122.4194"
-                          className="h-8 text-sm"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                <fieldset className="space-y-3 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Location</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={form.control}
+                      name="latitude"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm">Latitude</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="text"
+                              placeholder="e.g. 37.7749"
+                              className="h-8 text-sm"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="longitude"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm">Longitude</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="text"
+                              placeholder="e.g. -122.4194"
+                              className="h-8 text-sm"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-              <FormField
-                control={form.control}
-                name="address"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm text-muted-foreground">
-                      Street Address (optional, used if no GPS)
-                    </FormLabel>
-                    <div className="flex gap-1 items-center">
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="e.g. 123 Main St, City, State"
-                          className="h-8 text-sm flex-1"
-                        />
-                      </FormControl>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-sm px-2"
-                        onClick={handleGeocode}
-                        disabled={!String(field.value ?? "").trim() || geocoding}
-                      >
-                        {geocoding ? "..." : "Lookup"}
-                      </Button>
-                    </div>
-                    {geocodeError && <div className="text-sm text-destructive">{geocodeError}</div>}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="text-sm text-muted-foreground mt-1">
-                Note: Manually setting location will prevent auto-updates from telemetry
-                GPS data.
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm">Address</FormLabel>
+                        <div className="flex items-center gap-1">
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="e.g. 123 Main St, City, State"
+                              className="h-8 flex-1 text-sm"
+                            />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2 text-sm"
+                            onClick={handleGeocode}
+                            disabled={!String(field.value ?? "").trim() || geocoding}
+                          >
+                            {geocoding ? "..." : "Lookup"}
+                          </Button>
+                        </div>
+                        {geocodeError && <div className="text-sm text-destructive">{geocodeError}</div>}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </fieldset>
               </div>
             </div>
 
@@ -457,7 +459,7 @@ export function DeviceEditModal({
                 <FormItem>
                   <FormLabel className="text-sm">Notes</FormLabel>
                   <FormControl>
-                    <Textarea {...field} className="h-16 text-sm" />
+                      <Textarea {...field} className="text-sm" rows={2} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

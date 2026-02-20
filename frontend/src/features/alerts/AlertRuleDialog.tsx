@@ -47,12 +47,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   useCreateAlertRule,
   useUpdateAlertRule,
 } from "@/hooks/use-alert-rules";
@@ -452,7 +446,8 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
   }, [open, rule]);
 
   const errorMessage = useMemo(() => {
-    return getErrorMessage(createMutation.error || updateMutation.error);
+    const err = createMutation.error || updateMutation.error;
+    return err ? getErrorMessage(err) : null;
   }, [createMutation.error, updateMutation.error]);
 
   const normalizedMetrics = useMemo<NormalizedMetricReference[]>(
@@ -467,25 +462,6 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
       Array.isArray(metricReference?.raw_metrics) ? metricReference.raw_metrics : [],
     [metricReference]
   );
-  const selectedNormalized = useMemo(
-    () => normalizedMetrics.find((metric) => metric.name === metricName),
-    [metricName, normalizedMetrics]
-  );
-  const selectedRaw = useMemo(
-    () => rawMetrics.find((metric) => metric.name === metricName),
-    [metricName, rawMetrics]
-  );
-
-  const normalizedRange = useMemo(() => {
-    if (!selectedNormalized) return null;
-    if (selectedNormalized.expected_min == null && selectedNormalized.expected_max == null) {
-      return null;
-    }
-    const min = selectedNormalized.expected_min ?? "";
-    const max = selectedNormalized.expected_max ?? "";
-    return `${min}-${max}`;
-  }, [selectedNormalized]);
-
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   function applyTemplate(template: AlertRuleTemplate) {
@@ -694,7 +670,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
           if (!nextOpen) handleClose();
         }}
       >
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Alert Rule" : "Create Alert Rule"}</DialogTitle>
           <DialogDescription>
@@ -704,254 +680,292 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {!isEditing && templates.length > 0 && (
-              <div className="grid gap-2">
-                <Label>Load from Template</Label>
-                <Select
-                  value={selectedTemplateId || undefined}
-                  onValueChange={(value) => {
-                    const template = templates.find((tmpl) => tmpl.template_id === value);
-                    if (template) applyTemplate(template);
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from(new Set(templates.map((tmpl) => tmpl.device_type))).map(
-                      (deviceType) => (
-                        <SelectGroup key={deviceType}>
-                          <SelectLabel>{deviceType}</SelectLabel>
-                          {templates
-                            .filter((tmpl) => tmpl.device_type === deviceType)
-                            .map((tmpl) => (
-                              <SelectItem key={tmpl.template_id} value={tmpl.template_id}>
-                                {tmpl.name}
-                              </SelectItem>
-                            ))}
-                        </SelectGroup>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {!isEditing && templates.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label>Template</Label>
+                  <Select
+                    value={selectedTemplateId || undefined}
+                    onValueChange={(value) => {
+                      const template = templates.find((tmpl) => tmpl.template_id === value);
+                      if (template) applyTemplate(template);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from(new Set(templates.map((tmpl) => tmpl.device_type))).map(
+                        (deviceType) => (
+                          <SelectGroup key={deviceType}>
+                            <SelectLabel>{deviceType}</SelectLabel>
+                            {templates
+                              .filter((tmpl) => tmpl.device_type === deviceType)
+                              .map((tmpl) => (
+                                <SelectItem key={tmpl.template_id} value={tmpl.template_id}>
+                                  {tmpl.name}
+                                </SelectItem>
+                              ))}
+                          </SelectGroup>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Rule Name *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Battery Low" maxLength={100} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid gap-2">
-              <Label>Rule Mode</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={ruleMode === "simple" ? "default" : "outline"}
-                  onClick={() => form.setValue("ruleMode", "simple", { shouldDirty: true })}
-                >
-                  Simple Rule
-                </Button>
-                <Button
-                  type="button"
-                  variant={ruleMode === "multi" ? "default" : "outline"}
-                  onClick={() => {
-                    form.setValue("ruleMode", "multi", { shouldDirty: true });
-                    const existing = form.getValues("conditions") ?? [];
-                    if (existing.length === 0) {
-                      form.setValue(
-                        "conditions",
-                        [{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }],
-                        { shouldDirty: true }
-                      );
-                    }
-                    form.setValue("match_mode", "all", { shouldDirty: false });
-                  }}
-                >
-                  Multi-Condition Rule
-                </Button>
-                <Button
-                  type="button"
-                  variant={ruleMode === "anomaly" ? "default" : "outline"}
-                  onClick={() => form.setValue("ruleMode", "anomaly", { shouldDirty: true })}
-                >
-                  Anomaly Detection
-                </Button>
-                <Button
-                  type="button"
-                  variant={ruleMode === "gap" ? "default" : "outline"}
-                  onClick={() => form.setValue("ruleMode", "gap", { shouldDirty: true })}
-                >
-                  Data Gap
-                </Button>
-                <Button
-                  type="button"
-                  variant={ruleMode === "window" ? "default" : "outline"}
-                  onClick={() => form.setValue("ruleMode", "window", { shouldDirty: true })}
-                >
-                  Window Aggregation
-                </Button>
-              </div>
-            </div>
-
-            {ruleMode === "simple" ? (
-              <>
                 <FormField
                   control={form.control}
-                  name="targeting_mode"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Targeting</FormLabel>
+                      <FormLabel>Rule Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Battery Low" maxLength={100} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="ruleMode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rule Mode</FormLabel>
                       <Select
-                        value={(field.value as string) || "metric"}
+                        value={field.value}
                         onValueChange={(v) => {
                           field.onChange(v);
-                          // Clear other targeting fields when switching modes.
-                          if (v === "metric") {
-                            form.setValue("sensor_device_id", "", { shouldDirty: true });
-                            form.setValue("sensor_id", null, { shouldDirty: true });
-                            form.setValue("sensor_type", "", { shouldDirty: true });
-                          } else if (v === "sensor") {
-                            form.setValue("sensor_type", "", { shouldDirty: true });
-                            form.setValue("metric_name", "", { shouldDirty: true });
-                          } else if (v === "sensor_type") {
-                            form.setValue("sensor_device_id", "", { shouldDirty: true });
-                            form.setValue("sensor_id", null, { shouldDirty: true });
-                            form.setValue("metric_name", "", { shouldDirty: true });
+                          if (v === "multi") {
+                            const existing = form.getValues("conditions") ?? [];
+                            if (existing.length === 0) {
+                              form.setValue(
+                                "conditions",
+                                [{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }],
+                                { shouldDirty: true }
+                              );
+                            }
+                            form.setValue("match_mode", "all", { shouldDirty: false });
                           }
                         }}
                       >
                         <FormControl>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select targeting mode" />
+                            <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="metric">By metric name</SelectItem>
-                          <SelectItem value="sensor">By specific sensor</SelectItem>
-                          <SelectItem value="sensor_type">By sensor type</SelectItem>
+                          <SelectItem value="simple">Simple Threshold</SelectItem>
+                          <SelectItem value="multi">Multi-Condition</SelectItem>
+                          <SelectItem value="anomaly">Anomaly Detection</SelectItem>
+                          <SelectItem value="gap">Data Gap</SelectItem>
+                          <SelectItem value="window">Window Aggregation</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                {targetingMode === "metric" ? (
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="metric_name"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Metric Name *</FormLabel>
-                      <div className="flex items-center gap-2">
-                        <Select value={(field.value as string) || undefined} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger className="w-full" disabled={metricsLoading}>
-                              <SelectValue
-                                placeholder={metricsLoading ? "Loading metrics..." : "Select metric"}
-                              />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectLabel>Normalized</SelectLabel>
-                              {normalizedMetrics.length === 0 ? (
-                                <SelectItem value="__no_normalized" disabled>
-                                  No normalized metrics
-                                </SelectItem>
-                              ) : (
-                                normalizedMetrics.map((metric) => (
-                                  <SelectItem key={metric.name} value={metric.name}>
-                                    {metric.name}
-                                    {metric.display_unit ? ` (${metric.display_unit})` : ""}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectGroup>
-                            <SelectGroup>
-                              <SelectLabel>Raw</SelectLabel>
-                              {rawMetrics.length === 0 ? (
-                                <SelectItem value="__no_raw" disabled>
-                                  No raw metrics
-                                </SelectItem>
-                              ) : (
-                                rawMetrics.map((metric) => (
-                                  <SelectItem key={metric.name} value={metric.name}>
-                                    {metric.name}
-                                    {metric.mapped_to ? ` → ${metric.mapped_to}` : ""}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        {(selectedNormalized || selectedRaw) && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-sm text-muted-foreground">
-                                  i
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="right">
-                                <div className="space-y-1">
-                                  <div className="font-medium">
-                                    {selectedNormalized?.name || selectedRaw?.name}
-                                  </div>
-                                  {selectedNormalized ? (
-                                    <div className="space-y-1">
-                                      {selectedNormalized.description && (
-                                        <div>{selectedNormalized.description}</div>
-                                      )}
-                                      {selectedNormalized.display_unit && (
-                                        <div>Unit: {selectedNormalized.display_unit}</div>
-                                      )}
-                                      {normalizedRange && <div>Range: {normalizedRange}</div>}
-                                      {selectedNormalized.mapped_from.length > 0 ? (
-                                        <div>
-                                          Includes: {selectedNormalized.mapped_from.join(", ")}
-                                        </div>
-                                      ) : (
-                                        <div>No raw metrics mapped.</div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      {selectedRaw?.mapped_to
-                                        ? `Mapped to: ${selectedRaw.mapped_to}`
-                                        : "Unmapped raw metric"}
-                                    </div>
-                                  )}
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                      <FormDescription className="text-sm">
-                        {metricsLoading
-                          ? "Loading metric reference..."
-                          : normalizedMetrics.length === 0 && rawMetrics.length === 0
-                            ? "No metrics found. Metrics will appear after devices send telemetry."
-                            : selectedNormalized
-                              ? `Includes: ${selectedNormalized.mapped_from.join(", ") || "none"}`
-                              : "Select a metric to see details."}
-                      </FormDescription>
+                      <FormLabel>Rule Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Battery Low" maxLength={100} {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                ) : targetingMode === "sensor" ? (
+
+                <FormField
+                  control={form.control}
+                  name="ruleMode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rule Mode</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={(v) => {
+                          field.onChange(v);
+                          if (v === "multi") {
+                            const existing = form.getValues("conditions") ?? [];
+                            if (existing.length === 0) {
+                              form.setValue(
+                                "conditions",
+                                [{ metric_name: "", operator: "GT", threshold: 0, duration_minutes: null }],
+                                { shouldDirty: true }
+                              );
+                            }
+                            form.setValue("match_mode", "all", { shouldDirty: false });
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="simple">Simple Threshold</SelectItem>
+                          <SelectItem value="multi">Multi-Condition</SelectItem>
+                          <SelectItem value="anomaly">Anomaly Detection</SelectItem>
+                          <SelectItem value="gap">Data Gap</SelectItem>
+                          <SelectItem value="window">Window Aggregation</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {ruleMode === "simple" ? (
+              <>
+                {targetingMode === "metric" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="targeting_mode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Targeting</FormLabel>
+                          <Select
+                            value={(field.value as string) || "metric"}
+                            onValueChange={(v) => {
+                              field.onChange(v);
+                              if (v === "metric") {
+                                form.setValue("sensor_device_id", "", { shouldDirty: true });
+                                form.setValue("sensor_id", null, { shouldDirty: true });
+                                form.setValue("sensor_type", "", { shouldDirty: true });
+                              } else if (v === "sensor") {
+                                form.setValue("sensor_type", "", { shouldDirty: true });
+                                form.setValue("metric_name", "", { shouldDirty: true });
+                              } else if (v === "sensor_type") {
+                                form.setValue("sensor_device_id", "", { shouldDirty: true });
+                                form.setValue("sensor_id", null, { shouldDirty: true });
+                                form.setValue("metric_name", "", { shouldDirty: true });
+                              }
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select targeting mode" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="metric">By metric name</SelectItem>
+                              <SelectItem value="sensor">By specific sensor</SelectItem>
+                              <SelectItem value="sensor_type">By sensor type</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="metric_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Metric Name *</FormLabel>
+                          <Select value={(field.value as string) || undefined} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="w-full" disabled={metricsLoading}>
+                                <SelectValue
+                                  placeholder={metricsLoading ? "Loading metrics..." : "Select metric"}
+                                />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectGroup>
+                                <SelectLabel>Normalized</SelectLabel>
+                                {normalizedMetrics.length === 0 ? (
+                                  <SelectItem value="__no_normalized" disabled>
+                                    No normalized metrics
+                                  </SelectItem>
+                                ) : (
+                                  normalizedMetrics.map((metric) => (
+                                    <SelectItem key={metric.name} value={metric.name}>
+                                      {metric.name}
+                                      {metric.display_unit ? ` (${metric.display_unit})` : ""}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectGroup>
+                              <SelectGroup>
+                                <SelectLabel>Raw</SelectLabel>
+                                {rawMetrics.length === 0 ? (
+                                  <SelectItem value="__no_raw" disabled>
+                                    No raw metrics
+                                  </SelectItem>
+                                ) : (
+                                  rawMetrics.map((metric) => (
+                                    <SelectItem key={metric.name} value={metric.name}>
+                                      {metric.name}
+                                      {metric.mapped_to ? ` → ${metric.mapped_to}` : ""}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="targeting_mode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Targeting</FormLabel>
+                        <Select
+                          value={(field.value as string) || "metric"}
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            if (v === "metric") {
+                              form.setValue("sensor_device_id", "", { shouldDirty: true });
+                              form.setValue("sensor_id", null, { shouldDirty: true });
+                              form.setValue("sensor_type", "", { shouldDirty: true });
+                            } else if (v === "sensor") {
+                              form.setValue("sensor_type", "", { shouldDirty: true });
+                              form.setValue("metric_name", "", { shouldDirty: true });
+                            } else if (v === "sensor_type") {
+                              form.setValue("sensor_device_id", "", { shouldDirty: true });
+                              form.setValue("sensor_id", null, { shouldDirty: true });
+                              form.setValue("metric_name", "", { shouldDirty: true });
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select targeting mode" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="metric">By metric name</SelectItem>
+                            <SelectItem value="sensor">By specific sensor</SelectItem>
+                            <SelectItem value="sensor_type">By sensor type</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {targetingMode === "sensor" ? (
                   <div className="grid gap-3">
                     <FormField
                       control={form.control}
@@ -1048,7 +1062,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                       )}
                     />
                   </div>
-                ) : (
+                ) : targetingMode === "sensor_type" ? (
                   <FormField
                     control={form.control}
                     name="sensor_type"
@@ -1076,52 +1090,54 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                       </FormItem>
                     )}
                   />
-                )}
+                ) : null}
 
-                <FormField
-                  control={form.control}
-                  name="operator"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Operator</FormLabel>
-                      <Select value={(field.value as string) || "GT"} onValueChange={field.onChange}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="operator"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Operator</FormLabel>
+                        <Select value={(field.value as string) || "GT"} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select operator" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="GT">&gt; (GT)</SelectItem>
+                            <SelectItem value="LT">&lt; (LT)</SelectItem>
+                            <SelectItem value="GTE">≥ (GTE)</SelectItem>
+                            <SelectItem value="LTE">≤ (LTE)</SelectItem>
+                            <SelectItem value="EQ">= (EQ)</SelectItem>
+                            <SelectItem value="NEQ">!= (NEQ)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="threshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Threshold *</FormLabel>
                         <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select operator" />
-                          </SelectTrigger>
+                          <Input
+                            type="number"
+                            step="any"
+                            value={(field.value as unknown as string) ?? ""}
+                            onChange={field.onChange}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="GT">&gt; (GT)</SelectItem>
-                          <SelectItem value="LT">&lt; (LT)</SelectItem>
-                          <SelectItem value="GTE">≥ (GTE)</SelectItem>
-                          <SelectItem value="LTE">≤ (LTE)</SelectItem>
-                          <SelectItem value="EQ">= (EQ)</SelectItem>
-                          <SelectItem value="NEQ">!= (NEQ)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="threshold"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Threshold *</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="any"
-                          value={(field.value as unknown as string) ?? ""}
-                          onChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </>
             ) : ruleMode === "multi" ? (
               <div className="space-y-3 rounded-md border border-border p-3">
@@ -1205,54 +1221,56 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="anomaly_window_minutes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Window</FormLabel>
-                      <Select
-                        value={String(field.value ?? 60)}
-                        onValueChange={(v) => field.onChange(Number(v))}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="15">15 min</SelectItem>
-                          <SelectItem value="30">30 min</SelectItem>
-                          <SelectItem value="60">1 hour</SelectItem>
-                          <SelectItem value="360">6 hours</SelectItem>
-                          <SelectItem value="1440">24 hours</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="anomaly_window_minutes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Window</FormLabel>
+                        <Select
+                          value={String(field.value ?? 60)}
+                          onValueChange={(v) => field.onChange(Number(v))}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="15">15 min</SelectItem>
+                            <SelectItem value="30">30 min</SelectItem>
+                            <SelectItem value="60">1 hour</SelectItem>
+                            <SelectItem value="360">6 hours</SelectItem>
+                            <SelectItem value="1440">24 hours</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="anomaly_z_threshold"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Z-Score Threshold</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={10}
-                          step="0.1"
-                          value={String(field.value ?? 3)}
-                          onChange={(e) => field.onChange(e.target.value)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="anomaly_z_threshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Z-Score Threshold</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10}
+                            step="0.1"
+                            value={String(field.value ?? 3)}
+                            onChange={(e) => field.onChange(e.target.value)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
                 <FormField
                   control={form.control}
@@ -1354,143 +1372,191 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="window_aggregation"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Aggregation</FormLabel>
-                      <Select value={String(field.value ?? "avg")} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="avg">Average (avg)</SelectItem>
-                          <SelectItem value="min">Minimum (min)</SelectItem>
-                          <SelectItem value="max">Maximum (max)</SelectItem>
-                          <SelectItem value="count">Count</SelectItem>
-                          <SelectItem value="sum">Sum</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="window_aggregation"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Aggregation</FormLabel>
+                        <Select value={String(field.value ?? "avg")} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="avg">Average (avg)</SelectItem>
+                            <SelectItem value="min">Minimum (min)</SelectItem>
+                            <SelectItem value="max">Maximum (max)</SelectItem>
+                            <SelectItem value="count">Count</SelectItem>
+                            <SelectItem value="sum">Sum</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="operator"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Operator</FormLabel>
-                      <Select value={(field.value as string) || "GT"} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="GT">&gt; (GT)</SelectItem>
-                          <SelectItem value="LT">&lt; (LT)</SelectItem>
-                          <SelectItem value="GTE">≥ (GTE)</SelectItem>
-                          <SelectItem value="LTE">≤ (LTE)</SelectItem>
-                          <SelectItem value="EQ">= (EQ)</SelectItem>
-                          <SelectItem value="NEQ">!= (NEQ)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="window_seconds"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Window Duration</FormLabel>
+                        <Select
+                          value={String(field.value ?? 300)}
+                          onValueChange={(v) => field.onChange(Number(v))}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="60">1 minute</SelectItem>
+                            <SelectItem value="120">2 minutes</SelectItem>
+                            <SelectItem value="300">5 minutes</SelectItem>
+                            <SelectItem value="600">10 minutes</SelectItem>
+                            <SelectItem value="900">15 minutes</SelectItem>
+                            <SelectItem value="1800">30 minutes</SelectItem>
+                            <SelectItem value="3600">1 hour</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-sm">
+                          Alert fires when {windowAggregation}({metricName || "metric"}) breaches the
+                          threshold over a {Number(windowSeconds) / 60}-minute sliding window.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
-                <FormField
-                  control={form.control}
-                  name="threshold"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Threshold *</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="any"
-                          value={(field.value as unknown as string) ?? ""}
-                          onChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="operator"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Operator</FormLabel>
+                        <Select value={(field.value as string) || "GT"} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="GT">&gt; (GT)</SelectItem>
+                            <SelectItem value="LT">&lt; (LT)</SelectItem>
+                            <SelectItem value="GTE">≥ (GTE)</SelectItem>
+                            <SelectItem value="LTE">≤ (LTE)</SelectItem>
+                            <SelectItem value="EQ">= (EQ)</SelectItem>
+                            <SelectItem value="NEQ">!= (NEQ)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="window_seconds"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Window Duration</FormLabel>
-                      <Select
-                        value={String(field.value ?? 300)}
-                        onValueChange={(v) => field.onChange(Number(v))}
-                      >
+                  <FormField
+                    control={form.control}
+                    name="threshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Threshold *</FormLabel>
                         <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Input
+                            type="number"
+                            step="any"
+                            value={(field.value as unknown as string) ?? ""}
+                            onChange={field.onChange}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="60">1 minute</SelectItem>
-                          <SelectItem value="120">2 minutes</SelectItem>
-                          <SelectItem value="300">5 minutes</SelectItem>
-                          <SelectItem value="600">10 minutes</SelectItem>
-                          <SelectItem value="900">15 minutes</SelectItem>
-                          <SelectItem value="1800">30 minutes</SelectItem>
-                          <SelectItem value="3600">1 hour</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-sm">
-                        Alert fires when {windowAggregation}({metricName || "metric"}) breaches the
-                        threshold over a {Number(windowSeconds) / 60}-minute sliding window.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
             ) : null}
 
-            <FormField
-              control={form.control}
-              name="device_group_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Scope to Device Group</FormLabel>
-                  <Select
-                    value={(field.value as string) || "none"}
-                    onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
-                  >
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField
+                control={form.control}
+                name="severity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Severity</FormLabel>
+                    <Select value={String(field.value ?? 3)} onValueChange={(v) => field.onChange(Number(v))}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select severity" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="1">1 (Info)</SelectItem>
+                        <SelectItem value="2">2 (Low)</SelectItem>
+                        <SelectItem value="3">3 (Medium)</SelectItem>
+                        <SelectItem value="4">4 (High)</SelectItem>
+                        <SelectItem value="5">5 (Critical)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="duration_minutes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Duration (min)</FormLabel>
                     <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All devices (no group filter)" />
-                      </SelectTrigger>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder="Instant"
+                        value={field.value == null ? "" : String(field.value)}
+                        onChange={field.onChange}
+                      />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">All devices (no group filter)</SelectItem>
-                      {(deviceGroupsResponse?.groups ?? []).map((group: DeviceGroup) => (
-                        <SelectItem key={group.group_id} value={group.group_id}>
-                          {group.name} ({group.member_count ?? 0} devices)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription className="text-sm">
-                    If set, this rule only evaluates devices in the selected group.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="device_group_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Scope to Group</FormLabel>
+                    <Select
+                      value={(field.value as string) || "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="All devices" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">All devices</SelectItem>
+                        {(deviceGroupsResponse?.groups ?? []).map((group: DeviceGroup) => (
+                          <SelectItem key={group.group_id} value={group.group_id}>
+                            {group.name} ({group.member_count ?? 0})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}
@@ -1531,83 +1597,35 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="duration_minutes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Duration (minutes)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      placeholder="Instant (leave blank)"
-                      value={field.value == null ? "" : String(field.value)}
-                      onChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormDescription className="text-sm">
-                    Fire only after condition holds for this many minutes. Leave blank to fire
-                    immediately.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="severity"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Severity</FormLabel>
-                  <Select value={String(field.value ?? 3)} onValueChange={(v) => field.onChange(Number(v))}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select severity" />
-                      </SelectTrigger>
+                      <Textarea placeholder="Optional context for this rule" rows={2} {...field} />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="1">1 (Info)</SelectItem>
-                      <SelectItem value="2">2 (Low)</SelectItem>
-                      <SelectItem value="3">3 (Medium)</SelectItem>
-                      <SelectItem value="4">4 (High)</SelectItem>
-                      <SelectItem value="5">5 (Critical)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Optional context for this rule" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="enabled"
-              render={({ field }) => (
-                <div className="flex items-center justify-between rounded-md border border-border p-3">
-                  <div>
-                    <Label className="text-sm">Enabled</Label>
-                    <p className="text-sm text-muted-foreground">Alerts will trigger when enabled.</p>
+              <FormField
+                control={form.control}
+                name="enabled"
+                render={({ field }) => (
+                  <div className="flex items-center justify-between self-end rounded-md border border-border p-3">
+                    <div>
+                      <Label className="text-sm">Enabled</Label>
+                      <p className="text-sm text-muted-foreground">Alerts trigger when enabled.</p>
+                    </div>
+                    <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
                   </div>
-                  <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
-                </div>
-              )}
-            />
+                )}
+              />
+            </div>
 
             {errorMessage && <div className="text-sm text-destructive">{errorMessage}</div>}
 
