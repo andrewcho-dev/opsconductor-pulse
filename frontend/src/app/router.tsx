@@ -4,6 +4,7 @@ import AppShell from "@/components/layout/AppShell";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import GettingStartedPage from "@/features/fleet/GettingStartedPage";
+import ToolsHubPage from "@/features/fleet/ToolsHubPage";
 import HomePage from "@/features/home/HomePage";
 import AlertsHubPage from "@/features/alerts/AlertsHubPage";
 import AnalyticsHubPage from "@/features/analytics/AnalyticsHubPage";
@@ -98,6 +99,7 @@ export const router = createBrowserRouter(
             { path: "analytics", element: <AnalyticsHubPage /> },
             { path: "updates", element: <UpdatesHubPage /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
+            { path: "fleet/tools", element: <ToolsHubPage /> },
             { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
             { path: "templates", element: <TemplateListPage /> },

@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFleetSummary } from "@/hooks/use-devices";
 import { fetchAlerts } from "@/services/api/alerts";
+import { getEntitlements } from "@/services/api/billing";
 import { useAuth } from "@/services/auth/AuthProvider";
 
 export default function HomePage() {
@@ -30,7 +31,23 @@ export default function HomePage() {
     staleTime: 30000,
   });
 
+  const { data: entitlements } = useQuery({
+    queryKey: ["home-entitlements"],
+    queryFn: getEntitlements,
+    staleTime: 60000,
+  });
+
   const orgName = user?.tenantId ?? "your organization";
+
+  const usageKpis = Object.entries(entitlements?.usage ?? {})
+    .filter(([, { limit }]) => limit != null && limit > 0)
+    .slice(0, 4)
+    .map(([key, { current, limit }]) => ({
+      key,
+      label: key.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+      current,
+      limit: limit!,
+    }));
 
   return (
     <div className="space-y-6">
@@ -71,6 +88,25 @@ export default function HomePage() {
           </>
         )}
       </div>
+
+      {/* Resource Usage */}
+      {usageKpis.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Resource Usage</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {usageKpis.map((u) => (
+              <KpiCard
+                key={u.key}
+                label={u.label}
+                value={`${u.current} / ${u.limit}`}
+                current={u.current}
+                max={u.limit}
+                description={`${Math.round((u.current / u.limit) * 100)}% used`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <Card>

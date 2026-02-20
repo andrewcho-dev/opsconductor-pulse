@@ -8,6 +8,7 @@ import {
   Bell,
   BarChart3,
   Rocket,
+  Wrench,
   Shield,
   ShieldCheck,
   Activity,
@@ -255,6 +256,7 @@ export function AppSidebar() {
                   {renderNavItem({ label: "Fleet Map", href: "/map", icon: MapPin })}
                   {renderNavItem({ label: "Device Groups", href: "/device-groups", icon: Layers })}
                   {renderNavItem({ label: "Updates", href: "/updates", icon: Radio })}
+                  {renderNavItem({ label: "Tools", href: "/fleet/tools", icon: Wrench })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

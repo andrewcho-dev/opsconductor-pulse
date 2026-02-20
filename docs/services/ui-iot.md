@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178]
 ---
 
 # ui-iot
@@ -221,6 +221,15 @@ Phase 177 consolidates org and user settings under `/app/settings/*`:
 - `/app/settings/access` — Team hub (requires `users.read`)
 - `/app/settings/billing` — Billing
 - `/app/settings/profile` — Personal settings
+
+## Connection Tools (Phase 178)
+
+Phase 178 adds a Tools hub page at `/app/fleet/tools` with two tabs:
+
+- **Connection Guide** (`?tab=guide`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
+- **MQTT Test Client** (`?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
+
+The Home page (`/app/home`) also gains a "Resource Usage" section displaying quota KPI cards from the entitlements API (`GET /api/v1/customer/billing/entitlements`). The Billing page (`/app/settings/billing`) is refactored to use `KpiCard` components instead of custom progress bars for usage display.
 
 ## Troubleshooting
 

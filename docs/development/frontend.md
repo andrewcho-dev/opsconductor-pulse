@@ -14,6 +14,9 @@ sources:
   - frontend/src/features/home/HomePage.tsx
   - frontend/src/features/alerts/AlertsHubPage.tsx
   - frontend/src/components/layout/SettingsLayout.tsx
+  - frontend/src/features/fleet/ToolsHubPage.tsx
+  - frontend/src/features/fleet/ConnectionGuidePage.tsx
+  - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -25,7 +28,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178]
 ---
 
 # Frontend
@@ -66,7 +69,7 @@ Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 - `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands (Phase 171: tabbed device detail)
 - `alerts/` — alert inbox and rule dialogs
 - `escalation/` — escalation policies UI
-- `fleet/` — fleet-level pages (Getting Started onboarding guide)
+- `fleet/` — fleet-level pages (Getting Started onboarding guide, Tools hub with Connection Guide + MQTT Test Client)
 - `notifications/` — channels and routing rules UI
 - `oncall/` — schedules, layers, overrides, timeline
 - `reports/` — reports and export UI
@@ -189,6 +192,7 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 | Updates | `/updates` | Campaigns, Firmware |
 | Notifications | `/notifications` | Channels, Delivery Log, Dead Letter |
 | Team | `/team` | Members, Roles |
+| Tools | `/fleet/tools` | Connection Guide, MQTT Test Client |
 
 ### `embedded` prop convention
 
@@ -226,13 +230,25 @@ export default function MyHubPage() {
 }
 ```
 
+## MQTT Test Client (Phase 178)
+
+The MQTT Test Client (`/fleet/tools?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
+
+Key implementation details:
+
+- Connects to `ws://localhost:9001/mqtt` by default (EMQX WebSocket port)
+- Manual credential entry: broker URL, client ID, password
+- No auto-reconnect (`reconnectPeriod: 0`) — intentional for a debugging tool
+- Message buffer capped at 200 messages
+- Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
+
 ## Navigation Structure (Phase 176 + 177)
 
 The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
 
 - **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
 - **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
-- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub)
+- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub), Tools (hub)
 - **Settings** — Single link to `/settings` page with internal subcategory navigation
 
 (\* conditional — hidden when dismissed)

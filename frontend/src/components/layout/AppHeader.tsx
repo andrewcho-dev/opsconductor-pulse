@@ -58,6 +58,7 @@ function useBreadcrumbs(): { label: string; href?: string }[] {
     roles: "Roles",
     ota: "OTA",
     fleet: "Fleet",
+    tools: "Tools",
     operator: "Operator",
     "getting-started": "Getting Started",
     campaigns: "Campaigns",

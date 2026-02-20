@@ -23,6 +23,7 @@ import {
   Radio,
   Settings,
   Users,
+  Wrench,
   Webhook,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -154,6 +155,9 @@ export function CommandPalette() {
       { label: "Organization", href: "/settings/general", icon: Building2 },
       { label: "Team", href: "/settings/access", icon: Users },
       { label: "Getting Started", href: "/fleet/getting-started", icon: Activity },
+      { label: "Tools", href: "/fleet/tools", icon: Wrench },
+      { label: "Connection Guide", href: "/fleet/tools?tab=guide", icon: Wrench },
+      { label: "MQTT Test Client", href: "/fleet/tools?tab=mqtt", icon: Wrench },
     ],
     []
   );

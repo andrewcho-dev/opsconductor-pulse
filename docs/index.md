@@ -3,7 +3,7 @@ last-verified: 2026-02-19
 sources:
   - docs/development/frontend.md
   - docs/features/device-management.md
-phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177]
+phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177, 178]
 ---
 
 # OpsConductor-Pulse Documentation
@@ -45,6 +45,8 @@ phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 1
 - Hub pages: Alerts, Analytics, Updates, Notifications, Team
 - Flat sidebar navigation with section labels
 - Settings page with subcategory navigation (Account, Configuration, Access Control)
+- Connection tools: Connection Guide (code snippets for Python/Node.js/curl/Arduino) and MQTT Test Client
+- Resource usage/quota KPI visualization on Home page
 - [Dashboards](features/dashboards.md) — Dashboard system, widgets, TV/NOC mode
 - [Billing](features/billing.md) — Subscriptions, metering, device limits
 - [Reporting](features/reporting.md) — SLA reports, CSV exports
