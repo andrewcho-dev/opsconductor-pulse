@@ -8,6 +8,7 @@ from middleware.permissions import require_permission
 from typing import Any, Optional
 from fastapi import Query, Response as FastAPIResponse
 import asyncpg
+from datetime import timedelta
 
 from shared.logging import get_logger
 from shared.twin import compute_delta, compute_structured_delta, sync_status
@@ -1710,7 +1711,21 @@ async def get_telemetry_history(
         )
 
     tenant_id = get_tenant_id()
-    lookback, bucket = VALID_TELEMETRY_RANGES[range]
+    _, bucket = VALID_TELEMETRY_RANGES[range]
+    lookback_delta = {
+        "1h": timedelta(hours=1),
+        "6h": timedelta(hours=6),
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }[range]
+    bucket_delta = {
+        "1h": timedelta(minutes=1),
+        "6h": timedelta(minutes=5),
+        "24h": timedelta(minutes=15),
+        "7d": timedelta(hours=1),
+        "30d": timedelta(hours=6),
+    }[range]
 
     async with tenant_connection(pool, tenant_id) as conn:
         sensor = await conn.fetchrow(
@@ -1739,11 +1754,11 @@ async def get_telemetry_history(
             GROUP BY bucket
             ORDER BY bucket ASC
             """,
-            bucket,
+            bucket_delta,
             metric,
             tenant_id,
             device_id,
-            lookback,
+            lookback_delta,
         )
 
     return {
@@ -1819,7 +1834,13 @@ async def export_telemetry_csv(
         )
 
     tenant_id = get_tenant_id()
-    lookback = EXPORT_RANGES[range]
+    lookback_delta = {
+        "1h": timedelta(hours=1),
+        "6h": timedelta(hours=6),
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }[range]
     async with tenant_connection(pool, tenant_id) as conn:
         rows = await conn.fetch(
             """
@@ -1833,7 +1854,7 @@ async def export_telemetry_csv(
             """,
             tenant_id,
             device_id,
-            lookback,
+            lookback_delta,
             limit,
         )
 

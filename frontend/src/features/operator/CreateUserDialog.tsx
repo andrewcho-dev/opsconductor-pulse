@@ -209,14 +209,17 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDi
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tenant</FormLabel>
-                    <Select value={field.value || ""} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value || "none"}
+                      onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select tenant..." />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">No tenant (operator)</SelectItem>
+                        <SelectItem value="none">No tenant (operator)</SelectItem>
                         {orgsData?.organizations?.map((org) => (
                           <SelectItem key={org.id} value={org.alias || org.name}>
                             {org.alias || org.name}

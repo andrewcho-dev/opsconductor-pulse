@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192]
 ---
 
 # ui-iot
@@ -246,6 +246,8 @@ All sub-page navigation uses flat single-level tabs. No nested hubs, no left-nav
 
 - `/app/devices` — Devices hub with 4 tabs: Devices, Templates, Map, Updates
 - `/app/settings` — Settings hub with 9 tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile
+
+Phase 189 consolidates device detail from 6 tabs (Overview, Sensors & Data, Transport, Health, Twin & Commands, Security) to 3 tabs (Overview, Data, Manage). Health diagnostics move to Overview; Transport, Twin/Commands, Security, and Plan are grouped under Manage with section headers.
 
 Old standalone routes redirect to the appropriate hub tab:
 - `/app/sites` — Sites overview (standalone page)

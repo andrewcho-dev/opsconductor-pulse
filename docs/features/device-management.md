@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186, 187]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186, 187, 188, 189, 190, 191, 192]
 ---
 
 # Device Management
@@ -77,18 +77,15 @@ The customer UI includes a dedicated template management experience:
   - Slots
 - System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
 
-## Device Detail UI (Phases 171, 187)
+## Device Detail UI (Phases 171, 187, 188, 189, 192)
 
-The customer UI uses a 6-tab layout with a KPI strip above tabs (Status, Sensors, Alerts, Firmware, Plan) for at-a-glance health:
+The device detail page uses 3 tabs:
 
-- Overview: 2-column layout with a grouped properties panel (Identity, Hardware, Network, Location, Tags, Notes) on the left, and latest telemetry values plus map on the right. The map only renders when coordinates are present.
-- Sensors & Data: module assignment (template slots), sensor management, telemetry charts.
-- Transport: per-device transport configuration (protocol + physical connectivity) and carrier integration linking.
-- Health: device health telemetry and uptime.
-- Twin & Commands: desired/reported state management and command dispatch/history.
-- Security: API tokens and mTLS certificates.
+- **Overview** — Device properties in a 3-column card grid (Identity | Hardware | Network+Location), tags and notes side-by-side, a compact 5-metric health strip (signal, battery, CPU temp, memory, uptime — latest values only, no charts), and map (GPS only). Telemetry data and charts are on the Data tab, not the Overview.
+- **Data** — Expansion modules use a collapsible `<details>` section, closed by default when no modules are assigned (showing a one-line summary). The slot list is width-constrained to prevent full-width stretching.
+- **Manage** — Four visually distinct sections: Connectivity (transport protocol and physical config), Control (device twin + remote commands), Security (API tokens + X.509 certificates), and Subscription (plan limits and features).
 
-The page header now surfaces device status prominently as a colored status badge with relative last-seen context.
+A 3-card KPI strip above the tabs shows device status, open alert count, and sensor count.
 
 ## Fleet Navigation & Getting Started (Phase 174)
 

@@ -205,12 +205,12 @@ export function DevicePlanPanel({ deviceId }: DevicePlanPanelProps) {
                   key={p.plan_id}
                   type="button"
                   variant="outline"
-                  className={`h-auto w-full justify-start text-left p-3 hover:border-primary ${
+                  className={`h-auto w-full flex-col items-start whitespace-normal p-3 text-left hover:border-primary ${
                     isSelected ? "border-primary bg-primary/5" : "border-muted"
                   }`}
                   onClick={() => setSelectedPlanId(p.plan_id)}
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex w-full items-center justify-between gap-2">
                     <div className="font-medium">{p.name}</div>
                     <Badge variant="outline">{formatUsd(p.monthly_price_cents)}/mo</Badge>
                   </div>

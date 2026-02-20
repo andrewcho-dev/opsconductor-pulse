@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import { useDeviceAlerts } from "@/hooks/use-device-alerts";
 import { DeviceInfoCard } from "./DeviceInfoCard";
 import { DeviceMapCard } from "./DeviceMapCard";
 import { DeviceEditModal } from "./DeviceEditModal";
-import { DevicePlanPanel } from "./DevicePlanPanel";
 import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 import {
   getDeviceTags,
@@ -21,10 +20,8 @@ import {
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 import { DeviceSensorsDataTab } from "./DeviceSensorsDataTab";
-import { DeviceTransportTab } from "./DeviceTransportTab";
-import { DeviceHealthTab } from "./DeviceHealthTab";
-import { DeviceTwinCommandsTab } from "./DeviceTwinCommandsTab";
-import { DeviceSecurityTab } from "./DeviceSecurityTab";
+import { DeviceManageTab } from "./DeviceManageTab";
+import { DeviceHealthStrip } from "./DeviceHealthStrip";
 
 function relativeTime(input?: string | null) {
   if (!input) return "never";
@@ -103,12 +100,6 @@ export default function DeviceDetailPage() {
   }, [deviceId]);
 
   const openAlertCount = alertsData?.alerts?.length ?? 0;
-  const latestMetrics = useMemo(() => {
-    const latest = points.at(-1);
-    if (!latest) return [];
-    return Object.entries(latest.metrics).slice(0, 12);
-  }, [points]);
-
   async function refreshDevice() {
     if (!deviceId) return;
     await queryClient.invalidateQueries({ queryKey: ["device", deviceId] });
@@ -209,7 +200,7 @@ export default function DeviceDetailPage() {
       />
 
       {/* KPI strip — above tabs */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="rounded-md border border-border p-3">
           <div className="flex items-center gap-2">
             <span className={`h-3 w-3 rounded-full ${statusDot(device?.status)}`} />
@@ -218,108 +209,65 @@ export default function DeviceDetailPage() {
           <div className="mt-1 text-xs text-muted-foreground">{relativeTime(device?.last_seen_at)}</div>
         </div>
         <div className="rounded-md border border-border p-3">
-          <div className="text-lg font-semibold">{device?.sensor_count ?? "—"}</div>
-          <div className="text-xs text-muted-foreground">Sensors</div>
-        </div>
-        <div className="rounded-md border border-border p-3">
           <div className={`text-lg font-semibold ${openAlertCount > 0 ? "text-destructive" : ""}`}>
             {openAlertCount}
           </div>
           <div className="text-xs text-muted-foreground">Open Alerts</div>
         </div>
         <div className="rounded-md border border-border p-3">
-          <div className="text-lg font-semibold">{device?.fw_version ?? "—"}</div>
-          <div className="text-xs text-muted-foreground">Firmware</div>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <div className="text-lg font-semibold">{device?.plan_id ?? "—"}</div>
-          <div className="text-xs text-muted-foreground">Plan</div>
+          <div className="text-lg font-semibold">{device?.sensor_count ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">Sensors</div>
         </div>
       </div>
 
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="sensors">Sensors & Data</TabsTrigger>
-          <TabsTrigger value="transport">Transport</TabsTrigger>
-          <TabsTrigger value="health">Health</TabsTrigger>
-          <TabsTrigger value="twin">Twin & Commands</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="data">Data</TabsTrigger>
+          <TabsTrigger value="manage">Manage</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="pt-2 space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-            <DeviceInfoCard
-              device={device}
-              isLoading={deviceLoading}
-              tags={deviceTags}
-              onTagsChange={(next) => {
-                setDeviceTagsState(next);
-                void handleSaveTags(next);
-              }}
-              notesValue={notesValue}
-              onNotesChange={handleNotesChange}
-              onNotesBlur={handleSaveNotes}
-              onEdit={() => setEditModalOpen(true)}
-            />
+          <DeviceInfoCard
+            device={device}
+            isLoading={deviceLoading}
+            tags={deviceTags}
+            onTagsChange={(next) => {
+              setDeviceTagsState(next);
+              void handleSaveTags(next);
+            }}
+            notesValue={notesValue}
+            onNotesChange={handleNotesChange}
+            onNotesBlur={handleSaveNotes}
+            onEdit={() => setEditModalOpen(true)}
+          />
 
-            <div className="space-y-4">
-              <div className="rounded-md border border-border p-4">
-                <h4 className="mb-3 text-sm font-semibold">Latest Telemetry</h4>
-                {latestMetrics.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No telemetry data yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {latestMetrics.map(([name, value]) => (
-                      <div key={name} className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">{name}</span>
-                        <span className="font-mono font-medium">{String(value)}</span>
-                      </div>
-                    ))}
-                    <div className="pt-1 text-right text-xs text-muted-foreground">
-                      Updated {relativeTime(points.at(-1)?.timestamp)}
-                    </div>
-                  </div>
-                )}
-              </div>
+          {deviceId && <DeviceHealthStrip deviceId={deviceId} />}
 
-              {device?.latitude != null && device?.longitude != null && (
-                <div className="relative">
-                  <DeviceMapCard
-                    latitude={pendingLocation?.lat ?? device.latitude}
-                    longitude={pendingLocation?.lng ?? device.longitude}
-                    address={device.address}
-                    editable
-                    onLocationChange={handleMapLocationChange}
-                  />
-                  {pendingLocation && (
-                    <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
-                      <Button size="sm" className="h-8" onClick={handleSaveLocation}>
-                        Save Location
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8"
-                        onClick={() => setPendingLocation(null)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
+          {device?.latitude != null && device?.longitude != null && (
+            <div className="relative h-[200px]">
+              <DeviceMapCard
+                latitude={pendingLocation?.lat ?? device.latitude}
+                longitude={pendingLocation?.lng ?? device.longitude}
+                address={device.address}
+                editable
+                onLocationChange={handleMapLocationChange}
+              />
+              {pendingLocation && (
+                <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
+                  <Button size="sm" className="h-8" onClick={handleSaveLocation}>
+                    Save Location
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={() => setPendingLocation(null)}>
+                    Cancel
+                  </Button>
                 </div>
               )}
             </div>
-          </div>
-
-          {deviceId && (
-            <section>
-              <DevicePlanPanel deviceId={deviceId} />
-            </section>
           )}
         </TabsContent>
 
-        <TabsContent value="sensors">
+        <TabsContent value="data">
           {deviceId ? (
             <DeviceSensorsDataTab
               deviceId={deviceId}
@@ -337,22 +285,8 @@ export default function DeviceDetailPage() {
           ) : null}
         </TabsContent>
 
-        <TabsContent value="transport">
-          {deviceId ? <DeviceTransportTab deviceId={deviceId} /> : null}
-        </TabsContent>
-
-        <TabsContent value="health">
-          {deviceId ? <DeviceHealthTab deviceId={deviceId} /> : null}
-        </TabsContent>
-
-        <TabsContent value="twin">
-          {deviceId ? (
-            <DeviceTwinCommandsTab deviceId={deviceId} templateId={device?.template_id ?? null} />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="security">
-          {deviceId ? <DeviceSecurityTab deviceId={deviceId} /> : null}
+        <TabsContent value="manage">
+          {deviceId ? <DeviceManageTab deviceId={deviceId} /> : null}
         </TabsContent>
       </Tabs>
 
