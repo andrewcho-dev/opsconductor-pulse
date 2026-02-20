@@ -75,7 +75,7 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export default function TemplateListPage() {
+export default function TemplateListPage({ embedded }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -283,16 +283,26 @@ export default function TemplateListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Device Templates"
-        description={description}
-        action={
+      {!embedded && (
+        <PageHeader
+          title="Device Templates"
+          description={description}
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add Template
+            </Button>
+          }
+        />
+      )}
+      {embedded && (
+        <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Add Template
           </Button>
-        }
-      />
+        </div>
+      )}
 
       {error ? (
         <div className="text-destructive">Failed to load templates: {getErrorMessage(error)}</div>

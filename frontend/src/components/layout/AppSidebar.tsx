@@ -7,8 +7,7 @@ import {
   Cpu,
   Bell,
   BarChart3,
-  Rocket,
-  Wrench,
+  Scale,
   Shield,
   ShieldCheck,
   Activity,
@@ -23,8 +22,6 @@ import {
   Layers,
   Radio,
   LayoutGrid,
-  LayoutTemplate,
-  MapPin,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
@@ -92,9 +89,6 @@ function readSidebarOpen(key: string, defaultValue: boolean) {
 export function AppSidebar() {
   const location = useLocation();
   const { isOperator, isCustomer } = useAuth();
-  const [fleetSetupDismissed] = useState(() => {
-    return localStorage.getItem("pulse_fleet_setup_dismissed") === "true";
-  });
   const [operatorOverviewOpen, setOperatorOverviewOpen] = useState(() =>
     readSidebarOpen("sidebar-operator-overview", true)
   );
@@ -244,19 +238,8 @@ export function AppSidebar() {
               <SidebarGroupLabel>Fleet</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {!fleetSetupDismissed &&
-                    renderNavItem({
-                      label: "Getting Started",
-                      href: "/fleet/getting-started",
-                      icon: Rocket,
-                    })}
                   {renderNavItem({ label: "Devices", href: "/devices", icon: Cpu })}
-                  {renderNavItem({ label: "Sites", href: "/sites", icon: Building2 })}
-                  {renderNavItem({ label: "Templates", href: "/templates", icon: LayoutTemplate })}
-                  {renderNavItem({ label: "Fleet Map", href: "/map", icon: MapPin })}
-                  {renderNavItem({ label: "Device Groups", href: "/device-groups", icon: Layers })}
-                  {renderNavItem({ label: "Updates", href: "/updates", icon: Radio })}
-                  {renderNavItem({ label: "Tools", href: "/fleet/tools", icon: Wrench })}
+                  {renderNavItem({ label: "Rules", href: "/rules", icon: Scale })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

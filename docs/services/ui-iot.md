@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182]
 ---
 
 # ui-iot
@@ -203,33 +203,60 @@ The frontend Fleet sidebar is restructured into Setup / Monitor / Maintain sub-g
 
 Phase 176 introduces a Home landing page at `/app/home` and consolidates multiple standalone pages into hub pages (tabbed navigation with `?tab=` deep links). Key hub routes:
 
-- `/app/alerts` — Alerts hub (rules/escalation/on-call/maintenance are tabs)
-- `/app/analytics` — Analytics hub (reports are a tab)
-- `/app/updates` — Updates hub (replaces `/app/ota/campaigns` and `/app/ota/firmware`)
-- `/app/team` — Team hub (replaces `/app/users` and `/app/roles`)
+- `/app/alerts` — Alert inbox (simplified in Phase 180)
+- `/app/analytics` — Analytics hub (Explorer, Reports tabs)
+- `/app/devices` — Devices hub with 9 flat tabs (Phase 182)
+- `/app/settings` — Settings hub with 9 flat tabs (Phase 182)
 
 Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
 
-## Settings Route Structure (Phase 177)
+## Settings Hub (Phase 182)
 
-Phase 177 consolidates org and user settings under `/app/settings/*`:
+Phase 182 keeps settings as a flat hub page with single-level tabs:
 
-- `/app/settings` — Settings layout (redirects to `/app/settings/general`)
-- `/app/settings/general` — Organization settings
-- `/app/settings/notifications` — Notifications hub
-- `/app/settings/integrations` — Carrier integrations
-- `/app/settings/access` — Team hub (requires `users.read`)
-- `/app/settings/billing` — Billing
-- `/app/settings/profile` — Personal settings
+- `/app/settings` — Settings hub with tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile
+- `/app/settings?tab=general` — Organization settings (default tab)
+- `/app/settings?tab=members` — Members tab (requires `users.read`)
+- `/app/settings?tab=roles` — Roles tab (requires `users.roles`)
+
+Old nested paths (`/app/settings/general`, `/app/settings/billing`, etc.) redirect to the corresponding `?tab=` parameter.
 
 ## Connection Tools (Phase 178)
 
-Phase 178 adds a Tools hub page at `/app/fleet/tools` with two tabs:
+Phase 178 adds connection tooling pages:
 
-- **Connection Guide** (`?tab=guide`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
-- **MQTT Test Client** (`?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
+- **Connection Guide** (`/app/devices?tab=guide`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
+- **MQTT Test Client** (`/app/devices?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
 
 The Home page (`/app/home`) also gains a "Resource Usage" section displaying quota KPI cards from the entitlements API (`GET /api/v1/customer/billing/entitlements`). The Billing page (`/app/settings/billing`) is refactored to use `KpiCard` components instead of custom progress bars for usage display.
+
+## Navigation Simplification (Phase 180)
+
+Phase 180 simplifies the sidebar to 7 items and introduces a Rules hub:
+
+- `/app/rules` — Rules hub with tabs: Alert Rules, Escalation, On-Call, Maintenance
+- `/app/alerts` — Simplified to alert inbox only (rules/escalation/oncall/maintenance moved to Rules hub)
+- `/app/devices` — Became the fleet entry point; flattened to tab-based sub-navigation in Phase 182
+
+Old tab-based URLs (`/alerts?tab=rules`, `/alerts?tab=escalation`, etc.) redirect to the corresponding Rules hub tab.
+
+## Tab Standardization (Phases 181-182)
+
+All sub-page navigation uses flat single-level tabs. No nested hubs, no left-nav, no button-link rows.
+
+- `/app/devices` — Devices hub with 9 tabs: Devices, Sites, Templates, Groups, Map, Campaigns, Firmware, Guide, MQTT
+- `/app/settings` — Settings hub with 9 tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile
+
+Old standalone routes redirect to the appropriate hub tab:
+- `/app/sites` -> `/app/devices?tab=sites`
+- `/app/templates` -> `/app/devices?tab=templates`
+- `/app/updates` -> `/app/devices?tab=campaigns`
+- `/app/ota/firmware` -> `/app/devices?tab=firmware`
+- `/app/fleet/tools` -> `/app/devices?tab=guide`
+- `/app/settings/notifications` -> `/app/settings?tab=channels`
+- `/app/settings/access` -> `/app/settings?tab=members`
+
+Members and Roles tabs are permission-gated (`users.read` and `users.roles` respectively).
 
 ## Troubleshooting
 

@@ -42,7 +42,7 @@ function formatTimeAgo(input?: string | null) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function DeviceListPage() {
+export default function DeviceListPage({ embedded }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<DeviceListFilters>({
     limit: 25,
@@ -102,14 +102,27 @@ export default function DeviceListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Devices"
-        description={
-          isLoading
-            ? "Loading..."
-            : `${totalCount} devices in your fleet`
-        }
-        action={
+      {!embedded && (
+        <PageHeader
+          title="Devices"
+          description={
+            isLoading
+              ? "Loading..."
+              : `${totalCount} devices in your fleet`
+          }
+          action={
+            <DeviceActions
+              canCreate={true}
+              createDisabled={false}
+              onCreate={() => setAddOpen(true)}
+              onGuidedSetup={() => navigate("/devices/wizard")}
+              onImport={() => navigate("/devices/import")}
+            />
+          }
+        />
+      )}
+      {embedded && (
+        <div className="flex justify-end">
           <DeviceActions
             canCreate={true}
             createDisabled={false}
@@ -117,8 +130,8 @@ export default function DeviceListPage() {
             onGuidedSetup={() => navigate("/devices/wizard")}
             onImport={() => navigate("/devices/import")}
           />
-        }
-      />
+        </div>
+      )}
       <AddDeviceModal
         open={addOpen}
         onClose={() => setAddOpen(false)}

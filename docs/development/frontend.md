@@ -13,8 +13,11 @@ sources:
   - frontend/src/components/shared/illustrations.tsx
   - frontend/src/features/home/HomePage.tsx
   - frontend/src/features/alerts/AlertsHubPage.tsx
-  - frontend/src/components/layout/SettingsLayout.tsx
-  - frontend/src/features/fleet/ToolsHubPage.tsx
+  - frontend/src/features/devices/DevicesHubPage.tsx
+  - frontend/src/features/settings/SettingsHubPage.tsx
+  - frontend/src/features/ota/OtaCampaignsPage.tsx
+  - frontend/src/features/ota/FirmwareListPage.tsx
+  - frontend/src/features/rules/RulesHubPage.tsx
   - frontend/src/features/fleet/ConnectionGuidePage.tsx
   - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
@@ -28,7 +31,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182]
 ---
 
 # Frontend
@@ -69,7 +72,7 @@ Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 - `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands (Phase 171: tabbed device detail)
 - `alerts/` — alert inbox and rule dialogs
 - `escalation/` — escalation policies UI
-- `fleet/` — fleet-level pages (Getting Started onboarding guide, Tools hub with Connection Guide + MQTT Test Client)
+- `fleet/` — fleet-level pages (Getting Started onboarding guide, connection guide, MQTT test client)
 - `notifications/` — channels and routing rules UI
 - `oncall/` — schedules, layers, overrides, timeline
 - `reports/` — reports and export UI
@@ -167,12 +170,12 @@ New shared components:
 
 The `EmptyState` component now renders an SVG illustration by default instead of a plain icon.
 
-## Tab Conventions (Phase 175)
+## Tab Conventions (Phase 182)
 
-- `variant="line"` (underline with primary-colored active indicator): Use for hub page navigation tabs
-- `variant="default"` (pill/muted background): Use for filter toggles and small control groups
+- `variant="line"` (underline with primary-colored active indicator): Use for all hub page navigation tabs
+- `variant="default"` (pill/muted background): Use for filter toggles and small control groups only
 
-Hub pages (Alerts, Analytics, Updates, etc.) should use `variant="line"` for their tab navigation.
+All hubs use a single level of `variant="line"` tabs. There are no nested hubs or pill-variant inner tabs.
 
 ## Hub Pages (Phase 176)
 
@@ -187,12 +190,10 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 | Hub | Route | Tabs |
 |-----|-------|------|
-| Alerts | `/alerts` | Inbox, Rules, Escalation, On-Call, Maintenance |
+| Devices | `/devices` | Devices, Sites, Templates, Groups, Map, Campaigns, Firmware, Guide, MQTT |
+| Settings | `/settings` | General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile |
+| Rules | `/rules` | Alert Rules, Escalation, On-Call, Maintenance |
 | Analytics | `/analytics` | Explorer, Reports |
-| Updates | `/updates` | Campaigns, Firmware |
-| Notifications | `/notifications` | Channels, Delivery Log, Dead Letter |
-| Team | `/team` | Members, Roles |
-| Tools | `/fleet/tools` | Connection Guide, MQTT Test Client |
 
 ### `embedded` prop convention
 
@@ -232,7 +233,7 @@ export default function MyHubPage() {
 
 ## MQTT Test Client (Phase 178)
 
-The MQTT Test Client (`/fleet/tools?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
+The MQTT Test Client (`/devices?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
 
 Key implementation details:
 
@@ -242,40 +243,22 @@ Key implementation details:
 - Message buffer capped at 200 messages
 - Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
 
-## Navigation Structure (Phase 176 + 177)
+## Navigation Structure (Phase 182)
 
-The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
+The customer sidebar uses a flat layout with 7 items in 2 section labels:
 
-- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
-- **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
-- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub), Tools (hub)
-- **Settings** — Single link to `/settings` page with internal subcategory navigation
+- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts, onboarding checklist
+- **Monitoring** — Dashboard, Alerts (inbox only), Analytics (hub)
+- **Fleet** — Devices (hub), Rules (hub)
+- **Settings** — Single link to `/settings` hub page
 
-(\* conditional — hidden when dismissed)
+All sub-page navigation uses tabs — there are no left-nav layouts or button-link rows. Every page that contains sub-pages uses the same hub pattern: `PageHeader` + `TabsList variant="line"` + `useSearchParams`.
 
-Old standalone routes redirect to their hub page with the appropriate `?tab=` parameter.
+## Settings Hub (Phase 182)
 
-## Settings Page (Phase 177)
+The Settings page (`/settings`) is a standard hub page with flat tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile.
 
-The Settings page (`/settings`) uses a dedicated `SettingsLayout` component with a two-column layout:
-
-- **Left nav** (200px): links organized under subcategory labels
-- **Right content** (flex-1): active section rendered via `<Outlet />`
-
-### Subcategories
-
-| Category | Section | Route | Content |
-|----------|---------|-------|---------|
-| Account | General | `/settings/general` | Organization settings |
-| Account | Billing | `/settings/billing` | Billing + subscription |
-| Configuration | Notifications | `/settings/notifications` | Notifications hub (Channels/Delivery/Dead Letter tabs) |
-| Configuration | Integrations | `/settings/integrations` | Carrier integrations |
-| Access Control | Team | `/settings/access` | Team hub (Members/Roles tabs, requires `users.read`) |
-| Personal | Profile | `/settings/profile` | Personal settings |
-
-The SettingsLayout handles permission-based visibility: the "Team" nav item only appears for users with `users.read` permission.
-
-Hub pages (Notifications, Team) render with `embedded` mode inside the Settings layout — they skip their own `PageHeader` but keep their tab navigation.
+The Members tab is permission-gated by `users.read`; Roles is permission-gated by `users.roles` (and `users.read`).
 
 ## UI Pattern Conventions
 

@@ -1,21 +1,15 @@
-import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
-import SettingsLayout from "@/components/layout/SettingsLayout";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import GettingStartedPage from "@/features/fleet/GettingStartedPage";
-import ToolsHubPage from "@/features/fleet/ToolsHubPage";
 import HomePage from "@/features/home/HomePage";
 import AlertsHubPage from "@/features/alerts/AlertsHubPage";
 import AnalyticsHubPage from "@/features/analytics/AnalyticsHubPage";
-import UpdatesHubPage from "@/features/ota/UpdatesHubPage";
-import NotificationsHubPage from "@/features/notifications/NotificationsHubPage";
-import TeamHubPage from "@/features/users/TeamHubPage";
-import DeviceListPage from "@/features/devices/DeviceListPage";
+import RulesHubPage from "@/features/rules/RulesHubPage";
+import DevicesHubPage from "@/features/devices/DevicesHubPage";
 import DeviceDetailPage from "@/features/devices/DeviceDetailPage";
 import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
 import { SensorListPage } from "@/features/devices/SensorListPage";
-import FleetMapPage from "@/features/map/FleetMapPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
@@ -39,19 +33,13 @@ import NOCPage from "@/features/operator/noc/NOCPage";
 import AuditLogPage from "@/features/operator/AuditLogPage";
 import SettingsPage from "@/features/operator/SettingsPage";
 import CertificateOverviewPage from "@/features/operator/CertificateOverviewPage";
-import SitesPage from "@/features/sites/SitesPage";
 import SiteDetailPage from "@/features/sites/SiteDetailPage";
-import TemplateListPage from "@/features/templates/TemplateListPage";
 import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
-import ProfilePage from "@/features/settings/ProfilePage";
-import OrganizationPage from "@/features/settings/OrganizationPage";
-import BillingPage from "@/features/settings/BillingPage";
-import CarrierIntegrationsPage from "@/features/settings/CarrierIntegrationsPage";
+import SettingsHubPage from "@/features/settings/SettingsHubPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { usePermissions } from "@/services/auth";
 
 function HomeRedirect() {
   const { isOperator } = useAuth();
@@ -71,17 +59,6 @@ function RequireCustomer() {
   return <Outlet />;
 }
 
-function RequirePermission({ permission, children }: { permission: string; children?: ReactNode }) {
-  const { hasPermission, loading } = usePermissions();
-  const { isOperator } = useAuth();
-
-  // While permissions are loading, show nothing (prevents flash of redirect)
-  if (loading && !isOperator) return null;
-
-  if (!hasPermission(permission)) return <Navigate to="/dashboard" replace />;
-  return children ? <>{children}</> : <Outlet />;
-}
-
 export const router = createBrowserRouter(
   [
     {
@@ -97,68 +74,55 @@ export const router = createBrowserRouter(
             { path: "dashboard", element: <DashboardPage /> },
             { path: "alerts", element: <AlertsHubPage /> },
             { path: "analytics", element: <AnalyticsHubPage /> },
-            { path: "updates", element: <UpdatesHubPage /> },
+            { path: "rules", element: <RulesHubPage /> },
+            { path: "devices", element: <DevicesHubPage /> },
+            { path: "updates", element: <Navigate to="/devices?tab=campaigns" replace /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
-            { path: "fleet/tools", element: <ToolsHubPage /> },
-            { path: "sites", element: <SitesPage /> },
+            { path: "fleet/tools", element: <Navigate to="/devices?tab=guide" replace /> },
+            { path: "sites", element: <Navigate to="/devices?tab=sites" replace /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
-            { path: "templates", element: <TemplateListPage /> },
+            { path: "templates", element: <Navigate to="/devices?tab=templates" replace /> },
             { path: "templates/:templateId", element: <TemplateDetailPage /> },
-            { path: "devices", element: <DeviceListPage /> },
             { path: "devices/import", element: <BulkImportPage /> },
             { path: "devices/wizard", element: <SetupWizard /> },
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
             { path: "sensors", element: <SensorListPage /> },
-            { path: "device-groups", element: <DeviceGroupsPage /> },
+            { path: "device-groups", element: <Navigate to="/devices?tab=groups" replace /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
-            { path: "map", element: <FleetMapPage /> },
-            { path: "alert-rules", element: <Navigate to="/alerts?tab=rules" replace /> },
-            { path: "escalation-policies", element: <Navigate to="/alerts?tab=escalation" replace /> },
-            { path: "oncall", element: <Navigate to="/alerts?tab=oncall" replace /> },
-            { path: "maintenance-windows", element: <Navigate to="/alerts?tab=maintenance" replace /> },
-            { path: "integrations", element: <Navigate to="/settings/notifications" replace /> },
-            { path: "integrations/*", element: <Navigate to="/settings/notifications" replace /> },
-            { path: "customer/integrations", element: <Navigate to="/settings/notifications" replace /> },
-            { path: "customer/integrations/*", element: <Navigate to="/settings/notifications" replace /> },
+            { path: "map", element: <Navigate to="/devices?tab=map" replace /> },
+            { path: "alert-rules", element: <Navigate to="/rules?tab=alert-rules" replace /> },
+            { path: "escalation-policies", element: <Navigate to="/rules?tab=escalation" replace /> },
+            { path: "oncall", element: <Navigate to="/rules?tab=oncall" replace /> },
+            { path: "maintenance-windows", element: <Navigate to="/rules?tab=maintenance" replace /> },
+            { path: "integrations", element: <Navigate to="/settings?tab=channels" replace /> },
+            { path: "integrations/*", element: <Navigate to="/settings?tab=channels" replace /> },
+            { path: "customer/integrations", element: <Navigate to="/settings?tab=channels" replace /> },
+            { path: "customer/integrations/*", element: <Navigate to="/settings?tab=channels" replace /> },
             { path: "activity-log", element: <ActivityLogPage /> },
             { path: "metrics", element: <MetricsPage /> },
-            { path: "delivery-log", element: <Navigate to="/settings/notifications?tab=delivery" replace /> },
-            { path: "dead-letter", element: <Navigate to="/settings/notifications?tab=dead-letter" replace /> },
+            { path: "delivery-log", element: <Navigate to="/settings?tab=delivery" replace /> },
+            { path: "dead-letter", element: <Navigate to="/settings?tab=dead-letter" replace /> },
             { path: "jobs", element: <JobsPage /> },
-            { path: "ota/campaigns", element: <Navigate to="/updates?tab=campaigns" replace /> },
+            { path: "ota/campaigns", element: <Navigate to="/devices?tab=campaigns" replace /> },
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
-            { path: "ota/firmware", element: <Navigate to="/updates?tab=firmware" replace /> },
+            { path: "ota/firmware", element: <Navigate to="/devices?tab=firmware" replace /> },
             { path: "reports", element: <Navigate to="/analytics?tab=reports" replace /> },
-            { path: "subscription", element: <Navigate to="/settings/billing" replace /> },
+            { path: "subscription", element: <Navigate to="/settings?tab=billing" replace /> },
             { path: "subscription/renew", element: <RenewalPage /> },
-            // Settings route redirects (Phase 177)
-            { path: "notifications", element: <Navigate to="/settings/notifications" replace /> },
-            { path: "billing", element: <Navigate to="/settings/billing" replace /> },
-            { path: "team", element: <Navigate to="/settings/access" replace /> },
-            { path: "users", element: <Navigate to="/settings/access" replace /> },
-            { path: "roles", element: <Navigate to="/settings/access?tab=roles" replace /> },
-            {
-              path: "settings",
-              element: <SettingsLayout />,
-              children: [
-                { index: true, element: <Navigate to="/settings/general" replace /> },
-                { path: "general", element: <OrganizationPage embedded /> },
-                { path: "billing", element: <BillingPage embedded /> },
-                { path: "notifications", element: <NotificationsHubPage embedded /> },
-                { path: "integrations", element: <CarrierIntegrationsPage embedded /> },
-                {
-                  path: "access",
-                  element: (
-                    <RequirePermission permission="users.read">
-                      <TeamHubPage embedded />
-                    </RequirePermission>
-                  ),
-                },
-                { path: "profile", element: <ProfilePage embedded /> },
-                { path: "organization", element: <Navigate to="/settings/general" replace /> },
-                { path: "carrier", element: <Navigate to="/settings/integrations" replace /> },
-              ],
-            },
+            { path: "notifications", element: <Navigate to="/settings?tab=channels" replace /> },
+            { path: "billing", element: <Navigate to="/settings?tab=billing" replace /> },
+            { path: "team", element: <Navigate to="/settings?tab=members" replace /> },
+            { path: "users", element: <Navigate to="/settings?tab=members" replace /> },
+            { path: "roles", element: <Navigate to="/settings?tab=roles" replace /> },
+            { path: "settings", element: <SettingsHubPage /> },
+            { path: "settings/general", element: <Navigate to="/settings?tab=general" replace /> },
+            { path: "settings/billing", element: <Navigate to="/settings?tab=billing" replace /> },
+            { path: "settings/notifications", element: <Navigate to="/settings?tab=channels" replace /> },
+            { path: "settings/integrations", element: <Navigate to="/settings?tab=integrations" replace /> },
+            { path: "settings/access", element: <Navigate to="/settings?tab=members" replace /> },
+            { path: "settings/profile", element: <Navigate to="/settings?tab=profile" replace /> },
+            { path: "settings/organization", element: <Navigate to="/settings?tab=general" replace /> },
+            { path: "settings/carrier", element: <Navigate to="/settings?tab=integrations" replace /> },
           ],
         },
         // Operator routes

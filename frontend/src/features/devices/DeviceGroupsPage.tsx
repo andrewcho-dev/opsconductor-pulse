@@ -33,7 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 
-export default function DeviceGroupsPage() {
+export default function DeviceGroupsPage({ embedded }: { embedded?: boolean }) {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -187,7 +187,9 @@ export default function DeviceGroupsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Device Groups" description="Create and manage reusable device groups." />
+      {!embedded && (
+        <PageHeader title="Device Groups" description="Create and manage reusable device groups." />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
         <Card>
