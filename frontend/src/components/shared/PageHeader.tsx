@@ -6,7 +6,7 @@ interface BreadcrumbItem {
 }
 
 interface PageHeaderProps {
-  title: string;
+  title: ReactNode;
   description?: string;
   action?: ReactNode;
   // Deprecated: breadcrumbs are now derived in AppHeader (Phase 175).

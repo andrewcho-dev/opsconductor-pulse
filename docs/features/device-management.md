@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186, 187]
 ---
 
 # Device Management
@@ -77,16 +77,18 @@ The customer UI includes a dedicated template management experience:
   - Slots
 - System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
 
-## Device Detail UI (Phase 171)
+## Device Detail UI (Phases 171, 187)
 
-The customer UI restructures the device detail page into a 6-tab layout to keep all instance management in one place:
+The customer UI uses a 6-tab layout with a KPI strip above tabs (Status, Sensors, Alerts, Firmware, Plan) for at-a-glance health:
 
-- Overview: identity, map/location, plan/tier info, template badge link, notes/tags editing.
+- Overview: 2-column layout with a grouped properties panel (Identity, Hardware, Network, Location, Tags, Notes) on the left, and latest telemetry values plus map on the right. The map only renders when coordinates are present.
 - Sensors & Data: module assignment (template slots), sensor management, telemetry charts.
 - Transport: per-device transport configuration (protocol + physical connectivity) and carrier integration linking.
 - Health: device health telemetry and uptime.
 - Twin & Commands: desired/reported state management and command dispatch/history.
 - Security: API tokens and mTLS certificates.
+
+The page header now surfaces device status prominently as a colored status badge with relative last-seen context.
 
 ## Fleet Navigation & Getting Started (Phase 174)
 

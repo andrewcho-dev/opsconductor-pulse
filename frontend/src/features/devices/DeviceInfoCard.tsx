@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { Pencil, X } from "lucide-react";
-import { StatusBadge } from "@/components/shared";
+import { Link } from "react-router-dom";
+import { Copy, Pencil, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import type { Device } from "@/services/api/types";
 import { formatTimestamp } from "@/lib/format";
-import { Button } from "@/components/ui/button";
 
 interface DeviceInfoCardProps {
   device: Device | undefined;
@@ -15,6 +19,24 @@ interface DeviceInfoCardProps {
   onNotesChange: (value: string) => void;
   onNotesBlur?: () => void;
   onEdit: () => void;
+}
+
+function PropertyRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <span className="whitespace-nowrap text-sm text-muted-foreground">{label}</span>
+      <span className={`text-right text-sm ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
+  );
 }
 
 export function DeviceInfoCard({
@@ -28,160 +50,173 @@ export function DeviceInfoCard({
   onEdit,
 }: DeviceInfoCardProps) {
   const [tagInput, setTagInput] = useState("");
+
   if (isLoading) {
     return (
-      <div className="border rounded p-3 bg-card text-sm space-y-1">
-        <Skeleton className="h-3 w-64" />
-        <Skeleton className="h-3 w-72" />
-        <Skeleton className="h-3 w-56" />
+      <div className="space-y-3 rounded-md border border-border p-4">
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-4 w-64" />
+        <Skeleton className="h-4 w-56" />
+        <Skeleton className="h-4 w-40" />
       </div>
     );
   }
 
   if (!device) {
     return (
-      <div className="border rounded p-3 bg-card text-sm space-y-1">
+      <div className="rounded-md border border-border p-4">
         <p className="text-sm text-muted-foreground">Device not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="border rounded p-2 bg-card text-sm">
-      <div className="flex items-center gap-3 mb-1">
-        <span className="font-mono font-semibold text-sm">
-          {device.device_id}
-        </span>
-        <StatusBadge status={device.status} />
-        <span className="text-muted-foreground">Site: {device.site_id}</span>
-        <span className="text-muted-foreground">
-          {formatTimestamp(device.last_seen_at)}
-        </span>
-        <Button
-          type="button"
-          onClick={onEdit}
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto text-muted-foreground hover:text-foreground"
-          aria-label="Edit device"
-        >
-          <Pencil className="h-3 w-3" />
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-x-3 gap-y-0.5 text-sm">
-        <div>
-          <span className="text-muted-foreground">Model:</span>{" "}
-          {device.model || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">Mfr:</span>{" "}
-          {device.manufacturer || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">Serial:</span>{" "}
-          {device.serial_number || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">MAC:</span>{" "}
-          {device.mac_address || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">IMEI:</span>{" "}
-          {device.imei || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">SIM:</span>{" "}
-          {device.iccid || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">HW:</span>{" "}
-          {device.hw_revision || "—"}
-        </div>
-        <div>
-          <span className="text-muted-foreground">FW:</span>{" "}
-          {device.fw_version || "—"}
-        </div>
-      </div>
-
-      <div className="mt-1 flex items-center gap-1 text-sm">
-        <span className="text-muted-foreground">Location:</span>
-        {device.latitude != null && device.longitude != null ? (
-          <>
-            <span>
-              {device.latitude.toFixed(6)}, {device.longitude.toFixed(6)}
-            </span>
-            {device.address && (
-              <span className="text-muted-foreground">({device.address})</span>
-            )}
-            <span className="text-muted-foreground text-sm">
-              [{device.location_source || "auto"}]
-            </span>
-          </>
-        ) : device.address ? (
-          <>
-            <span>{device.address}</span>
-            <span className="text-muted-foreground text-sm">[manual]</span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </div>
-
-      <div className="mt-1 flex items-center gap-1 text-sm">
-        <span className="text-muted-foreground">Tags:</span>
-        {tags.map((tag) => (
-          <span
-            key={tag}
-              className="bg-muted px-1 py-0 rounded text-sm inline-flex items-center"
+    <div className="divide-y divide-border rounded-md border border-border">
+      <div className="space-y-1 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Identity
+          </h4>
+          <Button
+            type="button"
+            onClick={onEdit}
+            variant="ghost"
+            size="sm"
+            className="h-7 text-muted-foreground hover:text-foreground"
           >
-            {tag}
+            <Pencil className="mr-1 h-3 w-3" />
+            Edit
+          </Button>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-1.5">
+          <span className="text-sm text-muted-foreground">Device ID</span>
+          <div className="flex items-center gap-1.5">
+            <code className="font-mono text-sm">{device.device_id}</code>
             <Button
-              type="button"
-              onClick={() => onTagsChange(tags.filter((t) => t !== tag))}
               variant="ghost"
               size="icon-sm"
-              className="ml-0.5 h-4 w-4 text-muted-foreground hover:text-foreground"
-              aria-label={`Remove tag ${tag}`}
+              className="h-6 w-6"
+              onClick={() => {
+                void navigator.clipboard.writeText(device.device_id);
+                toast.success("Copied to clipboard");
+              }}
             >
-              <X className="h-3 w-3" />
+              <Copy className="h-3 w-3" />
             </Button>
-          </span>
-        ))}
-        <input
-          type="text"
-          placeholder="+"
-          value={tagInput}
-          onChange={(e) => setTagInput(e.target.value)}
-          className="w-12 text-sm bg-transparent border-b border-border py-0 px-0"
-          aria-label="Add device tag"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              const next = tagInput.trim();
-              if (!next) return;
-              if (tags.some((t) => t.toLowerCase() === next.toLowerCase())) {
-                setTagInput("");
-                return;
-              }
-              onTagsChange([...tags, next]);
-              setTagInput("");
-            } else if (e.key === "Backspace" && !tagInput && tags.length > 0) {
-              onTagsChange(tags.slice(0, -1));
-            }
-          }}
-        />
+          </div>
+        </div>
+        <PropertyRow label="Site" value={device.site_id} />
+        {device.template && (
+          <div className="flex items-center justify-between gap-4 py-1.5">
+            <span className="text-sm text-muted-foreground">Template</span>
+            <Link to={`/templates/${device.template.id}`} className="text-sm text-primary hover:underline">
+              {device.template.name}
+            </Link>
+          </div>
+        )}
+        <PropertyRow label="Last Seen" value={formatTimestamp(device.last_seen_at)} />
       </div>
 
-      <div className="mt-1 flex items-center gap-1 text-sm">
-        <span className="text-muted-foreground">Notes:</span>
-        <input
-          type="text"
+      {(device.model ||
+        device.manufacturer ||
+        device.serial_number ||
+        device.mac_address ||
+        device.hw_revision ||
+        device.fw_version) && (
+        <div className="space-y-1 p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Hardware
+          </h4>
+          <PropertyRow label="Model" value={device.model} />
+          <PropertyRow label="Manufacturer" value={device.manufacturer} />
+          <PropertyRow label="Serial Number" value={device.serial_number} mono />
+          <PropertyRow label="MAC Address" value={device.mac_address} mono />
+          <PropertyRow label="HW Revision" value={device.hw_revision} />
+          <PropertyRow label="FW Version" value={device.fw_version} mono />
+        </div>
+      )}
+
+      {(device.imei || device.iccid) && (
+        <div className="space-y-1 p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Network
+          </h4>
+          <PropertyRow label="IMEI" value={device.imei} mono />
+          <PropertyRow label="SIM / ICCID" value={device.iccid} mono />
+        </div>
+      )}
+
+      {(device.latitude != null || device.address) && (
+        <div className="space-y-1 p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Location
+          </h4>
+          {device.latitude != null && device.longitude != null && (
+            <PropertyRow
+              label="Coordinates"
+              value={`${device.latitude.toFixed(6)}, ${device.longitude.toFixed(6)}`}
+              mono
+            />
+          )}
+          <PropertyRow label="Address" value={device.address} />
+          <PropertyRow label="Source" value={device.location_source ?? "auto"} />
+        </div>
+      )}
+
+      <div className="p-4">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tags</h4>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {tags.map((tag) => (
+            <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+              {tag}
+              <Button
+                type="button"
+                onClick={() => onTagsChange(tags.filter((t) => t !== tag))}
+                variant="ghost"
+                size="icon-sm"
+                className="h-4 w-4 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </Badge>
+          ))}
+          <div className="flex items-center gap-1">
+            <Input
+              type="text"
+              placeholder="Add tag..."
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              className="h-7 w-28 text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const next = tagInput.trim();
+                  if (!next) return;
+                  if (tags.some((t) => t.toLowerCase() === next.toLowerCase())) {
+                    setTagInput("");
+                    return;
+                  }
+                  onTagsChange([...tags, next]);
+                  setTagInput("");
+                } else if (e.key === "Backspace" && !tagInput && tags.length > 0) {
+                  onTagsChange(tags.slice(0, -1));
+                }
+              }}
+            />
+          </div>
+          {tags.length === 0 && !tagInput && <span className="text-sm text-muted-foreground">No tags</span>}
+        </div>
+      </div>
+
+      <div className="p-4">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Notes</h4>
+        <Textarea
           value={notesValue}
           onChange={(e) => onNotesChange(e.target.value)}
           onBlur={onNotesBlur}
-          className="flex-1 text-sm bg-transparent border-b border-border py-0"
-          placeholder="—"
+          placeholder="Add notes about this device..."
+          rows={2}
+          className="text-sm"
         />
       </div>
     </div>

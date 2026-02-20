@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,24 @@ import { DeviceHealthTab } from "./DeviceHealthTab";
 import { DeviceTwinCommandsTab } from "./DeviceTwinCommandsTab";
 import { DeviceSecurityTab } from "./DeviceSecurityTab";
 
+function relativeTime(input?: string | null) {
+  if (!input) return "never";
+  const deltaMs = Date.now() - new Date(input).getTime();
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) return "just now";
+  const minutes = Math.floor(deltaMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function statusDot(status?: string) {
+  if (status === "ONLINE") return "bg-status-online";
+  if (status === "STALE") return "bg-status-stale";
+  return "bg-status-offline";
+}
+
 export default function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const queryClient = useQueryClient();
@@ -48,8 +66,6 @@ export default function DeviceDetailPage() {
   const device = deviceData?.device;
 
   const [notesValue, setNotesValue] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
-  const [tagsSaving, setTagsSaving] = useState(false);
   const [deviceTags, setDeviceTagsState] = useState<string[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(
@@ -87,6 +103,11 @@ export default function DeviceDetailPage() {
   }, [deviceId]);
 
   const openAlertCount = alertsData?.alerts?.length ?? 0;
+  const latestMetrics = useMemo(() => {
+    const latest = points.at(-1);
+    if (!latest) return [];
+    return Object.entries(latest.metrics).slice(0, 12);
+  }, [points]);
 
   async function refreshDevice() {
     if (!deviceId) return;
@@ -95,12 +116,11 @@ export default function DeviceDetailPage() {
 
   async function handleSaveNotes() {
     if (!deviceId) return;
-    setNotesSaving(true);
     try {
       await updateDevice(deviceId, { notes: notesValue || null });
       await refreshDevice();
-    } finally {
-      setNotesSaving(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error) || "Failed to save notes");
     }
   }
 
@@ -110,11 +130,10 @@ export default function DeviceDetailPage() {
 
   async function handleSaveTags(tags: string[]) {
     if (!deviceId) return;
-    setTagsSaving(true);
     try {
       await setDeviceTags(deviceId, tags);
-    } finally {
-      setTagsSaving(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error) || "Failed to save tags");
     }
   }
 
@@ -146,13 +165,34 @@ export default function DeviceDetailPage() {
     <div className="space-y-4">
       <PageHeader
         title={device?.device_id ?? "Device"}
-        description={device?.model || undefined}
+        description={
+          device
+            ? [device.model, device.manufacturer, device.site_id ? `Site: ${device.site_id}` : null]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            : undefined
+        }
         breadcrumbs={[
           { label: "Devices", href: "/devices" },
           { label: device?.device_id ?? "..." },
         ]}
         action={
           <div className="flex items-center gap-2">
+            {device ? (
+              <Badge
+                variant="outline"
+                className={
+                  device.status === "ONLINE"
+                    ? "border-green-500 text-green-600"
+                    : device.status === "STALE"
+                      ? "border-yellow-500 text-yellow-600"
+                      : "border-red-500 text-red-600"
+                }
+              >
+                <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${statusDot(device.status)}`} />
+                {device.status} · {relativeTime(device.last_seen_at)}
+              </Badge>
+            ) : null}
             {device?.template ? (
               <Badge variant="outline">
                 <Link to={`/templates/${device.template.id}`}>{device.template.name}</Link>
@@ -168,6 +208,35 @@ export default function DeviceDetailPage() {
         }
       />
 
+      {/* KPI strip — above tabs */}
+      <div className="grid grid-cols-5 gap-3">
+        <div className="rounded-md border border-border p-3">
+          <div className="flex items-center gap-2">
+            <span className={`h-3 w-3 rounded-full ${statusDot(device?.status)}`} />
+            <span className="text-sm font-semibold">{device?.status ?? "—"}</span>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{relativeTime(device?.last_seen_at)}</div>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <div className="text-lg font-semibold">{device?.sensor_count ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">Sensors</div>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <div className={`text-lg font-semibold ${openAlertCount > 0 ? "text-destructive" : ""}`}>
+            {openAlertCount}
+          </div>
+          <div className="text-xs text-muted-foreground">Open Alerts</div>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <div className="text-lg font-semibold">{device?.fw_version ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">Firmware</div>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <div className="text-lg font-semibold">{device?.plan_id ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">Plan</div>
+        </div>
+      </div>
+
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -179,7 +248,7 @@ export default function DeviceDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="pt-2 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
             <DeviceInfoCard
               device={device}
               isLoading={deviceLoading}
@@ -193,40 +262,60 @@ export default function DeviceDetailPage() {
               onNotesBlur={handleSaveNotes}
               onEdit={() => setEditModalOpen(true)}
             />
-            <div className="relative">
-              <DeviceMapCard
-                latitude={pendingLocation?.lat ?? device?.latitude}
-                longitude={pendingLocation?.lng ?? device?.longitude}
-                address={device?.address}
-                editable
-                onLocationChange={handleMapLocationChange}
-              />
-              {pendingLocation && (
-                <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
-                  <Button size="sm" className="h-8" onClick={handleSaveLocation}>
-                    Save Location
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    onClick={() => setPendingLocation(null)}
-                  >
-                    Cancel
-                  </Button>
+
+            <div className="space-y-4">
+              <div className="rounded-md border border-border p-4">
+                <h4 className="mb-3 text-sm font-semibold">Latest Telemetry</h4>
+                {latestMetrics.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No telemetry data yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {latestMetrics.map(([name, value]) => (
+                      <div key={name} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{name}</span>
+                        <span className="font-mono font-medium">{String(value)}</span>
+                      </div>
+                    ))}
+                    <div className="pt-1 text-right text-xs text-muted-foreground">
+                      Updated {relativeTime(points.at(-1)?.timestamp)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {device?.latitude != null && device?.longitude != null && (
+                <div className="relative">
+                  <DeviceMapCard
+                    latitude={pendingLocation?.lat ?? device.latitude}
+                    longitude={pendingLocation?.lng ?? device.longitude}
+                    address={device.address}
+                    editable
+                    onLocationChange={handleMapLocationChange}
+                  />
+                  {pendingLocation && (
+                    <div className="absolute bottom-2 right-2 z-[1000] flex gap-1">
+                      <Button size="sm" className="h-8" onClick={handleSaveLocation}>
+                        Save Location
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => setPendingLocation(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
-          {deviceId && <DevicePlanPanel deviceId={deviceId} />}
-
-          {notesSaving && <div className="text-sm text-muted-foreground">Saving notes...</div>}
-          {tagsSaving && <div className="text-sm text-muted-foreground">Saving tags...</div>}
-          {openAlertCount > 0 && (
-            <Link to="/alerts" className="text-sm text-primary hover:underline">
-              View {openAlertCount} alerts
-            </Link>
+          {deviceId && (
+            <section>
+              <DevicePlanPanel deviceId={deviceId} />
+            </section>
           )}
         </TabsContent>
 

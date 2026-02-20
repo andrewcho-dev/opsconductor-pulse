@@ -32,7 +32,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187]
 ---
 
 # Frontend
@@ -198,6 +198,7 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 Sites, Device Groups, Connection Guide, and MQTT Test Client are standalone pages at `/sites`, `/device-groups`, `/fleet/tools`, and `/fleet/mqtt-client` respectively (Phase 185).
 The device list (`/devices`) uses a full-width `DataTable` with sortable columns (Status, Device ID, Template, Site, Last Seen, Firmware, Alerts), server-side pagination, and row-click navigation to `/devices/:deviceId`. The old master-detail split layout (`DeviceDetailPane`) was removed in Phase 186.
+The device detail page (`/devices/:deviceId`) has a KPI strip (Status, Sensors, Alerts, Firmware, Plan) above 6 content tabs (Overview, Sensors & Data, Transport, Health, Twin & Commands, Security). The Overview tab uses a 2-column layout: device properties panel (left) with grouped sections (Identity, Hardware, Network, Location, Tags, Notes) and latest telemetry values + map (right). Status is prominently displayed as a colored badge in the page header.
 
 ### `embedded` prop convention
 
