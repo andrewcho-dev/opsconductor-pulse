@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   getAlertDigestSettings,
   updateAlertDigestSettings,
@@ -56,20 +57,24 @@ export function DigestSettingsCard() {
       </div>
       <div className="grid gap-2">
         <label className="text-sm text-muted-foreground">Frequency</label>
-        <select
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        <Select
           value={settings.frequency}
-          onChange={(event) =>
+          onValueChange={(v) =>
             setSettings((prev) => ({
               ...prev,
-              frequency: event.target.value as AlertDigestSettings["frequency"],
+              frequency: v as AlertDigestSettings["frequency"],
             }))
           }
         >
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="disabled">Disabled</option>
-        </select>
+          <SelectTrigger className="h-10">
+            <SelectValue placeholder="Select frequency" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="daily">Daily</SelectItem>
+            <SelectItem value="weekly">Weekly</SelectItem>
+            <SelectItem value="disabled">Disabled</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid gap-2">
         <label className="text-sm text-muted-foreground">Email</label>

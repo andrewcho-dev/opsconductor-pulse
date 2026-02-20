@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -28,7 +28,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179]
 ---
 
 # Frontend
@@ -329,6 +329,8 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 ### Prohibited Patterns
 
 - Raw `<button>` elements (use `<Button>`).
+- Raw `<select>` elements (use shadcn `Select` + `SelectTrigger` + `SelectContent` + `SelectItem`).
+- Raw `<input type="checkbox">` elements (use `Switch` for boolean toggles, `Checkbox` for multi-select lists).
 - Custom div overlays for modals (use `<Dialog>`).
 - `window.confirm()` / `confirm()` (use `<AlertDialog>`).
 - Custom page header layouts (use `<PageHeader>`).
@@ -337,6 +339,28 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
 - Standalone sidebar items for pages that belong in a hub (use the hub's tab instead).
 - Rendering PageHeader when `embedded` prop is true (use conditional rendering).
+
+## Form Primitives (Phase 179)
+
+All form controls must use design system components instead of raw HTML elements:
+
+| Need | Component | Import |
+|------|-----------|--------|
+| Dropdown / picker | `Select` + `SelectTrigger` + `SelectValue` + `SelectContent` + `SelectItem` | `@/components/ui/select` |
+| Boolean toggle (on/off) | `Switch` | `@/components/ui/switch` |
+| Multi-select list item | `Checkbox` | `@/components/ui/checkbox` |
+| Action trigger | `Button` | `@/components/ui/button` |
+
+### Select notes
+
+- `SelectItem value` must be a non-empty string. Use `"all"` or `"none"` as sentinel values.
+- For numeric values: `value={String(num)}` and `onValueChange={(v) => setNum(Number(v))}`.
+- `SelectTrigger` renders a chevron automatically — do not add one manually.
+
+### Switch vs Checkbox
+
+- **Switch** — Single boolean setting (enabled/disabled, feature flags, retain flag, use TLS). Standard for all on/off controls.
+- **Checkbox** — Item in a multi-select list (select devices, groups, metrics) or bulk-select header/row checkboxes.
 
 ## Mutation Feedback Conventions
 

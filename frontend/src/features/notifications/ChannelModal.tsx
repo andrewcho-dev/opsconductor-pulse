@@ -9,6 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ChannelType, NotificationChannel } from "@/services/api/notifications";
 
 type ChannelDraft = {
@@ -113,30 +116,36 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
           </div>
           <div>
             <label className="text-sm text-muted-foreground">Channel Type</label>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            <Select
               value={draft.channel_type}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, channel_type: e.target.value as ChannelType, config: {} }))
+              onValueChange={(v) =>
+                setDraft((prev) => ({ ...prev, channel_type: v as ChannelType, config: {} }))
               }
             >
-              <option value="slack">Slack</option>
-              <option value="pagerduty">PagerDuty</option>
-              <option value="teams">Teams</option>
-              <option value="webhook">Webhook</option>
-              <option value="email">Email (SMTP)</option>
-              <option value="snmp">SNMP Trap</option>
-              <option value="mqtt">MQTT</option>
-            </select>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="slack">Slack</SelectItem>
+                <SelectItem value="pagerduty">PagerDuty</SelectItem>
+                <SelectItem value="teams">Teams</SelectItem>
+                <SelectItem value="webhook">Webhook</SelectItem>
+                <SelectItem value="email">Email (SMTP)</SelectItem>
+                <SelectItem value="snmp">SNMP Trap</SelectItem>
+                <SelectItem value="mqtt">MQTT</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <div className="flex items-center justify-between">
+            <Label htmlFor="channel-enabled" className="text-sm">
+              Enabled
+            </Label>
+            <Switch
+              id="channel-enabled"
               checked={draft.is_enabled}
-              onChange={(e) => setDraft((prev) => ({ ...prev, is_enabled: e.target.checked }))}
+              onCheckedChange={(next) => setDraft((prev) => ({ ...prev, is_enabled: next }))}
             />
-            Is Enabled
-          </label>
+          </div>
 
           {draft.channel_type === "slack" && (
             <div>
@@ -176,14 +185,15 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
               </div>
               <div>
                 <label className="text-sm text-muted-foreground">Method</label>
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  value={cfgValue("method") || "POST"}
-                  onChange={(e) => setCfg("method", e.target.value)}
-                >
-                  <option value="POST">POST</option>
-                  <option value="PUT">PUT</option>
-                </select>
+                <Select value={cfgValue("method") || "POST"} onValueChange={(v) => setCfg("method", v)}>
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="Select method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="POST">POST</SelectItem>
+                    <SelectItem value="PUT">PUT</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-sm text-muted-foreground">Signing Secret</label>
@@ -277,23 +287,25 @@ export function ChannelModal({ open, onOpenChange, initial, onSave }: ChannelMod
                   />
                 </div>
                 <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
+                  <Switch
+                    id="smtp-use-tls"
                     checked={
                       typeof draft.config.smtp === "object" && draft.config.smtp
                         ? (draft.config.smtp as Record<string, unknown>).use_tls !== false
                         : true
                     }
-                    onChange={(e) =>
+                    onCheckedChange={(next) =>
                       setCfgObj("smtp", {
                         ...(typeof draft.config.smtp === "object" && draft.config.smtp
                           ? (draft.config.smtp as Record<string, unknown>)
                           : {}),
-                        use_tls: e.target.checked,
+                        use_tls: next,
                       })
                     }
                   />
-                  <label className="text-sm text-muted-foreground">Use TLS</label>
+                  <Label htmlFor="smtp-use-tls" className="text-sm text-muted-foreground">
+                    Use TLS
+                  </Label>
                 </div>
               </div>
               <div>

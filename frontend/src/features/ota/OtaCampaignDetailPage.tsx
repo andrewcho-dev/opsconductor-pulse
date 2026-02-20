@@ -205,31 +205,31 @@ export default function OtaCampaignDetailPage() {
 
       <div className="flex flex-wrap gap-2">
         {Object.entries(breakdown).map(([status, count]) => (
-          <button
+          <Button
             key={status}
+            type="button"
             onClick={() => {
               setPage(0);
               setStatusFilter(statusFilter === status ? undefined : status);
             }}
-            className={`rounded border px-3 py-1 text-sm transition-colors ${
-              statusFilter === status
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border hover:bg-muted"
-            }`}
+            size="sm"
+            variant={statusFilter === status ? "default" : "outline"}
           >
             {status}: {count}
-          </button>
+          </Button>
         ))}
         {statusFilter && (
-          <button
+          <Button
+            type="button"
             onClick={() => {
               setPage(0);
               setStatusFilter(undefined);
             }}
-            className="rounded border border-border px-3 py-1 text-sm hover:bg-muted"
+            size="sm"
+            variant="outline"
           >
             Clear filter
-          </button>
+          </Button>
         )}
       </div>
 

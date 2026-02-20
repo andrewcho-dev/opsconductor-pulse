@@ -1,6 +1,7 @@
 import { Component, type ReactNode, type ErrorInfo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   children: ReactNode;
@@ -44,12 +45,15 @@ export class WidgetErrorBoundary extends Component<Props, State> {
             <p className="text-xs text-muted-foreground">
               This widget encountered an error and could not render.
             </p>
-            <button
+            <Button
+              type="button"
               onClick={() => this.setState({ hasError: false, error: null })}
-              className="mt-2 text-xs text-primary hover:underline"
+              variant="outline"
+              size="sm"
+              className="mt-2"
             >
               Try again
-            </button>
+            </Button>
           </CardContent>
         </Card>
       );

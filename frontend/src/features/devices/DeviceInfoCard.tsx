@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, X } from "lucide-react";
 import { StatusBadge } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Device } from "@/services/api/types";
 import { formatTimestamp } from "@/lib/format";
+import { Button } from "@/components/ui/button";
 
 interface DeviceInfoCardProps {
   device: Device | undefined;
@@ -56,14 +57,16 @@ export function DeviceInfoCard({
         <span className="text-muted-foreground">
           {formatTimestamp(device.last_seen_at)}
         </span>
-        <button
+        <Button
           type="button"
           onClick={onEdit}
+          variant="ghost"
+          size="icon-sm"
           className="ml-auto text-muted-foreground hover:text-foreground"
           aria-label="Edit device"
         >
           <Pencil className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-4 gap-x-3 gap-y-0.5 text-sm">
@@ -133,14 +136,16 @@ export function DeviceInfoCard({
               className="bg-muted px-1 py-0 rounded text-sm inline-flex items-center"
           >
             {tag}
-            <button
+            <Button
               type="button"
               onClick={() => onTagsChange(tags.filter((t) => t !== tag))}
-              className="ml-0.5 text-muted-foreground hover:text-foreground"
+              variant="ghost"
+              size="icon-sm"
+              className="ml-0.5 h-4 w-4 text-muted-foreground hover:text-foreground"
               aria-label={`Remove tag ${tag}`}
             >
-              ×
-            </button>
+              <X className="h-3 w-3" />
+            </Button>
           </span>
         ))}
         <input

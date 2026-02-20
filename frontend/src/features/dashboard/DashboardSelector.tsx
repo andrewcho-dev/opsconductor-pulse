@@ -142,28 +142,34 @@ export function DashboardSelector({ activeDashboardId, onSelect }: DashboardSele
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-sm text-muted-foreground">{d.widget_count}w</span>
                       {d.is_owner && !d.is_default && (
-                        <button
+                        <Button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setDefaultMutation.mutate(d.id);
                           }}
+                          variant="ghost"
+                          size="icon-sm"
                           className="p-0.5 hover:text-yellow-500"
                           title="Set as default"
                         >
                           <Star className="h-3 w-3" />
-                        </button>
+                        </Button>
                       )}
                       {d.is_owner && (
-                        <button
+                        <Button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDelete(d);
                           }}
+                          variant="ghost"
+                          size="icon-sm"
                           className="p-0.5 hover:text-destructive"
                           title="Delete"
                         >
                           <Trash2 className="h-3 w-3" />
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </DropdownMenuItem>

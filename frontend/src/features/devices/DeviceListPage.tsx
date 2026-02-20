@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useDevices } from "@/hooks/use-devices";
-import { Cpu } from "lucide-react";
+import { ChevronLeft, ChevronRight, Cpu } from "lucide-react";
 import { fetchSites } from "@/services/api/sites";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DeviceActions } from "./DeviceActions";
 import type { Device } from "@/services/api/types";
 import { AddDeviceModal } from "./AddDeviceModal";
@@ -171,40 +173,48 @@ export default function DeviceListPage() {
                 className="h-8 w-full rounded border border-border bg-background px-2 text-sm"
               />
               <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={filters.status ?? ""}
-                  onChange={(e) =>
+                <Select
+                  value={filters.status ?? "all"}
+                  onValueChange={(v) =>
                     setFilters((prev) => ({
                       ...prev,
-                      status: e.target.value || undefined,
+                      status: v === "all" ? undefined : v,
                       offset: 0,
                     }))
                   }
-                  className="h-8 rounded border border-border bg-background px-2 text-sm"
                 >
-                  <option value="">All Status</option>
-                  <option value="ONLINE">Online</option>
-                  <option value="OFFLINE">Offline</option>
-                  <option value="STALE">Stale</option>
-                </select>
-                <select
-                  value={filters.site_id ?? ""}
-                  onChange={(e) =>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="ONLINE">Online</SelectItem>
+                    <SelectItem value="OFFLINE">Offline</SelectItem>
+                    <SelectItem value="STALE">Stale</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filters.site_id ?? "all"}
+                  onValueChange={(v) =>
                     setFilters((prev) => ({
                       ...prev,
-                      site_id: e.target.value || undefined,
+                      site_id: v === "all" ? undefined : v,
                       offset: 0,
                     }))
                   }
-                  className="h-8 rounded border border-border bg-background px-2 text-sm"
                 >
-                  <option value="">All Sites</option>
-                  {(sitesData?.sites ?? []).map((site) => (
-                    <option key={site.site_id} value={site.site_id}>
-                      {site.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="All Sites" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sites</SelectItem>
+                    {(sitesData?.sites ?? []).map((site) => (
+                      <SelectItem key={site.site_id} value={site.site_id}>
+                        {site.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -213,10 +223,12 @@ export default function DeviceListPage() {
                 const isSelected = selectedDevice?.device_id === device.device_id;
                 const openAlerts = alertCountByDevice.get(device.device_id) ?? 0;
                 return (
-                  <button
+                  <Button
                     key={device.device_id}
+                    type="button"
                     onClick={() => onDeviceClick(device)}
-                    className={`w-full rounded border p-2 text-left transition-colors ${
+                    variant="ghost"
+                    className={`h-auto w-full rounded border p-2 text-left justify-start transition-colors ${
                       isSelected
                         ? "border-l-2 border-l-primary bg-primary/10 border-primary"
                         : "border-border hover:bg-accent"
@@ -256,13 +268,14 @@ export default function DeviceListPage() {
                         </Badge>
                       )}
                     </div>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
 
             <div className="flex items-center justify-between border-t border-border p-2">
-              <button
+              <Button
+                type="button"
                 onClick={() =>
                   setFilters((prev) => ({
                     ...prev,
@@ -270,11 +283,14 @@ export default function DeviceListPage() {
                   }))
                 }
                 disabled={filters.offset === 0}
-                className="rounded border border-border px-2 py-1 text-sm disabled:opacity-50"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous page"
               >
-                {"< Prev"}
-              </button>
-              <button
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
                 onClick={() =>
                   setFilters((prev) => ({
                     ...prev,
@@ -282,10 +298,12 @@ export default function DeviceListPage() {
                   }))
                 }
                 disabled={filters.offset + filters.limit >= totalCount}
-                className="rounded border border-border px-2 py-1 text-sm disabled:opacity-50"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next page"
               >
-                {"Next >"}
-              </button>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
             </div>
           </div>
 

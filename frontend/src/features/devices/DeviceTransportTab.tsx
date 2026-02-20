@@ -30,6 +30,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   createDeviceTransport,
@@ -229,14 +231,16 @@ function TransportDialog({
             </div>
 
             <div className="flex items-end gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="primary-transport"
                   checked={isPrimary}
-                  onChange={(e) => setIsPrimary(e.target.checked)}
+                  onCheckedChange={setIsPrimary}
                 />
-                Primary transport
-              </label>
+                <Label htmlFor="primary-transport" className="text-sm">
+                  Primary transport
+                </Label>
+              </div>
 
               {mode === "edit" && (
                 <div className="flex-1 space-y-1">

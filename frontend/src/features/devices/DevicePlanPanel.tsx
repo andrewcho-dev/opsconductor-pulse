@@ -201,10 +201,11 @@ export function DevicePlanPanel({ deviceId }: DevicePlanPanelProps) {
             {(plansQuery.data?.plans ?? []).map((p) => {
               const isSelected = selectedPlanId === p.plan_id;
               return (
-                <button
+                <Button
                   key={p.plan_id}
                   type="button"
-                  className={`rounded border p-3 text-left hover:border-primary ${
+                  variant="outline"
+                  className={`h-auto w-full justify-start text-left p-3 hover:border-primary ${
                     isSelected ? "border-primary bg-primary/5" : "border-muted"
                   }`}
                   onClick={() => setSelectedPlanId(p.plan_id)}
@@ -219,7 +220,7 @@ export function DevicePlanPanel({ deviceId }: DevicePlanPanelProps) {
                     {p.limits?.data_retention_days ?? "—"}d · Telemetry:{" "}
                     {p.limits?.telemetry_rate_per_minute ?? "—"}/min
                   </div>
-                </button>
+                </Button>
               );
             })}
           </div>

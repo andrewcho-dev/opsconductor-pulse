@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -1509,12 +1510,11 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                             className="flex items-center justify-between gap-2 text-sm"
                           >
                             <span>{group.name}</span>
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={Boolean(checked)}
-                              onChange={(e) => {
+                              onCheckedChange={(nextChecked) => {
                                 const current = Array.isArray(field.value) ? [...field.value] : [];
-                                if (e.target.checked) {
+                                if (nextChecked === true) {
                                   field.onChange([...new Set([...current, group.group_id])]);
                                 } else {
                                   field.onChange(current.filter((id) => id !== group.group_id));

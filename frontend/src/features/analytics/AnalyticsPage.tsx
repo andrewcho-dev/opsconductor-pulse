@@ -16,6 +16,7 @@ import type {
 import { fetchDevices, fetchDeviceGroups } from "@/services/api/devices";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -323,11 +324,10 @@ export default function AnalyticsPage({ embedded }: { embedded?: boolean }) {
                         key={d.device_id}
                         className="flex items-center gap-2 text-sm cursor-pointer"
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedDeviceIds.includes(d.device_id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
+                          onCheckedChange={(checked) => {
+                            if (checked) {
                               setSelectedDeviceIds((prev) => [...prev, d.device_id]);
                             } else {
                               setSelectedDeviceIds((prev) =>

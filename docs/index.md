@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - docs/development/frontend.md
   - docs/features/device-management.md
-phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177, 178]
+phases: [142, 143, 144, 145, 146, 147, 148, 163, 165, 170, 173, 174, 175, 176, 177, 178, 179]
 ---
 
 # OpsConductor-Pulse Documentation

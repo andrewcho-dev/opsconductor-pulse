@@ -8,6 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { formatTimestamp } from "@/lib/format";
 import { Bell } from "lucide-react";
 import { memo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface DeviceAlertsSectionProps {
   deviceId: string;
@@ -68,56 +70,72 @@ function DeviceAlertsSectionInner({ deviceId }: DeviceAlertsSectionProps) {
                   {formatTimestamp(a.created_at)}
                 </span>
                 {a.status === "OPEN" && (
-                  <button
+                  <Button
+                    type="button"
                     onClick={async () => {
                       await acknowledgeAlert(String(a.alert_id));
                       await refresh();
                     }}
-                    className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
                   >
                     Ack
-                  </button>
+                  </Button>
                 )}
                 {(a.status === "OPEN" || a.status === "ACKNOWLEDGED") && (
                   <>
-                    <button
+                    <Button
+                      type="button"
                       onClick={async () => {
                         await closeAlert(String(a.alert_id));
                         await refresh();
                       }}
-                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-destructive hover:text-destructive"
                     >
                       Close
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      type="button"
                       onClick={() => setSilenceForAlert(a.alert_id)}
-                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
                     >
                       Silence
-                    </button>
+                    </Button>
                     {silenceForAlert === a.alert_id && (
                       <>
-                        <select
-                          value={silenceMinutes}
-                          onChange={(e) => setSilenceMinutes(Number(e.target.value))}
-                          className="px-2 py-1 text-sm rounded border border-border bg-background"
+                        <Select
+                          value={String(silenceMinutes)}
+                          onValueChange={(v) => setSilenceMinutes(Number(v))}
                         >
-                          <option value={15}>15m</option>
-                          <option value={30}>30m</option>
-                          <option value={60}>1h</option>
-                          <option value={240}>4h</option>
-                          <option value={1440}>24h</option>
-                        </select>
-                        <button
+                          <SelectTrigger className="w-[80px] h-7">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="15">15m</SelectItem>
+                            <SelectItem value="30">30m</SelectItem>
+                            <SelectItem value="60">1h</SelectItem>
+                            <SelectItem value="240">4h</SelectItem>
+                            <SelectItem value="1440">24h</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
                           onClick={async () => {
                             await silenceAlert(String(a.alert_id), silenceMinutes);
                             setSilenceForAlert(null);
                             await refresh();
                           }}
-                          className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2"
                         >
                           Apply
-                        </button>
+                        </Button>
                       </>
                     )}
                   </>

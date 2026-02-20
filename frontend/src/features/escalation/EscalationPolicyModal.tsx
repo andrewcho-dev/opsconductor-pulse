@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -219,22 +220,24 @@ export function EscalationPolicyModal({
                 </div>
                 <div className="md:col-span-2">
                   <div className="text-sm text-muted-foreground">On-Call Schedule</div>
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                    value={level.oncall_schedule_id ?? ""}
-                    onChange={(e) =>
-                      updateLevel(idx, {
-                        oncall_schedule_id: e.target.value ? Number(e.target.value) : undefined,
-                      })
+                  <Select
+                    value={level.oncall_schedule_id != null ? String(level.oncall_schedule_id) : "none"}
+                    onValueChange={(v) =>
+                      updateLevel(idx, { oncall_schedule_id: v === "none" ? undefined : Number(v) })
                     }
                   >
-                    <option value="">None</option>
-                    {(schedulesQuery.data?.schedules ?? []).map((schedule) => (
-                      <option key={schedule.schedule_id} value={schedule.schedule_id}>
-                        {schedule.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {(schedulesQuery.data?.schedules ?? []).map((schedule) => (
+                        <SelectItem key={schedule.schedule_id} value={String(schedule.schedule_id)}>
+                          {schedule.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex items-end justify-end md:col-span-1">
                   <Button

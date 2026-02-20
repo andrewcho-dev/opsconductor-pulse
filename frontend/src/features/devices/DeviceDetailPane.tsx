@@ -127,14 +127,15 @@ export function DeviceDetailPane({ deviceId }: DeviceDetailPaneProps) {
                 ⋮
               </summary>
               <div className="absolute right-0 z-10 mt-1 w-40 rounded border border-border bg-background p-1 shadow-md">
-                <button
-                  onClick={async () => {
-                    setConfirmDecommission(device.device_id);
-                  }}
-                  className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start px-2"
+                  onClick={() => setConfirmDecommission(device.device_id)}
                 >
                   Decommission
-                </button>
+                </Button>
                 <Link
                   to={`/devices/${device.device_id}`}
                   className="block rounded px-2 py-1 text-left text-sm hover:bg-accent"

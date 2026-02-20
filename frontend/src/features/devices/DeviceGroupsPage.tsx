@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -198,8 +199,10 @@ export default function DeviceGroupsPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {(groupsQuery.data?.groups ?? []).map((group) => (
-              <button
+              <Button
                 key={group.group_id}
+                type="button"
+                variant="ghost"
                 className={`w-full rounded-md border p-3 text-left ${
                   selectedGroupId === group.group_id ? "border-primary" : "border-border"
                 }`}
@@ -220,7 +223,7 @@ export default function DeviceGroupsPage() {
                 <div className="mt-1 text-sm text-muted-foreground">
                   Members: {group.member_count == null ? "-" : group.member_count}
                 </div>
-              </button>
+              </Button>
             ))}
             {(groupsQuery.data?.groups ?? []).length === 0 && (
               <div className="text-sm text-muted-foreground">No groups created yet.</div>
@@ -275,18 +278,22 @@ export default function DeviceGroupsPage() {
                   <div className="grid gap-2">
                     <Label>Add Device</Label>
                     <div className="flex gap-2">
-                      <select
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                        value={selectedDeviceId}
-                        onChange={(e) => setSelectedDeviceId(e.target.value)}
+                      <Select
+                        value={selectedDeviceId || "none"}
+                        onValueChange={(v) => setSelectedDeviceId(v === "none" ? "" : v)}
                       >
-                        <option value="">Select a device</option>
-                        {(devicesQuery.data?.devices ?? []).map((device) => (
-                          <option key={device.device_id} value={device.device_id}>
-                            {device.device_id}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger className="h-10 w-full">
+                          <SelectValue placeholder="Select a device" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Select a device</SelectItem>
+                          {(devicesQuery.data?.devices ?? []).map((device) => (
+                            <SelectItem key={device.device_id} value={device.device_id}>
+                              {device.device_id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Button
                         disabled={!selectedDeviceId}
                         onClick={() =>
@@ -377,15 +384,19 @@ export default function DeviceGroupsPage() {
             {isDynamic && (
               <div className="space-y-2 rounded-md border border-border p-3">
                 <Label>Status Filter</Label>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
+                <Select
+                  value={filterStatus || "any"}
+                  onValueChange={(v) => setFilterStatus(v === "any" ? "" : v)}
                 >
-                  <option value="">Any status</option>
-                  <option value="ONLINE">ONLINE</option>
-                  <option value="STALE">STALE</option>
-                </select>
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Any status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any status</SelectItem>
+                    <SelectItem value="ONLINE">ONLINE</SelectItem>
+                    <SelectItem value="STALE">STALE</SelectItem>
+                  </SelectContent>
+                </Select>
 
                 <Label>Tags (comma-separated)</Label>
                 <Input

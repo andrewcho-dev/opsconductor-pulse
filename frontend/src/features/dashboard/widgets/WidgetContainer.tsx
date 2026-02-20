@@ -1,6 +1,7 @@
 import { Suspense, lazy, useMemo, memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
 import { getWidgetDefinition, getWidgetRenderer } from "./widget-registry";
 import type { DashboardWidget } from "@/services/api/dashboards";
@@ -72,22 +73,28 @@ function WidgetContainerInner({
           {isEditing && (
             <div className="flex gap-1 shrink-0 relative z-20">
               {onConfigure && (
-                <button
+                <Button
+                  type="button"
                   onClick={() => onConfigure(widget.id)}
+                  variant="ghost"
+                  size="icon-sm"
                   className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
                   title="Configure"
                 >
                   &#9881;
-                </button>
+                </Button>
               )}
               {onRemove && (
-                <button
+                <Button
+                  type="button"
                   onClick={() => onRemove(widget.id)}
+                  variant="ghost"
+                  size="icon-sm"
                   className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
                   title="Remove"
                 >
                   &times;
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -97,22 +104,28 @@ function WidgetContainerInner({
       {!showTitle && isEditing && (
         <div className="absolute top-1 right-1 z-20 flex gap-1">
           {onConfigure && (
-            <button
+            <Button
+              type="button"
               onClick={() => onConfigure(widget.id)}
+              variant="ghost"
+              size="icon-sm"
               className="rounded p-1 text-sm text-muted-foreground hover:bg-accent"
               title="Configure"
             >
               &#9881;
-            </button>
+            </Button>
           )}
           {onRemove && (
-            <button
+            <Button
+              type="button"
               onClick={() => onRemove(widget.id)}
+              variant="ghost"
+              size="icon-sm"
               className="rounded p-1 text-sm text-destructive hover:bg-destructive/10"
               title="Remove"
             >
               &times;
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -122,12 +135,14 @@ function WidgetContainerInner({
             <p className="text-sm text-muted-foreground">
               This widget needs to be configured.
             </p>
-            <button
+            <Button
+              type="button"
               onClick={() => onConfigure(widget.id)}
-              className="text-sm text-primary underline underline-offset-2 hover:text-primary/80"
+              variant="link"
+              size="sm"
             >
               Configure widget
-            </button>
+            </Button>
           </div>
         ) : (
           <WidgetErrorBoundary widgetName={displayTitle}>

@@ -18,6 +18,8 @@ import { fetchSites } from "@/services/api/sites";
 import { fetchAlertRules } from "@/services/api/alert-rules";
 import { provisionDevice } from "@/services/api/devices";
 import { apiPost } from "@/services/api/client";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -197,18 +199,22 @@ export default function SetupWizard() {
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Site</label>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                value={state.siteId}
-                onChange={(e) => dispatch({ type: "set", key: "siteId", value: e.target.value })}
+              <Select
+                value={state.siteId || "none"}
+                onValueChange={(v) => dispatch({ type: "set", key: "siteId", value: v === "none" ? "" : v })}
               >
-                <option value="">Select site</option>
-                {(sitesData?.sites ?? []).map((site) => (
-                  <option key={site.site_id} value={site.site_id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="Select site" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select site</SelectItem>
+                  {(sitesData?.sites ?? []).map((site) => (
+                    <SelectItem key={site.site_id} value={site.site_id}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         )}
@@ -265,11 +271,10 @@ export default function SetupWizard() {
                         {rule.metric_name} {rule.operator} {rule.threshold}
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
+                      onCheckedChange={(checked) => {
+                        if (checked) {
                           dispatch({
                             type: "set",
                             key: "selectedRuleIds",

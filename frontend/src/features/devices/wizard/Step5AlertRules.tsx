@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   applyAlertRuleTemplates,
   createAlertRule,
@@ -96,16 +97,17 @@ export function Step5AlertRules({ deviceId, deviceType, onDone }: Step5AlertRule
           <div className="grid gap-2 md:grid-cols-3">
             <div className="grid gap-1">
               <Label>Operator</Label>
-              <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                value={operator}
-                onChange={(event) => setOperator(event.target.value as "GT" | "LT" | "GTE" | "LTE")}
-              >
-                <option value="GT">GT</option>
-                <option value="LT">LT</option>
-                <option value="GTE">GTE</option>
-                <option value="LTE">LTE</option>
-              </select>
+              <Select value={operator} onValueChange={(v) => setOperator(v as "GT" | "LT" | "GTE" | "LTE")}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select operator" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GT">GT</SelectItem>
+                  <SelectItem value="LT">LT</SelectItem>
+                  <SelectItem value="GTE">GTE</SelectItem>
+                  <SelectItem value="LTE">LTE</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>Threshold</Label>
@@ -117,15 +119,16 @@ export function Step5AlertRules({ deviceId, deviceType, onDone }: Step5AlertRule
             </div>
             <div className="grid gap-1">
               <Label>Severity</Label>
-              <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                value={severity}
-                onChange={(event) => setSeverity(event.target.value)}
-              >
-                <option value="1">Critical</option>
-                <option value="2">Warning</option>
-                <option value="3">Info</option>
-              </select>
+              <Select value={severity} onValueChange={setSeverity}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Critical</SelectItem>
+                  <SelectItem value="2">Warning</SelectItem>
+                  <SelectItem value="3">Info</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="flex justify-between">

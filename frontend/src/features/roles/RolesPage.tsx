@@ -35,12 +35,12 @@ function RoleRow({
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between p-3">
-        <button type="button" className="flex items-center gap-2" onClick={onToggle}>
+        <Button type="button" variant="ghost" className="flex items-center gap-2 px-2 -ml-2" onClick={onToggle}>
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           {role.is_system && <Lock className="h-4 w-4 text-muted-foreground" />}
           <div className="text-sm font-medium">{role.name}</div>
           <Badge variant="secondary">{permCount} permissions</Badge>
-        </button>
+        </Button>
         <div className="flex items-center gap-2">{actions}</div>
       </div>
       {expanded && (

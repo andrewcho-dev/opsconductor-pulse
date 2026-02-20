@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { OncallLayer, OncallSchedule } from "@/services/api/oncall";
 
 interface ScheduleModalProps {
@@ -75,17 +76,18 @@ export default function ScheduleModal({ open, onOpenChange, initial, onSave }: S
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          <select
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-          >
-            {ZONES.map((zone) => (
-              <option key={zone} value={zone}>
-                {zone}
-              </option>
-            ))}
-          </select>
+          <Select value={timezone} onValueChange={setTimezone}>
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Select timezone" />
+            </SelectTrigger>
+            <SelectContent>
+              {ZONES.map((zone) => (
+                <SelectItem key={zone} value={zone}>
+                  {zone}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <div className="space-y-3">
             {layers.map((layer, idx) => (
@@ -98,21 +100,25 @@ export default function ScheduleModal({ open, onOpenChange, initial, onSave }: S
                   }
                 />
                 <div className="grid gap-2 md:grid-cols-4">
-                  <select
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  <Select
                     value={layer.rotation_type}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       setLayers((prev) =>
                         prev.map((item, i) =>
-                          i === idx ? { ...item, rotation_type: e.target.value as OncallLayer["rotation_type"] } : item
+                          i === idx ? { ...item, rotation_type: v as OncallLayer["rotation_type"] } : item
                         )
                       )
                     }
                   >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="custom">Custom</option>
-                  </select>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Rotation type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Input
                     type="number"
                     min={1}

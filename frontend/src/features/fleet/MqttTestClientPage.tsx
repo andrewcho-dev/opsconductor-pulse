@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -247,15 +248,18 @@ export default function MqttTestClientPage({ embedded }: { embedded?: boolean })
                     </SelectContent>
                   </Select>
                 </div>
-                <label className="flex items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center gap-1.5">
+                  <Switch
+                    id="pub-retain"
                     checked={pubRetain}
-                    onChange={(e) => setPubRetain(e.target.checked)}
+                    onCheckedChange={setPubRetain}
                     disabled={!connected}
+                    size="sm"
                   />
-                  Retain
-                </label>
+                  <Label htmlFor="pub-retain" className="text-xs">
+                    Retain
+                  </Label>
+                </div>
                 <div className="flex-1" />
                 <Button size="sm" onClick={handlePublish} disabled={!connected || !pubTopic}>
                   <Send className="mr-1 h-3.5 w-3.5" />
@@ -291,12 +295,16 @@ export default function MqttTestClientPage({ embedded }: { embedded?: boolean })
                   {subscriptions.map((t) => (
                     <Badge key={t} variant="secondary" className="gap-1 pr-1">
                       <span className="font-mono text-xs">{t}</span>
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="ml-0.5 h-4 w-4 rounded-full"
                         onClick={() => handleUnsubscribe(t)}
-                        className="ml-0.5 rounded-full hover:bg-muted"
+                        aria-label={`Unsubscribe ${t}`}
                       >
                         <X className="h-3 w-3" />
-                      </button>
+                      </Button>
                     </Badge>
                   ))}
                 </div>

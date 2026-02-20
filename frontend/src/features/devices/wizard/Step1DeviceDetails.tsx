@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { fetchSites } from "@/services/api/sites";
 import { listTemplates } from "@/services/api/templates";
 import type { DeviceDetailsData } from "./types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Step1DeviceDetailsProps {
   onNext: (data: DeviceDetailsData) => void;
@@ -43,21 +44,27 @@ export function Step1DeviceDetails({ onNext, initialData }: Step1DeviceDetailsPr
       </div>
       <div className="grid gap-2">
         <Label>Template (recommended)</Label>
-        <select
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          value={templateId}
-          onChange={(event) => setTemplateId(event.target.value)}
+        <Select
+          value={templateId || "none"}
+          onValueChange={(v) => setTemplateId(v === "none" ? "" : v)}
         >
-          <option value="">None</option>
-          {templateOptions
-            .slice()
-            .sort((a, b) => (a.source === b.source ? a.name.localeCompare(b.name) : a.source === "system" ? -1 : 1))
-            .map((t) => (
-              <option key={t.id} value={String(t.id)}>
-                {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
-              </option>
-            ))}
-        </select>
+          <SelectTrigger className="h-10 w-full">
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            {templateOptions
+              .slice()
+              .sort((a, b) =>
+                a.source === b.source ? a.name.localeCompare(b.name) : a.source === "system" ? -1 : 1
+              )
+              .map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
         <div className="text-xs text-muted-foreground">
           Device type is still supported, but templates unlock modules, transports, and semantic telemetry.
         </div>
@@ -72,18 +79,19 @@ export function Step1DeviceDetails({ onNext, initialData }: Step1DeviceDetailsPr
       </div>
       <div className="grid gap-2">
         <Label>Site</Label>
-        <select
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          value={siteId}
-          onChange={(event) => setSiteId(event.target.value)}
-        >
-          <option value="">Default site</option>
-          {sites.map((site) => (
-            <option key={site.site_id} value={site.site_id}>
-              {site.name}
-            </option>
-          ))}
-        </select>
+        <Select value={siteId || "default"} onValueChange={(v) => setSiteId(v === "default" ? "" : v)}>
+          <SelectTrigger className="h-10 w-full">
+            <SelectValue placeholder="Default site" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Default site</SelectItem>
+            {sites.map((site) => (
+              <SelectItem key={site.site_id} value={site.site_id}>
+                {site.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex justify-end">
         <Button

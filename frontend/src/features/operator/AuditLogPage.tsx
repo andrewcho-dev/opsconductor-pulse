@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useActivityLog } from "@/hooks/use-operator";
 import { formatTimestamp } from "@/lib/format";
-import { ScrollText } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ScrollText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const PAGE_SIZES = [100, 250, 500, 1000];
 
@@ -44,21 +45,56 @@ function PaginationControls({
         <span className="text-muted-foreground">
           {totalCount > 0 ? `${offset + 1}-${Math.min(offset + limit, totalCount)}` : "0"} of {totalCount.toLocaleString()}
         </span>
-        <select
-          value={limit}
-          onChange={(e) => { setLimit(Number(e.target.value)); setOffset(0); }}
-          className="h-6 px-1 rounded border border-border bg-background text-sm"
+        <Select
+          value={String(limit)}
+          onValueChange={(v) => {
+            setLimit(Number(v));
+            setOffset(0);
+          }}
         >
-          {PAGE_SIZES.map((size) => (
-            <option key={size} value={size}>{size} / page</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-6 w-[110px] px-2 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} / page
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex gap-1">
-        <button onClick={() => setOffset(0)} disabled={offset === 0} className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm">First</button>
-        <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset === 0} className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm">Prev</button>
-        <button onClick={() => setOffset(offset + limit)} disabled={offset + limit >= totalCount} className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm">Next</button>
-        <button onClick={() => setOffset(Math.max(0, Math.floor((totalCount - 1) / limit) * limit))} disabled={offset + limit >= totalCount} className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm">Last</button>
+        <Button variant="outline" size="icon-sm" onClick={() => setOffset(0)} disabled={offset === 0} aria-label="First page">
+          <ChevronsLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={() => setOffset(Math.max(0, offset - limit))}
+          disabled={offset === 0}
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={() => setOffset(offset + limit)}
+          disabled={offset + limit >= totalCount}
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={() => setOffset(Math.max(0, Math.floor((totalCount - 1) / limit) * limit))}
+          disabled={offset + limit >= totalCount}
+          aria-label="Last page"
+        >
+          <ChevronsRight className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </div>
   );
@@ -183,9 +219,15 @@ export default function AuditLogPage() {
                         <TableCell className="py-1 px-2">{event.actor_name || event.actor_id || event.actor_type || "—"}</TableCell>
                         <TableCell className="py-1 px-2 text-right">
                           {event.details && (
-                            <button className="text-primary hover:underline" onClick={() => toggleExpanded(key)}>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="h-6 w-6"
+                              onClick={() => toggleExpanded(key)}
+                              aria-label={expanded.has(key) ? "Collapse details" : "Expand details"}
+                            >
                               {expanded.has(key) ? "−" : "+"}
-                            </button>
+                            </Button>
                           )}
                         </TableCell>
                       </TableRow>

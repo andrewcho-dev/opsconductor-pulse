@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, X } from "lucide-react";
 
 interface PaginationControlsProps {
   offset: number;
@@ -31,57 +34,68 @@ function PaginationControls({
             : "0"}{" "}
           of {totalCount.toLocaleString()}
         </span>
-        <select
-          value={limit}
-          onChange={(e) => {
-            setLimit(Number(e.target.value));
+        <Select
+          value={String(limit)}
+          onValueChange={(v) => {
+            setLimit(Number(v));
             setOffset(0);
           }}
-          className="h-6 px-1 rounded border border-border bg-background text-sm"
-          aria-label="Devices per page"
         >
-          {[100, 250, 500, 1000].map((size) => (
-            <option key={size} value={size}>
-              {size} / page
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="h-6 w-[110px]" aria-label="Devices per page">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[100, 250, 500, 1000].map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} / page
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex gap-1">
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => setOffset(0)}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="First page"
         >
-          First
-        </button>
-        <button
+          <ChevronsLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => setOffset(Math.max(0, offset - limit))}
           disabled={offset === 0}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Previous page"
         >
-          Prev
-        </button>
-        <button
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => setOffset(offset + limit)}
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Next page"
         >
-          Next
-        </button>
-        <button
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() =>
             setOffset(Math.max(0, Math.floor((totalCount - 1) / limit) * limit))
           }
           disabled={offset + limit >= totalCount}
-          className="px-2 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           aria-label="Last page"
         >
-          Last
-        </button>
+          <ChevronsRight className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </div>
   );
@@ -151,35 +165,43 @@ export function DeviceFilters({
             🔍
           </span>
           {searchText && (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 setSearchText("");
                 onQChange("");
               }}
+              variant="ghost"
+              size="icon-sm"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label="Clear search"
             >
-              ×
-            </button>
+              <X className="h-3.5 w-3.5" />
+            </Button>
           )}
         </div>
 
         <label className="sr-only" htmlFor="device-status-filter">
           Status filter
         </label>
-        <select
-          id="device-status-filter"
-          value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value)}
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          aria-label="Status filter"
+        <Select
+          value={statusFilter || "all"}
+          onValueChange={(v) => onStatusFilterChange(v === "all" ? "" : v)}
         >
-          <option value="">All statuses</option>
-          <option value="ONLINE">Online</option>
-          <option value="STALE">Stale</option>
-          <option value="OFFLINE">Offline</option>
-        </select>
+          <SelectTrigger
+            id="device-status-filter"
+            className="h-8 w-[150px]"
+            aria-label="Status filter"
+          >
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="ONLINE">Online</SelectItem>
+            <SelectItem value="STALE">Stale</SelectItem>
+            <SelectItem value="OFFLINE">Offline</SelectItem>
+          </SelectContent>
+        </Select>
 
         <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
           <span className="inline-flex items-center gap-1">
@@ -212,13 +234,16 @@ export function DeviceFilters({
           <span className="text-sm text-muted-foreground">
             Tags filter active ({selectedTags.length})
           </span>
-          <button
+          <Button
+            type="button"
             onClick={() => setSelectedTags([])}
-            className="text-sm text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-muted-foreground hover:text-foreground"
             aria-label="Clear tag filters"
           >
             Clear
-          </button>
+          </Button>
         </div>
       )}
 
@@ -233,11 +258,9 @@ export function DeviceFilters({
                 key={tag}
                 className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted p-1 rounded"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selectedTags.includes(tag)}
-                  onChange={() => toggleTag(tag)}
-                  className="h-3 w-3"
+                  onCheckedChange={() => toggleTag(tag)}
                   aria-label={`Filter by tag ${tag}`}
                 />
                 {tag}
