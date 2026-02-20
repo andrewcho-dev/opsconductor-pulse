@@ -39,7 +39,7 @@ function relativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function EscalationPoliciesPage() {
+export default function EscalationPoliciesPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EscalationPolicy | null>(null);
@@ -145,23 +145,29 @@ export default function EscalationPoliciesPage() {
     },
   ];
 
+  const actions = (
+    <Button
+      onClick={() => {
+        setEditing(null);
+        setOpen(true);
+      }}
+    >
+      <Plus className="mr-1 h-4 w-4" />
+      Add Policy
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Escalation Policies"
-        description="Define multi-level escalation actions for unacknowledged alerts."
-        action={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setOpen(true);
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add Policy
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Escalation Policies"
+          description="Define multi-level escalation actions for unacknowledged alerts."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <DataTable
         columns={columns}

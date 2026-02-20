@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CreditCard, ExternalLink, Loader2, Plus } from "lucide-react";
 import { PageHeader } from "@/components/shared";
+import { KpiCard } from "@/components/shared/KpiCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,24 +23,7 @@ import {
   getEntitlements,
 } from "@/services/api/billing";
 
-function usageColor(pct: number) {
-  if (pct > 90) return "bg-status-critical";
-  if (pct >= 75) return "bg-status-warning";
-  return "bg-status-online";
-}
-
-function ProgressBar({ percent }: { percent: number }) {
-  return (
-    <div className="h-2 w-full rounded-full bg-muted">
-      <div
-        className={`h-2 rounded-full ${usageColor(percent)}`}
-        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-      />
-    </div>
-  );
-}
-
-export default function BillingPage() {
+export default function BillingPage({ embedded }: { embedded?: boolean }) {
   const { data: config } = useQuery({
     queryKey: ["billing-config"],
     queryFn: getBillingConfig,
@@ -97,10 +81,9 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Billing"
-        description="Manage account tier and billing limits."
-      />
+      {!embedded && (
+        <PageHeader title="Billing" description="Manage account tier and billing limits." />
+      )}
 
       <Card>
         <CardHeader>
@@ -211,35 +194,18 @@ export default function BillingPage() {
               No usage data available.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Resource</TableHead>
-                  <TableHead>Current</TableHead>
-                  <TableHead>Limit</TableHead>
-                  <TableHead className="w-[220px]">Progress</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {usageRows.map((r) => (
-                  <TableRow key={r.key}>
-                    <TableCell>{r.label}</TableCell>
-                    <TableCell>{r.current}</TableCell>
-                    <TableCell>{r.limit}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <ProgressBar percent={r.percent_used} />
-                        </div>
-                        <div className="w-12 text-right text-sm text-muted-foreground">
-                          {r.percent_used}%
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {usageRows.map((r) => (
+                <KpiCard
+                  key={r.key}
+                  label={r.label}
+                  value={`${r.current} / ${r.limit ?? "∞"}`}
+                  current={r.current}
+                  max={r.limit ?? undefined}
+                  description={r.limit ? `${r.percent_used}% used` : "Unlimited"}
+                />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

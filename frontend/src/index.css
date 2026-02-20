@@ -7,13 +7,13 @@
 
 /* Light theme as default */
 :root {
-  --background: 220 14% 96%;
+  --background: 240 10% 97%;
   --foreground: 240 10% 10%;
   --card: 0 0% 100%;
   --card-foreground: 240 10% 10%;
   --popover: 0 0% 100%;
   --popover-foreground: 240 10% 10%;
-  --primary: 216 89% 50%;
+  --primary: 262 83% 58%;
   --primary-foreground: 0 0% 100%;
   --secondary: 240 5% 96%;
   --secondary-foreground: 240 10% 10%;
@@ -25,26 +25,26 @@
   --destructive-foreground: 0 0% 100%;
   --border: 240 6% 90%;
   --input: 240 6% 90%;
-  --ring: 216 89% 50%;
+  --ring: 262 83% 58%;
   --radius: 0.5rem;
 
   /* Sidebar - light */
   --sidebar-background: 220 14% 97%;
   --sidebar-foreground: 240 10% 10%;
-  --sidebar-primary: 216 89% 50%;
+  --sidebar-primary: 262 83% 58%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 5% 96%;
-  --sidebar-accent-foreground: 240 10% 10%;
+  --sidebar-accent: 262 30% 96%;
+  --sidebar-accent-foreground: 262 40% 30%;
   --sidebar-border: 240 6% 90%;
-  --sidebar-ring: 216 89% 50%;
+  --sidebar-ring: 262 83% 58%;
   --sidebar: hsl(0 0% 98%);
 
   /* Charts - light */
-  --chart-1: 216 89% 50%;
+  --chart-1: 262 83% 58%;
   --chart-2: 142 71% 45%;
   --chart-3: 38 92% 50%;
   --chart-4: 0 84% 60%;
-  --chart-5: 262 83% 58%;
+  --chart-5: 216 89% 50%;
 
   /* Status semantic colors */
   --status-online: 122 39% 49%;
@@ -109,8 +109,8 @@
   --card-foreground: 0 0% 93%;
   --popover: 240 20% 8%;
   --popover-foreground: 0 0% 93%;
-  --primary: 216 89% 76%;
-  --primary-foreground: 240 33% 5%;
+  --primary: 262 83% 72%;
+  --primary-foreground: 262 40% 10%;
   --secondary: 240 10% 15%;
   --secondary-foreground: 0 0% 93%;
   --muted: 240 10% 15%;
@@ -121,25 +121,25 @@
   --destructive-foreground: 0 0% 100%;
   --border: 240 10% 20%;
   --input: 240 10% 20%;
-  --ring: 216 89% 76%;
+  --ring: 262 83% 72%;
 
   /* Sidebar - dark */
   --sidebar-background: 240 20% 6%;
   --sidebar-foreground: 0 0% 93%;
-  --sidebar-primary: 216 89% 76%;
-  --sidebar-primary-foreground: 240 33% 5%;
-  --sidebar-accent: 240 10% 12%;
-  --sidebar-accent-foreground: 0 0% 93%;
+  --sidebar-primary: 262 83% 72%;
+  --sidebar-primary-foreground: 262 40% 10%;
+  --sidebar-accent: 262 20% 15%;
+  --sidebar-accent-foreground: 262 20% 90%;
   --sidebar-border: 240 10% 15%;
-  --sidebar-ring: 216 89% 76%;
+  --sidebar-ring: 262 83% 72%;
   --sidebar: hsl(240 20% 6%);
 
   /* Charts - dark (slightly brighter for visibility) */
-  --chart-1: 216 89% 66%;
+  --chart-1: 262 83% 68%;
   --chart-2: 142 71% 55%;
   --chart-3: 38 92% 60%;
   --chart-4: 0 84% 65%;
-  --chart-5: 262 83% 68%;
+  --chart-5: 216 89% 66%;
 
   /* Status semantic colors - dark (slightly desaturated for legibility) */
   --status-online: 122 39% 55%;

@@ -41,7 +41,7 @@ type TenantUser = {
   roles?: string[] | null;
 };
 
-export default function UsersPage() {
+export default function UsersPage({ embedded }: { embedded?: boolean }) {
   const { user: currentUser } = useAuth();
   const currentUserId = currentUser?.sub;
   const [search, setSearch] = useState("");
@@ -181,18 +181,24 @@ export default function UsersPage() {
     return roles[0] || "User";
   }
 
+  const actions = (
+    <Button onClick={() => setInviteDialogOpen(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      Add User
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Team Members"
-        description="Manage users in your organization"
-        action={
-          <Button onClick={() => setInviteDialogOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add User
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Team Members"
+          description="Manage users in your organization"
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <div className="flex gap-2">
         <Input

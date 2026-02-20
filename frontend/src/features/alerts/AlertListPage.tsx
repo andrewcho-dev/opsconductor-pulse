@@ -3,6 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAlerts } from "@/hooks/use-alerts";
 import { acknowledgeAlert, closeAlert, silenceAlert } from "@/services/api/alerts";
 import { Bell, ChevronDown, ChevronRight, MoreHorizontal, RefreshCw } from "lucide-react";
@@ -85,7 +87,7 @@ function formatDuration(from: string, now: number) {
   return `${seconds}s`;
 }
 
-export default function AlertListPage() {
+export default function AlertListPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabKey>("ALL");
   const [search, setSearch] = useState("");
@@ -173,21 +175,25 @@ export default function AlertListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Alerts"
-        description="Professional inbox for real-time alert triage"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/alert-rules">Rules</Link>
-            </Button>
-          </div>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Alerts"
+          description="Professional inbox for real-time alert triage"
+          action={
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw
+                  className={`mr-1 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/alert-rules">Rules</Link>
+              </Button>
+            </div>
+          }
+        />
+      )}
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((item) => (
@@ -254,10 +260,9 @@ export default function AlertListPage() {
         <div className="rounded-md border border-border">
           <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] border-b border-border bg-muted/30 px-2 py-2 text-sm font-semibold uppercase text-muted-foreground">
             <div>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={allVisibleSelected}
-                onChange={(e) => toggleAllVisible(e.target.checked)}
+                onCheckedChange={(checked) => toggleAllVisible(checked === true)}
               />
             </div>
             <div />
@@ -274,10 +279,9 @@ export default function AlertListPage() {
               <div key={alert.alert_id} className="border-b border-border last:border-b-0">
                 <div className="grid grid-cols-[40px_40px_170px_1fr_170px_100px_60px] items-center px-2 py-2 text-sm">
                   <div>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selected.has(alert.alert_id)}
-                      onChange={(e) => toggleSelected(alert.alert_id, e.target.checked)}
+                      onCheckedChange={(checked) => toggleSelected(alert.alert_id, checked === true)}
                     />
                   </div>
                   <Button
@@ -460,20 +464,24 @@ export default function AlertListPage() {
             {Math.min((pageIndex + 1) * pageSize, data?.total ?? 0)} of {data?.total ?? 0}
           </span>
           <div className="flex items-center gap-2">
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => {
+                setPageSize(Number(v));
                 setPageIndex(0);
               }}
-              className="h-8 rounded border border-border bg-background px-2 text-sm"
             >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size} / page
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size} / page
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"

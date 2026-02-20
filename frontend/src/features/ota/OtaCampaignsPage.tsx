@@ -25,7 +25,7 @@ const STATUS_VARIANT: Record<
   ABORTED: "destructive",
 };
 
-export default function OtaCampaignsPage() {
+export default function OtaCampaignsPage({ embedded }: { embedded?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [abortTarget, setAbortTarget] = useState<OtaCampaign | null>(null);
   const { data, isLoading } = useOtaCampaigns();
@@ -130,18 +130,24 @@ export default function OtaCampaignsPage() {
     },
   ];
 
+  const actions = (
+    <Button onClick={() => setCreateOpen(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      Add Campaign
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="OTA Campaigns"
-        description="Manage firmware rollouts to your device fleet."
-        action={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add Campaign
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="OTA Campaigns"
+          description="Manage firmware rollouts to your device fleet."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <DataTable
         columns={columns}

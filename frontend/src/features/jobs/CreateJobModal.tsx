@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createJob, type CreateJobPayload } from "@/services/api/jobs";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface CreateJobModalProps {
   onClose: () => void;
@@ -80,15 +81,16 @@ export function CreateJobModal({
 
         <div className="space-y-1">
           <label className="text-sm">Target</label>
-          <select
-            className="w-full rounded border border-border bg-background p-2 text-sm"
-            value={targetType}
-            onChange={(event) => setTargetType(event.target.value as "device" | "group" | "all")}
-          >
-            <option value="device">Single device</option>
-            <option value="group">Device group</option>
-            <option value="all">All devices in tenant</option>
-          </select>
+          <Select value={targetType} onValueChange={(v) => setTargetType(v as "device" | "group" | "all")}>
+            <SelectTrigger className="w-full h-10">
+              <SelectValue placeholder="Select target" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="device">Single device</SelectItem>
+              <SelectItem value="group">Device group</SelectItem>
+              <SelectItem value="all">All devices in tenant</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {targetType === "device" && (

@@ -52,6 +52,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { WidgetErrorBoundary } from "@/components/shared/WidgetErrorBoundary";
 import { TelemetryChartsSection } from "./TelemetryChartsSection";
 import type { TimeRange } from "@/lib/charts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function parseJsonObject(input: string): Record<string, string> {
   const trimmed = input.trim();
@@ -142,18 +143,22 @@ function AssignModuleDialog({
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">Module Template (optional)</div>
-              <select
-                className="h-10 w-full rounded border border-border bg-background px-2 text-sm"
-                value={moduleTemplateId}
-                onChange={(e) => setModuleTemplateId(e.target.value)}
+              <Select
+                value={moduleTemplateId || "custom"}
+                onValueChange={(v) => setModuleTemplateId(v === "custom" ? "" : v)}
               >
-                <option value="">(custom / unknown)</option>
-                {compatible.map((t) => (
-                  <option key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-10 w-full">
+                  <SelectValue placeholder="(custom / unknown)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom">(custom / unknown)</SelectItem>
+                  {compatible.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">Label</div>
@@ -282,18 +287,22 @@ function AddSensorDialog({
           {mode === "template" ? (
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">Template Metric</div>
-              <select
-                className="h-10 w-full rounded border border-border bg-background px-2 text-sm"
-                value={templateMetricId}
-                onChange={(e) => setTemplateMetricId(e.target.value)}
+              <Select
+                value={templateMetricId || "none"}
+                onValueChange={(v) => setTemplateMetricId(v === "none" ? "" : v)}
               >
-                <option value="">Select a metric</option>
-                {templateMetrics.map((m) => (
-                  <option key={m.id} value={String(m.id)}>
-                    {m.display_name} ({m.metric_key})
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-10 w-full">
+                  <SelectValue placeholder="Select a metric" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select a metric</SelectItem>
+                  {templateMetrics.map((m) => (
+                    <SelectItem key={m.id} value={String(m.id)}>
+                      {m.display_name} ({m.metric_key})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {!template && <div className="text-xs text-muted-foreground">No template assigned to this device.</div>}
             </div>
           ) : (
@@ -422,15 +431,16 @@ function EditSensorDialog({
           </div>
           <div className="space-y-1">
             <div className="text-sm text-muted-foreground">Status</div>
-            <select
-              className="h-10 w-full rounded border border-border bg-background px-2 text-sm"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-              <option value="error">error</option>
-            </select>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">active</SelectItem>
+                <SelectItem value="inactive">inactive</SelectItem>
+                <SelectItem value="error">error</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

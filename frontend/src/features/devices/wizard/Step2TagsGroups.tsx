@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchDeviceGroups } from "@/services/api/devices";
@@ -40,12 +41,11 @@ export function Step2TagsGroups({ onNext, onBack, initialData }: Step2TagsGroups
           {groups.map((group) => (
             <label key={group.group_id} className="flex items-center justify-between text-sm">
               <span>{group.name}</span>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={groupIds.includes(group.group_id)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setGroupIds((prev) =>
-                    event.target.checked
+                    checked
                       ? [...new Set([...prev, group.group_id])]
                       : prev.filter((id) => id !== group.group_id)
                   )

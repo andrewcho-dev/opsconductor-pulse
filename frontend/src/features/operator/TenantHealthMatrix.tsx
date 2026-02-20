@@ -4,6 +4,7 @@ import { RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchTenantsSummary, type TenantSummary } from "@/services/api/tenants";
 import { fetchDeviceSubscriptions } from "@/services/api/operator";
 import TenantActivitySparkline from "./TenantActivitySparkline";
@@ -154,16 +155,17 @@ export default function TenantHealthMatrix() {
             placeholder="Search tenants..."
             className="h-8 w-56"
           />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortKey)}
-            className="h-8 rounded border border-border bg-background px-2 text-sm"
-          >
-            <option value="alerts">Sort: Alerts</option>
-            <option value="devices">Sort: Devices</option>
-            <option value="lastActive">Sort: Last Active</option>
-            <option value="name">Sort: Tenant Name</option>
-          </select>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
+            <SelectTrigger className="h-8 w-[160px]">
+              <SelectValue placeholder="Sort by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alerts">Sort: Alerts</SelectItem>
+              <SelectItem value="devices">Sort: Devices</SelectItem>
+              <SelectItem value="lastActive">Sort: Last Active</SelectItem>
+              <SelectItem value="name">Sort: Tenant Name</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
             <span>↻ 30s</span>

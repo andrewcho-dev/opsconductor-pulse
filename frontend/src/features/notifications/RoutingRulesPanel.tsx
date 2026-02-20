@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   createRoutingRule,
@@ -170,34 +171,39 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
       </div>
 
       <div className="grid gap-2 md:grid-cols-10">
-        <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          value={draft.channel_id || ""}
-          onChange={(e) => setDraft((prev) => ({ ...prev, channel_id: Number(e.target.value) }))}
+        <Select
+          value={draft.channel_id ? String(draft.channel_id) : "none"}
+          onValueChange={(v) => setDraft((prev) => ({ ...prev, channel_id: v === "none" ? 0 : Number(v) }))}
         >
-          <option value="">Channel</option>
-          {channels.map((channel) => (
-            <option key={channel.channel_id} value={channel.channel_id}>
-              {channel.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          value={draft.min_severity ?? ""}
-          onChange={(e) =>
-            setDraft((prev) => ({
-              ...prev,
-              min_severity: e.target.value ? Number(e.target.value) : undefined,
-            }))
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Channel" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Channel</SelectItem>
+            {channels.map((channel) => (
+              <SelectItem key={channel.channel_id} value={String(channel.channel_id)}>
+                {channel.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={draft.min_severity != null ? String(draft.min_severity) : "any"}
+          onValueChange={(v) =>
+            setDraft((prev) => ({ ...prev, min_severity: v === "any" ? undefined : Number(v) }))
           }
         >
-          <option value="">Any severity</option>
-          <option value="1">LOW (1)</option>
-          <option value="3">MEDIUM (3)</option>
-          <option value="4">HIGH (4)</option>
-          <option value="5">CRITICAL (5)</option>
-        </select>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Any severity" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="any">Any severity</SelectItem>
+            <SelectItem value="1">LOW (1)</SelectItem>
+            <SelectItem value="3">MEDIUM (3)</SelectItem>
+            <SelectItem value="4">HIGH (4)</SelectItem>
+            <SelectItem value="5">CRITICAL (5)</SelectItem>
+          </SelectContent>
+        </Select>
         <input
           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           placeholder="Alert type"
@@ -244,21 +250,25 @@ export function RoutingRulesPanel({ channels, rules }: RoutingRulesPanelProps) {
             }))
           }
         />
-        <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        <Select
           value={(draft.deliver_on ?? ["OPEN"]).join(",")}
-          onChange={(e) =>
+          onValueChange={(v) =>
             setDraft((prev) => ({
               ...prev,
-              deliver_on: e.target.value.split(",").filter(Boolean),
+              deliver_on: v.split(",").filter(Boolean),
             }))
           }
         >
-          <option value="OPEN">OPEN</option>
-          <option value="OPEN,CLOSED">OPEN+CLOSED</option>
-          <option value="OPEN,ACKNOWLEDGED">OPEN+ACKNOWLEDGED</option>
-          <option value="OPEN,CLOSED,ACKNOWLEDGED">OPEN+CLOSED+ACKNOWLEDGED</option>
-        </select>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Deliver on" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="OPEN">OPEN</SelectItem>
+            <SelectItem value="OPEN,CLOSED">OPEN+CLOSED</SelectItem>
+            <SelectItem value="OPEN,ACKNOWLEDGED">OPEN+ACKNOWLEDGED</SelectItem>
+            <SelectItem value="OPEN,CLOSED,ACKNOWLEDGED">OPEN+CLOSED+ACKNOWLEDGED</SelectItem>
+          </SelectContent>
+        </Select>
         <input
           type="number"
           min={0}

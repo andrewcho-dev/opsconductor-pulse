@@ -31,6 +31,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 import { listTemplates } from "@/services/api/templates";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface DeviceEditModalProps {
   device: Device;
@@ -233,18 +234,22 @@ export function DeviceEditModal({
                   <FormItem className="col-span-2">
                     <FormLabel className="text-sm">Template</FormLabel>
                     <FormControl>
-                      <select
-                        className="h-8 w-full rounded border border-border bg-background px-2 text-sm"
-                        value={field.value ?? ""}
-                        onChange={(e) => field.onChange(e.target.value)}
+                      <Select
+                        value={(field.value ?? "") || "none"}
+                        onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
                       >
-                        <option value="">(none)</option>
-                        {templates.map((t) => (
-                          <option key={t.id} value={String(t.id)}>
-                            {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger className="h-8 w-full">
+                          <SelectValue placeholder="(none)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">(none)</SelectItem>
+                          {templates.map((t) => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                              {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </FormControl>
                     {templateChanged ? (
                       <div className="text-xs text-yellow-600">

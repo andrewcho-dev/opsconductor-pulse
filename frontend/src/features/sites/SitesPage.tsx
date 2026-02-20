@@ -1,11 +1,10 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useSites } from "@/hooks/use-sites";
 
 export default function SitesPage() {
-  const navigate = useNavigate();
   const { data, isLoading, error } = useSites();
   const sites = data?.sites ?? [];
 
@@ -24,11 +23,10 @@ export default function SitesPage() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {sites.map((site) => (
-            <button
+            <Link
               key={site.site_id}
-              type="button"
-              onClick={() => navigate(`/sites/${site.site_id}`)}
-              className="rounded-md border border-border p-4 text-left hover:bg-muted/40"
+              to={`/sites/${site.site_id}`}
+              className="block rounded-md border border-border p-4 text-left hover:bg-muted/40 transition-colors"
             >
               <div className="text-lg font-semibold">{site.name}</div>
               {site.location && <div className="text-sm text-muted-foreground">{site.location}</div>}
@@ -47,7 +45,7 @@ export default function SitesPage() {
                   <Badge variant="secondary">No Active Alerts</Badge>
                 )}
               </div>
-            </button>
+            </Link>
           ))}
         </div>
       )}

@@ -15,7 +15,7 @@ function statusVariant(status: string): "secondary" | "destructive" | "default" 
   return "secondary";
 }
 
-export default function DeliveryLogPage() {
+export default function DeliveryLogPage({ embedded }: { embedded?: boolean }) {
   const [status, setStatus] = useState<string>("ALL");
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -88,7 +88,7 @@ export default function DeliveryLogPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Delivery Log" description={`${total} jobs`} />
+      {!embedded && <PageHeader title="Delivery Log" description={`${total} jobs`} />}
       <div className="flex items-center gap-2">
         <Select value={status} onValueChange={(v) => { setStatus(v); setOffset(0); }}>
           <SelectTrigger className="w-[220px]">

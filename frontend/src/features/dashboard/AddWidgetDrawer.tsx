@@ -5,6 +5,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { getWidgetsByCategory, type WidgetDefinition } from "./widgets/widget-registry";
 import { addWidget } from "@/services/api/dashboards";
 import { toast } from "sonner";
@@ -96,11 +97,12 @@ export function AddWidgetDrawer({
                 {group.widgets.map((def: WidgetDefinition) => {
                   const Icon = ICON_MAP[def.icon] ?? Hash;
                   return (
-                    <button
+                    <Button
                       key={def.type}
                       disabled={addMutation.isPending}
                       onClick={() => addMutation.mutate(def)}
-                      className="w-full flex items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent transition-colors disabled:opacity-50"
+                      variant="outline"
+                      className="h-auto w-full flex items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent transition-colors disabled:opacity-50"
                     >
                       <div className="rounded-md bg-muted p-2">
                         <Icon className="h-5 w-5 text-muted-foreground" />
@@ -114,7 +116,7 @@ export function AddWidgetDrawer({
                           Default: {def.defaultSize.w}×{def.defaultSize.h}
                         </div>
                       </div>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

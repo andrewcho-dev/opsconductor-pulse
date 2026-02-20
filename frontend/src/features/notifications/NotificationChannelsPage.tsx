@@ -36,7 +36,7 @@ import {
 import { ChannelModal } from "./ChannelModal";
 import { RoutingRulesPanel } from "./RoutingRulesPanel";
 
-export default function NotificationChannelsPage() {
+export default function NotificationChannelsPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<NotificationChannel | null>(null);
@@ -182,23 +182,29 @@ export default function NotificationChannelsPage() {
     },
   ];
 
+  const actions = (
+    <Button
+      onClick={() => {
+        setEditing(null);
+        setOpen(true);
+      }}
+    >
+      <Plus className="mr-1 h-4 w-4" />
+      Add Channel
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Notification Channels"
-        description="Configure channels and alert routing rules."
-        action={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setOpen(true);
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add Channel
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Notification Channels"
+          description="Configure channels and alert routing rules."
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       <DataTable
         columns={columns}

@@ -16,6 +16,7 @@ import type {
 import { fetchDevices, fetchDeviceGroups } from "@/services/api/devices";
 import { EChartWrapper } from "@/lib/charts/EChartWrapper";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -53,7 +54,7 @@ const GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "group", label: "By Device Group" },
 ];
 
-export default function AnalyticsPage() {
+export default function AnalyticsPage({ embedded }: { embedded?: boolean }) {
   const [metric, setMetric] = useState<string>("");
   const [aggregation, setAggregation] = useState<Aggregation>("avg");
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
@@ -184,23 +185,32 @@ export default function AnalyticsPage() {
     }));
   }, [queryResult?.columns]);
 
+  const exportButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => void handleExport()}
+      disabled={!metric}
+    >
+      <Download className="h-4 w-4 mr-2" />
+      Export CSV
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5" />
-          <h1 className="text-lg font-semibold">Analytics</h1>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            <h1 className="text-lg font-semibold">Analytics</h1>
+          </div>
+          {exportButton}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleExport()}
-          disabled={!metric}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Export CSV
-        </Button>
-      </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end gap-2 mb-4">{exportButton}</div>
+      )}
 
       <div className="flex gap-6">
         {/* Query builder */}
@@ -314,11 +324,10 @@ export default function AnalyticsPage() {
                         key={d.device_id}
                         className="flex items-center gap-2 text-sm cursor-pointer"
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedDeviceIds.includes(d.device_id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
+                          onCheckedChange={(checked) => {
+                            if (checked) {
                               setSelectedDeviceIds((prev) => [...prev, d.device_id]);
                             } else {
                               setSelectedDeviceIds((prev) =>

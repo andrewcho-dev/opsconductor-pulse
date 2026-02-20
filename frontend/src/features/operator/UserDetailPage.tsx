@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { X } from "lucide-react";
 import {
   assignRole,
   fetchUserDetail,
@@ -183,29 +185,33 @@ export default function UserDetailPage() {
             {roles.map((role) => (
               <Badge key={role} variant="outline" className="flex items-center gap-2">
                 {role}
-                <button
+                <Button
                   type="button"
-                  className="text-xs"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-5 w-5"
                   onClick={() => removeRoleMut.mutate(role)}
+                  aria-label={`Remove role ${role}`}
                 >
-                  Remove
-                </button>
+                  <X className="h-3 w-3" />
+                </Button>
               </Badge>
             ))}
             {roles.length === 0 ? <p className="text-sm text-muted-foreground">No roles</p> : null}
           </div>
           <div className="flex items-center gap-2">
-            <select
-              className="h-9 rounded border px-2 text-sm"
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value)}
-            >
-              {KNOWN_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            <Select value={newRole} onValueChange={setNewRole}>
+              <SelectTrigger className="h-9 w-[160px]">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {KNOWN_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button variant="outline" onClick={() => addRoleMut.mutate(newRole)}>
               Add Role
             </Button>

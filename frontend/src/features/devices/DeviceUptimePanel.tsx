@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { getDeviceUptime } from "@/services/api/devices";
 import { UptimeBar } from "@/components/ui/UptimeBar";
+import { Button } from "@/components/ui/button";
 
 interface DeviceUptimePanelProps {
   deviceId: string;
@@ -27,16 +28,16 @@ export function DeviceUptimePanel({ deviceId }: DeviceUptimePanelProps) {
         <h3 className="text-sm font-semibold">Uptime</h3>
         <div className="flex gap-1">
           {(["24h", "7d", "30d"] as const).map((option) => (
-            <button
+            <Button
               key={option}
               type="button"
-              className={`px-2 py-1 text-xs rounded border ${
-                range === option ? "bg-primary text-primary-foreground border-primary" : "border-border"
-              }`}
+              size="sm"
+              variant={range === option ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
               onClick={() => setRange(option)}
             >
               {option}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177]
 ---
 
 # Device Management

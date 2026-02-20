@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { fetchSystemAggregates, fetchSystemHealth } from "@/services/api/system";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertHeatmap } from "./AlertHeatmap";
 import { GaugeRow } from "./GaugeRow";
 import { LiveEventFeed } from "./LiveEventFeed";
@@ -100,29 +102,36 @@ export default function NOCPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <select
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(Number(e.target.value))}
-            className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-300"
-          >
-            <option value={15000}>15s</option>
-            <option value={30000}>30s</option>
-            <option value={60000}>60s</option>
-          </select>
-          <button
+          <Select value={String(refreshInterval)} onValueChange={(v) => setRefreshInterval(Number(v))}>
+            <SelectTrigger className="h-8 w-[80px] border-gray-600 bg-gray-800 px-2 text-sm text-gray-300">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="15000">15s</SelectItem>
+              <SelectItem value="30000">30s</SelectItem>
+              <SelectItem value="60000">60s</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setIsPaused((prev) => !prev)}
+            className="border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-gray-100"
             title="Pause/Resume"
-            className="rounded border border-gray-600 bg-gray-800 p-1.5 text-gray-300 hover:bg-gray-700"
           >
-            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-          </button>
-          <button
+            {isPaused ? <Play className="mr-1 h-3.5 w-3.5" /> : <Pause className="mr-1 h-3.5 w-3.5" />}
+            {isPaused ? "Resume" : "Pause"}
+          </Button>
+          <Button
+            variant={tvMode ? "default" : "outline"}
+            size="sm"
             onClick={toggleTvMode}
+            className={tvMode ? "" : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-gray-100"}
             title="TV Mode (F)"
-            className="rounded border border-gray-600 bg-gray-800 p-1.5 text-gray-300 hover:bg-gray-700"
           >
-            {tvMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
+            {tvMode ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
+            TV Mode
+          </Button>
         </div>
       </div>
 

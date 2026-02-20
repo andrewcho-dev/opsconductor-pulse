@@ -35,12 +35,12 @@ function RoleRow({
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between p-3">
-        <button type="button" className="flex items-center gap-2" onClick={onToggle}>
+        <Button type="button" variant="ghost" className="flex items-center gap-2 px-2 -ml-2" onClick={onToggle}>
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           {role.is_system && <Lock className="h-4 w-4 text-muted-foreground" />}
           <div className="text-sm font-medium">{role.name}</div>
           <Badge variant="secondary">{permCount} permissions</Badge>
-        </button>
+        </Button>
         <div className="flex items-center gap-2">{actions}</div>
       </div>
       {expanded && (
@@ -61,7 +61,7 @@ function RoleRow({
   );
 }
 
-export default function RolesPage() {
+export default function RolesPage({ embedded }: { embedded?: boolean }) {
   const { hasPermission } = usePermissions();
   const { data, isLoading, error, refetch } = useRoles();
   const deleteMutation = useDeleteRole();
@@ -91,18 +91,24 @@ export default function RolesPage() {
     setConfirmDeleteRole(role);
   };
 
+  const actions = (
+    <Button onClick={() => setCreateDialogOpen(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      Add Role
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Roles & Permissions"
-        description="Manage role bundles for your organization"
-        action={
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add Role
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Roles & Permissions"
+          description="Manage role bundles for your organization"
+          action={actions}
+        />
+      ) : (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      )}
 
       {error ? (
         <div className="text-destructive">Failed to load roles: {(error as Error).message}</div>

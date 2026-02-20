@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/app.py
   - services/ui_iot/Dockerfile
@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179]
 ---
 
 # ui-iot
@@ -198,6 +198,38 @@ Phase 169 updates device management APIs to use the instance-level template mode
 ## Fleet Navigation (Phase 174)
 
 The frontend Fleet sidebar is restructured into Setup / Monitor / Maintain sub-groups. A Getting Started page is served at `/app/fleet/getting-started` with 5-step onboarding and live completion detection. The fleet-wide Sensors page (`/app/sensors`) is removed from sidebar navigation but the route is preserved for backward compatibility.
+
+## Navigation & Hub Pages (Phase 176)
+
+Phase 176 introduces a Home landing page at `/app/home` and consolidates multiple standalone pages into hub pages (tabbed navigation with `?tab=` deep links). Key hub routes:
+
+- `/app/alerts` — Alerts hub (rules/escalation/on-call/maintenance are tabs)
+- `/app/analytics` — Analytics hub (reports are a tab)
+- `/app/updates` — Updates hub (replaces `/app/ota/campaigns` and `/app/ota/firmware`)
+- `/app/team` — Team hub (replaces `/app/users` and `/app/roles`)
+
+Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
+
+## Settings Route Structure (Phase 177)
+
+Phase 177 consolidates org and user settings under `/app/settings/*`:
+
+- `/app/settings` — Settings layout (redirects to `/app/settings/general`)
+- `/app/settings/general` — Organization settings
+- `/app/settings/notifications` — Notifications hub
+- `/app/settings/integrations` — Carrier integrations
+- `/app/settings/access` — Team hub (requires `users.read`)
+- `/app/settings/billing` — Billing
+- `/app/settings/profile` — Personal settings
+
+## Connection Tools (Phase 178)
+
+Phase 178 adds a Tools hub page at `/app/fleet/tools` with two tabs:
+
+- **Connection Guide** (`?tab=guide`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
+- **MQTT Test Client** (`?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
+
+The Home page (`/app/home`) also gains a "Resource Usage" section displaying quota KPI cards from the entitlements API (`GET /api/v1/customer/billing/entitlements`). The Billing page (`/app/settings/billing`) is refactored to use `KpiCard` components instead of custom progress bars for usage display.
 
 ## Troubleshooting
 

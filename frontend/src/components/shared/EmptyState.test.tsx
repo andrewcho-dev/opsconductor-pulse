@@ -17,6 +17,7 @@ describe("EmptyState", () => {
       <EmptyState
         title="Empty"
         description="Nothing here"
+        showIllustration={false}
         icon={<AlertCircle data-testid="custom-icon" />}
       />
     );

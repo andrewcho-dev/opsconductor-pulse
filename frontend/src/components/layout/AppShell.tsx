@@ -18,7 +18,7 @@ export default function AppShell() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <AppHeader />
           <SubscriptionBanner />
-          <main className="flex-1 overflow-auto p-4">
+          <main className="flex-1 overflow-auto px-6 py-4">
             <Outlet />
           </main>
           <AppFooter />

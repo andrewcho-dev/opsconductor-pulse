@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/form";
 import { useQuery } from "@tanstack/react-query";
 import { listTemplates } from "@/services/api/templates";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const addDeviceSchema = z.object({
   name: z.string().min(1, "Device name is required").max(100),
@@ -149,21 +150,31 @@ export function AddDeviceModal({ open, onClose, onCreated }: AddDeviceModalProps
                   <FormItem>
                     <FormLabel>Template (optional)</FormLabel>
                     <FormControl>
-                      <select
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                        value={field.value ?? ""}
-                        onChange={(e) => field.onChange(e.target.value)}
+                      <Select
+                        value={(field.value ?? "") || "none"}
+                        onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
                       >
-                        <option value="">None</option>
-                        {templates
-                          .slice()
-                          .sort((a, b) => (a.source === b.source ? a.name.localeCompare(b.name) : a.source === "system" ? -1 : 1))
-                          .map((t) => (
-                            <option key={t.id} value={String(t.id)}>
-                              {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
-                            </option>
-                          ))}
-                      </select>
+                        <SelectTrigger className="h-10 w-full">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {templates
+                            .slice()
+                            .sort((a, b) =>
+                              a.source === b.source
+                                ? a.name.localeCompare(b.name)
+                                : a.source === "system"
+                                  ? -1
+                                  : 1
+                            )
+                            .map((t) => (
+                              <SelectItem key={t.id} value={String(t.id)}>
+                                {t.name} ({t.category}){t.source === "system" ? " [system]" : ""}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

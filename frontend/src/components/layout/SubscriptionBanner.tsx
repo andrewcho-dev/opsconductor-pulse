@@ -48,7 +48,7 @@ export function SubscriptionBanner() {
   const suspended = subscriptions.find((sub) => sub.status === "SUSPENDED");
   if (suspended) {
     return (
-      <div className="flex items-center justify-between gap-4 border-b border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+      <div className="flex items-center justify-between gap-4 border-b border-destructive/40 bg-destructive/10 px-6 py-3 text-destructive">
         <div className="flex items-center gap-2 text-sm">
           <XCircle className="h-4 w-4" />
           <span>
@@ -76,7 +76,7 @@ export function SubscriptionBanner() {
   const grace = subscriptions.find((sub) => sub.status === "GRACE");
   if (grace) {
     return (
-      <div className="flex items-center justify-between gap-4 border-b border-orange-500/40 bg-orange-50 px-4 py-3 text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">
+      <div className="flex items-center justify-between gap-4 border-b border-orange-500/40 bg-orange-50 px-6 py-3 text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">
         <div className="flex items-center gap-2 text-sm">
           <AlertCircle className="h-4 w-4 text-orange-600" />
           <span>
@@ -112,7 +112,7 @@ export function SubscriptionBanner() {
       )
     );
     return (
-      <div className="flex items-center justify-between gap-4 border-b border-yellow-500/40 bg-yellow-50 px-4 py-3 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200">
+      <div className="flex items-center justify-between gap-4 border-b border-yellow-500/40 bg-yellow-50 px-6 py-3 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200">
         <div className="flex items-center gap-2 text-sm">
           <AlertTriangle className="h-4 w-4 text-yellow-600" />
           <span>

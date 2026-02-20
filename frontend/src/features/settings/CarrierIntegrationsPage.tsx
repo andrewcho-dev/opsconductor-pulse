@@ -59,7 +59,7 @@ import { getErrorMessage } from "@/lib/errors";
 const CARRIER_OPTIONS = ["hologram", "1nce"] as const;
 const SYNC_INTERVALS = [15, 30, 60, 120, 360] as const;
 
-export default function CarrierIntegrationsPage() {
+export default function CarrierIntegrationsPage({ embedded }: { embedded?: boolean }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<CarrierIntegration | null>(null);
@@ -109,19 +109,23 @@ export default function CarrierIntegrationsPage() {
     onError: (err) => toast.error(getErrorMessage(err) || "Failed to delete integration"),
   });
 
+  const actions = isSelfService ? (
+    <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+      <Plus className="mr-1 h-3 w-3" /> Add Carrier
+    </Button>
+  ) : null;
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Carrier Integrations"
-        description="Connect your IoT carrier accounts for diagnostics and usage"
-        action={
-          isSelfService ? (
-            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-              <Plus className="mr-1 h-3 w-3" /> Add Carrier
-            </Button>
-          ) : null
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Carrier Integrations"
+          description="Connect your IoT carrier accounts for diagnostics and usage"
+          action={actions}
+        />
+      ) : actions ? (
+        <div className="flex justify-end gap-2 mb-4">{actions}</div>
+      ) : null}
 
       {!isSelfService && (
         <Card className="border-muted">

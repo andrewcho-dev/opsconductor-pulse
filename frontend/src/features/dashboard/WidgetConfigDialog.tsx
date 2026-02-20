@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -661,17 +662,15 @@ export function WidgetConfigDialog({
                     key={m.value}
                     className={`flex items-center gap-2 text-sm rounded px-2 py-1 cursor-pointer hover:bg-accent ${atLimit ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={isSelected}
                       disabled={atLimit}
-                      onChange={(e) => {
-                        const newMetrics = e.target.checked
+                      onCheckedChange={(checked) => {
+                        const newMetrics = checked === true
                           ? [...selectedMetrics, m.value]
                           : selectedMetrics.filter((x) => x !== m.value);
                         if (newMetrics.length >= 3) updateConfig("radar_metrics", newMetrics);
                       }}
-                      className="rounded"
                     />
                     <span className="truncate">
                       {m.label}

@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -8,6 +8,15 @@ sources:
   - frontend/src/features/
   - frontend/src/features/templates/
   - frontend/src/features/fleet/GettingStartedPage.tsx
+  - frontend/src/index.css
+  - frontend/src/components/shared/KpiCard.tsx
+  - frontend/src/components/shared/illustrations.tsx
+  - frontend/src/features/home/HomePage.tsx
+  - frontend/src/features/alerts/AlertsHubPage.tsx
+  - frontend/src/components/layout/SettingsLayout.tsx
+  - frontend/src/features/fleet/ToolsHubPage.tsx
+  - frontend/src/features/fleet/ConnectionGuidePage.tsx
+  - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
   - frontend/src/features/devices/DeviceSensorsDataTab.tsx
   - frontend/src/features/devices/DeviceTransportTab.tsx
@@ -19,7 +28,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179]
 ---
 
 # Frontend
@@ -60,7 +69,7 @@ Top-level feature areas under `frontend/src/features/` include (non-exhaustive):
 - `devices/` — device list/detail, provisioning wizard, import, tokens, twin, commands (Phase 171: tabbed device detail)
 - `alerts/` — alert inbox and rule dialogs
 - `escalation/` — escalation policies UI
-- `fleet/` — fleet-level pages (Getting Started onboarding guide)
+- `fleet/` — fleet-level pages (Getting Started onboarding guide, Tools hub with Connection Guide + MQTT Test Client)
 - `notifications/` — channels and routing rules UI
 - `oncall/` — schedules, layers, overrides, timeline
 - `reports/` — reports and export UI
@@ -97,8 +106,8 @@ Forms use:
 
 Phases 143–144 establish a baseline visual system to keep the UI consistent and readable in a data-dense console.
 
-- Spacing: AppShell `<main>` uses `p-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
-- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-8`) frames the bottom and shows version + year.
+- Spacing: AppShell `<main>` uses `px-6 py-4`; page wrappers use `space-y-4`; card grids use `gap-3`; cards default to `py-3 px-3` with `gap-2` (see `components/ui/card.tsx`); modal containers typically use `p-4 ... space-y-3`.
+- Viewport/framing: AppShell is viewport-contained (`h-screen overflow-hidden`) so only `<main>` scrolls; footer (`AppFooter`, `h-7`) frames the bottom and shows version + year.
 - Typography hierarchy:
 
 | Role | Tailwind |
@@ -116,6 +125,157 @@ Phases 143–144 establish a baseline visual system to keep the UI consistent an
 - Empty states: cap empty/loading padding at `py-8`; prefer the shared `EmptyState` component.
 - Minimum readable size: `text-xs` is reserved for timestamps/badges/keyboard hints; do not use `text-[10px]` or smaller.
 - Cards/backgrounds/status colors: border-based containment (no shadow); light mode uses a light gray page background with white cards (tokens in `src/index.css`); use semantic status token utilities (e.g. `text-status-online`, `bg-status-critical`), not Tailwind color literals.
+
+## Color System (Phase 175)
+
+The application uses a violet/purple primary color (`--primary: 262 83% 58%` in light mode, `262 83% 72%` in dark mode). All semantic tokens (ring, sidebar-primary, chart-1) derive from this primary.
+
+Status colors remain independent of the primary: `--status-online` (green), `--status-stale` (amber), `--status-offline` (gray), `--status-critical` (red).
+
+Color tokens are defined in `frontend/src/index.css` using CSS custom properties consumed by Tailwind v4's `@theme inline` block.
+
+## Sidebar (Phase 175)
+
+The sidebar uses shadcn/ui's `collapsible="icon"` mode:
+
+- Expanded: full-width (16rem) with text labels
+- Collapsed: icon-only strip (3rem) with hover tooltips
+- Toggle: Cmd+B keyboard shortcut, SidebarTrigger button, or SidebarRail drag edge
+- State persists via cookie (`sidebar_state`)
+
+All `SidebarMenuButton` instances must include the `tooltip` prop for accessible icon-mode behavior.
+
+## Header (Phase 175)
+
+The AppHeader renders a compact (h-12) top bar:
+
+- Left: SidebarTrigger + auto-derived breadcrumbs (from URL path)
+- Right: Search (Cmd+K) + ConnectionStatus + Notification bell (alert count badge) + User avatar dropdown
+
+The user avatar dropdown contains: Profile, Organization, Theme toggle, and Log out.
+
+Breadcrumbs are no longer rendered by `PageHeader` — they are auto-derived in the header from the URL path.
+
+## Shared Components (Phase 175)
+
+New shared components:
+
+- `components/ui/progress.tsx` — Radix Progress bar (used for quota/usage visualization)
+- `components/ui/avatar.tsx` — Radix Avatar with fallback initials
+- `components/shared/KpiCard.tsx` — KPI display card: label + big number + optional progress bar + optional description
+- `components/shared/illustrations.tsx` — SVG illustration components (IllustrationEmpty, IllustrationSetup, IllustrationError, IllustrationNotFound)
+
+The `EmptyState` component now renders an SVG illustration by default instead of a plain icon.
+
+## Tab Conventions (Phase 175)
+
+- `variant="line"` (underline with primary-colored active indicator): Use for hub page navigation tabs
+- `variant="default"` (pill/muted background): Use for filter toggles and small control groups
+
+Hub pages (Alerts, Analytics, Updates, etc.) should use `variant="line"` for their tab navigation.
+
+## Hub Pages (Phase 176)
+
+Hub pages consolidate related standalone pages into a single page with tabbed navigation. Each hub:
+
+- Renders a `PageHeader` with the hub title
+- Uses `TabsList variant="line"` for primary-colored underline tabs
+- Stores active tab in URL via `useSearchParams` (`?tab=value`) for deep linking
+- Renders existing page components in `TabsContent` panels with the `embedded` prop
+
+### Hub page inventory
+
+| Hub | Route | Tabs |
+|-----|-------|------|
+| Alerts | `/alerts` | Inbox, Rules, Escalation, On-Call, Maintenance |
+| Analytics | `/analytics` | Explorer, Reports |
+| Updates | `/updates` | Campaigns, Firmware |
+| Notifications | `/notifications` | Channels, Delivery Log, Dead Letter |
+| Team | `/team` | Members, Roles |
+| Tools | `/fleet/tools` | Connection Guide, MQTT Test Client |
+
+### `embedded` prop convention
+
+Page components that can be rendered inside a hub tab accept an optional `embedded?: boolean` prop. When `true`:
+
+- The page skips its own `PageHeader`
+- Action buttons render in a simple flex container instead
+- All other content (queries, tables, modals) remains unchanged
+
+### Creating a new hub page
+
+```tsx
+import { useSearchParams } from "react-router-dom";
+import { PageHeader } from "@/components/shared";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+export default function MyHubPage() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") ?? "default";
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Hub Title" description="Hub description" />
+      <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
+        <TabsList variant="line">
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1" className="mt-4">
+          <ExistingPage embedded />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+```
+
+## MQTT Test Client (Phase 178)
+
+The MQTT Test Client (`/fleet/tools?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
+
+Key implementation details:
+
+- Connects to `ws://localhost:9001/mqtt` by default (EMQX WebSocket port)
+- Manual credential entry: broker URL, client ID, password
+- No auto-reconnect (`reconnectPeriod: 0`) — intentional for a debugging tool
+- Message buffer capped at 200 messages
+- Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
+
+## Navigation Structure (Phase 176 + 177)
+
+The customer sidebar uses a flat layout with 3 section labels (no collapsible groups):
+
+- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts
+- **Monitoring** — Dashboard, Alerts (hub), Analytics (hub)
+- **Fleet** — Getting Started*, Devices, Sites, Templates, Fleet Map, Device Groups, Updates (hub), Tools (hub)
+- **Settings** — Single link to `/settings` page with internal subcategory navigation
+
+(\* conditional — hidden when dismissed)
+
+Old standalone routes redirect to their hub page with the appropriate `?tab=` parameter.
+
+## Settings Page (Phase 177)
+
+The Settings page (`/settings`) uses a dedicated `SettingsLayout` component with a two-column layout:
+
+- **Left nav** (200px): links organized under subcategory labels
+- **Right content** (flex-1): active section rendered via `<Outlet />`
+
+### Subcategories
+
+| Category | Section | Route | Content |
+|----------|---------|-------|---------|
+| Account | General | `/settings/general` | Organization settings |
+| Account | Billing | `/settings/billing` | Billing + subscription |
+| Configuration | Notifications | `/settings/notifications` | Notifications hub (Channels/Delivery/Dead Letter tabs) |
+| Configuration | Integrations | `/settings/integrations` | Carrier integrations |
+| Access Control | Team | `/settings/access` | Team hub (Members/Roles tabs, requires `users.read`) |
+| Personal | Profile | `/settings/profile` | Personal settings |
+
+The SettingsLayout handles permission-based visibility: the "Team" nav item only appears for users with `users.read` permission.
+
+Hub pages (Notifications, Team) render with `embedded` mode inside the Settings layout — they skip their own `PageHeader` but keep their tab navigation.
 
 ## UI Pattern Conventions
 
@@ -153,9 +313,8 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 
 ### Breadcrumbs
 
-- ALL detail pages MUST provide breadcrumbs via the `PageHeader` `breadcrumbs` prop.
-- Format: `[{ label: "Parent", href: "/parent" }, { label: itemName }]`.
-- No standalone "Back" buttons; breadcrumbs replace that navigation pattern.
+- Breadcrumbs are derived from the URL path and rendered in the AppHeader (Phase 175).
+- Pages may still pass `breadcrumbs` to `PageHeader` for backward compatibility, but they are not rendered.
 
 ### Modals & Dialogs
 
@@ -170,11 +329,38 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 ### Prohibited Patterns
 
 - Raw `<button>` elements (use `<Button>`).
+- Raw `<select>` elements (use shadcn `Select` + `SelectTrigger` + `SelectContent` + `SelectItem`).
+- Raw `<input type="checkbox">` elements (use `Switch` for boolean toggles, `Checkbox` for multi-select lists).
 - Custom div overlays for modals (use `<Dialog>`).
 - `window.confirm()` / `confirm()` (use `<AlertDialog>`).
 - Custom page header layouts (use `<PageHeader>`).
 - Standalone "Back" buttons (use breadcrumbs).
 - "New" / "Create" verbs in primary create actions (use `"Add {Noun}"`).
+- Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
+- Standalone sidebar items for pages that belong in a hub (use the hub's tab instead).
+- Rendering PageHeader when `embedded` prop is true (use conditional rendering).
+
+## Form Primitives (Phase 179)
+
+All form controls must use design system components instead of raw HTML elements:
+
+| Need | Component | Import |
+|------|-----------|--------|
+| Dropdown / picker | `Select` + `SelectTrigger` + `SelectValue` + `SelectContent` + `SelectItem` | `@/components/ui/select` |
+| Boolean toggle (on/off) | `Switch` | `@/components/ui/switch` |
+| Multi-select list item | `Checkbox` | `@/components/ui/checkbox` |
+| Action trigger | `Button` | `@/components/ui/button` |
+
+### Select notes
+
+- `SelectItem value` must be a non-empty string. Use `"all"` or `"none"` as sentinel values.
+- For numeric values: `value={String(num)}` and `onValueChange={(v) => setNum(Number(v))}`.
+- `SelectTrigger` renders a chevron automatically — do not add one manually.
+
+### Switch vs Checkbox
+
+- **Switch** — Single boolean setting (enabled/disabled, feature flags, retain flag, use TLS). Standard for all on/off controls.
+- **Checkbox** — Item in a multi-select list (select devices, groups, metrics) or bulk-select header/row checkboxes.
 
 ## Mutation Feedback Conventions
 
