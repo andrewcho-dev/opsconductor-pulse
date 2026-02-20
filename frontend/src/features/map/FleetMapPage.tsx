@@ -129,7 +129,7 @@ function DevicePopup({ device }: { device: Device }) {
   );
 }
 
-export default function FleetMapPage() {
+export default function FleetMapPage({ embedded }: { embedded?: boolean }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["fleet-map-devices"],
     queryFn: () => fetchDevices({ limit: 1000, offset: 0 }),
@@ -143,9 +143,12 @@ export default function FleetMapPage() {
     [devices]
   );
   const devicesWithoutLocation = devices.length - devicesWithLocation.length;
+  const heightClass = embedded
+    ? "h-[calc(100vh-var(--header-height,56px)-120px)]"
+    : "h-[calc(100vh-var(--header-height,56px))]";
 
   return (
-    <div className="-m-6 flex flex-col h-[calc(100vh-var(--header-height,56px))]">
+    <div className={`-m-6 flex flex-col ${heightClass}`}>
       <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
         <div className="flex items-center gap-2">
           <MapPin className="h-5 w-5" />

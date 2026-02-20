@@ -118,13 +118,13 @@ function UserMenu() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/settings/profile">
+          <Link to="/settings?tab=profile">
             <UserCircle className="mr-2 h-4 w-4" />
             Profile
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/settings/organization">
+          <Link to="/settings?tab=general">
             <Building2 className="mr-2 h-4 w-4" />
             Organization
           </Link>

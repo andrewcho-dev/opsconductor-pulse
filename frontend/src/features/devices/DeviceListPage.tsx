@@ -1,19 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, EmptyState } from "@/components/shared";
 import { useDevices } from "@/hooks/use-devices";
-import {
-  Building2,
-  ChevronLeft,
-  ChevronRight,
-  Cpu,
-  Layers,
-  LayoutTemplate,
-  MapPin,
-  Radio,
-  Wrench,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Cpu } from "lucide-react";
 import { fetchSites } from "@/services/api/sites";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -34,15 +24,6 @@ interface DeviceListFilters {
   site_id?: string;
 }
 
-const FLEET_LINKS = [
-  { label: "Sites", href: "/sites", icon: Building2 },
-  { label: "Templates", href: "/templates", icon: LayoutTemplate },
-  { label: "Groups", href: "/device-groups", icon: Layers },
-  { label: "Map", href: "/map", icon: MapPin },
-  { label: "Updates", href: "/updates", icon: Radio },
-  { label: "Tools", href: "/fleet/tools", icon: Wrench },
-] as const;
-
 function statusDot(status: string) {
   if (status === "ONLINE") return "bg-status-online";
   if (status === "STALE") return "bg-status-stale";
@@ -61,7 +42,7 @@ function formatTimeAgo(input?: string | null) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function DeviceListPage() {
+export default function DeviceListPage({ embedded }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<DeviceListFilters>({
     limit: 25,
@@ -121,14 +102,27 @@ export default function DeviceListPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Devices"
-        description={
-          isLoading
-            ? "Loading..."
-            : `${totalCount} devices in your fleet`
-        }
-        action={
+      {!embedded && (
+        <PageHeader
+          title="Devices"
+          description={
+            isLoading
+              ? "Loading..."
+              : `${totalCount} devices in your fleet`
+          }
+          action={
+            <DeviceActions
+              canCreate={true}
+              createDisabled={false}
+              onCreate={() => setAddOpen(true)}
+              onGuidedSetup={() => navigate("/devices/wizard")}
+              onImport={() => navigate("/devices/import")}
+            />
+          }
+        />
+      )}
+      {embedded && (
+        <div className="flex justify-end">
           <DeviceActions
             canCreate={true}
             createDisabled={false}
@@ -136,26 +130,13 @@ export default function DeviceListPage() {
             onGuidedSetup={() => navigate("/devices/wizard")}
             onImport={() => navigate("/devices/import")}
           />
-        }
-      />
+        </div>
+      )}
       <AddDeviceModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={async () => {}}
       />
-      <div className="flex flex-wrap gap-1.5">
-        {FLEET_LINKS.map((link) => {
-          const Icon = link.icon;
-          return (
-            <Button key={link.href} variant="outline" size="sm" asChild className="h-7 text-xs">
-              <Link to={link.href}>
-                <Icon className="mr-1 h-3 w-3" />
-                {link.label}
-              </Link>
-            </Button>
-          );
-        })}
-      </div>
 
       {!isLoading && devices.length > 0 && (
         <div className="flex items-center gap-4 rounded-md border border-border px-3 py-2 text-sm">

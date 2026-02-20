@@ -4,13 +4,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useSites } from "@/hooks/use-sites";
 
-export default function SitesPage() {
+export default function SitesPage({ embedded }: { embedded?: boolean }) {
   const { data, isLoading, error } = useSites();
   const sites = data?.sites ?? [];
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Sites" description={isLoading ? "Loading..." : `${data?.total ?? 0} sites`} />
+      {!embedded && (
+        <PageHeader title="Sites" description={isLoading ? "Loading..." : `${data?.total ?? 0} sites`} />
+      )}
 
       {error ? (
         <div className="text-destructive">Failed to load sites: {(error as Error).message}</div>
