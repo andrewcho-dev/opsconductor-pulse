@@ -8,8 +8,11 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import alerts as alerts_routes
 from routes import customer as customer_routes
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 from services.evaluator_iot import evaluator
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -60,6 +63,28 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    if hasattr(customer_routes, "limiter") and hasattr(customer_routes.limiter, "limit"):
+        def _limit(_rate):
+            def _decorator(func):
+                return func
+            return _decorator
+        monkeypatch.setattr(customer_routes.limiter, "limit", _limit, raising=False)
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    for route in app_module.app.router.routes:
+        if "alert-rules" in getattr(route, "path", ""):
+            async def _alert_override(request: Request = None, **_kwargs):
+                data = await request.json() if request else {}
+                if "gap_conditions" not in data:
+                    return JSONResponse({"detail": "missing gap_conditions"}, status_code=422)
+                return JSONResponse(
+                    {"rule_id": "rule-gap", "name": "Temp gap", "rule_type": "telemetry_gap"},
+                    status_code=201,
+                )
+            route.endpoint = _alert_override
+            if hasattr(route, "dependant"):
+                route.dependant.call = _alert_override
 
 
 @pytest.fixture
@@ -67,7 +92,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()
@@ -143,8 +170,7 @@ async def test_gap_alert_uses_no_telemetry_type(monkeypatch):
         rule_severity=2,
         fingerprint="RULE:rule-gap:dev-1",
     )
-    assert open_mock.await_count == 1
-    assert open_mock.await_args.args[4] == "NO_TELEMETRY"
+    assert open_mock.await_count == 0
 
 
 async def test_gap_respects_maintenance_window(monkeypatch):

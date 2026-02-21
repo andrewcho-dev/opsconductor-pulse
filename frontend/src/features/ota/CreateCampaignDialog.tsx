@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -76,7 +77,7 @@ export function CreateCampaignDialog({ open, onOpenChange, onCreated }: CreateCa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Create OTA Campaign</DialogTitle>
         </DialogHeader>
@@ -171,12 +172,11 @@ export function CreateCampaignDialog({ open, onOpenChange, onCreated }: CreateCa
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">Campaign Name</label>
-              <input
-                type="text"
+              <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., v2.1.0 rollout - production"
-                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm"
+                className="mt-1"
               />
             </div>
             <div>
@@ -199,34 +199,36 @@ export function CreateCampaignDialog({ open, onOpenChange, onCreated }: CreateCa
                 ))}
               </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">
-                Rollout Rate (devices per cycle, ~10s interval)
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={1000}
-                value={rolloutRate}
-                onChange={(e) => setRolloutRate(Number(e.target.value))}
-                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">
-                Abort Threshold (% failure rate to auto-abort)
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={abortThreshold}
-                onChange={(e) => setAbortThreshold(Number(e.target.value))}
-                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm"
-              />
-              <div className="text-sm text-muted-foreground mt-1">
-                Campaign will automatically abort if more than {abortThreshold}% of
-                devices fail.
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium">
+                  Rollout Rate (devices per cycle, ~10s interval)
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={String(rolloutRate)}
+                  onChange={(e) => setRolloutRate(Number(e.target.value))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">
+                  Abort Threshold (% failure rate to auto-abort)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={String(abortThreshold)}
+                  onChange={(e) => setAbortThreshold(Number(e.target.value))}
+                  className="mt-1"
+                />
+                <div className="text-sm text-muted-foreground mt-1">
+                  Campaign will automatically abort if more than {abortThreshold}% of
+                  devices fail.
+                </div>
               </div>
             </div>
           </div>

@@ -12,10 +12,11 @@ import logging
 import os
 import re
 from typing import Any
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger("pulse.ota_status_worker")
 
-MQTT_BROKER_URL = os.getenv("MQTT_BROKER_URL", "mqtt://iot-mqtt:1883")
+MQTT_BROKER_URL = optional_env("MQTT_BROKER_URL", "mqtt://iot-mqtt:1883")
 OTA_STATUS_TOPIC = "tenant/+/device/+/ota/status"
 VALID_OTA_STATUSES = {"DOWNLOADING", "INSTALLING", "SUCCESS", "FAILED"}
 
@@ -63,17 +64,17 @@ async def run_ota_status_listener(pool) -> None:
 
     client = mqtt.Client(client_id="ops-worker-ota-status")
     mqtt_username = os.getenv("MQTT_USERNAME")
-    mqtt_password = os.getenv("MQTT_PASSWORD")
-    if mqtt_username and mqtt_password:
+    mqtt_password = require_env("MQTT_PASSWORD")
+    if mqtt_username:
         client.username_pw_set(mqtt_username, mqtt_password)
 
-    mqtt_ca_cert = os.getenv("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
+    mqtt_ca_cert = optional_env("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
     if os.path.exists(mqtt_ca_cert):
         client.tls_set(
             ca_certs=mqtt_ca_cert,
             tls_version=ssl.PROTOCOL_TLSv1_2,
         )
-        mqtt_tls_insecure = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
+        mqtt_tls_insecure = optional_env("MQTT_TLS_INSECURE", "false").lower() == "true"
         if mqtt_tls_insecure:
             client.tls_insecure_set(True)
 

@@ -4,6 +4,7 @@
 -- Date: 2026-02-15
 
 -- Table 1: permissions (global/read-only; no RLS)
+-- RLS: EXEMPT - global IAM action catalog
 CREATE TABLE IF NOT EXISTS permissions (
     id          SERIAL PRIMARY KEY,
     action      TEXT UNIQUE NOT NULL,     -- e.g. 'devices.read'
@@ -45,6 +46,7 @@ CREATE POLICY roles_tenant_isolation
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 -- Table 3: role_permissions (no RLS; enforced via roles RLS in query patterns)
+-- RLS: EXEMPT - global role-to-permission mapping
 CREATE TABLE IF NOT EXISTS role_permissions (
     role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     permission_id INT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,

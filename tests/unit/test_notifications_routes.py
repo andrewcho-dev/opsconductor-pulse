@@ -38,6 +38,7 @@ class FakeConn:
         self.fetchrow_result = None
         self.fetch_result = []
         self.execute_result = "DELETE 1"
+        self.fetchval_result = None
 
     async def fetchrow(self, query, *args):
         if self.fetchrow_results is not None:
@@ -55,6 +56,11 @@ class FakeConn:
 
     async def execute(self, query, *args):
         return self.execute_result
+
+    async def fetchval(self, query, *args):
+        if self.fetchval_result is not None:
+            return self.fetchval_result
+        return 1
 
     def transaction(self):
         return _Tx()

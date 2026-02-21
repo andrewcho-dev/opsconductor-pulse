@@ -12,14 +12,15 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import httpx
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
 # Configuration
-KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
-KEYCLOAK_ADMIN_USERNAME = os.getenv("KEYCLOAK_ADMIN_USERNAME", "admin")
-KEYCLOAK_ADMIN_PASSWORD = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "")
+KEYCLOAK_INTERNAL_URL = optional_env("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
+KEYCLOAK_REALM = optional_env("KEYCLOAK_REALM", "pulse")
+KEYCLOAK_ADMIN_USERNAME = optional_env("KEYCLOAK_ADMIN_USERNAME", "admin")
+KEYCLOAK_ADMIN_PASSWORD = require_env("KEYCLOAK_ADMIN_PASSWORD")
 
 # Token cache
 _token_cache: dict[str, Any] = {"token": None, "expires_at": None}

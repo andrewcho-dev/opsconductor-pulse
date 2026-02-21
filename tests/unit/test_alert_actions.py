@@ -9,6 +9,7 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -86,6 +87,9 @@ def _mock_customer_deps(monkeypatch, conn, role="customer_admin", tenant_id="ten
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    async def _grant_all(_request=None):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -93,8 +97,13 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
         client.cookies.set("csrf_token", "csrf")
+        from middleware import permissions as perm_mod
+        async def _grant(req): perm_mod.permissions_context.set({"*"})
+        app_module.app.dependency_overrides[perm_mod.inject_permissions] = _grant
         yield client
     app_module.app.dependency_overrides.clear()
 

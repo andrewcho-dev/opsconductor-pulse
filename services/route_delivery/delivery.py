@@ -18,29 +18,31 @@ import nats
 import asyncpg
 from aiohttp import web
 from prometheus_client import Counter, Gauge, Histogram, CONTENT_TYPE_LATEST, generate_latest
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger("route_delivery")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
 )
 
-NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
+NATS_URL = optional_env("NATS_URL", "nats://localhost:4222")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_HOST = os.getenv("PG_HOST", "localhost")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "")
-WORKER_COUNT = int(os.getenv("DELIVERY_WORKER_COUNT", "4"))
-WEBHOOK_TIMEOUT = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10"))
+PG_HOST = optional_env("PG_HOST", "localhost")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
+WORKER_COUNT = int(optional_env("DELIVERY_WORKER_COUNT", "4"))
+WEBHOOK_TIMEOUT = float(optional_env("WEBHOOK_TIMEOUT_SECONDS", "10"))
 
 # Optional: MQTT client for republish destinations
 MQTT_HOST = os.getenv("MQTT_HOST")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_PORT = int(optional_env("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-MQTT_TLS = os.getenv("MQTT_TLS", "true").lower() == "true"
-MQTT_TLS_INSECURE = os.getenv("MQTT_TLS_INSECURE", "true").lower() == "true"
+MQTT_PASSWORD = require_env("MQTT_PASSWORD")
+MQTT_TLS = optional_env("MQTT_TLS", "true").lower() == "true"
+MQTT_TLS_INSECURE = optional_env("MQTT_TLS_INSECURE", "false").lower() == "true"
+MQTT_CA_CERT = optional_env("MQTT_CA_CERT", "/etc/emqx/certs/ca.crt")
 
 # Prometheus metrics
 delivery_total = Counter(
@@ -119,9 +121,11 @@ class RouteDeliveryService:
             if MQTT_USERNAME and MQTT_PASSWORD:
                 self._mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
             if MQTT_TLS:
-                # Internal EMQX listener is TLS; allow insecure in Docker network.
+                cert_reqs = ssl.CERT_NONE if MQTT_TLS_INSECURE else ssl.CERT_REQUIRED
                 self._mqtt_client.tls_set(
-                    tls_version=ssl.PROTOCOL_TLS_CLIENT, cert_reqs=ssl.CERT_NONE
+                    ca_certs=MQTT_CA_CERT,
+                    tls_version=ssl.PROTOCOL_TLS_CLIENT,
+                    cert_reqs=cert_reqs,
                 )
                 if MQTT_TLS_INSECURE:
                     self._mqtt_client.tls_insecure_set(True)

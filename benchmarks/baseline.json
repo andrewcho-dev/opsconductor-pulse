@@ -1,0 +1,4 @@
+{
+  "benchmarks": [],
+  "note": "Baseline generation failed in local environment (no running API/DB). Update via scripts/update_benchmark_baseline.py when benchmarks can run."
+}

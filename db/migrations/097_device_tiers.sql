@@ -1,6 +1,7 @@
 -- Migration 097: Device tiers and subscription tier allocations
 
 -- 1. Device tiers (platform-wide, not tenant-scoped)
+-- RLS: EXEMPT - global tier catalog
 CREATE TABLE IF NOT EXISTS device_tiers (
     tier_id     SERIAL PRIMARY KEY,
     name        VARCHAR(50) NOT NULL UNIQUE,       -- 'basic', 'standard', 'premium'
@@ -49,6 +50,7 @@ ALTER TABLE device_registry ADD COLUMN IF NOT EXISTS tier_id INT REFERENCES devi
 CREATE INDEX IF NOT EXISTS idx_device_tier ON device_registry(tier_id) WHERE tier_id IS NOT NULL;
 
 -- 4. Subscription tier allocations (how many slots of each tier a subscription includes)
+-- RLS: EXEMPT - global allocation lookup table
 CREATE TABLE IF NOT EXISTS subscription_tier_allocations (
     id              SERIAL PRIMARY KEY,
     subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id) ON DELETE CASCADE,
@@ -78,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_subs
     WHERE stripe_subscription_id IS NOT NULL;
 
 -- 6. Subscription plans (database-driven — NO hardcoded plan names/limits in code)
+-- RLS: EXEMPT - global subscription plan catalog
 CREATE TABLE IF NOT EXISTS subscription_plans (
     plan_id             VARCHAR(50) PRIMARY KEY,        -- 'starter', 'pro', 'enterprise'
     name                VARCHAR(100) NOT NULL,           -- 'Starter', 'Pro', 'Enterprise'
@@ -139,6 +142,7 @@ INSERT INTO subscription_plans (plan_id, name, description, device_limit, limits
 ON CONFLICT (plan_id) DO NOTHING;
 
 -- 7. Plan-to-tier default allocations (what tier slots each plan includes)
+-- RLS: EXEMPT - global defaults mapping plans to tiers
 CREATE TABLE IF NOT EXISTS plan_tier_defaults (
     id          SERIAL PRIMARY KEY,
     plan_id     VARCHAR(50) NOT NULL REFERENCES subscription_plans(plan_id) ON DELETE CASCADE,

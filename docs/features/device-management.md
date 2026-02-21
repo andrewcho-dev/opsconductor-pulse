@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/routes/devices.py
   - services/ui_iot/routes/sensors.py
@@ -23,7 +23,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/features/fleet/GettingStartedPage.tsx
   - frontend/src/components/layout/AppSidebar.tsx
-phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177]
+phases: [166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 185, 186, 187, 188, 189, 190, 191, 192]
 ---
 
 # Device Management
@@ -77,23 +77,22 @@ The customer UI includes a dedicated template management experience:
   - Slots
 - System templates are read-only and show a clone banner to create a customizable tenant-owned copy.
 
-## Device Detail UI (Phase 171)
+## Device Detail UI (Phases 171, 187, 188, 189, 192)
 
-The customer UI restructures the device detail page into a 6-tab layout to keep all instance management in one place:
+The device detail page uses 3 tabs:
 
-- Overview: identity, map/location, plan/tier info, template badge link, notes/tags editing.
-- Sensors & Data: module assignment (template slots), sensor management, telemetry charts.
-- Transport: per-device transport configuration (protocol + physical connectivity) and carrier integration linking.
-- Health: device health telemetry and uptime.
-- Twin & Commands: desired/reported state management and command dispatch/history.
-- Security: API tokens and mTLS certificates.
+- **Overview** — Device properties in a 3-column card grid (Identity | Hardware | Network+Location), tags and notes side-by-side, a compact 5-metric health strip (signal, battery, CPU temp, memory, uptime — latest values only, no charts), and map (GPS only). Telemetry data and charts are on the Data tab, not the Overview.
+- **Data** — Expansion modules use a collapsible `<details>` section, closed by default when no modules are assigned (showing a one-line summary). The slot list is width-constrained to prevent full-width stretching.
+- **Manage** — Four visually distinct sections: Connectivity (transport protocol and physical config), Control (device twin + remote commands), Security (API tokens + X.509 certificates), and Subscription (plan limits and features).
+
+A 3-card KPI strip above the tabs shows device status, open alert count, and sensor count.
 
 ## Fleet Navigation & Getting Started (Phase 174)
 
 The Fleet sidebar is organized into workflow-oriented sub-groups:
 
-- **Setup**: Sites, Device Templates, Devices — the fundamental configuration workflow.
-- **Monitor**: Fleet Map, Device Groups — observability and logical grouping.
+- **Setup**: Device Templates, Devices — the fundamental configuration workflow. Sites is a standalone page (`/sites`).
+- **Monitor**: Fleet Map — geographic device view. Device Groups is a standalone page (`/device-groups`).
 - **Maintain**: OTA Updates, Firmware — ongoing fleet maintenance.
 
 A "Getting Started" page (`/app/fleet/getting-started`) guides new customers through 5 setup steps with live completion detection:
@@ -109,6 +108,8 @@ Each step auto-detects completion via API queries. The page is accessible from t
 The fleet-wide Sensors page is no longer linked in the sidebar (per-device sensors management is now in the Device Detail Sensors & Data tab from Phase 171). The route remains accessible via direct URL with a deprecation tip banner.
 
 The Device List page includes a health summary strip showing online/stale/offline device counts above the device list.
+Phase 186 replaces the old split master-detail device list with a full-width DataTable, sortable columns, server-side pagination, and row-click navigation to the full device detail page (`/devices/:deviceId`). `DeviceDetailPane` was removed, leaving `DeviceDetailPage` as the single detail experience.
+OTA Campaigns and Firmware views are merged under a single "Updates" tab in the Devices hub.
 
 ## Telemetry Key Normalization (Phase 172)
 

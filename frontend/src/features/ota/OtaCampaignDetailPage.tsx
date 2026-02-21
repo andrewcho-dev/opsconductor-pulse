@@ -129,10 +129,6 @@ export default function OtaCampaignDetailPage() {
       <PageHeader
         title={campaign.name}
         description={description}
-        breadcrumbs={[
-          { label: "OTA Campaigns", href: "/ota/campaigns" },
-          { label: campaign.name || "..." },
-        ]}
         action={
           <div className="flex gap-2">
             {(campaign.status === "CREATED" || campaign.status === "PAUSED") && (

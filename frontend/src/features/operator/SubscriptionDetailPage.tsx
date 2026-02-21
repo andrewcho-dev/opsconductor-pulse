@@ -98,10 +98,6 @@ export default function SubscriptionDetailPage() {
       <PageHeader
         title={sub.subscription_id}
         description={`Device subscription for ${sub.device_id}`}
-        breadcrumbs={[
-          { label: "Subscriptions", href: "/operator/subscriptions" },
-          { label: sub.subscription_id },
-        ]}
       />
 
       <div className="flex items-center gap-3">

@@ -122,6 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_quarantine_counters_tenant
 -- ============================================================
 -- APP SETTINGS (global configuration)
 -- ============================================================
+-- RLS: EXEMPT - global application key/value settings with no tenant rows
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT NOT NULL PRIMARY KEY,
     value      TEXT NOT NULL,

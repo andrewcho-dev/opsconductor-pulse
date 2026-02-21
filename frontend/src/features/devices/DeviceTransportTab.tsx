@@ -94,9 +94,11 @@ function TransportDialog({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [ingestionProtocol, setIngestionProtocol] = useState<string>(initial?.ingestion_protocol ?? "mqtt_direct");
-  const [physicalConnectivity, setPhysicalConnectivity] = useState<string>(initial?.physical_connectivity ?? "");
+  const [physicalConnectivity, setPhysicalConnectivity] = useState<string>(
+    initial?.physical_connectivity ?? "none"
+  );
   const [carrierIntegrationId, setCarrierIntegrationId] = useState<string>(
-    initial?.carrier_integration?.id != null ? String(initial.carrier_integration.id) : ""
+    initial?.carrier_integration?.id != null ? String(initial.carrier_integration.id) : "none"
   );
   const [isPrimary, setIsPrimary] = useState<boolean>(initial?.is_primary ?? false);
   const [status, setStatus] = useState<string>(initial?.status ?? "active");
@@ -113,11 +115,11 @@ function TransportDialog({
     mutationFn: async () => {
       const payload: TransportCreatePayload = {
         ingestion_protocol: ingestionProtocol,
-        physical_connectivity: physicalConnectivity || undefined,
+        physical_connectivity: physicalConnectivity === "none" ? undefined : physicalConnectivity,
         protocol_config: parseJsonObject(protocolConfigText),
         connectivity_config: parseJsonObject(connectivityConfigText),
         is_primary: isPrimary,
-        carrier_integration_id: carrierIntegrationId ? Number(carrierIntegrationId) : undefined,
+        carrier_integration_id: carrierIntegrationId === "none" ? undefined : Number(carrierIntegrationId),
       };
       return createDeviceTransport(deviceId, payload);
     },
@@ -134,12 +136,12 @@ function TransportDialog({
     mutationFn: async () => {
       if (!initial) throw new Error("Missing transport");
       const payload: TransportUpdatePayload = {
-        physical_connectivity: physicalConnectivity || undefined,
+        physical_connectivity: physicalConnectivity === "none" ? undefined : physicalConnectivity,
         protocol_config: parseJsonObject(protocolConfigText),
         connectivity_config: parseJsonObject(connectivityConfigText),
         is_primary: isPrimary,
         status,
-        carrier_integration_id: carrierIntegrationId ? Number(carrierIntegrationId) : undefined,
+        carrier_integration_id: carrierIntegrationId === "none" ? undefined : Number(carrierIntegrationId),
       };
       return updateDeviceTransport(deviceId, initial.id, payload);
     },
@@ -201,7 +203,7 @@ function TransportDialog({
                   <SelectValue placeholder="Select connectivity (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">(none)</SelectItem>
+                  <SelectItem value="none">(none)</SelectItem>
                   {Object.entries(connectivityLabels).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
                       {label}
@@ -220,7 +222,7 @@ function TransportDialog({
                   <SelectValue placeholder="Select carrier integration (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">(none)</SelectItem>
+                  <SelectItem value="none">(none)</SelectItem>
                   {carrierOptions.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.display_name}

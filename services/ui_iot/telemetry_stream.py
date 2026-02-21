@@ -17,15 +17,16 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import paho.mqtt.client as mqtt
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-MQTT_HOST = os.getenv("MQTT_HOST", "iot-mqtt")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_HOST = optional_env("MQTT_HOST", "iot-mqtt")
+MQTT_PORT = int(optional_env("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-MAX_CONNECTIONS_PER_TENANT = int(os.getenv("MAX_STREAM_CONNECTIONS_PER_TENANT", "10"))
-STREAM_QUEUE_SIZE = int(os.getenv("STREAM_QUEUE_SIZE", "100"))
+MQTT_PASSWORD = require_env("MQTT_PASSWORD")
+MAX_CONNECTIONS_PER_TENANT = int(optional_env("MAX_STREAM_CONNECTIONS_PER_TENANT", "10"))
+STREAM_QUEUE_SIZE = int(optional_env("STREAM_QUEUE_SIZE", "100"))
 
 
 @dataclass

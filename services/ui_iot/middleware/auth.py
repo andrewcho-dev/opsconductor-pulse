@@ -68,7 +68,7 @@ def get_signing_key(token: str, jwks: dict) -> dict:
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
     if request.client:

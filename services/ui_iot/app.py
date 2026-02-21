@@ -70,6 +70,7 @@ from shared.audit import init_audit_logger
 from shared.http_client import traced_client
 from shared.logging import configure_logging
 from shared.jwks_cache import init_jwks_cache, get_jwks_cache
+from shared.config import require_env, optional_env
 from shared.metrics import (
     fleet_active_alerts,
     fleet_devices_by_status,
@@ -118,26 +119,27 @@ from telemetry_stream import stream_manager
 
 configure_logging("ui_iot")
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB   = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
-AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
-FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
-REQUIRE_TOKEN = os.getenv("REQUIRE_TOKEN", "1") == "1"
+AUTH_CACHE_TTL = int(optional_env("AUTH_CACHE_TTL_SECONDS", "60"))
+BATCH_SIZE = int(optional_env("BATCH_SIZE", "500"))
+FLUSH_INTERVAL_MS = int(optional_env("FLUSH_INTERVAL_MS", "1000"))
+MAX_BUFFER_SIZE = int(optional_env("MAX_BUFFER_SIZE", "5000"))
+REQUIRE_TOKEN = optional_env("REQUIRE_TOKEN", "1") == "1"
 
-UI_REFRESH_SECONDS = int(os.getenv("UI_REFRESH_SECONDS", "5"))
+UI_REFRESH_SECONDS = int(optional_env("UI_REFRESH_SECONDS", "5"))
 
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
-ALLOWED_ORIGINS = [origin for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin]
+ALLOWED_ORIGINS = [origin for origin in optional_env("CORS_ORIGINS", "").split(",") if origin]
 if not ALLOWED_ORIGINS:
     if os.getenv("ENV") == "PROD":
         ALLOWED_ORIGINS = []
@@ -222,7 +224,13 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-CSRF-Token",
+        "X-Request-ID",
+        "X-Tenant-ID",
+    ],
 )
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TraceMiddleware)
@@ -483,16 +491,18 @@ CSRF_EXEMPT_PATHS = (
 async def csrf_middleware(request: Request, call_next):
     if request.method in ("GET", "HEAD", "OPTIONS"):
         response = await call_next(request)
-        if CSRF_COOKIE_NAME not in request.cookies:
+        csrf_token = request.cookies.get(CSRF_COOKIE_NAME)
+        if not csrf_token:
             csrf_token = secrets.token_urlsafe(32)
             response.set_cookie(
                 CSRF_COOKIE_NAME,
                 csrf_token,
-                httponly=False,
+                httponly=True,
                 secure=_secure_cookies_enabled(),
                 samesite="strict",
                 path="/",
             )
+        response.headers["X-CSRF-Token"] = csrf_token
         return response
 
     if any(request.url.path.startswith(path) for path in CSRF_EXEMPT_PATHS):
@@ -525,20 +535,6 @@ def generate_state() -> str:
     return secrets.token_urlsafe(32)
 
 
-_nats_client = None
-
-
-async def get_nats():
-    """Get or create a shared NATS connection for publishing ingest messages."""
-    global _nats_client
-    if _nats_client is None or not _nats_client.is_connected:
-        import nats
-
-        nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
-        _nats_client = await nats.connect(nats_url)
-    return _nats_client
-
-
 async def get_pool():
     global pool
     if pool is None:
@@ -565,10 +561,13 @@ async def get_pool():
 @app.on_event("startup")
 async def startup():
     await get_pool()
+    import nats
 
     # Initialize HTTP ingest infrastructure
     app.state.get_pool = get_pool
-    app.state.get_nats = get_nats
+    nats_url = optional_env("NATS_URL", "nats://localhost:4222")
+    app.state.nats_client = await nats.connect(nats_url)
+    logger.info("NATS connected", extra={"url": nats_url})
     app.state.auth_cache = DeviceAuthCache(ttl_seconds=AUTH_CACHE_TTL)
     pool = await get_pool()
     app.state.pool = pool
@@ -576,6 +575,7 @@ async def startup():
         pool=pool,
         batch_size=BATCH_SIZE,
         flush_interval_ms=FLUSH_INTERVAL_MS,
+        max_buffer_size=MAX_BUFFER_SIZE,
     )
     await app.state.batch_writer.start()
     app.state.audit = init_audit_logger(pool, "ui_api")
@@ -629,35 +629,35 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _nats_client
     if hasattr(app.state, "batch_writer"):
         await app.state.batch_writer.stop()
     if hasattr(app.state, "audit"):
         await app.state.audit.stop()
     try:
-        if _nats_client:
-            await _nats_client.drain()
+        nats_client = getattr(app.state, "nats_client", None)
+        if nats_client:
+            await nats_client.drain()
     except Exception:
-        pass
+        logger.warning("Failed to drain NATS client", exc_info=True)
     try:
         cache = get_jwks_cache()
         if cache is not None:
             await cache.stop()
     except Exception:
-        pass
+        logger.warning("Failed to stop JWKS cache", exc_info=True)
     try:
         from shared.sampled_logger import get_sampled_logger
         get_sampled_logger().shutdown()
     except Exception:
-        pass
+        logger.warning("Failed to shutdown sampled logger", exc_info=True)
     try:
         await shutdown_ws_listener()
     except Exception:
-        pass
+        logger.warning("Failed to shutdown websocket listener", exc_info=True)
     try:
         stream_manager.stop()
     except Exception:
-        pass
+        logger.warning("Failed to stop telemetry stream manager", exc_info=True)
     for task in background_tasks:
         task.cancel()
     for task in background_tasks:
@@ -687,6 +687,7 @@ async def healthz():
             await conn.fetchval("SELECT 1")
         checks["db"] = "ok"
     except Exception:
+        logger.warning("health check: database unreachable", exc_info=True)
         checks["db"] = "unreachable"
 
     try:
@@ -701,6 +702,7 @@ async def healthz():
         else:
             checks["keycloak"] = "cached"
     except Exception as exc:
+        logger.warning("health check: keycloak unreachable", exc_info=True)
         checks["keycloak"] = f"unreachable: {type(exc).__name__}"
 
     overall = "ok" if checks.get("db") == "ok" else "degraded"
@@ -745,7 +747,7 @@ async def metrics_endpoint():
         pulse_db_pool_size.labels(service="ui_api").set(p.get_size())
         pulse_db_pool_free.labels(service="ui_api").set(p.get_idle_size())
     except Exception:
-        pass
+        logger.debug("pool metrics not available", exc_info=True)
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
@@ -1016,7 +1018,7 @@ async def auth_refresh(request: Request):
                 or (request.client.host if request.client else "unknown"),
             )
         except Exception:
-            pass  # Non-critical; don't break refresh flow
+            logger.debug("auth refresh audit logging failed", exc_info=True)
 
     refreshed = JSONResponse({"success": True, "expires_in": expires_in})
     refreshed.set_cookie(

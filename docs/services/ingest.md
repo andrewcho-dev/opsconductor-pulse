@@ -1,9 +1,10 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ingest_iot/ingest.py
+  - services/shared/ingest_core.py
   - compose/nats/init-streams.sh
-phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165, 172, 173]
+phases: [15, 23, 101, 139, 142, 160, 161, 162, 164, 165, 172, 173, 198]
 ---
 
 # ingest
@@ -60,6 +61,7 @@ Environment variables read by the service:
 | `AUTH_CACHE_MAX_SIZE` | `10000` | Auth cache maximum entries. |
 | `BATCH_SIZE` | `500` | Telemetry batch size before flush. |
 | `FLUSH_INTERVAL_MS` | `1000` | Max time before flushing telemetry batch. |
+| `MAX_BUFFER_SIZE` | `5000` | Max in-memory telemetry buffer size before oldest records are dropped. |
 | `INGEST_WORKER_COUNT` | `4` | Number of ingestion workers. |
 | `BUCKET_TTL_SECONDS` | `3600` | Rate limiter bucket TTL. |
 | `BUCKET_CLEANUP_INTERVAL` | `300` | Bucket cleanup interval. |
@@ -85,6 +87,7 @@ Key Prometheus metrics:
 - `pulse_ingest_messages_total{tenant_id, result}` — accepted/rejected/rate_limited counts
 - `pulse_ingest_queue_depth` — JetStream consumer pending (telemetry)
 - `pulse_ingest_batch_write_seconds_bucket` — batch flush latency histogram (recorded under `tenant_id="__all__"`)
+- `ingest_records_dropped_total{tenant_id}` — records dropped due to in-memory buffer overflow
 - `ingest_metric_keys_normalized_total{tenant_id}` — number of telemetry keys translated via `metric_key_map`
 - `ingest_metric_key_map_cache_hits_total` / `ingest_metric_key_map_cache_misses_total` — cache behavior for metric map lookups
 

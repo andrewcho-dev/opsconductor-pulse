@@ -12,6 +12,9 @@ import DeviceGroupsPage from "@/features/devices/DeviceGroupsPage";
 import { SensorListPage } from "@/features/devices/SensorListPage";
 import SetupWizard from "@/features/devices/wizard/SetupWizard";
 import BulkImportPage from "@/features/devices/BulkImportPage";
+import SitesPage from "@/features/sites/SitesPage";
+import ConnectionGuidePage from "@/features/fleet/ConnectionGuidePage";
+import MqttTestClientPage from "@/features/fleet/MqttTestClientPage";
 import ActivityLogPage from "@/features/audit/ActivityLogPage";
 import MetricsPage from "@/features/metrics/MetricsPage";
 import RenewalPage from "@/features/subscription/RenewalPage";
@@ -38,6 +41,9 @@ import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
 import SettingsHubPage from "@/features/settings/SettingsHubPage";
+import SupportPage from "@/features/support/SupportPage";
+import ReportsPage from "@/features/reports/ReportsPage";
+import BroadcastsPage from "@/features/operator/BroadcastsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 
@@ -76,10 +82,11 @@ export const router = createBrowserRouter(
             { path: "analytics", element: <AnalyticsHubPage /> },
             { path: "rules", element: <RulesHubPage /> },
             { path: "devices", element: <DevicesHubPage /> },
-            { path: "updates", element: <Navigate to="/devices?tab=campaigns" replace /> },
+            { path: "updates", element: <Navigate to="/devices?tab=updates" replace /> },
             { path: "fleet/getting-started", element: <GettingStartedPage /> },
-            { path: "fleet/tools", element: <Navigate to="/devices?tab=guide" replace /> },
-            { path: "sites", element: <Navigate to="/devices?tab=sites" replace /> },
+            { path: "fleet/tools", element: <ConnectionGuidePage /> },
+            { path: "fleet/mqtt-client", element: <MqttTestClientPage /> },
+            { path: "sites", element: <SitesPage /> },
             { path: "sites/:siteId", element: <SiteDetailPage /> },
             { path: "templates", element: <Navigate to="/devices?tab=templates" replace /> },
             { path: "templates/:templateId", element: <TemplateDetailPage /> },
@@ -87,7 +94,7 @@ export const router = createBrowserRouter(
             { path: "devices/wizard", element: <SetupWizard /> },
             { path: "devices/:deviceId", element: <DeviceDetailPage /> },
             { path: "sensors", element: <SensorListPage /> },
-            { path: "device-groups", element: <Navigate to="/devices?tab=groups" replace /> },
+            { path: "device-groups", element: <DeviceGroupsPage /> },
             { path: "device-groups/:groupId", element: <DeviceGroupsPage /> },
             { path: "map", element: <Navigate to="/devices?tab=map" replace /> },
             { path: "alert-rules", element: <Navigate to="/rules?tab=alert-rules" replace /> },
@@ -103,10 +110,10 @@ export const router = createBrowserRouter(
             { path: "delivery-log", element: <Navigate to="/settings?tab=delivery" replace /> },
             { path: "dead-letter", element: <Navigate to="/settings?tab=dead-letter" replace /> },
             { path: "jobs", element: <JobsPage /> },
-            { path: "ota/campaigns", element: <Navigate to="/devices?tab=campaigns" replace /> },
+            { path: "ota/campaigns", element: <Navigate to="/devices?tab=updates" replace /> },
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
-            { path: "ota/firmware", element: <Navigate to="/devices?tab=firmware" replace /> },
-            { path: "reports", element: <Navigate to="/analytics?tab=reports" replace /> },
+            { path: "ota/firmware", element: <Navigate to="/devices?tab=updates" replace /> },
+            { path: "reports", element: <ReportsPage /> },
             { path: "subscription", element: <Navigate to="/settings?tab=billing" replace /> },
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "notifications", element: <Navigate to="/settings?tab=channels" replace /> },
@@ -123,6 +130,7 @@ export const router = createBrowserRouter(
             { path: "settings/profile", element: <Navigate to="/settings?tab=profile" replace /> },
             { path: "settings/organization", element: <Navigate to="/settings?tab=general" replace /> },
             { path: "settings/carrier", element: <Navigate to="/settings?tab=integrations" replace /> },
+            { path: "support", element: <SupportPage /> },
           ],
         },
         // Operator routes
@@ -148,6 +156,7 @@ export const router = createBrowserRouter(
             { path: "noc", element: <NOCPage /> },
             { path: "audit-log", element: <AuditLogPage /> },
             { path: "settings", element: <SettingsPage /> },
+            { path: "broadcasts", element: <BroadcastsPage /> },
           ],
         },
         // 404 catch-all — must be last

@@ -1,10 +1,15 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/middleware/auth.py
+  - services/ui_iot/app.py
+  - services/ui_iot/routes/api_v2.py
+  - frontend/src/services/websocket/manager.ts
+  - services/provision_api/app.py
+  - db/migrations/117_operator_role_granularity.sql
   - compose/emqx/emqx.conf
   - compose/caddy/Caddyfile
-phases: [36, 97, 110, 112, 113, 114, 115, 120, 131, 142, 161, 162, 165]
+phases: [36, 97, 110, 112, 113, 114, 115, 120, 131, 142, 161, 162, 165, 194, 197, 205, 209, 212]
 ---
 
 # Security
@@ -76,8 +81,9 @@ Tenant isolation is enforced in DB via:
 
 Operator bypass:
 
-- `operator_connection()` uses `SET LOCAL ROLE pulse_operator` (BYPASSRLS)
-- Operator access should be audited
+- `operator_read_connection()` uses `SET LOCAL ROLE pulse_operator_read` (BYPASSRLS) for read-only operator access.
+- `operator_write_connection()` uses `SET LOCAL ROLE pulse_operator_write` for scoped operational writes.
+- Legacy `operator_connection()` is deprecated and mapped to read-role behavior during transition.
 
 ### MQTT ACLs
 EMQX enforces per-device topic ACLs at the broker level via internal HTTP endpoints in `ui_iot`:
@@ -102,12 +108,36 @@ Webhook destinations are validated (production hardening) to prevent internal ne
 ### CSRF Protection
 
 Customer UI/API flows use cookie + header token conventions for CSRF protection in browser contexts.
+The CSRF cookie is set as `HttpOnly` and `SameSite=Strict`, and the token value is
+returned to the browser in the `X-CSRF-Token` response header for in-memory client use.
+
+### CORS
+
+`ui_iot` CORS uses explicit origins and an explicit request-header allowlist.
+There is no wildcard default in compose for allowed origins.
 
 ### Rate Limiting
 
 - Auth attempts are rate-limited per client IP.
 - Some API routes are rate-limited (SlowAPI).
 - Ingestion is rate-limited per tenant/device token bucket.
+- Provision API admin endpoints enforce per-IP rate limiting (10 requests/minute).
+
+### Stripe Webhook Security
+
+Stripe webhooks are secured with layered controls:
+
+- Signature verification is required for every webhook (`stripe.Webhook.construct_event` on raw request bytes).
+- Missing/invalid signatures return HTTP 400 and are not processed.
+- Event processing is idempotent using `stripe_events` keyed by Stripe `event.id`, enforced atomically via a single `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id` (no pre-check SELECT, no race window).
+- Only known billing event types are handled; unknown event types are acknowledged and ignored.
+- Critical subscription state is re-fetched from Stripe API where needed instead of trusting webhook payload blindly.
+- Logs avoid sensitive payment fields; use non-sensitive identifiers (event/subscription IDs).
+
+### Provisioning Admin Key
+
+- Provision API admin key comparison uses constant-time `secrets.compare_digest`.
+- `ADMIN_KEY` must be at least 32 characters; short values fail startup.
 
 ## Audit Logging
 

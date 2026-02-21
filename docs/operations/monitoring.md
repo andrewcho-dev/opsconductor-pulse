@@ -1,11 +1,11 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - compose/prometheus/prometheus.yml
   - compose/prometheus/alert_rules.yml
   - compose/grafana/provisioning/
   - compose/grafana/dashboards/
-phases: [58, 102, 139, 142, 164, 165]
+phases: [58, 102, 139, 142, 164, 165, 204]
 ---
 
 # Monitoring
@@ -128,6 +128,27 @@ HTTP / auth:
 - `pulse_http_requests_total`
 - `pulse_http_request_duration_seconds`
 - `pulse_auth_failures_total`
+
+## Frontend Error Tracking
+
+Frontend production errors are captured with Sentry via `@sentry/react`.
+
+Configuration:
+
+- Environment variable: `VITE_SENTRY_DSN`
+- Set in frontend runtime environment; keep unset for local/no-op mode
+
+Capture behavior:
+
+- `logger.error(...)` sends to Sentry in production
+- `logger.warn(...)` sends warning-level messages to Sentry in production
+- `logger.log(...)` and `logger.debug(...)` remain console-only in development
+- React error boundaries also capture exceptions with component stack context
+
+Safety:
+
+- If `VITE_SENTRY_DSN` is unset, logger and boundaries do not send events (silent fallback)
+- `sendDefaultPii` is disabled in initialization
 
 ## See Also
 

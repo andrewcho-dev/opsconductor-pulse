@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-20
+last-verified: 2026-02-21
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -18,6 +18,7 @@ sources:
   - frontend/src/features/ota/OtaCampaignsPage.tsx
   - frontend/src/features/ota/FirmwareListPage.tsx
   - frontend/src/features/rules/RulesHubPage.tsx
+  - frontend/src/features/alerts/AlertRuleDialog.tsx
   - frontend/src/features/fleet/ConnectionGuidePage.tsx
   - frontend/src/features/fleet/MqttTestClientPage.tsx
   - frontend/src/features/devices/DeviceDetailPage.tsx
@@ -31,7 +32,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 199, 202, 207, 210, 211]
 ---
 
 # Frontend
@@ -137,16 +138,19 @@ Status colors remain independent of the primary: `--status-online` (green), `--s
 
 Color tokens are defined in `frontend/src/index.css` using CSS custom properties consumed by Tailwind v4's `@theme inline` block.
 
-## Sidebar (Phase 175)
+## Sidebar (Phase 210)
 
-The sidebar uses shadcn/ui's `collapsible="icon"` mode:
+The customer sidebar follows an EMQX-style icon-first design using shadcn/ui `Sidebar` with `collapsible="icon"`:
 
-- Expanded: full-width (16rem) with text labels
-- Collapsed: icon-only strip (3rem) with hover tooltips
-- Toggle: Cmd+B keyboard shortcut, SidebarTrigger button, or SidebarRail drag edge
-- State persists via cookie (`sidebar_state`)
+- Collapsed: ~64px wide, icons only, hover tooltips for labels
+- Expanded: ~220px wide, icons + labels
+- Expand/collapse toggle at the bottom (also Cmd+B or SidebarTrigger)
+- Nav groups (top): Home, Monitoring, Intelligence, Fleet Management, Account, Settings
+- Divider, then Support group (bottom): Support → `/support`
+- Active item styling: left border accent + muted highlight
+- Icon-only mode shows only parent icons; child links appear when expanded
 
-All `SidebarMenuButton` instances must include the `tooltip` prop for accessible icon-mode behavior.
+The operator sidebar keeps its existing routes but uses the same icon/collapse styling and bottom toggle.
 
 ## Header (Phase 175)
 
@@ -190,10 +194,14 @@ Hub pages consolidate related standalone pages into a single page with tabbed na
 
 | Hub | Route | Tabs |
 |-----|-------|------|
-| Devices | `/devices` | Devices, Sites, Templates, Groups, Map, Campaigns, Firmware, Guide, MQTT |
+| Devices | `/devices` | Devices, Templates, Map, Updates |
 | Settings | `/settings` | General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile |
 | Rules | `/rules` | Alert Rules, Escalation, On-Call, Maintenance |
 | Analytics | `/analytics` | Explorer, Reports |
+
+Sites, Device Groups, Connection Guide, and MQTT Test Client are standalone pages at `/sites`, `/device-groups`, `/fleet/tools`, and `/fleet/mqtt-client` respectively (Phase 185).
+The device list (`/devices`) uses a full-width `DataTable` with sortable columns (Status, Device ID, Template, Site, Last Seen, Firmware, Alerts), server-side pagination, and row-click navigation to `/devices/:deviceId`. The old master-detail split layout (`DeviceDetailPane`) was removed in Phase 186.
+The device detail page (`/devices/:deviceId`) has a KPI strip (Status, Sensors, Alerts, Firmware, Plan) above 6 content tabs (Overview, Sensors & Data, Transport, Health, Twin & Commands, Security). The Overview tab uses a 2-column layout: device properties panel (left) with grouped sections (Identity, Hardware, Network, Location, Tags, Notes) and latest telemetry values + map (right). Status is prominently displayed as a colored badge in the page header.
 
 ### `embedded` prop convention
 
@@ -233,7 +241,7 @@ export default function MyHubPage() {
 
 ## MQTT Test Client (Phase 178)
 
-The MQTT Test Client (`/devices?tab=mqtt`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
+The MQTT Test Client (`/fleet/mqtt-client`) is a browser-based MQTT client using the `mqtt` npm package (mqtt.js). It connects via WebSocket to the EMQX broker.
 
 Key implementation details:
 
@@ -243,16 +251,40 @@ Key implementation details:
 - Message buffer capped at 200 messages
 - Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
 
-## Navigation Structure (Phase 182)
+MQTT broker URLs for provisioned devices are configured via `VITE_MQTT_BROKER_URL`.
 
-The customer sidebar uses a flat layout with 7 items in 2 section labels:
+## WebSocket Message Validation
 
-- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts, onboarding checklist
-- **Monitoring** — Dashboard, Alerts (inbox only), Analytics (hub)
-- **Fleet** — Devices (hub), Rules (hub)
-- **Settings** — Single link to `/settings` hub page
+- WebSocket payloads are runtime-validated with Zod before dispatching in the message bus.
+- Do not cast parsed websocket payloads directly to TypeScript types without validation.
 
-All sub-page navigation uses tabs — there are no left-nav layouts or button-link rows. Every page that contains sub-pages uses the same hub pattern: `PageHeader` + `TabsList variant="line"` + `useSearchParams`.
+## API Auth Utilities
+
+- CSRF/header auth helpers are centralized in `frontend/src/services/api/client.ts`.
+- Other API modules should import auth helpers from `client.ts` instead of redefining them.
+
+## Frontend Reliability Conventions
+
+- Use `logger` from `@/lib/logger` instead of direct `console.*` calls in app code.
+- Do not include the full `form` object from `react-hook-form` in `useEffect` deps; destructure stable methods (`setValue`, `reset`) and depend on those.
+- For boolean/object values in `localStorage`, use `JSON.stringify` on write and `JSON.parse` on read.
+
+## Navigation Structure (Phase 210)
+
+Customer sidebar (icon-first, collapsible):
+
+- Top: Home, Monitoring, Intelligence, Fleet Management, Account, Settings
+- Bottom: Support
+- Collapsed width ~64px (icons + tooltips), expanded ~220px (icons + labels), toggle at bottom
+
+Operator sidebar keeps existing routes with the same icon/collapse styling and bottom toggle.
+
+## Home Page (Phase 211)
+
+- Two-column layout: main (2/3) + side (1/3)
+- Main: fleet KPIs, quick actions (card tiles), recent alerts, onboarding checklist only when fleet total = 0
+- Side: Documentation links list; News & Updates (broadcasts from `/api/v1/customer/broadcasts`)
+- Broadcasts fetched via `useBroadcasts` hook (`frontend/src/features/home/useBroadcasts.ts`)
 
 ## Settings Hub (Phase 182)
 
@@ -309,6 +341,27 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - All form modals should use `useFormDirtyGuard` to protect against losing unsaved changes.
 - Destructive confirms: use `<AlertDialog>`; never `window.confirm()`.
 
+### Modal Sizing (Phases 183-184)
+
+The default `DialogContent` width is `sm:max-w-xl` (640px). Override with an explicit class when needed:
+
+| Tier | Class | Width | Use for |
+|------|-------|-------|---------|
+| S | `sm:max-w-sm` | 384px | Confirmations, 1-field dialogs |
+| M | `sm:max-w-md` | 448px | Simple forms (2-3 fields), assign/change dialogs |
+| L | (default) | 640px | Standard forms (4-8 fields) |
+| XL | `sm:max-w-2xl` | 672px | Forms with tables or 10+ fields |
+| 2XL | `sm:max-w-3xl` | 768px | Complex multi-section forms (e.g., AlertRuleDialog) |
+
+#### Layout rules
+
+- **Multi-column grids:** Use `grid gap-4 sm:grid-cols-2` to put related short fields side by side (Severity + Duration, Operator + Threshold, First Name + Last Name).
+- **No scroll when avoidable:** Wider dialog + 2-column layout should eliminate scrolling for most forms. Only add `max-h-[85vh] overflow-y-auto` when content is truly unbounded (e.g., multi-condition rules with user-added rows).
+- **Full-width fields:** Description, textarea, toggles, and fields with long help text should span full width.
+- **Fieldset grouping:** For 8+ fields, group related inputs into fieldsets using `<fieldset className="space-y-3 rounded-md border p-4">` with `<legend>` labels.
+- **Fieldset 2-column grid:** When a dialog has 2+ fieldsets, place them side-by-side using `grid gap-4 sm:grid-cols-2` to reduce vertical height.
+- **Repeating sections as cards:** For user-addable rows (escalation levels, schedule layers), render each row as a bordered card with a header (title + remove button) and labeled grid fields.
+
 ### Prohibited Patterns
 
 - Raw `<button>` elements (use `<Button>`).
@@ -322,6 +375,11 @@ Deprecated, duplicate, or reorganized components removed in Phase 171:
 - Breadcrumbs in PageHeader (breadcrumbs are auto-derived in the AppHeader from URL).
 - Standalone sidebar items for pages that belong in a hub (use the hub's tab instead).
 - Rendering PageHeader when `embedded` prop is true (use conditional rendering).
+- Leaving default dialog width for forms with 6+ fields (use a wider tier or 2-column layout).
+- Single-column layout for forms where fields naturally pair (use `sm:grid-cols-2`).
+- Raw `<input>` elements in dialogs (use `Input` component - Phase 179).
+- Unlabeled number inputs in compact grids (every field must have a label).
+- Stacking 3+ simple header controls (Name/Type/Enabled) on separate rows instead of a single grid row.
 
 ## Form Primitives (Phase 179)
 
@@ -379,6 +437,13 @@ Phase 146 standardizes mutation feedback and error formatting. The goal is zero 
 - Duplicated `formatError()` functions - use `getErrorMessage` from `@/lib/errors`.
 - `window.confirm()` - use `<AlertDialog>` (Phase 145).
 - Inconsistent modal state names (`show`, `isOpen`, `visible`).
+
+## Accessibility (Phase 207)
+
+- Icon-only buttons (`size="icon"`) require an `aria-label` describing the action.
+- Form inputs must have a visible `<Label htmlFor>` or `aria-label` / `aria-labelledby`.
+- Dialogs must include `<DialogTitle>` (and `<DialogDescription>` when helpful); shadcn/Radix dialogs handle focus trapping by default.
+- Dynamic updates (for example, alert counts) should expose a polite `aria-live` status when screen-reader awareness is needed.
 
 ## Dashboard Widget System
 

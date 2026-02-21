@@ -2,33 +2,38 @@ import os
 import json
 import hashlib
 import secrets
-import shutil
-import subprocess
+import time
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict, deque
 
 import asyncpg
 import logging
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from passlib.hash import bcrypt as passlib_bcrypt
 from shared.logging import configure_logging, log_event
+from shared.config import require_env, optional_env
 
 configure_logging("provision_api")
 logger = logging.getLogger("provision_api")
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB   = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-ADMIN_KEY = os.getenv("ADMIN_KEY", "")
-ACTIVATION_TTL_MINUTES = int(os.getenv("ACTIVATION_TTL_MINUTES", "60"))
-MQTT_PASSWD_FILE = os.getenv("MQTT_PASSWD_FILE", "/mosquitto/passwd/passwd")
+ADMIN_KEY = require_env("ADMIN_KEY")
+ACTIVATION_TTL_MINUTES = int(optional_env("ACTIVATION_TTL_MINUTES", "60"))
+MQTT_PASSWD_FILE = optional_env("MQTT_PASSWD_FILE", "/mosquitto/passwd/passwd")
 app = FastAPI(title="IoT Provisioning API", version="0.1")
 
 pool: asyncpg.Pool | None = None
+_admin_attempts: dict[str, deque[float]] = defaultdict(deque)
+_ADMIN_RATE_LIMIT = 10
+_ADMIN_RATE_WINDOW_SECONDS = 60
 
 
 @app.get("/health")
@@ -75,10 +80,6 @@ def add_device_mqtt_credentials(tenant_id: str, device_id: str, password: str) -
     Add or update device MQTT credentials in Mosquitto password file.
     Non-fatal if tooling/volume is unavailable.
     """
-    passwd_tool = shutil.which("mosquitto_passwd")
-    if not passwd_tool:
-        logger.warning("mqtt_passwd_tool_missing", extra={"device_id": device_id})
-        return False
     if not os.path.exists(MQTT_PASSWD_FILE):
         logger.warning("mqtt_passwd_file_missing", extra={"passwd_file": MQTT_PASSWD_FILE})
         return False
@@ -87,19 +88,21 @@ def add_device_mqtt_credentials(tenant_id: str, device_id: str, password: str) -
     safe_device = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in device_id)
     username = f"device_{safe_tenant}_{safe_device}"
     try:
-        result = subprocess.run(
-            [passwd_tool, "-b", MQTT_PASSWD_FILE, username, password],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode != 0:
-            logger.warning(
-                "mqtt_passwd_add_failed",
-                extra={"device_id": device_id, "error": result.stderr.strip()},
-            )
-            return False
+        entries: dict[str, str] = {}
+        with open(MQTT_PASSWD_FILE, "r", encoding="utf-8") as infile:
+            for line in infile:
+                line = line.strip()
+                if ":" in line:
+                    user, hashed = line.split(":", 1)
+                    entries[user] = hashed
+
+        entries[username] = passlib_bcrypt.using(rounds=12).hash(password)
+
+        tmp_file = MQTT_PASSWD_FILE + ".tmp"
+        with open(tmp_file, "w", encoding="utf-8") as outfile:
+            for user, hashed in entries.items():
+                outfile.write(f"{user}:{hashed}\n")
+        os.replace(tmp_file, MQTT_PASSWD_FILE)
         return True
     except Exception as exc:
         logger.warning("mqtt_passwd_add_error", extra={"device_id": device_id, "error": str(exc)})
@@ -167,6 +170,10 @@ CREATE INDEX IF NOT EXISTS device_token_hist_idx
 
 @app.on_event("startup")
 async def startup():
+    if len(ADMIN_KEY) < 32:
+        raise RuntimeError(
+            "ADMIN_KEY must be at least 32 characters. Generate with: openssl rand -hex 32"
+        )
     p = await get_pool()
     async with p.acquire() as conn:
         for stmt in DDL.strip().split(";"):
@@ -174,10 +181,23 @@ async def startup():
             if s:
                 await conn.execute(s + ";")
 
-def require_admin(x_admin_key: str | None):
-    if x_admin_key is None or x_admin_key != ADMIN_KEY:
+def require_admin(request: Request, x_admin_key: str | None):
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    attempts = _admin_attempts[client_ip]
+    while attempts and now - attempts[0] > _ADMIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    if len(attempts) >= _ADMIN_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    attempts.append(now)
+
+    if x_admin_key is None:
+        log_event(logger, "provision attempt failed", level="WARNING", reason="missing_admin_key")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not secrets.compare_digest(x_admin_key.encode(), ADMIN_KEY.encode()):
         log_event(logger, "provision attempt failed", level="WARNING", reason="invalid_admin_key")
-        raise HTTPException(status_code=401, detail="Unauthorized (missing/invalid X-Admin-Key)")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 # -------------------------
 # Models
@@ -259,8 +279,8 @@ class AdminRouteResponse(BaseModel):
 # -------------------------
 
 @app.post("/api/admin/devices", response_model=AdminCreateDeviceResponse)
-async def admin_create_device(payload: AdminCreateDevice, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+async def admin_create_device(request: Request, payload: AdminCreateDevice, x_admin_key: str | None = Header(default=None)):
+    require_admin(request, x_admin_key)
 
     activation_code = secrets.token_urlsafe(18)
     activation_hash = sha256_hex(activation_code)
@@ -309,13 +329,14 @@ async def admin_create_device(payload: AdminCreateDevice, x_admin_key: str | Non
 
 @app.get("/api/admin/devices")
 async def admin_list_devices(
+    request: Request,
     x_admin_key: str | None = Header(default=None),
     tenant_id: str | None = Query(default=None),
     site_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
 ):
-    require_admin(x_admin_key)
+    require_admin(request, x_admin_key)
 
     clauses = []
     args = []
@@ -345,8 +366,8 @@ async def admin_list_devices(
         return [dict(r) for r in rows]
 
 @app.post("/api/admin/devices/{tenant_id}/{device_id}/revoke")
-async def admin_revoke_device(tenant_id: str, device_id: str, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+async def admin_revoke_device(request: Request, tenant_id: str, device_id: str, x_admin_key: str | None = Header(default=None)):
+    require_admin(request, x_admin_key)
 
     p = await get_pool()
     async with p.acquire() as conn:
@@ -361,8 +382,8 @@ async def admin_revoke_device(tenant_id: str, device_id: str, x_admin_key: str |
     return {"ok": True}
 
 @app.post("/api/admin/devices/{tenant_id}/{device_id}/rotate-token", response_model=AdminRotateTokenResponse)
-async def admin_rotate_token(tenant_id: str, device_id: str, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+async def admin_rotate_token(request: Request, tenant_id: str, device_id: str, x_admin_key: str | None = Header(default=None)):
+    require_admin(request, x_admin_key)
 
     new_token = "tok-" + secrets.token_urlsafe(24)
     token_hash = sha256_hex(new_token)
@@ -401,8 +422,8 @@ async def admin_rotate_token(tenant_id: str, device_id: str, x_admin_key: str | 
     return AdminRotateTokenResponse(tenant_id=tenant_id, device_id=device_id, new_provision_token=new_token)
 
 @app.post("/api/admin/integrations", response_model=AdminIntegrationResponse)
-async def admin_create_integration(payload: AdminCreateIntegration, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+async def admin_create_integration(request: Request, payload: AdminCreateIntegration, x_admin_key: str | None = Header(default=None)):
+    require_admin(request, x_admin_key)
 
     url = payload.url.strip()
     headers = payload.headers or {}
@@ -442,12 +463,13 @@ async def admin_create_integration(payload: AdminCreateIntegration, x_admin_key:
 
 @app.get("/api/admin/integrations")
 async def admin_list_integrations(
+    request: Request,
     x_admin_key: str | None = Header(default=None),
     tenant_id: str | None = Query(default=None),
     enabled: bool | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
 ):
-    require_admin(x_admin_key)
+    require_admin(request, x_admin_key)
 
     clauses = []
     args = []
@@ -490,8 +512,8 @@ async def admin_list_integrations(
     return output
 
 @app.post("/api/admin/integration-routes", response_model=AdminRouteResponse)
-async def admin_create_route(payload: AdminCreateRoute, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+async def admin_create_route(request: Request, payload: AdminCreateRoute, x_admin_key: str | None = Header(default=None)):
+    require_admin(request, x_admin_key)
 
     deliver_on = payload.deliver_on or ["OPEN"]
     deliver_on = [d.upper() for d in deliver_on if isinstance(d, str)]
@@ -547,13 +569,14 @@ async def admin_create_route(payload: AdminCreateRoute, x_admin_key: str | None 
 
 @app.get("/api/admin/integration-routes")
 async def admin_list_routes(
+    request: Request,
     x_admin_key: str | None = Header(default=None),
     tenant_id: str | None = Query(default=None),
     integration_id: UUID | None = Query(default=None),
     enabled: bool | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
 ):
-    require_admin(x_admin_key)
+    require_admin(request, x_admin_key)
 
     clauses = []
     args = []

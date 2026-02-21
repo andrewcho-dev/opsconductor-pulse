@@ -10,6 +10,8 @@ from middleware import auth as auth_module
 from middleware import permissions as permissions_module
 from middleware import tenant as tenant_module
 from routes import users as users_routes
+import dependencies as dependencies_module
+from tests.conftest import FakeConn, FakePool
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -24,7 +26,8 @@ def _auth_header():
     return {"Authorization": "Bearer test-token", "X-CSRF-Token": "csrf"}
 
 
-def _mock_user_deps(monkeypatch, *, tenant_id: str = "tenant-a", perms: set[str] | None = None, roles=None):
+def _mock_user_deps(monkeypatch, *, tenant_id: str = "tenant-a", perms: set[str] | None = None, roles=None, conn: FakeConn | None = None):
+    conn = conn or FakeConn()
     if roles is None:
         roles = ["customer", "tenant-admin"]
     user_payload = {
@@ -45,6 +48,21 @@ def _mock_user_deps(monkeypatch, *, tenant_id: str = "tenant-a", perms: set[str]
         return None
 
     monkeypatch.setattr(permissions_module, "inject_permissions", AsyncMock(side_effect=_inject))
+
+    # DB override and defaults for entitlements checks
+    if not conn.fetchrow_results:
+        conn.fetchrow_results = [
+            {"limits": {"users": 10}, "name": "basic", "tier_id": "basic"},
+        ]
+    if not conn.fetchval_results:
+        conn.fetchval_results = [0]
+
+    async def _override_get_db_pool(_request=None):
+        return FakePool(conn)
+
+    app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
+    app_module.app.state.pool = FakePool(conn)
+    return conn
 
 
 @pytest.fixture

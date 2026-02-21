@@ -120,10 +120,6 @@ export default function UserDetailPage() {
       <PageHeader
         title={displayName}
         description={user?.email || undefined}
-        breadcrumbs={[
-          { label: "Users", href: "/operator/users" },
-          { label: displayName || "..." },
-        ]}
       />
 
       <Card>

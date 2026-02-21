@@ -22,6 +22,7 @@ from shared.metrics import (
     pulse_db_pool_size,
     pulse_db_pool_free,
 )
+from shared.config import require_env, optional_env
 
 # PHASE 44 AUDIT — Time-Window Rules
 #
@@ -40,28 +41,23 @@ from shared.metrics import (
 # the threshold has been continuously breached for duration_seconds.
 # Only then fire the alert.
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB   = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 configure_logging("evaluator")
 logger = logging.getLogger("evaluator")
 
-POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
-HEARTBEAT_STALE_SECONDS = int(os.getenv("HEARTBEAT_STALE_SECONDS", "30"))
+POLL_SECONDS = int(optional_env("POLL_SECONDS", "5"))
+HEARTBEAT_STALE_SECONDS = int(optional_env("HEARTBEAT_STALE_SECONDS", "30"))
 OPERATOR_SQL = {"GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
 OPERATOR_SYMBOLS = OPERATOR_SQL
-
-COUNTERS = {
-    "rules_evaluated": 0,
-    "alerts_created": 0,
-    "evaluation_errors": 0,
-    "last_evaluation_at": None,
-}
+STATEMENT_TIMEOUT_MS = int(optional_env("EVALUATOR_STATEMENT_TIMEOUT_MS", "10000"))
+LOCK_TIMEOUT_MS = int(optional_env("EVALUATOR_LOCK_TIMEOUT_MS", "5000"))
 
 _POOL_READY = False
 
@@ -81,21 +77,6 @@ COUNTERS = {
     "last_evaluation_at": None,
 }
 
-async def health_handler(request):
-    return web.json_response(
-        {
-            "status": "healthy",
-            "service": "evaluator",
-            "counters": {
-                "rules_evaluated": COUNTERS["rules_evaluated"],
-                "alerts_created": COUNTERS["alerts_created"],
-                "evaluation_errors": COUNTERS["evaluation_errors"],
-            },
-            "last_evaluation_at": COUNTERS["last_evaluation_at"],
-        }
-    )
-
-
 async def ready_handler(_request):
     if _POOL_READY:
         return web.json_response({"status": "ready"})
@@ -106,16 +87,6 @@ async def metrics_handler(_request):
     return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
 
 
-async def start_health_server():
-    app = web.Application()
-    app.router.add_get("/health", health_handler)
-    app.router.add_get("/ready", ready_handler)
-    app.router.add_get("/metrics", metrics_handler)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    log_event(logger, "health server started", service_port=8080)
 DDL = """
 CREATE TABLE IF NOT EXISTS device_state (
   tenant_id            TEXT NOT NULL,
@@ -1105,6 +1076,7 @@ async def fetch_rollup_timescaledb(pg_conn) -> list[dict]:
             try:
                 metrics = json.loads(metrics_raw)
             except Exception:
+                logger.debug("failed_to_parse_metrics_json", exc_info=True)
                 metrics = {}
         elif isinstance(metrics_raw, dict):
             metrics = metrics_raw
@@ -1154,7 +1126,7 @@ async def close_notify_listener(conn, channel: str, callback) -> None:
     try:
         await conn.remove_listener(channel, callback)
     except Exception:
-        pass
+        logger.debug("remove_notify_listener_failed", exc_info=True)
     await conn.close()
 
 
@@ -1172,6 +1144,7 @@ def on_telemetry_notify(conn, pid, channel, payload):
             elif isinstance(parsed, str) and parsed:
                 _pending_tenants.add(parsed)
         except Exception:
+            logger.debug("notify_payload_parse_failed", extra={"payload": payload}, exc_info=True)
             _pending_tenants.add(payload)
     _notify_event.set()
 
@@ -1208,6 +1181,11 @@ async def maintain_notify_listener(channel: str, callback, stop_event: asyncio.E
         if not stop_event.is_set():
             await asyncio.sleep(2)
 
+
+async def _init_db_connection(conn: asyncpg.Connection) -> None:
+    await conn.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT_MS}ms'")
+    await conn.execute(f"SET lock_timeout = '{LOCK_TIMEOUT_MS}ms'")
+
 async def main():
     if DATABASE_URL:
         pool = await asyncpg.create_pool(
@@ -1215,6 +1193,7 @@ async def main():
             min_size=PG_POOL_MIN,
             max_size=PG_POOL_MAX,
             command_timeout=30,
+            init=_init_db_connection,
         )
     else:
         pool = await asyncpg.create_pool(
@@ -1222,6 +1201,7 @@ async def main():
             min_size=PG_POOL_MIN,
             max_size=PG_POOL_MAX,
             command_timeout=30,
+            init=_init_db_connection,
         )
 
     async with pool.acquire() as conn:
@@ -1232,8 +1212,8 @@ async def main():
     audit = init_audit_logger(pool, "evaluator")
     await audit.start()
 
-    fallback_poll_seconds = int(os.getenv("FALLBACK_POLL_SECONDS", str(POLL_SECONDS)))
-    debounce_seconds = float(os.getenv("DEBOUNCE_SECONDS", "0.5"))
+    fallback_poll_seconds = int(optional_env("FALLBACK_POLL_SECONDS", str(POLL_SECONDS)))
+    debounce_seconds = float(optional_env("DEBOUNCE_SECONDS", "0.5"))
 
     stop_listener = asyncio.Event()
     listener_task = asyncio.create_task(
@@ -1427,6 +1407,19 @@ async def main():
                                 latest_metrics_snapshot[normalized_name] = normalized_value
                                 break
 
+                    device_groups: set[str] = set()
+                    if any(rule.get("group_ids") for rule in rules):
+                        group_rows = await conn.fetch(
+                            """
+                            SELECT group_id
+                            FROM device_group_members
+                            WHERE tenant_id = $1 AND device_id = $2
+                            """,
+                            tenant_id,
+                            device_id,
+                        )
+                        device_groups = {str(row["group_id"]) for row in group_rows}
+
                     for rule in rules:
                         COUNTERS["rules_evaluated"] += 1
                         evaluator_rules_evaluated_total.labels(tenant_id=tenant_id).inc()
@@ -1443,19 +1436,7 @@ async def main():
                             continue
 
                         if rule.get("group_ids"):
-                            is_member = await conn.fetchval(
-                                """
-                                SELECT 1
-                                FROM device_group_members
-                                WHERE tenant_id = $1
-                                  AND device_id = $2
-                                  AND group_id = ANY($3::text[])
-                                LIMIT 1
-                                """,
-                                tenant_id,
-                                device_id,
-                                rule["group_ids"],
-                            )
+                            is_member = bool(device_groups.intersection(rule["group_ids"]))
                             if not is_member:
                                 continue
 
@@ -1475,6 +1456,11 @@ async def main():
                             try:
                                 conditions_json = json.loads(conditions_json)
                             except Exception:
+                                logger.debug(
+                                    "rule_conditions_parse_failed",
+                                    extra={"tenant_id": tenant_id, "device_id": device_id, "rule_id": str(rule_id)},
+                                    exc_info=True,
+                                )
                                 conditions_json = {}
 
                         if rule_type == "telemetry_gap":

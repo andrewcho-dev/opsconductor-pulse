@@ -15,10 +15,11 @@ import os
 import uuid
 
 from shared.logging import get_logger, trace_id_var
+from shared.config import require_env, optional_env
 
 logger = get_logger("pulse.ota_worker")
 
-MQTT_BROKER_URL = os.getenv("MQTT_BROKER_URL", "mqtt://iot-mqtt:1883")
+MQTT_BROKER_URL = optional_env("MQTT_BROKER_URL", "mqtt://iot-mqtt:1883")
 
 
 async def _publish_ota_command(
@@ -59,10 +60,10 @@ async def _publish_ota_command(
 
         def _pub():
             mqtt_username = os.getenv("MQTT_USERNAME")
-            mqtt_password = os.getenv("MQTT_PASSWORD")
-            mqtt_ca_cert = os.getenv("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
+            mqtt_password = require_env("MQTT_PASSWORD")
+            mqtt_ca_cert = optional_env("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
             client = mqtt.Client()
-            if mqtt_username and mqtt_password:
+            if mqtt_username:
                 client.username_pw_set(mqtt_username, mqtt_password)
 
             # Our broker uses TLS on port 1883 (internal listener).
@@ -71,7 +72,7 @@ async def _publish_ota_command(
                     ca_certs=mqtt_ca_cert,
                     tls_version=ssl.PROTOCOL_TLSv1_2,
                 )
-                mqtt_tls_insecure = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
+                mqtt_tls_insecure = optional_env("MQTT_TLS_INSECURE", "false").lower() == "true"
                 if mqtt_tls_insecure:
                     client.tls_insecure_set(True)
             client.connect(host, port, keepalive=10)

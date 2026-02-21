@@ -20,14 +20,17 @@ class TestAlertPipeline:
             assert a["tenant_id"] == test_tenants["tenant_a"]
 
         # 2) If any OPEN alerts exist, exercise acknowledge and close flows.
-        # These may 403 if permission bootstrap isn't present; accept that.
         if alerts:
             alert_id = alerts[0]["alert_id"]
             ack = await client.patch(f"/customer/alerts/{alert_id}/acknowledge", headers=headers)
-            assert ack.status_code in (200, 403, 404)
+            assert ack.status_code == 200
+            ack_data = ack.json()
+            assert ack_data.get("ok") is True
 
             close = await client.patch(f"/customer/alerts/{alert_id}/close", headers=headers)
-            assert close.status_code in (200, 403, 404)
+            assert close.status_code == 200
+            close_data = close.json()
+            assert close_data.get("ok") is True
 
     async def test_alert_rules_list_contract(
         self, client: AsyncClient, customer_a_token: str, clean_db

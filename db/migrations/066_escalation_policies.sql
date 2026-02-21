@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS escalation_policies (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- RLS: EXEMPT - shared severity-level lookup metadata
 CREATE TABLE IF NOT EXISTS escalation_levels (
     level_id        SERIAL PRIMARY KEY,
     policy_id       INTEGER NOT NULL REFERENCES escalation_policies(policy_id) ON DELETE CASCADE,

@@ -151,28 +151,40 @@ class AuditLogger:
         if len(self.buffer) == 0:
             return
 
+        events: list[AuditEvent] = []
         async with self._lock:
-            events = []
-            while self.buffer:
-                events.append(self.buffer.popleft())
+            events = list(self.buffer)
+            self.buffer.clear()
 
-            if not events:
-                return
+        if not events:
+            return
 
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.copy_records_to_table(
+                    "audit_log",
+                    records=[e.to_tuple() for e in events],
+                    columns=self.COLUMNS,
+                )
+            self.events_flushed += len(events)
+        except Exception as exc:
+            self.flush_errors += 1
+            logger.error("Audit flush failed (%s events): %s", len(events), exc, exc_info=True)
             try:
-                async with self.pool.acquire() as conn:
-                    await conn.copy_records_to_table(
-                        "audit_log",
-                        records=[e.to_tuple() for e in events],
-                        columns=self.COLUMNS,
-                    )
-                self.events_flushed += len(events)
-            except Exception as exc:
-                self.flush_errors += 1
-                logger.error("Audit flush failed (%s events): %s", len(events), exc)
-                for event in reversed(events):
-                    if len(self.buffer) < self.max_buffer_size:
-                        self.buffer.appendleft(event)
+                async with self._lock:
+                    for event in reversed(events):
+                        if len(self.buffer) < self.max_buffer_size:
+                            self.buffer.appendleft(event)
+                        else:
+                            # Keep memory bounded under persistent DB failures.
+                            self.buffer.pop()
+                            self.buffer.appendleft(event)
+                            logger.warning(
+                                "Audit buffer full (%s). Dropping oldest events.",
+                                self.max_buffer_size,
+                            )
+            except Exception:
+                logger.warning("Audit re-queue failed", exc_info=True)
 
     def log(
         self,

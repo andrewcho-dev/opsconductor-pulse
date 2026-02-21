@@ -91,7 +91,7 @@ client.loop_forever()`,
   nodejs: `const mqtt = require("mqtt");
 
 // Replace with your device credentials from the Devices page
-const BROKER = "mqtt://your-broker-host:1883";
+const BROKER = "mqtts://your-broker-host:8883";
 const CLIENT_ID = "your-client-id";
 const PASSWORD = "your-device-password";
 const TENANT_ID = "your-tenant-id";
@@ -104,7 +104,7 @@ const client = mqtt.connect(BROKER, {
 });
 
 client.on("connect", () => {
-  console.log("Connected");
+  process.stdout.write("Connected\\n");
 
   // Subscribe to commands
   client.subscribe(\`tenant/\${TENANT_ID}/device/\${DEVICE_ID}/command/#\`);
@@ -118,7 +118,7 @@ client.on("connect", () => {
 });
 
 client.on("message", (topic, message) => {
-  console.log(\`Received: \${topic} -> \${message.toString()}\`);
+  process.stdout.write(\`Received: \${topic} -> \${message.toString()}\\n\`);
 });`,
 
   curl: `# HTTP Telemetry Ingestion (no MQTT required)
@@ -245,7 +245,7 @@ export default function ConnectionGuidePage({ embedded }: { embedded?: boolean }
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <div>
               <span className="text-muted-foreground">MQTT Broker:</span>{" "}
-              <code className="bg-muted px-1 py-0.5 rounded text-xs">mqtt://your-host:1883</code>
+              <code className="bg-muted px-1 py-0.5 rounded text-xs">mqtts://your-host:8883</code>
             </div>
             <div>
               <span className="text-muted-foreground">MQTT TLS:</span>{" "}
@@ -253,7 +253,7 @@ export default function ConnectionGuidePage({ embedded }: { embedded?: boolean }
             </div>
             <div>
               <span className="text-muted-foreground">WebSocket:</span>{" "}
-              <code className="bg-muted px-1 py-0.5 rounded text-xs">ws://your-host:9001/mqtt</code>
+              <code className="bg-muted px-1 py-0.5 rounded text-xs">wss://your-host:9001/mqtt</code>
             </div>
             <div>
               <span className="text-muted-foreground">HTTP Ingest:</span>{" "}

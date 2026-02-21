@@ -14,22 +14,23 @@ from starlette.requests import Request
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, require_operator
 from db.pool import operator_connection
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-POSTGRES_HOST = os.getenv("PG_HOST", "iot-postgres")
-POSTGRES_PORT = int(os.getenv("PG_PORT", "5432"))
-POSTGRES_DB = os.getenv("PG_DB", "iotcloud")
-POSTGRES_USER = os.getenv("PG_USER", "iot")
-POSTGRES_PASS = os.getenv("PG_PASS", "iot_dev")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+POSTGRES_HOST = optional_env("PG_HOST", "iot-postgres")
+POSTGRES_PORT = int(optional_env("PG_PORT", "5432"))
+POSTGRES_DB = optional_env("PG_DB", "iotcloud")
+POSTGRES_USER = optional_env("PG_USER", "iot")
+POSTGRES_PASS = require_env("PG_PASS")
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
-KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "pulse")
+KEYCLOAK_INTERNAL_URL = optional_env("KEYCLOAK_INTERNAL_URL", "http://pulse-keycloak:8080")
+KEYCLOAK_REALM = optional_env("KEYCLOAK_REALM", "pulse")
 
-INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
-EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
+INGEST_URL = optional_env("INGEST_HEALTH_URL", "http://iot-ingest:8080")
+EVALUATOR_URL = optional_env("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
 
 router = APIRouter(
     prefix="/api/v1/operator/system",

@@ -26,7 +26,7 @@ export function DeleteAlertRuleDialog({
 }: DeleteAlertRuleDialogProps) {
   const deleteMutation = useDeleteAlertRule();
   const errorMessage = useMemo(
-    () => getErrorMessage(deleteMutation.error),
+    () => (deleteMutation.error ? getErrorMessage(deleteMutation.error) : null),
     [deleteMutation.error]
   );
 
@@ -39,7 +39,7 @@ export function DeleteAlertRuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Delete Alert Rule</DialogTitle>
           <DialogDescription>

@@ -175,6 +175,9 @@ export default function AlertListPage({ embedded }: { embedded?: boolean }) {
 
   return (
     <div className="space-y-4">
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {filteredAlerts.length} alerts loaded
+      </div>
       {!embedded && (
         <PageHeader
           title="Alerts"
@@ -236,6 +239,7 @@ export default function AlertListPage({ embedded }: { embedded?: boolean }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search device or alert type..."
+          aria-label="Search alerts"
           className="h-8 w-full max-w-xs rounded border border-border bg-background px-2 text-sm"
         />
       </div>
@@ -287,6 +291,7 @@ export default function AlertListPage({ embedded }: { embedded?: boolean }) {
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={isExpanded ? "Collapse alert details" : "Expand alert details"}
                     onClick={() =>
                       setExpandedAlertId(isExpanded ? null : alert.alert_id)
                     }

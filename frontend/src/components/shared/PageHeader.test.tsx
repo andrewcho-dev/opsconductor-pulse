@@ -19,17 +19,8 @@ describe("PageHeader", () => {
     expect(screen.getByRole("button", { name: "Add Device" })).toBeInTheDocument();
   });
 
-  it("renders breadcrumbs when provided", () => {
-    render(
-      <PageHeader
-        title="Device Details"
-        breadcrumbs={[
-          { label: "Home", href: "/" },
-          { label: "Devices", href: "/devices" },
-        ]}
-      />
-    );
-    expect(screen.getByText("Home")).toBeInTheDocument();
-    expect(screen.getByText("Devices")).toBeInTheDocument();
+  it("does not require legacy breadcrumb props", () => {
+    render(<PageHeader title="Device Details" />);
+    expect(screen.getByText("Device Details")).toBeInTheDocument();
   });
 });

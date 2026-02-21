@@ -132,7 +132,7 @@ export default function OperatorUsersPage() {
             className="w-64"
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
-          <Button variant="outline" onClick={handleSearch}>
+          <Button variant="outline" onClick={handleSearch} aria-label="Search users">
             <Search className="h-4 w-4" />
           </Button>
         </div>
@@ -143,6 +143,7 @@ export default function OperatorUsersPage() {
             setPage(1);
           }}
           placeholder="Filter by tenant..."
+          aria-label="Filter by tenant"
           className="w-48"
         />
         {(search || tenantFilter) && (
@@ -220,8 +221,8 @@ export default function OperatorUsersPage() {
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label="Open user actions">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>

@@ -74,7 +74,6 @@ from reports.sla_report import generate_sla_report
 from shared.utils import check_delete_result, validate_uuid
 from dependencies import get_db_pool
 from shared.utils import check_delete_result, validate_uuid
-from dependencies import get_db_pool
 
 # PHASE 44b DIAGNOSIS — Operator Format:
 # DB constraint allows: '>', '<', '>=', '<=', '==', '!='
@@ -1074,6 +1073,40 @@ async def geocode_address_endpoint(address: str = Query(..., min_length=3)):
             return {"error": f"Geocoding service returned {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/broadcasts", dependencies=[Depends(require_customer)])
+async def list_broadcasts(pool=Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, title, body, type, pinned, created_at
+            FROM broadcasts
+            WHERE active = true AND is_banner = false
+              AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY pinned DESC, created_at DESC
+            LIMIT 10
+            """,
+        )
+    return [dict(r) for r in rows]
+
+
+@router.get("/broadcasts/banner", dependencies=[Depends(require_customer)])
+async def get_active_banner(pool=Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, title, body, type, created_at
+            FROM broadcasts
+            WHERE is_banner = true AND active = true
+              AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY pinned DESC, created_at DESC
+            LIMIT 1
+            """,
+        )
+    if not row:
+        return None
+    return dict(row)
 
 
 

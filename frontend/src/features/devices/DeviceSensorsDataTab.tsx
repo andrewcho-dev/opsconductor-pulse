@@ -129,7 +129,9 @@ function AssignModuleDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">Assign Module</Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs">
+          Assign
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -647,71 +649,74 @@ export function DeviceSensorsDataTab({
 
   return (
     <div className="space-y-6 pt-2">
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold">Expansion Modules</div>
-            <div className="text-sm text-muted-foreground">
-              Assign expansion modules to template slots (if available).
-            </div>
-          </div>
-        </div>
-
+      <section>
         {!templateId ? (
-          <div className="rounded border border-border p-4 text-sm text-muted-foreground">
-            No template assigned to this device. Assign a template to enable slot/module management.
+          <div className="rounded border border-border p-3 text-sm text-muted-foreground">
+            No template assigned. Assign a template to enable expansion modules.
           </div>
-        ) : slots.length === 0 ? (
-          <div className="rounded border border-border p-4 text-sm text-muted-foreground">
-            This template has no slots defined.
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {slots.map((slot) => {
-              const assigned = modules.filter((m) => m.slot_key === slot.slot_key && m.status !== "removed");
-              const max = slot.max_devices ?? null;
-              const capacityText = max != null ? `${assigned.length}/${max} assigned` : `${assigned.length} assigned`;
-              const canAssign = max == null || assigned.length < max;
-              return (
-                <div key={slot.id} className="rounded border border-border p-4 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm">{slot.slot_key}</span>
-                        <span className="text-sm font-medium">{slot.display_name}</span>
-                        {slotBadge(slot)}
-                        {slot.is_required && <Badge>required</Badge>}
+        ) : slots.length === 0 ? null : (
+          (() => {
+            const totalAssigned = modules.filter((m) => m.status !== "removed").length;
+            const hasAssignments = totalAssigned > 0;
+            return (
+              <details open={hasAssignments || undefined} className="group">
+                <summary className="flex cursor-pointer items-center gap-2 py-2 text-sm [&::-webkit-details-marker]:hidden">
+                  <span className="text-xs text-muted-foreground transition-transform group-open:rotate-90">
+                    &#9654;
+                  </span>
+                  <span className="font-semibold">Expansion Modules</span>
+                  <span className="text-muted-foreground">
+                    — {slots.length} slots, {totalAssigned} assigned
+                  </span>
+                </summary>
+                <div className="mt-2 max-w-2xl divide-y divide-border rounded-md border border-border">
+                  {slots.map((slot) => {
+                    const assigned = modules.filter((m) => m.slot_key === slot.slot_key && m.status !== "removed");
+                    const max = slot.max_devices ?? null;
+                    const countText = max != null ? `${assigned.length}/${max}` : `${assigned.length}`;
+                    const canAssign = max == null || assigned.length < max;
+                    return (
+                      <div key={slot.id}>
+                        <div className="flex items-center gap-2 px-3 py-1.5">
+                          <code className="text-xs text-muted-foreground">{slot.slot_key}</code>
+                          <span className="text-sm">{slot.display_name}</span>
+                          {slotBadge(slot)}
+                          {slot.is_required && (
+                            <Badge variant="destructive" className="px-1 py-0 text-[10px]">
+                              required
+                            </Badge>
+                          )}
+                          <span className="ml-auto text-xs text-muted-foreground">{countText}</span>
+                          {canAssign ? (
+                            <AssignModuleDialog
+                              deviceId={deviceId}
+                              slot={slot}
+                              moduleTemplates={moduleTemplates}
+                              onDone={() => {}}
+                            />
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              Full
+                            </Badge>
+                          )}
+                        </div>
+                        {assigned.length > 0 && (
+                          <div className="border-t border-border bg-muted/30 px-3 py-2">
+                            <DataTable
+                              columns={moduleColumns}
+                              data={assigned}
+                              isLoading={modulesQuery.isLoading}
+                              manualPagination={false}
+                            />
+                          </div>
+                        )}
                       </div>
-                      <div className="text-sm text-muted-foreground">{capacityText}</div>
-                    </div>
-                    {canAssign ? (
-                      <AssignModuleDialog
-                        deviceId={deviceId}
-                        slot={slot}
-                        moduleTemplates={moduleTemplates}
-                        onDone={() => {}}
-                      />
-                    ) : (
-                      <Button size="sm" variant="outline" disabled>
-                        At capacity
-                      </Button>
-                    )}
-                  </div>
-
-                  {assigned.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No modules assigned.</div>
-                  ) : (
-                    <DataTable
-                      columns={moduleColumns}
-                      data={assigned}
-                      isLoading={modulesQuery.isLoading}
-                      manualPagination={false}
-                    />
-                  )}
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              </details>
+            );
+          })()
         )}
       </section>
 

@@ -39,6 +39,7 @@ CREATE POLICY dashboards_tenant_isolation
 -- DASHBOARD WIDGETS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS dashboard_widgets (
+    -- RLS: EXEMPT - no tenant_id column; access constrained through dashboard_id parent policies
     id              SERIAL PRIMARY KEY,
     dashboard_id    INT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
     widget_type     VARCHAR(50) NOT NULL,

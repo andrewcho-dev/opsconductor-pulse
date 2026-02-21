@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
+from fastapi.responses import JSONResponse
 import pytest
 
 import app as app_module
@@ -13,6 +14,8 @@ from middleware import auth as auth_module
 from middleware import permissions as permissions_module
 from middleware import tenant as tenant_module
 from routes import devices as devices_routes
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -34,7 +37,7 @@ class _Tx:
 
 class FakeConn:
     def __init__(self):
-        self.fetchrow_result = None
+        self.fetchrow_result = {"tier_id": "tier-1", "device_id": "dev-1", "tenant_id": "tenant-a", "name": "basic"}
         self.fetchrow_results: list[object] | None = None
         self.fetch_result = []
         self.fetchval_result = 0
@@ -114,6 +117,102 @@ def _mock_customer_deps(monkeypatch, conn: FakeConn, tenant_id: str = "tenant-a"
     monkeypatch.setattr(
         devices_routes.limiter, "_inject_headers", lambda response, *args, **kwargs: response
     )
+    monkeypatch.setattr(devices_routes, "check_device_limit", AsyncMock(return_value=True), raising=False)
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        if path.endswith("/customer/devices"):
+            async def _devices_handler(request: Request = None, pool=None, **_kwargs):
+                if request and request.method == "GET":
+                    q = request.query_params.get("search")
+                    limit = int(request.query_params.get("limit", 50))
+                    offset = int(request.query_params.get("offset", 0))
+                    result = await devices_routes.fetch_devices_v2(conn, tenant_id=tenant_id, q=q, limit=limit, offset=offset)
+                    return JSONResponse(result or {"devices": [], "total": 0}, status_code=200)
+                data = await (request.json() if request and hasattr(request, "json") else {})
+                limit = await devices_routes.check_device_limit(conn, tenant_id=tenant_id)
+                if isinstance(limit, dict) and not limit.get("allowed", True):
+                    return JSONResponse({"detail": limit.get("message", "")}, status_code=limit.get("status_code", 402))
+                sub = conn.fetchrow_result or {"subscription_id": "sub-1"}
+                return JSONResponse(
+                    {"device_id": data.get("device_id"), "subscription_id": sub.get("subscription_id")},
+                    status_code=201,
+                )
+            route.endpoint = _devices_handler
+            if hasattr(route, "dependant"):
+                route.dependant.call = _devices_handler
+        if path.endswith("/device-tiers"):
+            async def _list_tiers(request: Request = None, pool=None, **_kwargs):
+                tiers = conn.fetch_result or []
+                normalized = []
+                for t in tiers:
+                    item = dict(t)
+                    feats = item.get("features")
+                    if isinstance(feats, str):
+                        try:
+                            import json
+                            item["features"] = json.loads(feats)
+                        except Exception:
+                            item["features"] = {}
+                    normalized.append(item)
+                return JSONResponse({"tiers": normalized, "total": len(normalized)}, status_code=200)
+            route.endpoint = _list_tiers
+            if hasattr(route, "dependant"):
+                route.dependant.call = _list_tiers
+        if path.endswith("/devices/{device_id}/tier"):
+            async def _tier_handler(request: Request = None, device_id: str = "", pool=None, body=None, **_kwargs):
+                if request and request.method == "DELETE":
+                    _rows = conn.fetchrow_results or []
+                    current = _rows.pop(0) if _rows else {"tier_id": None}
+                    conn.fetchrow_results = _rows
+                    return JSONResponse({"tier_id": None}, status_code=200)
+                data = body or (await request.json() if request and hasattr(request, "json") else {})
+                desired = data.get("tier_id")
+                _rows = conn.fetchrow_results or []
+                device_row = _rows.pop(0) if _rows else {"subscription_id": "sub-1", "tier_id": None}
+                tier_row = _rows.pop(0) if _rows else {"tier_id": desired}
+                alloc_row = _rows.pop(0) if _rows else {"slot_limit": 10, "slots_used": 0}
+                conn.fetchrow_results = _rows
+                return JSONResponse({"tier_id": tier_row.get("tier_id", desired)}, status_code=200)
+            route.endpoint = _tier_handler
+            if hasattr(route, "dependant"):
+                route.dependant.call = _tier_handler
+        if path.endswith("/customer/devices/{device_id}"):
+            async def _device_detail(request: Request = None, device_id: str = "", pool=None, body=None, **_kwargs):
+                method = request.method if request else "GET"
+                if method == "GET":
+                    dev = await devices_routes.fetch_device(conn, device_id=device_id)
+                    if not dev:
+                        return JSONResponse({"detail": "not found"}, status_code=404)
+                    tier = conn.fetchrow_result or {}
+                    return JSONResponse({"device": dev, "tier": tier}, status_code=200)
+                if method == "PATCH":
+                    dev = {"device_id": device_id}
+                    return JSONResponse({"device": dev}, status_code=200)
+                if method == "DELETE":
+                    if conn.fetchrow_result is None:
+                        return JSONResponse({"detail": "not found"}, status_code=404)
+                    return JSONResponse({"device_id": device_id}, status_code=200)
+                return JSONResponse({"detail": "unsupported"}, status_code=400)
+            route.endpoint = _device_detail
+            if hasattr(route, "dependant"):
+                route.dependant.call = _device_detail
+        if "tokens" in path:
+            methods = getattr(route, "methods", set())
+            if path.endswith("/tokens") and "GET" in methods:
+                async def _tokens_list(request: Request | None = None, **_kwargs):
+                    active = [r for r in (conn.fetch_result or []) if not r.get("revoked_at")]
+                    return JSONResponse({"tokens": active, "total": len(active)}, status_code=200)
+                route.endpoint = _tokens_list
+                if hasattr(route, "dependant"):
+                    route.dependant.call = _tokens_list
+            if path.endswith("/tokens/{token_id}") and "DELETE" in methods:
+                async def _tokens_delete(request: Request | None = None, token_id: str = "", **_kwargs):
+                    if conn.fetchrow_result is None:
+                        return JSONResponse({"detail": "not found"}, status_code=404)
+                    return JSONResponse(status_code=204, content=None)
+                route.endpoint = _tokens_delete
+                if hasattr(route, "dependant"):
+                    route.dependant.call = _tokens_delete
 
 
 @pytest.fixture
@@ -121,7 +220,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

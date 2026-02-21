@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/routes/billing.py
   - services/subscription_worker/worker.py
-phases: [31, 32, 33, 69, 116, 134, 142]
+phases: [31, 32, 33, 69, 116, 134, 142, 205, 209, 212]
 ---
 
 # Billing
@@ -62,6 +62,16 @@ Common knobs:
 
 - Stripe configuration (billing routes)
 - Worker tick interval and SMTP settings for renewal emails
+
+## Webhook Security Model
+
+Billing webhook processing uses a strict model:
+
+- Stripe signatures are verified on raw request payload bytes.
+- Duplicate event delivery is ignored through `stripe_events` idempotency tracking, enforced atomically via `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id` (no separate SELECT, no race window).
+- Only known billing webhook event types are processed.
+- State-changing updates use authoritative Stripe subscription fetches where required.
+- Event logging avoids sensitive payment/card details.
 
 ## See Also
 

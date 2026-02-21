@@ -5,8 +5,12 @@ import os
 import uuid
 from urllib.parse import urlparse, urlunparse
 
-import boto3
-from botocore.config import Config
+try:
+    import boto3
+    from botocore.config import Config
+except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    Config = None  # type: ignore[assignment]
 from fastapi.responses import RedirectResponse
 
 from routes.customer import *  # noqa: F401,F403
@@ -16,6 +20,7 @@ from schemas.exports import (
     ExportJobResponse,
     ExportListResponse,
 )
+from shared.config import require_env, optional_env
 
 router = APIRouter(
     prefix="/api/v1/customer",
@@ -27,15 +32,19 @@ router = APIRouter(
     ],
 )
 
-S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://iot-minio:9000")
-S3_PUBLIC_ENDPOINT = os.getenv("S3_PUBLIC_ENDPOINT", "").strip()
-S3_BUCKET = os.getenv("S3_BUCKET", "exports")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
-S3_REGION = os.getenv("S3_REGION", "us-east-1")
+S3_ENDPOINT = optional_env("S3_ENDPOINT", "http://iot-minio:9000")
+S3_PUBLIC_ENDPOINT = optional_env("S3_PUBLIC_ENDPOINT", "").strip()
+S3_BUCKET = optional_env("S3_BUCKET", "exports")
+S3_ACCESS_KEY = require_env("S3_ACCESS_KEY")
+S3_SECRET_KEY = require_env("S3_SECRET_KEY")
+S3_REGION = optional_env("S3_REGION", "us-east-1")
 
 
 def get_s3_client():
+    if boto3 is None or Config is None:
+        raise RuntimeError(
+            "boto3 is required for S3 export operations. Install it with: pip install boto3"
+        )
     return boto3.client(
         "s3",
         endpoint_url=S3_ENDPOINT,

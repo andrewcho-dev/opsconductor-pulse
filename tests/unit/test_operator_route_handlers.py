@@ -8,6 +8,7 @@ from starlette.requests import Request
 
 import app as app_module
 from middleware import auth as auth_module
+from middleware import permissions as permissions_module
 from routes import operator as operator_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -76,6 +77,14 @@ def _mock_operator_deps(monkeypatch, conn, role="operator"):
     )
     monkeypatch.setattr(operator_routes, "get_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(operator_routes, "operator_connection", _operator_connection(conn))
+    monkeypatch.setattr(operator_routes, "list_subscriptions", AsyncMock(return_value={"subscriptions": []}), raising=False)
+    monkeypatch.setattr(operator_routes, "create_subscription", AsyncMock(return_value={"subscription_id": "sub-1", "status": "created"}), raising=False)
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -83,7 +92,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
         yield client
 
 
@@ -91,7 +102,7 @@ async def test_operator_list_all_devices(client, monkeypatch):
     conn = FakeConn()
     _mock_operator_deps(monkeypatch, conn, role="operator")
     monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    monkeypatch.setattr(operator_routes, "fetch_all_devices", AsyncMock(return_value=[{"device_id": "d1"}]))
+    monkeypatch.setattr(operator_routes, "fetch_all_devices", AsyncMock(return_value=[{"device_id": "d1", "tenant_id": "tenant-a"}]))
 
     resp = await client.get("/operator/devices", headers=_auth_header())
     assert resp.status_code == 200
@@ -102,8 +113,8 @@ async def test_operator_filter_by_tenant(client, monkeypatch):
     conn = FakeConn()
     _mock_operator_deps(monkeypatch, conn, role="operator")
     monkeypatch.setattr(operator_routes, "log_operator_access", AsyncMock())
-    fetch_devices = AsyncMock(return_value=[{"device_id": "d2"}])
-    fetch_all_devices = AsyncMock(return_value=[{"device_id": "d1"}])
+    fetch_devices = AsyncMock(return_value=[{"device_id": "d2", "tenant_id": "tenant-a"}])
+    fetch_all_devices = AsyncMock(return_value=[{"device_id": "d1", "tenant_id": "tenant-a"}])
     monkeypatch.setattr(operator_routes, "fetch_devices", fetch_devices)
     monkeypatch.setattr(operator_routes, "fetch_all_devices", fetch_all_devices)
 

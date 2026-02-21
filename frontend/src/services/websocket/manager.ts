@@ -1,10 +1,59 @@
 import keycloak from "@/services/auth/keycloak";
+import { getAuthHeaders } from "@/services/api/client";
+import { logger } from "@/lib/logger";
+import { z } from "zod";
 import { messageBus } from "./message-bus";
-import type { WsServerMessage, WsSubscribeMessage } from "./types";
+import type { WsSubscribeMessage } from "./types";
 
 const MAX_RETRY_DELAY = 30_000; // 30 seconds
 const BASE_RETRY_DELAY = 1_000; // 1 second
 const MAX_RETRIES = 20;
+
+const WsAlertMessageSchema = z.object({
+  type: z.literal("alerts"),
+  alerts: z.array(z.unknown()),
+});
+
+const WsTelemetryMessageSchema = z.object({
+  type: z.literal("telemetry"),
+  device_id: z.string(),
+  data: z.object({
+    timestamp: z.string(),
+    metrics: z.record(z.string(), z.union([z.number(), z.boolean()])),
+  }),
+});
+
+const WsFleetSummaryMessageSchema = z.object({
+  type: z.literal("fleet_summary"),
+  data: z.object({
+    ONLINE: z.number(),
+    STALE: z.number(),
+    OFFLINE: z.number(),
+    total: z.number(),
+    active_alerts: z.number(),
+  }),
+});
+
+const WsSubscribedMessageSchema = z.object({
+  type: z.union([z.literal("subscribed"), z.literal("unsubscribed")]),
+  channel: z.string(),
+  device_id: z.string().optional(),
+});
+
+const WsErrorMessageSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+});
+
+const WsServerMessageSchema = z.discriminatedUnion("type", [
+  WsAlertMessageSchema,
+  WsTelemetryMessageSchema,
+  WsFleetSummaryMessageSchema,
+  WsSubscribedMessageSchema,
+  WsErrorMessageSchema,
+]);
+
+type WsServerMessage = z.infer<typeof WsServerMessageSchema>;
 
 export class WebSocketManager {
   private ws: WebSocket | null = null;
@@ -13,10 +62,27 @@ export class WebSocketManager {
   private intentionalClose = false;
   private subscriptions: WsSubscribeMessage[] = [];
 
+  private async fetchWsTicket(): Promise<string> {
+    const headers = await getAuthHeaders();
+    const res = await fetch("/api/ws-ticket", {
+      method: "GET",
+      credentials: "include",
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to get WS ticket: ${res.status}`);
+    }
+    const data = (await res.json()) as { ticket?: string };
+    if (!data.ticket) {
+      throw new Error("WS ticket missing in response");
+    }
+    return data.ticket;
+  }
+
   /**
    * Connect to the WebSocket endpoint using the current Keycloak token.
    */
-  connect(): void {
+  async connect(): Promise<void> {
     // Don't connect if already connected or connecting
     if (
       this.ws?.readyState === WebSocket.OPEN ||
@@ -27,7 +93,7 @@ export class WebSocketManager {
 
     const token = keycloak.token;
     if (!token) {
-      console.warn("WebSocketManager: No token available, skipping connect");
+      logger.warn("WebSocketManager: No token available, skipping connect");
       messageBus.emit("connection", { status: "error", message: "No auth token" });
       return;
     }
@@ -36,14 +102,21 @@ export class WebSocketManager {
     messageBus.emit("connection", { status: "connecting" });
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/v2/ws?token=${encodeURIComponent(
-      token
-    )}`;
+    let url = `${protocol}//${window.location.host}/api/v2/ws`;
+    try {
+      const ticket = await this.fetchWsTicket();
+      url = `${url}?ticket=${encodeURIComponent(ticket)}`;
+    } catch (err) {
+      logger.error("WebSocketManager: Failed to fetch WS ticket", err);
+      messageBus.emit("connection", { status: "error", message: "WS ticket failed" });
+      this.scheduleReconnect();
+      return;
+    }
 
     try {
       this.ws = new WebSocket(url);
     } catch (err) {
-      console.error("WebSocketManager: Failed to create WebSocket", err);
+      logger.error("WebSocketManager: Failed to create WebSocket", err);
       messageBus.emit("connection", { status: "error", message: "Connection failed" });
       this.scheduleReconnect();
       return;
@@ -61,10 +134,15 @@ export class WebSocketManager {
 
     this.ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data) as WsServerMessage;
-        this.handleMessage(msg);
+        const raw = JSON.parse(event.data);
+        const result = WsServerMessageSchema.safeParse(raw);
+        if (!result.success) {
+          logger.error("WebSocketManager: unexpected message shape", result.error, raw);
+          return;
+        }
+        this.handleMessage(result.data);
       } catch (err) {
-        console.error("WebSocketManager: Failed to parse message", err);
+        logger.error("WebSocketManager: Failed to parse message", err);
       }
     };
 
@@ -180,18 +258,18 @@ export class WebSocketManager {
         break;
 
       case "error":
-        console.warn("WebSocket server error:", msg.message);
+        logger.warn("WebSocket server error:", msg.message);
         messageBus.emit("error", msg.message);
         break;
 
       default:
-        console.warn("Unknown WebSocket message type:", msg);
+        logger.warn("Unknown WebSocket message type:", msg);
     }
   }
 
   private scheduleReconnect(): void {
     if (this.retryCount >= MAX_RETRIES) {
-      console.warn("WebSocketManager: Max retries reached, giving up");
+      logger.warn("WebSocketManager: Max retries reached, giving up");
       messageBus.emit("connection", {
         status: "error",
         message: "Max reconnection attempts reached",

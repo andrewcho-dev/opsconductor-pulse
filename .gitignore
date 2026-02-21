@@ -6,11 +6,13 @@ coverage.xml
 *.py,cover
 .pytest_cache/
 test-results/
+benchmarks/current.json
 # secrets
 .env
 .env.*
 compose/.env
 !compose/.env.example
+compose/certs/
 compose/mosquitto/passwd
 compose/mosquitto/certs/*.key
 compose/mosquitto/certs/*.csr

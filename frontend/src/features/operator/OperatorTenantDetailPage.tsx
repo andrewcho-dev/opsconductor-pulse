@@ -85,10 +85,6 @@ export default function OperatorTenantDetailPage() {
       <PageHeader
         title={data.name}
         description={`Tenant ID: ${data.tenant_id}`}
-        breadcrumbs={[
-          { label: "Tenants", href: "/operator/tenants" },
-          { label: data.name || "..." },
-        ]}
         action={
           <div className="flex items-center gap-2">
             <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>

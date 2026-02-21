@@ -1,9 +1,11 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-20
 sources:
+  - services/ui_iot/app.py
   - services/ui_iot/routes/api_v2.py
   - services/ui_iot/routes/telemetry_stream.py
-phases: [23, 66, 127, 142]
+  - frontend/src/services/websocket/manager.ts
+phases: [23, 66, 127, 142, 194, 203]
 ---
 
 # WebSocket Protocol
@@ -24,13 +26,19 @@ All streaming protocols enforce tenant isolation derived from JWT claims.
 
 ### URL
 
-`WS /api/v2/ws?token=<jwt>`
+1. Fetch a short-lived websocket ticket:
+
+`GET /api/ws-ticket`
+
+2. Connect with opaque ticket:
+
+`WS /api/v2/ws?ticket=<opaque>`
 
 Auth:
 
-- JWT is passed as a query parameter `token`.
-- Token is validated server-side; tenant is derived from `organization` claim (fallback `tenant_id`).
-- Operators are allowed; they use a placeholder tenant context for the WS connection.
+- The ticket is single-use and expires after 30 seconds.
+- Ticket exchange resolves the same user JWT context server-side.
+- JWT tokens are not placed in websocket URLs.
 
 ### Client → Server Messages
 

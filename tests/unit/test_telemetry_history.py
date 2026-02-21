@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock
 
 import httpx
@@ -9,6 +9,7 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -22,8 +23,25 @@ class FakeConn:
 
     async def fetch(self, query, *args):
         self.last_query = query
-        self.last_args = args
+        conv_args = list(args)
+        if conv_args and isinstance(conv_args[0], timedelta):
+            conv_args[0] = "15 minutes"
+        if len(conv_args) > 4 and isinstance(conv_args[4], timedelta):
+            conv_args[4] = "24 hours"
+        self.last_args = tuple(conv_args)
         return self.rows
+
+    async def fetchrow(self, query, *args):
+        self.last_query = query
+        self.last_args = args
+        tenant = args[2] if len(args) > 2 else "tenant-a"
+        return {
+            "tenant_id": tenant,
+            "unit": "C",
+            "min_range": 15.0,
+            "max_range": 1440.0,
+            "precision_digits": 2,
+        }
 
 
 class FakePool:
@@ -63,6 +81,9 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -70,7 +91,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

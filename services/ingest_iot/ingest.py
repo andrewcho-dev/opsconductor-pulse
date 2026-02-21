@@ -23,6 +23,7 @@ from shared.audit import init_audit_logger, get_audit_logger
 from shared.logging import trace_id_var
 from shared.logging import configure_logging, log_event
 from shared.metrics import ingest_messages_total, ingest_queue_depth
+from shared.config import require_env, optional_env
 try:
     # Package import (e.g. `import services.ingest_iot.ingest`)
     from .topic_matcher import mqtt_topic_matches, evaluate_payload_filter
@@ -30,38 +31,39 @@ except ImportError:  # pragma: no cover
     # Script/legacy import when `services/ingest_iot` is on sys.path
     from topic_matcher import mqtt_topic_matches, evaluate_payload_filter
 
-NATS_URL = os.getenv("NATS_URL", "nats://iot-nats:4222")
+NATS_URL = optional_env("NATS_URL", "nats://iot-nats:4222")
 SHADOW_REPORTED_TOPIC = "tenant/+/device/+/shadow/reported"
 COMMAND_ACK_TOPIC = "tenant/+/device/+/commands/ack"
 COMMAND_ACK_RE = re.compile(r"^tenant/(?P<tenant_id>[^/]+)/device/(?P<device_id>[^/]+)/commands/ack$")
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB   = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
-AUTO_PROVISION = os.getenv("AUTO_PROVISION", "0") == "1"
-REQUIRE_TOKEN  = os.getenv("REQUIRE_TOKEN", "1") == "1"
-CERT_AUTH_ENABLED = os.getenv("CERT_AUTH_ENABLED", "0") == "1"
+AUTO_PROVISION = optional_env("AUTO_PROVISION", "0") == "1"
+REQUIRE_TOKEN = optional_env("REQUIRE_TOKEN", "1") == "1"
+CERT_AUTH_ENABLED = optional_env("CERT_AUTH_ENABLED", "0") == "1"
 
-COUNTERS_ENABLED = os.getenv("COUNTERS_ENABLED", "1") == "1"
-SETTINGS_POLL_SECONDS = int(os.getenv("SETTINGS_POLL_SECONDS", "5"))
-LOG_STATS_EVERY_SECONDS = int(os.getenv("LOG_STATS_EVERY_SECONDS", "30"))
-AUTH_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
-AUTH_CACHE_MAX_SIZE = int(os.getenv("AUTH_CACHE_MAX_SIZE", "10000"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
-FLUSH_INTERVAL_MS = int(os.getenv("FLUSH_INTERVAL_MS", "1000"))
-INGEST_WORKER_COUNT = int(os.getenv("INGEST_WORKER_COUNT", "4"))
-BUCKET_TTL_SECONDS = int(os.getenv("BUCKET_TTL_SECONDS", "3600"))
-BUCKET_CLEANUP_INTERVAL = int(os.getenv("BUCKET_CLEANUP_INTERVAL", "300"))
+COUNTERS_ENABLED = optional_env("COUNTERS_ENABLED", "1") == "1"
+SETTINGS_POLL_SECONDS = int(optional_env("SETTINGS_POLL_SECONDS", "5"))
+LOG_STATS_EVERY_SECONDS = int(optional_env("LOG_STATS_EVERY_SECONDS", "30"))
+AUTH_CACHE_TTL = int(optional_env("AUTH_CACHE_TTL_SECONDS", "60"))
+AUTH_CACHE_MAX_SIZE = int(optional_env("AUTH_CACHE_MAX_SIZE", "10000"))
+BATCH_SIZE = int(optional_env("BATCH_SIZE", "500"))
+FLUSH_INTERVAL_MS = int(optional_env("FLUSH_INTERVAL_MS", "1000"))
+MAX_BUFFER_SIZE = int(optional_env("MAX_BUFFER_SIZE", "5000"))
+INGEST_WORKER_COUNT = int(optional_env("INGEST_WORKER_COUNT", "4"))
+BUCKET_TTL_SECONDS = int(optional_env("BUCKET_TTL_SECONDS", "3600"))
+BUCKET_CLEANUP_INTERVAL = int(optional_env("BUCKET_CLEANUP_INTERVAL", "300"))
 
 # Phase 172: Metric key map cache (raw -> semantic normalization)
-METRIC_MAP_CACHE_TTL = int(os.getenv("METRIC_MAP_CACHE_TTL", "300"))
-METRIC_MAP_CACHE_SIZE = int(os.getenv("METRIC_MAP_CACHE_SIZE", "10000"))
+METRIC_MAP_CACHE_TTL = int(optional_env("METRIC_MAP_CACHE_TTL", "300"))
+METRIC_MAP_CACHE_SIZE = int(optional_env("METRIC_MAP_CACHE_SIZE", "10000"))
 
 # Operational metrics (Phase 164)
 ingest_batch_write_seconds = Histogram(
@@ -1285,7 +1287,7 @@ class Ingestor:
 
             except Exception:
                 # keep previous values
-                pass
+                logger.warning("settings_refresh_failed", exc_info=True)
 
             await asyncio.sleep(SETTINGS_POLL_SECONDS)
 
@@ -1311,7 +1313,7 @@ class Ingestor:
                         max(0.0, float(batch_stats.get("last_flush_latency_ms", 0.0)) / 1000.0)
                     )
                 except Exception:
-                    pass
+                    logger.debug("ingest_batch_latency_metric_observe_failed", exc_info=True)
 
             # Best-effort: update pending counts from JetStream consumer state.
             if self._js:
@@ -1319,17 +1321,17 @@ class Ingestor:
                     info = await self._js.consumer_info("TELEMETRY", "ingest-workers")
                     self._nats_pending_telemetry = getattr(info, "num_pending", 0)
                 except Exception:
-                    pass
+                    logger.debug("nats_pending_telemetry_fetch_failed", exc_info=True)
                 try:
                     info = await self._js.consumer_info("SHADOW", "ingest-shadow")
                     self._nats_pending_shadow = getattr(info, "num_pending", 0)
                 except Exception:
-                    pass
+                    logger.debug("nats_pending_shadow_fetch_failed", exc_info=True)
                 try:
                     info = await self._js.consumer_info("COMMANDS", "ingest-commands")
                     self._nats_pending_commands = getattr(info, "num_pending", 0)
                 except Exception:
-                    pass
+                    logger.debug("nats_pending_commands_fetch_failed", exc_info=True)
 
             ingest_queue_depth.set(self._nats_pending_telemetry)
             log_event(
@@ -2099,7 +2101,7 @@ class Ingestor:
             try:
                 await self._nc.drain()
             except Exception:
-                pass
+                logger.warning("nats_drain_failed", exc_info=True)
             logger.info("nats_connection_closed")
 
         # 4. Close DB pool
@@ -2121,6 +2123,7 @@ class Ingestor:
             pool=self.pool,
             batch_size=BATCH_SIZE,
             flush_interval_ms=FLUSH_INTERVAL_MS,
+            max_buffer_size=MAX_BUFFER_SIZE,
         )
         await self.batch_writer.start()
         audit = init_audit_logger(self.pool, "ingest")

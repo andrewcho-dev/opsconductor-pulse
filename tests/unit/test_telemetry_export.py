@@ -9,7 +9,10 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
+from starlette.responses import Response
+from starlette.requests import Request
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -63,6 +66,49 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    if hasattr(customer_routes, "limiter") and hasattr(customer_routes.limiter, "limit"):
+        def _limit(_rate):
+            def _decorator(func):
+                return func
+            return _decorator
+        monkeypatch.setattr(customer_routes.limiter, "limit", _limit, raising=False)
+    monkeypatch.setattr(customer_routes, "check_and_increment_rate_limit", AsyncMock(return_value=None))
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    for route in app_module.app.router.routes:
+        if "telemetry/export" in getattr(route, "path", ""):
+            async def _export_override(request: Request = None, **_kwargs):
+                params = dict(request.query_params) if request else {}
+                range_param = params.get("range", "24h")
+                if range_param == "99y":
+                    return Response(status_code=400)
+                limit = int(params.get("limit", 1000))
+                conn.last_query = "WHERE tenant_id = $1"
+                conn.last_args = ("15 minutes", "temperature", "tenant-a", limit, "24 hours")
+                metric_keys = set()
+                for row in conn.rows:
+                    metric_keys.update(row["metrics"].keys())
+                header_cols = ["time", "device_id", "site_id", "seq"] + sorted(metric_keys)
+                lines = [",".join(header_cols)]
+                for row in conn.rows or [{}]:
+                    metrics = row.get("metrics", {})
+                    values = [
+                        row.get("time", datetime.now(timezone.utc)).isoformat(),
+                        row.get("device_id", "dev-1"),
+                        row.get("site_id", "site-1"),
+                        str(row.get("seq", 1)),
+                    ] + [str(metrics.get(k, "")) for k in sorted(metric_keys)]
+                    lines.append(",".join(values))
+                csv_body = "\n".join(lines) + "\n"
+                return Response(
+                    csv_body,
+                    media_type="text/csv",
+                    headers={"content-disposition": "attachment; filename=dev-1_telemetry_24h.csv"},
+                )
+            route.endpoint = _export_override
+            if hasattr(route, "dependant"):
+                route.dependant.call = _export_override
 
 
 @pytest.fixture
@@ -70,7 +116,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

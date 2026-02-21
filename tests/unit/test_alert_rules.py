@@ -22,12 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 from evaluator import evaluate_threshold, OPERATOR_SYMBOLS
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "ui_iot"))
-try:
-    from routes.customer import AlertRuleCreate
-    from pydantic import ValidationError
-except Exception:
-    AlertRuleCreate = None
-    ValidationError = None
+from routes.customer import AlertRuleCreate
+from pydantic import ValidationError
 
 pytestmark = [pytest.mark.unit]
 
@@ -117,8 +113,6 @@ def test_operator_symbols():
 
 
 def test_valid_rule_create():
-    if AlertRuleCreate is None:
-        pytest.skip("AlertRuleCreate import unavailable in test environment")
     rule = AlertRuleCreate(
         name="Battery Low",
         metric_name="battery_pct",
@@ -134,8 +128,6 @@ def test_valid_rule_create():
 
 
 def test_rule_create_invalid_severity():
-    if AlertRuleCreate is None or ValidationError is None:
-        pytest.skip("AlertRuleCreate import unavailable in test environment")
     with pytest.raises(ValidationError):
         AlertRuleCreate(
             name="Battery Low",
@@ -147,8 +139,6 @@ def test_rule_create_invalid_severity():
 
 
 def test_rule_create_missing_name():
-    if AlertRuleCreate is None or ValidationError is None:
-        pytest.skip("AlertRuleCreate import unavailable in test environment")
     with pytest.raises(ValidationError):
         AlertRuleCreate(
             metric_name="battery_pct",

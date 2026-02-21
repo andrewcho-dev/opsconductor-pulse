@@ -19,6 +19,12 @@ ingest_queue_depth = Gauge(
     "Current ingest processing queue depth",
 )
 
+ingest_records_dropped_total = Counter(
+    "ingest_records_dropped_total",
+    "Telemetry records dropped due to ingest buffer overflow",
+    ["tenant_id"],
+)
+
 # Evaluator
 evaluator_rules_evaluated_total = Counter(
     "pulse_evaluator_rules_evaluated_total",

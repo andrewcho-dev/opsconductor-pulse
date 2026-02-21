@@ -14,7 +14,7 @@ sources:
   - services/ui_iot/routes/internal.py
   - compose/docker-compose.yml
   - frontend/src/features/fleet/GettingStartedPage.tsx
-phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182]
+phases: [1, 23, 43, 88, 91, 122, 128, 138, 142, 157, 158, 160, 161, 162, 164, 165, 168, 169, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192]
 ---
 
 # ui-iot
@@ -205,7 +205,7 @@ Phase 176 introduces a Home landing page at `/app/home` and consolidates multipl
 
 - `/app/alerts` — Alert inbox (simplified in Phase 180)
 - `/app/analytics` — Analytics hub (Explorer, Reports tabs)
-- `/app/devices` — Devices hub with 9 flat tabs (Phase 182)
+- `/app/devices` — Devices hub with 4 tabs (Devices, Templates, Map, Updates)
 - `/app/settings` — Settings hub with 9 flat tabs (Phase 182)
 
 Legacy routes redirect to the appropriate hub route with the correct `?tab=` parameter.
@@ -225,8 +225,8 @@ Old nested paths (`/app/settings/general`, `/app/settings/billing`, etc.) redire
 
 Phase 178 adds connection tooling pages:
 
-- **Connection Guide** (`/app/devices?tab=guide`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
-- **MQTT Test Client** (`/app/devices?tab=mqtt`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
+- **Connection Guide** (`/app/fleet/tools`) — Language-specific code snippets (Python, Node.js, curl, Arduino) showing how to connect devices and send telemetry
+- **MQTT Test Client** (`/app/fleet/mqtt-client`) — Browser-based MQTT client using mqtt.js over WebSocket for publishing/subscribing to topics
 
 The Home page (`/app/home`) also gains a "Resource Usage" section displaying quota KPI cards from the entitlements API (`GET /api/v1/customer/billing/entitlements`). The Billing page (`/app/settings/billing`) is refactored to use `KpiCard` components instead of custom progress bars for usage display.
 
@@ -244,15 +244,20 @@ Old tab-based URLs (`/alerts?tab=rules`, `/alerts?tab=escalation`, etc.) redirec
 
 All sub-page navigation uses flat single-level tabs. No nested hubs, no left-nav, no button-link rows.
 
-- `/app/devices` — Devices hub with 9 tabs: Devices, Sites, Templates, Groups, Map, Campaigns, Firmware, Guide, MQTT
+- `/app/devices` — Devices hub with 4 tabs: Devices, Templates, Map, Updates
 - `/app/settings` — Settings hub with 9 tabs: General, Billing, Channels, Delivery Log, Dead Letter, Integrations, Members, Roles, Profile
 
+Phase 189 consolidates device detail from 6 tabs (Overview, Sensors & Data, Transport, Health, Twin & Commands, Security) to 3 tabs (Overview, Data, Manage). Health diagnostics move to Overview; Transport, Twin/Commands, Security, and Plan are grouped under Manage with section headers.
+
 Old standalone routes redirect to the appropriate hub tab:
-- `/app/sites` -> `/app/devices?tab=sites`
+- `/app/sites` — Sites overview (standalone page)
 - `/app/templates` -> `/app/devices?tab=templates`
-- `/app/updates` -> `/app/devices?tab=campaigns`
-- `/app/ota/firmware` -> `/app/devices?tab=firmware`
-- `/app/fleet/tools` -> `/app/devices?tab=guide`
+- `/app/updates` -> `/app/devices?tab=updates`
+- `/app/ota/campaigns` -> `/app/devices?tab=updates`
+- `/app/ota/firmware` -> `/app/devices?tab=updates`
+- `/app/fleet/tools` — Connection guide (standalone page)
+- `/app/fleet/mqtt-client` — MQTT test client (standalone page)
+- `/app/device-groups` — Device groups management (standalone page)
 - `/app/settings/notifications` -> `/app/settings?tab=channels`
 - `/app/settings/access` -> `/app/settings?tab=members`
 

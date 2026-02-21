@@ -14,13 +14,14 @@ import asyncpg
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-DEVICE_CA_CERT_PATH = os.getenv("DEVICE_CA_CERT_PATH", "/mosquitto/certs/device-ca.crt")
-DEVICE_CA_KEY_PATH = os.getenv("DEVICE_CA_KEY_PATH", "/mosquitto/certs/device-ca.key")
-CRL_OUTPUT_PATH = os.getenv("CRL_OUTPUT_PATH", "/certs/device-crl.pem")
-CERT_EXPIRY_WARNING_DAYS = int(os.getenv("CERT_EXPIRY_WARNING_DAYS", "30"))
+DEVICE_CA_CERT_PATH = optional_env("DEVICE_CA_CERT_PATH", "/mosquitto/certs/device-ca.crt")
+DEVICE_CA_KEY_PATH = optional_env("DEVICE_CA_KEY_PATH", "/mosquitto/certs/device-ca.key")
+CRL_OUTPUT_PATH = optional_env("CRL_OUTPUT_PATH", "/certs/device-crl.pem")
+CERT_EXPIRY_WARNING_DAYS = int(optional_env("CERT_EXPIRY_WARNING_DAYS", "30"))
 
 
 def _load_device_ca() -> tuple[object, x509.Certificate]:
@@ -37,9 +38,9 @@ def _load_device_ca() -> tuple[object, x509.Certificate]:
 
 async def _notify_broker_crl_update() -> None:
     """Notify EMQX to reload TLS configuration after CRL update."""
-    emqx_api_url = os.getenv("EMQX_API_URL", "http://iot-mqtt:18083")
-    emqx_api_user = os.getenv("EMQX_API_USER", "admin")
-    emqx_api_pass = os.getenv("EMQX_DASHBOARD_PASSWORD", "admin123")
+    emqx_api_url = optional_env("EMQX_API_URL", "http://iot-mqtt:18083")
+    emqx_api_user = optional_env("EMQX_API_USER", "admin")
+    emqx_api_pass = require_env("EMQX_DASHBOARD_PASSWORD")
 
     try:
         import httpx

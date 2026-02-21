@@ -15,21 +15,23 @@ import threading
 
 import nats
 import paho.mqtt.client as paho_mqtt
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger("mqtt_nats_bridge")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
 )
 
-NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
+NATS_URL = optional_env("NATS_URL", "nats://localhost:4222")
 
-MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_HOST = optional_env("MQTT_HOST", "localhost")
+MQTT_PORT = int(optional_env("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", "tenant/+/device/+/+")
-MQTT_TLS = os.getenv("MQTT_TLS", "true").lower() == "true"
-MQTT_TLS_INSECURE = os.getenv("MQTT_TLS_INSECURE", "true").lower() == "true"
+MQTT_PASSWORD = require_env("MQTT_PASSWORD")
+MQTT_TOPIC = optional_env("MQTT_TOPIC", "tenant/+/device/+/+")
+MQTT_TLS = optional_env("MQTT_TLS", "true").lower() == "true"
+MQTT_TLS_INSECURE = optional_env("MQTT_TLS_INSECURE", "false").lower() == "true"
+MQTT_CA_CERT = optional_env("MQTT_CA_CERT", "/etc/emqx/certs/ca.crt")
 
 
 def topic_extract(topic: str) -> tuple[str | None, str | None, str | None]:
@@ -113,7 +115,12 @@ class Bridge:
         if MQTT_USERNAME and MQTT_PASSWORD:
             client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         if MQTT_TLS:
-            client.tls_set(tls_version=ssl.PROTOCOL_TLS_CLIENT, cert_reqs=ssl.CERT_NONE)
+            cert_reqs = ssl.CERT_NONE if MQTT_TLS_INSECURE else ssl.CERT_REQUIRED
+            client.tls_set(
+                ca_certs=MQTT_CA_CERT,
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+                cert_reqs=cert_reqs,
+            )
             if MQTT_TLS_INSECURE:
                 client.tls_insecure_set(True)
         client.on_connect = self._on_connect

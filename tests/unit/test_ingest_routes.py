@@ -1,12 +1,15 @@
 from unittest.mock import AsyncMock, MagicMock
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from shared.ingest_core import IngestResult
+from middleware.auth import _get_client_ip as get_client_ip
 
-from routes.ingest import get_client_ip, router
+from routes.ingest import router
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -15,7 +18,12 @@ pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 def ingest_app():
     app = FastAPI()
     app.include_router(router)
-    app.state.get_pool = AsyncMock(return_value=MagicMock())
+    class _Pool:
+        @asynccontextmanager
+        async def acquire(self):
+            yield MagicMock()
+    app.state.get_pool = AsyncMock(return_value=_Pool())
+    app.state.pool = _Pool()
     app.state.auth_cache = MagicMock()
     app.state.batch_writer = MagicMock()
     app.state.batch_writer.add = AsyncMock()
@@ -24,6 +32,24 @@ def ingest_app():
     app.state.rps = 5.0
     app.state.burst = 20.0
     app.state.require_token = True
+    class _JS:
+        async def publish(self, *args, **kwargs):
+            return None
+    class _NATS:
+        def jetstream(self):
+            return _JS()
+    app.state.nats_client = _NATS()
+    app.state.get_nats = AsyncMock(return_value=app.state.nats_client)
+    limiter = SimpleNamespace(
+        check_all=lambda *args, **kwargs: (True, "", 200),
+        get_stats=lambda: {"allowed": 1},
+    )
+    import routes.ingest as ingest_routes
+    ingest_routes.get_rate_limiter = lambda: limiter
+    # Remove auth dependency for metrics endpoint
+    for route in app.router.routes:
+        if getattr(route, "path", "").endswith("/metrics/rate-limits"):
+            route.dependant.dependencies = []
     return app
 
 

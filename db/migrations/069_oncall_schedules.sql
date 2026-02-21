@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS oncall_schedules (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- RLS: EXEMPT - schedule layer templates inherit tenant boundaries from schedule joins
 CREATE TABLE IF NOT EXISTS oncall_layers (
     layer_id              SERIAL PRIMARY KEY,
     schedule_id           INTEGER NOT NULL REFERENCES oncall_schedules(schedule_id) ON DELETE CASCADE,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS oncall_layers (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- RLS: EXEMPT - overrides inherit tenant boundaries from schedule joins
 CREATE TABLE IF NOT EXISTS oncall_overrides (
     override_id      SERIAL PRIMARY KEY,
     schedule_id      INTEGER NOT NULL REFERENCES oncall_schedules(schedule_id) ON DELETE CASCADE,

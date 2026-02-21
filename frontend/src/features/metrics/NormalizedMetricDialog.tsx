@@ -155,7 +155,7 @@ export default function NormalizedMetricDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {isEditing
@@ -164,24 +164,26 @@ export default function NormalizedMetricDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="normalized-name">Name (used in rules)</Label>
-            <Input
-              id="normalized-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Temperature"
-              disabled={isEditing}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="normalized-unit">Display Unit</Label>
-            <Input
-              id="normalized-unit"
-              value={unit}
-              onChange={(event) => setUnit(event.target.value)}
-              placeholder="°F"
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="normalized-name">Name (used in rules)</Label>
+              <Input
+                id="normalized-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Temperature"
+                disabled={isEditing}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="normalized-unit">Display Unit</Label>
+              <Input
+                id="normalized-unit"
+                value={unit}
+                onChange={(event) => setUnit(event.target.value)}
+                placeholder="°F"
+              />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="normalized-description">Description</Label>

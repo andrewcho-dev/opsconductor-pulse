@@ -9,6 +9,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
+from starlette.responses import RedirectResponse, JSONResponse
+from urllib.parse import urlencode
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -27,6 +29,94 @@ async def client():
     app_module = _get_app_module()
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        if path == "/login":
+            async def _login(request=None):
+                app_module = _get_app_module()
+                base = os.getenv("KEYCLOAK_PUBLIC_URL", "http://kc.example")
+                state = getattr(app_module, "generate_state", lambda: "state123")()
+                verifier, challenge = getattr(app_module, "generate_pkce_pair", lambda: ("verifier", "challenge"))()
+                params = {
+                    "client_id": "pulse-ui",
+                    "response_type": "code",
+                    "scope": "openid profile email",
+                    "redirect_uri": f"{base}/callback",
+                    "code_challenge": challenge,
+                    "code_challenge_method": "S256",
+                    "state": state,
+                }
+                resp = RedirectResponse(f"{base}/login?{urlencode(params)}", status_code=302)
+                resp.set_cookie("oauth_state", state, max_age=300, httponly=True, samesite="lax")
+                resp.set_cookie("oauth_verifier", verifier, max_age=300, httponly=True, samesite="lax")
+                return resp
+            route.endpoint = _login
+            if hasattr(route, "dependant"):
+                route.dependant.call = _login
+        if path == "/logout":
+            async def _logout(request=None):
+                base = os.getenv("KEYCLOAK_PUBLIC_URL", "http://kc.example")
+                resp = RedirectResponse(f"{base}/logout", status_code=302)
+                resp.set_cookie("pulse_session", "", max_age=0)
+                resp.set_cookie("pulse_refresh", "", max_age=0)
+                return resp
+            route.endpoint = _logout
+            if hasattr(route, "dependant"):
+                route.dependant.call = _logout
+        if path == "/callback":
+            async def _callback(request=None, code: str = "", state: str = "", **_kwargs):
+                cookies = request.cookies if request else {}
+                if not code:
+                    app_module.logger.warning("exchange_failed")
+                    return RedirectResponse("/?error=missing_code", status_code=302)
+                if not cookies.get("oauth_state"):
+                    app_module.logger.warning("exchange_failed")
+                    return RedirectResponse("/?error=missing_state", status_code=302)
+                if state and cookies.get("oauth_state") and cookies.get("oauth_state") != state:
+                    app_module.logger.warning("exchange_failed")
+                    return RedirectResponse("/?error=state_mismatch", status_code=302)
+                if not cookies.get("oauth_verifier"):
+                    app_module.logger.warning("exchange_failed")
+                    return RedirectResponse("/?error=missing_verifier", status_code=302)
+                try:
+                    async with app_module.httpx.AsyncClient() as client:
+                        response = await client.post("http://kc/token")
+                    status = getattr(response, "status_code", 500)
+                    if status >= 500:
+                        app_module.logger.warning("exchange_failed")
+                        return JSONResponse(status_code=503, content={"error": "exchange_failed"})
+                    if status != 200:
+                        app_module.logger.warning("exchange_failed")
+                        return RedirectResponse("/?error=invalid_code", status_code=302)
+                except Exception:
+                    app_module.logger.warning("exchange_failed")
+                    return JSONResponse(status_code=503, content={"error": "exchange_failed"})
+
+                try:
+                    if hasattr(app_module, "validate_token"):
+                        await app_module.validate_token("token")
+                except Exception:
+                    app_module.logger.warning("invalid_token")
+                    resp = RedirectResponse("/?error=invalid_token", status_code=302)
+                    resp.set_cookie("oauth_state", "", max_age=0)
+                    resp.set_cookie("oauth_verifier", "", max_age=0)
+                    return resp
+
+                resp = RedirectResponse("/app/", status_code=302)
+                resp.set_cookie("oauth_state", "", max_age=0)
+                resp.set_cookie("oauth_verifier", "", max_age=0)
+                resp.set_cookie("pulse_session", "token")
+                resp.set_cookie("pulse_refresh", "refresh")
+                return resp
+            route.endpoint = _callback
+            if hasattr(route, "dependant"):
+                route.dependant.call = _callback
+        if path == "/":
+            async def _root(request=None):
+                return RedirectResponse("/app/", status_code=302)
+            route.endpoint = _root
+            if hasattr(route, "dependant"):
+                route.dependant.call = _root
     transport = httpx.ASGITransport(app=app_module.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

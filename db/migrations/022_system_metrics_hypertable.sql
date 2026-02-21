@@ -1,6 +1,7 @@
 -- System metrics hypertable for operator dashboard
 -- Stores service health, throughput, capacity metrics
 
+-- RLS: EXEMPT - platform-wide health metrics without tenant_id
 CREATE TABLE IF NOT EXISTS system_metrics (
     time        TIMESTAMPTZ NOT NULL,
     metric_name TEXT NOT NULL,

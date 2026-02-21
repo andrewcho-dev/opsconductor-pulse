@@ -39,15 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 
 from ws_manager import ConnectionManager, WSConnection
 
-# Configure rate limit for tests before importing api_v2
-os.environ.setdefault("API_RATE_LIMIT", "5")
-os.environ.setdefault("API_RATE_WINDOW_SECONDS", "60")
-
-try:
-    from routes.api_v2 import _check_rate_limit, _rate_buckets, _validate_timestamp, API_RATE_LIMIT
-    _api_v2_imported = True
-except Exception:
-    _api_v2_imported = False
+from routes.api_v2 import create_ws_ticket, consume_ws_ticket, _ws_tickets
 
 from fastapi import HTTPException
 
@@ -157,55 +149,23 @@ async def test_multiple_connections():
     assert manager.connection_count == 1
 
 
-def test_rate_limit_allows_under_limit():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    _rate_buckets.clear()
-    for _ in range(API_RATE_LIMIT):
-        assert _check_rate_limit("tenant-test") is True
+def test_create_ws_ticket_returns_token():
+    _ws_tickets.clear()
+    ticket = create_ws_ticket({"sub": "user-1", "tenant_id": "tenant-a"})
+    assert isinstance(ticket, str)
+    assert ticket in _ws_tickets
 
 
-def test_rate_limit_blocks_over_limit():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    _rate_buckets.clear()
-    for _ in range(API_RATE_LIMIT):
-        assert _check_rate_limit("tenant-test") is True
-    assert _check_rate_limit("tenant-test") is False
+def test_consume_ws_ticket_single_use():
+    _ws_tickets.clear()
+    ticket = create_ws_ticket({"sub": "user-1"})
+    first = consume_ws_ticket(ticket)
+    second = consume_ws_ticket(ticket)
+    assert first is not None
+    assert first.get("sub") == "user-1"
+    assert second is None
 
 
-def test_rate_limit_per_tenant_isolation():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    _rate_buckets.clear()
-    for _ in range(API_RATE_LIMIT):
-        assert _check_rate_limit("tenant-a") is True
-    assert _check_rate_limit("tenant-a") is False
-    assert _check_rate_limit("tenant-b") is True
-
-
-def test_validate_timestamp_valid():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    assert _validate_timestamp("2024-01-15T10:30:00Z", "start") == "2024-01-15T10:30:00Z"
-
-
-def test_validate_timestamp_none():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    assert _validate_timestamp(None, "start") is None
-
-
-def test_validate_timestamp_invalid():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    with pytest.raises(HTTPException) as excinfo:
-        _validate_timestamp("not-a-date", "start")
-    assert excinfo.value.status_code == 400
-
-
-def test_validate_timestamp_sanitizes():
-    if not _api_v2_imported:
-        pytest.skip("api_v2 import unavailable in test environment")
-    value = "2024-01-15T10:30:00Z; DROP TABLE"
-    assert _validate_timestamp(value, "start") == "2024-01-15T10:30:00ZDROPTABLE"
+def test_consume_ws_ticket_invalid_returns_none():
+    _ws_tickets.clear()
+    assert consume_ws_ticket("invalid-ticket") is None

@@ -8,22 +8,23 @@ import asyncpg
 import httpx
 
 from shared.http_client import traced_client
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-COLLECTION_INTERVAL = int(os.getenv("METRICS_COLLECTION_INTERVAL", "5"))
+COLLECTION_INTERVAL = int(optional_env("METRICS_COLLECTION_INTERVAL", "5"))
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
-INGEST_URL = os.getenv("INGEST_HEALTH_URL", "http://iot-ingest:8080")
-EVALUATOR_URL = os.getenv("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
+INGEST_URL = optional_env("INGEST_HEALTH_URL", "http://iot-ingest:8080")
+EVALUATOR_URL = optional_env("EVALUATOR_HEALTH_URL", "http://iot-evaluator:8080")
 
 
 class MetricsCollector:
