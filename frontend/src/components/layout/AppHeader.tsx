@@ -191,7 +191,7 @@ export function AppHeader() {
   const openAlertCount = alertData?.total ?? 0;
 
   return (
-    <header className="flex h-14 items-center gap-2 border-b border-border px-4 bg-card">
+    <header className="flex h-16 items-center gap-2 border-b border-border px-4 bg-card">
       <Link
         to={isOperator ? "/operator" : "/home"}
         className="flex items-center shrink-0"
@@ -200,7 +200,7 @@ export function AppHeader() {
         <img
           src="/app/opsconductor_logo_clean_PROPER.svg"
           alt="OpsConductor"
-          className="h-7 w-7"
+            className="h-8 w-8"
         />
       </Link>
       <nav
