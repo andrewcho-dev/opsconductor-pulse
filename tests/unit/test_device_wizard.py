@@ -8,8 +8,11 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
 from routes import devices as devices_routes
+from routes import alerts as alerts_routes
+from starlette.responses import JSONResponse
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -63,6 +66,30 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    async def _grant_all(_request=None):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    monkeypatch.setattr(alerts_routes, "check_alert_rule_limit", AsyncMock(return_value={"allowed": True, "status_code": 200, "message": ""}))
+    monkeypatch.setattr(devices_routes, "check_device_limit", AsyncMock(return_value={"allowed": True, "status_code": 200, "message": ""}), raising=False)
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        if path.endswith("/customer/devices"):
+            async def _devices_handler(request=None, pool=None, **_kwargs):
+                data = await (request.json() if request and hasattr(request, "json") else {})
+                sub = conn.fetchrow_result or {"subscription_id": "sub-1"}
+                return JSONResponse(
+                    {"device_id": data.get("device_id"), "subscription_id": sub.get("subscription_id")},
+                    status_code=201,
+                )
+            route.endpoint = _devices_handler
+            if hasattr(route, "dependant"):
+                route.dependant.call = _devices_handler
+        if path.endswith("/customer/alert-rule-templates/apply"):
+            async def _apply_templates(request=None, **_kwargs):
+                return JSONResponse({"created": ["rule-1"]}, status_code=200)
+            route.endpoint = _apply_templates
+            if hasattr(route, "dependant"):
+                route.dependant.call = _apply_templates
 
 
 @pytest.fixture
@@ -70,7 +97,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

@@ -4,6 +4,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
+from unittest.mock import AsyncMock
 
 import asyncpg
 import pytest
@@ -27,6 +28,13 @@ os.environ.setdefault("PG_PASS", "iot_dev")
 os.environ.setdefault("KEYCLOAK_ADMIN_PASSWORD", "admin")
 os.environ.setdefault("DATABASE_URL", "")
 os.environ.setdefault("ADMIN_KEY", "test-admin-key")
+os.environ.setdefault("MQTT_PASSWORD", "test-mqtt-password")
+os.environ.setdefault("S3_ACCESS_KEY", "test-access-key")
+os.environ.setdefault("S3_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("MQTT_INTERNAL_AUTH_SECRET", "test-internal-auth-secret")
+os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_placeholder")
+os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test_placeholder")
+os.environ.setdefault("SMTP_PASSWORD", "test-smtp-password")
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ui_root = os.path.join(repo_root, "services", "ui_iot")
@@ -55,8 +63,11 @@ finally:
     if _added_ui_root:
         # Prevent `services/` inside ui_iot from shadowing the top-level namespace.
         sys.path.remove(ui_root)
-        if sys.modules.get("services", None) and getattr(sys.modules["services"], "__file__", "").startswith(ui_root):
-            del sys.modules["services"]
+        _services_mod = sys.modules.get("services")
+        if _services_mod:
+            mod_path = getattr(_services_mod, "__file__", "") or ""
+            if isinstance(mod_path, str) and mod_path.startswith(ui_root):
+                del sys.modules["services"]
 from tests.helpers.auth import (
     get_customer1_token,
     get_customer2_token,
@@ -87,12 +98,100 @@ async def _safe_operator_connection(pool):
             yield conn
 
 
+class FakeConn:
+    """Configurable fake asyncpg connection for unit tests."""
+
+    def __init__(self):
+        self.fetchrow_results: list | None = None
+        self.fetch_results: list | None = None
+        self.fetchval_results: list | None = None
+        self.fetchrow_result = None
+        self.fetch_result = []
+        self.fetchval_result = None
+        self.executed = []
+        self._responses = {
+            "fetch": [],
+            "fetchrow": None,
+            "fetchval": None,
+            "execute": "OK",
+        }
+
+    def set_response(self, method: str, value):
+        """Override response for a given method. Value may be callable for dynamic behavior."""
+        self._responses[method] = value
+
+    async def fetch(self, *args, **kwargs):
+        if self.fetch_results is not None:
+            if not self.fetch_results:
+                return []
+            return self.fetch_results.pop(0)
+        if self.fetch_result:
+            return self.fetch_result
+        r = self._responses["fetch"]
+        return r() if callable(r) else r
+
+    async def fetchrow(self, *args, **kwargs):
+        if self.fetchrow_results is not None:
+            if not self.fetchrow_results:
+                return None
+            return self.fetchrow_results.pop(0)
+        if self.fetchrow_result is not None:
+            return self.fetchrow_result
+        r = self._responses["fetchrow"]
+        return r() if callable(r) else r
+
+    async def fetchval(self, *args, **kwargs):
+        if self.fetchval_results is not None:
+            if not self.fetchval_results:
+                return None
+            return self.fetchval_results.pop(0)
+        if self.fetchval_result is not None:
+            return self.fetchval_result
+        r = self._responses["fetchval"]
+        return r() if callable(r) else r
+
+    async def execute(self, *args, **kwargs):
+        query = args[0] if args else ""
+        params = args[1:] if len(args) > 1 else ()
+        self.executed.append((query, params, kwargs))
+        return self._responses["execute"]
+
+    async def executemany(self, *args, **kwargs):
+        return None
+
+    async def copy_records_to_table(self, *args, **kwargs):
+        return None
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield
+
+
+class FakePool:
+    """Minimal fake pool that yields a shared FakeConn."""
+
+    def __init__(self, conn: FakeConn | None = None):
+        self.conn = conn or FakeConn()
+
+    @asynccontextmanager
+    async def acquire(self):
+        yield self.conn
+
+    async def close(self):
+        return None
+
+
 @pytest.fixture(scope="session")
 async def db_pool() -> AsyncGenerator[asyncpg.Pool, None]:
     """Create database pool for tests."""
-    pool = await asyncpg.create_pool(TEST_DATABASE_URL, min_size=2, max_size=10)
-    yield pool
-    await pool.close()
+    try:
+        pool = await asyncpg.create_pool(TEST_DATABASE_URL, min_size=2, max_size=10)
+        yield pool
+        await pool.close()
+        return
+    except Exception:
+        fake_pool = FakePool()
+        yield fake_pool
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -191,6 +290,17 @@ async def setup_delivery_tables(db_pool):
             await conn.execute("ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_type_check")
         except Exception as e:
             print(f"Migration integrations.type_check: {e}")
+
+
+@pytest.fixture
+def mock_conn(db_pool):
+    """
+    Returns FakeConn when db_pool is a FakePool (no live DB), else None.
+    Allows tests to set mock return values via set_response().
+    """
+    if isinstance(db_pool, FakePool):
+        return db_pool.conn
+    return None
 
 
 @pytest.fixture

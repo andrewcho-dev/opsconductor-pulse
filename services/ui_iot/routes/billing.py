@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+import stripe
 
 from middleware.auth import JWTBearer
 from middleware.tenant import inject_tenant_context, get_tenant_id, get_user, require_customer
@@ -25,6 +26,37 @@ from services.stripe_service import (
 from services.keycloak_admin import create_user, assign_realm_role, send_password_reset_email
 
 logger = logging.getLogger("pulse.billing")
+
+HANDLED_EVENT_TYPES = {
+    "checkout.session.completed",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_failed",
+    "invoice.payment_succeeded",
+    "invoice.paid",
+}
+
+
+def _can_transition(current_status: str | None, new_status: str) -> bool:
+    allowed = {
+        None: {"TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"},
+        "TRIAL": {"TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"},
+        "ACTIVE": {"ACTIVE", "GRACE", "SUSPENDED", "EXPIRED"},
+        "GRACE": {"GRACE", "ACTIVE", "SUSPENDED", "EXPIRED"},
+        "SUSPENDED": {"SUSPENDED", "ACTIVE", "EXPIRED"},
+        "EXPIRED": {"EXPIRED"},
+    }
+    return new_status in allowed.get(current_status, set())
+
+
+def _event_summary(event: dict) -> dict:
+    obj = (event.get("data") or {}).get("object") or {}
+    return {
+        "id": event.get("id"),
+        "type": event.get("type"),
+        "object_id": obj.get("id"),
+        "object_type": obj.get("object"),
+    }
 
 # ── Customer billing router ──────────────────────────────────
 
@@ -625,12 +657,12 @@ async def _handle_checkout_completed(pool, session):
                     try:
                         await send_password_reset_email(user_id)
                     except Exception:
-                        logger.warning("Failed to send welcome email to %s", admin_email)
+                        logger.warning("Failed to send welcome email for tenant %s", tenant_id)
 
-                logger.info("Created Keycloak user %s for tenant %s", admin_email, tenant_id)
+                logger.info("Created Keycloak user for tenant %s", tenant_id)
 
             except Exception as exc:
-                logger.error("Failed to create Keycloak user %s: %s", admin_email, exc)
+                logger.error("Failed to create Keycloak user for tenant %s: %s", tenant_id, exc)
                 # Don't fail the webhook — tenant + subscription are created
                 # Operator can manually create the user
 
@@ -643,6 +675,8 @@ async def _handle_checkout_completed(pool, session):
 async def _handle_subscription_updated(pool, stripe_sub):
     """Handle plan change or status change from Stripe."""
     stripe_sub_id = stripe_sub["id"]
+    # Re-fetch to avoid trusting event payload for critical billing state.
+    stripe_sub = retrieve_subscription(stripe_sub_id)
     metadata = stripe_sub.get("metadata", {}) or {}
     tenant_id = metadata.get("tenant_id")
     device_id = metadata.get("device_id")
@@ -672,11 +706,19 @@ async def _handle_subscription_updated(pool, stripe_sub):
                 )
 
             existing = await conn.fetchrow(
-                "SELECT subscription_id, tenant_id, plan_id, device_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
+                "SELECT subscription_id, tenant_id, plan_id, device_id, status FROM device_subscriptions WHERE stripe_subscription_id = $1",
                 stripe_sub_id,
             )
             if not existing:
                 logger.warning("No device_subscription for Stripe sub %s", stripe_sub_id)
+                return
+            if not _can_transition(existing["status"], platform_status):
+                logger.warning(
+                    "Invalid Stripe status transition blocked for %s (%s -> %s)",
+                    stripe_sub_id,
+                    existing["status"],
+                    platform_status,
+                )
                 return
 
             new_plan_id = plan_id or existing["plan_id"]
@@ -732,10 +774,17 @@ async def _handle_subscription_deleted(pool, stripe_sub):
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
+            "SELECT subscription_id, tenant_id, status FROM device_subscriptions WHERE stripe_subscription_id = $1",
             stripe_sub_id,
         )
         if not existing:
+            return
+        if not _can_transition(existing["status"], "EXPIRED"):
+            logger.warning(
+                "Invalid Stripe status transition blocked for %s (%s -> EXPIRED)",
+                stripe_sub_id,
+                existing["status"],
+            )
             return
 
         async with conn.transaction():
@@ -800,10 +849,17 @@ async def _handle_invoice_paid(pool, invoice):
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT subscription_id, tenant_id FROM device_subscriptions WHERE stripe_subscription_id = $1",
+            "SELECT subscription_id, tenant_id, status FROM device_subscriptions WHERE stripe_subscription_id = $1",
             stripe_sub_id,
         )
         if not existing:
+            return
+        if not _can_transition(existing["status"], "ACTIVE"):
+            logger.warning(
+                "Invalid Stripe status transition blocked for %s (%s -> ACTIVE)",
+                stripe_sub_id,
+                existing["status"],
+            )
             return
 
         # Get updated period from Stripe
@@ -846,17 +902,50 @@ async def stripe_webhook(request: Request):
     pool = request.app.state.pool
 
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(400, "Missing stripe-signature header")
 
     try:
         event = construct_webhook_event(payload, sig_header)
-    except Exception as exc:
-        logger.warning("Stripe webhook signature failed: %s", exc)
+    except stripe.error.SignatureVerificationError:
+        logger.warning("Stripe webhook signature verification failed")
         raise HTTPException(400, "Invalid signature")
+    except Exception:
+        logger.error("Stripe webhook parsing failed", exc_info=True)
+        raise HTTPException(400, "Invalid payload")
 
-    event_type = event["type"]
-    data_object = event["data"]["object"]
-    logger.info("Stripe webhook: %s (id=%s)", event_type, event.get("id"))
+    event_id = event.get("id")
+    event_type = event.get("type")
+    data_object = (event.get("data") or {}).get("object")
+    if not event_id or not event_type or not isinstance(data_object, dict):
+        raise HTTPException(400, "Invalid payload")
+
+    logger.info("Stripe webhook: %s (id=%s)", event_type, event_id)
+
+    if event_type not in HANDLED_EVENT_TYPES:
+        logger.debug("Unhandled Stripe event type, ignoring: %s", event_type)
+        return {"status": "ok"}
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            inserted_id = await conn.fetchval(
+                """
+                INSERT INTO stripe_events (event_id, event_type, received_at, payload_summary)
+                VALUES ($1, $2, NOW(), $3::jsonb)
+                ON CONFLICT (event_id) DO NOTHING
+                RETURNING event_id
+                """,
+                event_id,
+                event_type,
+                json.dumps(_event_summary(event)),
+            )
+            if inserted_id is None:
+                logger.info(
+                    "Stripe event already processed, skipping",
+                    extra={"event_id": event_id},
+                )
+                return {"status": "ok"}
 
     try:
         if event_type == "checkout.session.completed":
@@ -867,7 +956,7 @@ async def stripe_webhook(request: Request):
             await _handle_subscription_deleted(pool, data_object)
         elif event_type == "invoice.payment_failed":
             await _handle_payment_failed(pool, data_object)
-        elif event_type == "invoice.paid":
+        elif event_type in {"invoice.paid", "invoice.payment_succeeded"}:
             await _handle_invoice_paid(pool, data_object)
         else:
             logger.debug("Unhandled Stripe event: %s", event_type)
@@ -876,5 +965,10 @@ async def stripe_webhook(request: Request):
         # Return 200 to avoid Stripe retry storms on processing errors
         # Errors are logged; events can be replayed from Stripe dashboard
 
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE stripe_events SET processed_at = NOW() WHERE event_id = $1",
+            event_id,
+        )
     return {"status": "ok"}
 

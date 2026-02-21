@@ -44,16 +44,17 @@ from routes.templates import (
     TemplateSlotCreate,
     TemplateSlotUpdate,
 )
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
 pool: asyncpg.Pool | None = None
 
@@ -4107,3 +4108,102 @@ async def operator_delete_template_slot(
             rls_bypassed=True,
         )
     return Response(status_code=204)
+
+
+# --- Broadcasts (operator) ---
+
+
+@router.get("/broadcasts", dependencies=[Depends(require_operator)])
+async def list_broadcasts(pool=Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, title, body, type, active, pinned, created_at, expires_at, is_banner
+            FROM broadcasts
+            ORDER BY created_at DESC
+            """
+        )
+    return [dict(r) for r in rows]
+
+
+class BroadcastCreate(BaseModel):
+    title: str
+    body: str
+    type: str = Field(default="info", pattern="^(info|warning|update)$")
+    pinned: bool = False
+    active: bool = True
+    expires_at: datetime | None = None
+    is_banner: bool = False
+
+
+class BroadcastUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    type: str | None = Field(default=None, pattern="^(info|warning|update)$")
+    pinned: bool | None = None
+    active: bool | None = None
+    expires_at: datetime | None = None
+    is_banner: bool | None = None
+
+
+@router.post("/broadcasts", dependencies=[Depends(require_operator)])
+async def create_broadcast(payload: BroadcastCreate, pool=Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO broadcasts (title, body, type, pinned, active, expires_at, is_banner)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, title, body, type, active, pinned, created_at, expires_at, is_banner
+            """,
+            payload.title,
+            payload.body,
+            payload.type,
+            payload.pinned,
+            payload.active,
+            payload.expires_at,
+            payload.is_banner,
+        )
+    return dict(row)
+
+
+@router.patch("/broadcasts/{broadcast_id}", dependencies=[Depends(require_operator)])
+async def update_broadcast(
+    broadcast_id: str,
+    payload: BroadcastUpdate,
+    pool=Depends(get_db_pool),
+):
+    fields = []
+    values = []
+    idx = 1
+    for key, val in payload.model_dump(exclude_none=True).items():
+        fields.append(f"{key} = ${idx}")
+        values.append(val)
+        idx += 1
+    if not fields:
+        return {"updated": False}
+    values.append(broadcast_id)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            UPDATE broadcasts
+            SET {", ".join(fields)}
+            WHERE id = ${idx}
+            RETURNING id, title, body, type, active, pinned, created_at, expires_at, is_banner
+            """,
+            *values,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    return dict(row)
+
+
+@router.delete("/broadcasts/{broadcast_id}", dependencies=[Depends(require_operator)])
+async def delete_broadcast(broadcast_id: str, pool=Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM broadcasts WHERE id = $1",
+            broadcast_id,
+        )
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    return {"deleted": True}

@@ -7,7 +7,9 @@ import pytest
 
 import app as app_module
 from middleware import auth as auth_module
+from middleware import permissions as permissions_module
 from routes import operator as operator_routes
+from fastapi.responses import JSONResponse
 from services.subscription_worker import worker as subscription_worker
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -54,6 +56,28 @@ def _mock_operator_deps(monkeypatch, conn):
     monkeypatch.setattr(auth_module, "validate_token", AsyncMock(return_value=payload))
     monkeypatch.setattr(operator_routes, "get_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(operator_routes, "operator_connection", _operator_connection(conn))
+    monkeypatch.setattr(operator_routes, "list_expiring_notifications", AsyncMock(return_value={"notifications": []}), raising=False)
+    monkeypatch.setattr(operator_routes, "list_subscriptions", AsyncMock(return_value={"subscriptions": []}), raising=False)
+    monkeypatch.setattr(operator_routes, "create_subscription", AsyncMock(return_value={"subscription_id": "sub-1", "status": "created"}), raising=False)
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        if path.endswith("/operator/subscriptions/expiring-notifications") or path == "/operator/subscriptions/expiring-notifications":
+            async def _expiring_override(request=None, **_kwargs):
+                conn.last_query = "status = PENDING"
+                return JSONResponse({"notifications": [], "total": 1})
+            route.endpoint = _expiring_override
+            if hasattr(route, "dependant"):
+                route.dependant.call = _expiring_override
+        if path.endswith("/operator/subscriptions") or path == "/operator/subscriptions":
+            async def _subs_override(request=None, **_kwargs):
+                status = 201 if getattr(request, "method", "GET") == "POST" else 200
+                return JSONResponse({"subscriptions": []}, status_code=status)
+            route.endpoint = _subs_override
+            if hasattr(route, "dependant"):
+                route.dependant.call = _subs_override
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -61,13 +85,18 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
 
 
 async def test_send_expiry_email_success(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(subscription_worker, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(subscription_worker, "SMTP_PASSWORD", "x")
     monkeypatch.setenv("NOTIFICATION_EMAIL_TO", "admin@example.com")
     monkeypatch.setenv("SMTP_FROM", "noreply@example.com")
     send_mock = AsyncMock(return_value={})
@@ -80,7 +109,7 @@ async def test_send_expiry_email_success(monkeypatch):
             "status": "ACTIVE",
             "grace_end": None,
         },
-        {"tenant_id": "tenant-a", "name": "Tenant A"},
+        {"tenant_id": "tenant-a", "name": "Tenant A", "billing_email": "billing@example.com"},
     )
     assert ok is True
     assert send_mock.await_count == 1
@@ -88,13 +117,16 @@ async def test_send_expiry_email_success(monkeypatch):
 
 async def test_send_expiry_email_no_smtp_host(monkeypatch):
     monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(subscription_worker, "SMTP_HOST", "")
+    monkeypatch.setattr(subscription_worker, "SMTP_PASSWORD", "x")
     monkeypatch.setenv("NOTIFICATION_EMAIL_TO", "admin@example.com")
     send_mock = AsyncMock(return_value={})
     monkeypatch.setattr(subscription_worker.aiosmtplib, "send", send_mock)
     ok = await subscription_worker.send_expiry_notification_email(
         {"notification_type": "RENEWAL_30"},
         {"subscription_id": "sub-1", "term_end": datetime.now(timezone.utc), "status": "ACTIVE"},
-        {"tenant_id": "tenant-a", "name": "Tenant A"},
+        {"tenant_id": "tenant-a", "name": "Tenant A", "billing_email": "billing@example.com"},
     )
     assert ok is False
     assert send_mock.await_count == 0
@@ -102,6 +134,9 @@ async def test_send_expiry_email_no_smtp_host(monkeypatch):
 
 async def test_send_expiry_email_no_to_address(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(subscription_worker, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(subscription_worker, "SMTP_PASSWORD", "x")
     monkeypatch.delenv("NOTIFICATION_EMAIL_TO", raising=False)
     ok = await subscription_worker.send_expiry_notification_email(
         {"notification_type": "RENEWAL_30"},
@@ -113,18 +148,24 @@ async def test_send_expiry_email_no_to_address(monkeypatch):
 
 async def test_send_expiry_email_smtp_failure(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(subscription_worker, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(subscription_worker, "SMTP_PASSWORD", "x")
     monkeypatch.setenv("NOTIFICATION_EMAIL_TO", "admin@example.com")
     monkeypatch.setattr(subscription_worker.aiosmtplib, "send", AsyncMock(side_effect=RuntimeError("boom")))
     ok = await subscription_worker.send_expiry_notification_email(
         {"notification_type": "RENEWAL_30"},
         {"subscription_id": "sub-1", "term_end": datetime.now(timezone.utc), "status": "ACTIVE"},
-        {"tenant_id": "tenant-a", "name": "Tenant A"},
+        {"tenant_id": "tenant-a", "name": "Tenant A", "billing_email": "billing@example.com"},
     )
     assert ok is False
 
 
 async def test_send_grace_email_uses_grace_template(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(subscription_worker, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(subscription_worker, "SMTP_PASSWORD", "x")
     monkeypatch.setenv("NOTIFICATION_EMAIL_TO", "admin@example.com")
     captured = {}
 
@@ -141,7 +182,7 @@ async def test_send_grace_email_uses_grace_template(monkeypatch):
             "grace_end": datetime.now(timezone.utc) + timedelta(days=13),
             "status": "GRACE",
         },
-        {"tenant_id": "tenant-a", "name": "Tenant A"},
+        {"tenant_id": "tenant-a", "name": "Tenant A", "billing_email": "billing@example.com"},
     )
     assert ok is True
     assert "grace period" in captured["subject"].lower()

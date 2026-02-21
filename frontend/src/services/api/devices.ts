@@ -225,7 +225,7 @@ export async function provisionDevice(
     device_id: created.device_id,
     client_id: created.device_id,
     password: `tok-${created.device_id.toLowerCase()}`,
-    broker_url: "mqtt://localhost:1883",
+    broker_url: import.meta.env.VITE_MQTT_BROKER_URL ?? "mqtts://localhost:8883",
   };
 }
 

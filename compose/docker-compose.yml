@@ -3,15 +3,20 @@ services:
     image: emqx/emqx:5.8
     container_name: iot-mqtt
     environment:
-      EMQX_NODE_COOKIE: "${EMQX_NODE_COOKIE:-emqx_pulse_secret}"
-      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
-      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
+      EMQX_NODE_COOKIE: "${EMQX_NODE_COOKIE:?EMQX_NODE_COOKIE is required}"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:?EMQX_DASHBOARD_PASSWORD is required}"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:?MQTT_INTERNAL_AUTH_SECRET is required}"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE: "/etc/emqx/certs/ca.crt"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE: "/etc/emqx/certs/server.crt"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE: "/etc/emqx/certs/server.key"
+      EMQX_LISTENERS__SSL__DEFAULT__BIND: "0.0.0.0:8883"
     ports:
       - "8883:8883"
       - "9001:9001"
       - "18083:18083"
     volumes:
       - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./certs/emqx:/etc/emqx/certs:ro
       - ./mosquitto/certs:/certs:ro
       - emqx-data:/opt/emqx/data
     healthcheck:
@@ -163,7 +168,10 @@ services:
       MQTT_USERNAME: "service_pulse"
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_TLS: "false"
+      MQTT_CA_CERT: "/etc/emqx/certs/ca.crt"
       MQTT_TOPIC: "tenant/+/device/+/+"
+    volumes:
+      - ./certs/emqx:/etc/emqx/certs:ro
     depends_on:
       nats:
         condition: service_healthy
@@ -244,8 +252,11 @@ services:
       MQTT_USERNAME: "service_pulse"
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_TLS: "false"
+      MQTT_CA_CERT: "/etc/emqx/certs/ca.crt"
       DELIVERY_WORKER_COUNT: "4"
       WEBHOOK_TIMEOUT_SECONDS: "10"
+    volumes:
+      - ./certs/emqx:/etc/emqx/certs:ro
     depends_on:
       nats:
         condition: service_healthy
@@ -297,7 +308,7 @@ services:
       MQTT_USERNAME: "service_pulse"
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
-      MQTT_TLS_INSECURE: "true"
+      MQTT_TLS_INSECURE: "false"
       PG_HOST: iot-pgbouncer
       PG_PORT: "5432"
       PG_DB: iotcloud
@@ -319,7 +330,7 @@ services:
       CRL_OUTPUT_PATH: "/certs/device-crl.pem"
       EMQX_API_URL: "http://iot-mqtt:18083"
       EMQX_API_USER: "admin"
-      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:-admin123}"
+      EMQX_DASHBOARD_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:?EMQX_DASHBOARD_PASSWORD is required}"
       CERT_EXPIRY_WARNING_DAYS: "30"
     volumes:
       - ./mosquitto/certs/ca.crt:/mosquitto/certs/ca.crt:ro
@@ -462,14 +473,14 @@ services:
       MQTT_PASSWORD: ${MQTT_ADMIN_PASSWORD}
       MQTT_BROKER_URL: "mqtt://iot-mqtt:1883"
       MQTT_CA_CERT: "/mosquitto/certs/ca.crt"
-      MQTT_TLS_INSECURE: "true"
-      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:-changeme_auth_secret}"
+      MQTT_TLS_INSECURE: "false"
+      MQTT_INTERNAL_AUTH_SECRET: "${MQTT_INTERNAL_AUTH_SECRET:?MQTT_INTERNAL_AUTH_SECRET is required}"
       INGEST_HEALTH_URL: "http://iot-ingest:8080"
       EVALUATOR_HEALTH_URL: "http://iot-evaluator:8080"
       METRICS_COLLECTION_INTERVAL: "5"
       AUTH_CACHE_TTL_SECONDS: "60"
       REQUIRE_TOKEN: "1"
-      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-*}"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS}"
       API_RATE_LIMIT: "${API_RATE_LIMIT:-100}"
       API_RATE_WINDOW_SECONDS: "${API_RATE_WINDOW_SECONDS:-60}"
       WS_POLL_SECONDS: "${WS_POLL_SECONDS:-5}"

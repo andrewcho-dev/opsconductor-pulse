@@ -8,20 +8,29 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
-import boto3
-from botocore.config import Config
+try:
+    import boto3
+    from botocore.config import Config
+except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    Config = None  # type: ignore[assignment]
 import httpx
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://iot-minio:9000")
-S3_BUCKET = os.getenv("S3_BUCKET", "exports")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
-S3_REGION = os.getenv("S3_REGION", "us-east-1")
+S3_ENDPOINT = optional_env("S3_ENDPOINT", "http://iot-minio:9000")
+S3_BUCKET = optional_env("S3_BUCKET", "exports")
+S3_ACCESS_KEY = require_env("S3_ACCESS_KEY")
+S3_SECRET_KEY = require_env("S3_SECRET_KEY")
+S3_REGION = optional_env("S3_REGION", "us-east-1")
 
 
 def get_s3_client():
+    if boto3 is None or Config is None:
+        raise RuntimeError(
+            "boto3 is required for S3 export operations. Install it with: pip install boto3"
+        )
     return boto3.client(
         "s3",
         endpoint_url=S3_ENDPOINT,

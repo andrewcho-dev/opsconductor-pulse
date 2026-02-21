@@ -1,15 +1,17 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - services/ui_iot/middleware/auth.py
   - services/ui_iot/middleware/tenant.py
   - services/ui_iot/db/pool.py
+  - db/migrations/117_operator_role_granularity.sql
+  - db/migrations/118_rls_gap_fixes.sql
   - services/ui_iot/routes/internal.py
   - services/ingest_iot/ingest.py
   - compose/emqx/emqx.conf
   - compose/nats/nats.conf
   - compose/nats/init-streams.sh
-phases: [4, 36, 43, 96, 97, 142, 161, 162, 165]
+phases: [4, 36, 43, 96, 97, 142, 161, 162, 165, 197, 201]
 ---
 
 # Tenant Isolation
@@ -87,13 +89,17 @@ RLS policies (configured via migrations) rely on `app.tenant_id` being set. The 
 
 - Tenant-scoped tables include `tenant_id` and RLS policies enforce matching `current_setting('app.tenant_id')`.
 - If tenant context is missing, the app fails closed (HTTP 401/403 at middleware; DB wrapper raises for missing tenant).
+- The authoritative table-by-table status is tracked in [`rls-inventory.md`](rls-inventory.md).
+- Current coverage: 61 `PROTECTED`, 21 `EXEMPT`, 0 `REVIEW`, and 0 `GAP`.
+- New tenant-scoped tables must follow the standard RLS pattern and be added to the inventory in the same change.
 
 ## Operator Access Model
 
-Operator routes use `operator_connection(pool)`:
+Operator routes use granular roles:
 
-- `SET LOCAL ROLE pulse_operator` (BYPASSRLS)
-- No tenant context is set by default
+- `operator_read_connection(pool)` sets `pulse_operator_read` (BYPASSRLS, SELECT-only intent)
+- `operator_write_connection(pool)` sets `pulse_operator_write` (no BYPASSRLS, scoped DML intent)
+- Legacy `operator_connection(pool)` remains as a deprecated read-role alias during transition
 - Operator access should always be audited at the route/service layer
 
 ## Tenant Context Invariants

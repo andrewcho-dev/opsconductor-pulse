@@ -1,11 +1,11 @@
 ---
-last-verified: 2026-02-19
+last-verified: 2026-02-20
 sources:
   - compose/docker-compose.yml
   - compose/.env
   - compose/.env.example
   - compose/caddy/Caddyfile
-phases: [114, 115, 139, 142, 161, 162, 163, 164, 165]
+phases: [114, 115, 139, 142, 161, 162, 163, 164, 165, 193, 195]
 ---
 
 # Deployment
@@ -46,6 +46,8 @@ Key services in `compose/docker-compose.yml`:
 ## Environment Variables
 
 Source of truth for required `.env` keys is `compose/.env.example`.
+
+Credential variables are now fail-fast required at service startup. Missing values for secret-bearing vars (`*_PASS`, `*_PASSWORD`, `*_SECRET`, `*_KEY`, `*_TOKEN`) cause service startup to exit non-zero; there are no insecure fallback defaults.
 
 | Variable | Purpose / Notes |
 |----------|------------------|
@@ -91,6 +93,18 @@ Source of truth for required `.env` keys is `compose/.env.example`.
 | `S3_REGION` | S3 region (default `us-east-1`). |
 
 ## TLS Configuration
+
+MQTT TLS is enabled for external device connections on `8883`.
+
+- Generate local dev certs with `bash scripts/generate-dev-certs.sh`
+- Certs are mounted from `compose/certs/emqx/` into the EMQX container
+- External device clients should use `mqtts://<host>:8883`
+- Internal Docker-network service traffic may continue on internal listener `1883`
+- Required MQTT/EMQX env vars include:
+  - `MQTT_ADMIN_PASSWORD`
+  - `EMQX_DASHBOARD_PASSWORD`
+  - `EMQX_NODE_COOKIE`
+  - `MQTT_INTERNAL_AUTH_SECRET`
 
 ## Kubernetes (Helm)
 

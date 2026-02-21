@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getAllTags } from "@/services/api/devices";
+import { logger } from "@/lib/logger";
 
 interface TagInputProps {
   tags: string[];
@@ -26,7 +27,7 @@ export function TagInput({ tags, onTagsChange, placeholder }: TagInputProps) {
           setSuggestions(response.tags);
         }
       } catch (error) {
-        console.error("Failed to load tag suggestions:", error);
+        logger.error("Failed to load tag suggestions:", error);
         if (isMounted) {
           setSuggestions([]);
         }

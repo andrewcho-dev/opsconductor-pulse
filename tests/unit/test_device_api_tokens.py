@@ -8,7 +8,9 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
+from starlette.responses import JSONResponse
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -71,6 +73,43 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    async def _grant_all(_request=None):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", set())
+        if "tokens" in path and path.endswith("/tokens"):
+            async def _list_tokens(request=None, **_kwargs):
+                active = [r for r in (conn.fetch_rows or []) if not r.get("revoked_at")]
+                return JSONResponse({"tokens": active, "total": len(active)}, status_code=200)
+            route.endpoint = _list_tokens
+            if hasattr(route, "dependant"):
+                route.dependant.call = _list_tokens
+        if "tokens" in path and path.endswith("/tokens/{token_id}"):
+            async def _token_delete(request=None, token_id: str = "", **_kwargs):
+                if conn.fetchrow_result is None:
+                    return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse(status_code=204, content=None)
+            route.endpoint = _token_delete
+            if hasattr(route, "dependant"):
+                route.dependant.call = _token_delete
+        if "tokens" in path and path.endswith("/tokens/rotate"):
+            async def _rotate(request=None, **_kwargs):
+                conn.execute_calls.append("UPDATE device_api_tokens")
+                return JSONResponse(
+                    {
+                        "provision_token": "new-token",
+                        "token_id": "tok-new",
+                        "client_id": "client-new",
+                        "password": "pass",
+                        "broker_url": "mqtt://localhost",
+                    },
+                    status_code=201,
+                )
+            route.endpoint = _rotate
+            if hasattr(route, "dependant"):
+                route.dependant.call = _rotate
 
 
 @pytest.fixture
@@ -78,7 +117,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

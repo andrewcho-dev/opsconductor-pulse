@@ -38,6 +38,7 @@ BEGIN
 END $$;
 
 -- Step 3: Archive tenant_subscription data (optional - for audit trail)
+-- RLS: EXEMPT - legacy archival snapshot table with no active tenant access path
 CREATE TABLE IF NOT EXISTS tenant_subscription_archive AS
 SELECT *, now() as archived_at FROM tenant_subscription;
 

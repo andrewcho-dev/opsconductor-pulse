@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import logging
 
 import asyncpg
 
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def tenant_connection(pool: asyncpg.Pool, tenant_id: str) -> AsyncGenerator[asyncpg.Connection, None]:
@@ -28,7 +30,7 @@ async def tenant_connection(pool: asyncpg.Pool, tenant_id: str) -> AsyncGenerato
 
 
 @asynccontextmanager
-async def operator_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:
+async def operator_read_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:
     """
     Acquire a connection with operator role (bypasses RLS).
 
@@ -42,6 +44,27 @@ async def operator_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Conn
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Set role to pulse_operator (BYPASSRLS)
+            await conn.execute("SET LOCAL ROLE pulse_operator_read")
+            yield conn
+
+
+@asynccontextmanager
+async def operator_write_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:
+    """
+    Acquire a connection with operator write role.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ROLE pulse_operator_write")
+            yield conn
+
+
+@asynccontextmanager
+async def operator_connection(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:
+    """
+    Backward-compatible operator connection that sets pulse_operator role.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
             await conn.execute("SET LOCAL ROLE pulse_operator")
             yield conn

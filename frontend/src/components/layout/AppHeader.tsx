@@ -1,9 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 import { useUIStore } from "@/stores/ui-store";
 import {
@@ -103,7 +101,12 @@ function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-full"
+          aria-label="Open user menu"
+        >
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium">
             {initials}
           </div>
@@ -164,9 +167,6 @@ export function AppHeader() {
 
   return (
     <header className="flex h-12 items-center gap-2 border-b border-border px-3 bg-card">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="h-5" />
-
       <nav
         className="flex items-center gap-1 text-sm text-muted-foreground overflow-hidden"
         aria-label="Breadcrumb"
@@ -197,6 +197,7 @@ export function AppHeader() {
           variant="ghost"
           size="icon"
           className="h-8 w-8"
+          aria-label="Open command palette"
           onClick={() =>
             document.dispatchEvent(
               new KeyboardEvent("keydown", { key: "k", metaKey: true })
@@ -209,7 +210,13 @@ export function AppHeader() {
         <ConnectionStatus />
 
         {isCustomer && (
-          <Button variant="ghost" size="icon" className="relative h-8 w-8" asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative h-8 w-8"
+            aria-label="View alerts"
+            asChild
+          >
             <Link to="/alerts">
               <Bell className="h-4 w-4" />
               {openAlertCount > 0 && (

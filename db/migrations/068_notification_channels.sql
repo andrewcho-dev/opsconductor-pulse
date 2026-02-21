@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS notification_routing_rules (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- RLS: EXEMPT - global delivery event log keyed by channel/alert IDs
 CREATE TABLE IF NOT EXISTS notification_log (
     log_id      BIGSERIAL PRIMARY KEY,
     channel_id  INTEGER NOT NULL,

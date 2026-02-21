@@ -1,9 +1,9 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-20
 sources:
   - .github/pull_request_template.md
   - .github/BRANCH_PROTECTION.md
-phases: [142]
+phases: [142, 196]
 ---
 
 # Conventions
@@ -40,6 +40,13 @@ Example:
 - Python 3.10+ with type hints where practical
 - Async I/O (`asyncio` / `asyncpg`) for service code
 - FastAPI for HTTP services
+
+## Exception Handling
+
+- Prefer specific exception types for known failure modes
+- Never swallow exceptions with silent `pass`; always log with context
+- Infrastructure failures (database/NATS connectivity) should be logged and reraised
+- Include `exc_info=True` in logs for unexpected failures
 
 ## Frontend Style
 

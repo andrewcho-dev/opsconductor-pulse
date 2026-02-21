@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useAuth } from "./AuthProvider";
 import { fetchMyPermissions } from "@/services/api/roles";
+import { logger } from "@/lib/logger";
 
 interface PermissionContextValue {
   permissions: Set<string>;
@@ -53,7 +54,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       const data = await fetchMyPermissions();
       setPermissions(new Set(data.permissions));
     } catch (error) {
-      console.error("Failed to load permissions:", error);
+      logger.error("Failed to load permissions:", error);
       setPermissions(new Set());
     } finally {
       setLoading(false);

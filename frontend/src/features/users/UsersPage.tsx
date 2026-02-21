@@ -107,8 +107,8 @@ export default function UsersPage({ embedded }: { embedded?: boolean }) {
         const isSelf = user.id === currentUserId;
         return (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="Open user actions">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -205,10 +205,11 @@ export default function UsersPage({ embedded }: { embedded?: boolean }) {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search users..."
+          aria-label="Search users"
           className="max-w-xs"
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
-        <Button variant="outline" onClick={handleSearch}>
+          <Button variant="outline" onClick={handleSearch} aria-label="Search users">
           <Search className="h-4 w-4" />
         </Button>
         {search && (

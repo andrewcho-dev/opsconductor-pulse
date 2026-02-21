@@ -2,9 +2,12 @@ import os
 import json
 import logging
 import asyncio
+import secrets
+import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
+from starlette.requests import Request
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import asyncpg
@@ -14,16 +17,17 @@ from ws_manager import manager as ws_manager
 from db.pool import tenant_connection
 from db.queries import fetch_alerts
 from db.telemetry_queries import fetch_device_telemetry_latest
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 
-WS_KEEPALIVE_SECONDS = float(os.getenv("WS_KEEPALIVE_SECONDS", "10"))
+WS_KEEPALIVE_SECONDS = float(optional_env("WS_KEEPALIVE_SECONDS", "10"))
 
 
 pool: asyncpg.Pool | None = None
@@ -107,6 +111,55 @@ async def shutdown_ws_listener() -> None:
 
 
 ws_router = APIRouter()
+_ws_tickets: dict[str, dict] = {}
+_WS_TICKET_TTL = 30
+
+
+def _cleanup_expired_tickets() -> None:
+    now = time.monotonic()
+    expired = [k for k, v in _ws_tickets.items() if v["expires_at"] < now]
+    for key in expired:
+        del _ws_tickets[key]
+
+
+def create_ws_ticket(user_context: dict) -> str:
+    _cleanup_expired_tickets()
+    ticket = secrets.token_urlsafe(32)
+    _ws_tickets[ticket] = {
+        "user_context": user_context,
+        "expires_at": time.monotonic() + _WS_TICKET_TTL,
+    }
+    return ticket
+
+
+def consume_ws_ticket(ticket: str) -> dict | None:
+    _cleanup_expired_tickets()
+    entry = _ws_tickets.pop(ticket, None)
+    if entry is None:
+        return None
+    if entry["expires_at"] < time.monotonic():
+        return None
+    return entry["user_context"]
+
+
+@ws_router.get("/api/ws-ticket")
+async def get_ws_ticket(request: Request):
+    auth_header = request.headers.get("authorization", "")
+    token = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        token = request.cookies.get("pulse_session")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        user_context = await validate_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return {"ticket": create_ws_ticket(user_context)}
 
 
 async def _ws_push_loop(conn):
@@ -177,10 +230,13 @@ async def _ws_push_loop(conn):
 
 
 @ws_router.websocket("/api/v2/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    ticket: str | None = None,
+):
     """WebSocket endpoint for live telemetry and alert streaming.
 
-    Auth: Pass JWT as query param: ws://host/api/v2/ws?token=JWT_TOKEN
+    Auth: Pass short-lived ws ticket: ws://host/api/v2/ws?ticket=OPAQUE_TICKET
 
     Client messages (JSON):
         {"action": "subscribe", "type": "device", "device_id": "dev-0001"}
@@ -195,14 +251,14 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         {"type": "subscribed", "channel": "alerts"}
         {"type": "error", "message": "..."}
     """
-    if not token:
-        await websocket.close(code=4001, reason="Missing token parameter")
-        return
-
-    try:
-        payload = await validate_token(token)
-    except Exception:
-        await websocket.close(code=4001, reason="Invalid or expired token")
+    payload = None
+    if ticket:
+        payload = consume_ws_ticket(ticket)
+        if payload is None:
+            await websocket.close(code=4008, reason="Invalid or expired ticket")
+            return
+    else:
+        await websocket.close(code=4008, reason="Missing ticket parameter")
         return
 
     # Extract tenant ID from organization claim (new format), with legacy fallback.

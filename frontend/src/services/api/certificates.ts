@@ -1,5 +1,6 @@
 import keycloak from "@/services/auth/keycloak";
 import { apiGet, apiPost, ApiError } from "./client";
+import { logger } from "@/lib/logger";
 
 // ---------- Types ----------
 
@@ -115,7 +116,7 @@ export async function downloadCaBundle(): Promise<string> {
     try {
       await keycloak.updateToken(30);
     } catch (error) {
-      console.error("Auth token refresh failed:", error);
+      logger.error("Auth token refresh failed:", error);
       keycloak.login();
       throw new ApiError(401, "Token expired");
     }
@@ -152,7 +153,7 @@ export async function downloadOperatorCaBundle(): Promise<string> {
     try {
       await keycloak.updateToken(30);
     } catch (error) {
-      console.error("Auth token refresh failed:", error);
+      logger.error("Auth token refresh failed:", error);
       keycloak.login();
       throw new ApiError(401, "Token expired");
     }

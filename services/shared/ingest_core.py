@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import asyncpg
+from shared.metrics import ingest_records_dropped_total
 
 logger = logging.getLogger(__name__)
 SUPPORTED_ENVELOPE_VERSIONS = {"1"}
@@ -126,10 +127,12 @@ class TimescaleBatchWriter:
         pool: asyncpg.Pool,
         batch_size: int = 500,
         flush_interval_ms: int = 1000,
+        max_buffer_size: int = 5000,
     ):
         self.pool = pool
         self.batch_size = batch_size
         self.flush_interval = flush_interval_ms / 1000.0
+        self.max_buffer_size = max_buffer_size
         self.batch: list[TelemetryRecord] = []
         self._lock = asyncio.Lock()
         self._flush_task: Optional[asyncio.Task] = None
@@ -169,6 +172,19 @@ class TimescaleBatchWriter:
     async def add(self, record: TelemetryRecord):
         """Add a record to the batch."""
         async with self._lock:
+            if len(self.batch) >= self.max_buffer_size:
+                dropped = self.batch.pop(0)
+                ingest_records_dropped_total.labels(
+                    tenant_id=dropped.tenant_id or "unknown"
+                ).inc()
+                logger.warning(
+                    "batch writer buffer full, dropping oldest record",
+                    extra={
+                        "tenant_id": dropped.tenant_id,
+                        "device_id": dropped.device_id,
+                        "buffer_size": self.max_buffer_size,
+                    },
+                )
             self.batch.append(record)
             if len(self.batch) >= self.batch_size:
                 await self._flush_locked()
@@ -176,7 +192,21 @@ class TimescaleBatchWriter:
     async def add_many(self, records: list[TelemetryRecord]):
         """Add multiple records to the batch."""
         async with self._lock:
-            self.batch.extend(records)
+            for record in records:
+                if len(self.batch) >= self.max_buffer_size:
+                    dropped = self.batch.pop(0)
+                    ingest_records_dropped_total.labels(
+                        tenant_id=dropped.tenant_id or "unknown"
+                    ).inc()
+                    logger.warning(
+                        "batch writer buffer full, dropping oldest record",
+                        extra={
+                            "tenant_id": dropped.tenant_id,
+                            "device_id": dropped.device_id,
+                            "buffer_size": self.max_buffer_size,
+                        },
+                    )
+                self.batch.append(record)
             if len(self.batch) >= self.batch_size:
                 await self._flush_locked()
 

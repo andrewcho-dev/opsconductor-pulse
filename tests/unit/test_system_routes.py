@@ -7,6 +7,7 @@ import pytest
 
 import app as app_module
 from middleware import auth as auth_module
+from middleware import permissions as permissions_module
 from routes import system as system_routes
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -46,6 +47,9 @@ def _mock_auth(monkeypatch, role="operator"):
             }
         ),
     )
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -53,7 +57,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         yield c
 
 

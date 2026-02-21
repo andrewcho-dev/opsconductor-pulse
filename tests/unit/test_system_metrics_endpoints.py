@@ -16,7 +16,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         yield c
 
 

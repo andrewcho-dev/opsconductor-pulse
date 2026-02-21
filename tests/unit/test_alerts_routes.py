@@ -326,6 +326,11 @@ async def test_apply_alert_rule_templates_create_and_skip(client, monkeypatch):
     # First template: not existing -> create; Second: existing -> skip.
     conn.fetchval_results = [None, 123]
     conn.fetchrow_results = [{"id": "new-rule", "name": tmpl["name"]}]
+    monkeypatch.setattr(
+        alerts_routes,
+        "check_alert_rule_limit",
+        AsyncMock(return_value={"allowed": True, "status_code": 200, "message": ""}),
+    )
     _mock_customer_deps(monkeypatch, conn)
     resp = await client.post(
         "/api/v1/customer/alert-rule-templates/apply",

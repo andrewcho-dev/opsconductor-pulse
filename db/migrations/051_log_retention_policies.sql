@@ -18,6 +18,7 @@ BEGIN;
 -- 2. Maintenance log (track cleanup runs)
 -- ============================================
 
+-- RLS: EXEMPT - platform maintenance and retention operations log
 CREATE TABLE IF NOT EXISTS maintenance_log (
     id BIGSERIAL PRIMARY KEY,
     job_name TEXT NOT NULL,

@@ -1,10 +1,10 @@
 ---
-last-verified: 2026-02-17
+last-verified: 2026-02-20
 sources:
   - compose/docker-compose.yml
   - compose/.env.example
   - README.md
-phases: [142]
+phases: [142, 193, 195, 204]
 ---
 
 # Getting Started
@@ -28,6 +28,14 @@ cp .env.example .env
 
 Edit `compose/.env` and set strong values for secrets (DB passwords, Keycloak admin password, admin keys).
 
+Before starting services, fill all required credential variables in `.env` (see `compose/.env.example`). Services now fail at startup if required credential values are missing.
+
+Generate local MQTT TLS certificates before first `docker compose up`:
+
+```bash
+bash scripts/generate-dev-certs.sh
+```
+
 ## Start the Platform
 
 ```bash
@@ -44,7 +52,7 @@ docker compose ps
 Access:
 
 - App: `https://localhost` (accept self-signed certificate warning)
-- Keycloak Admin: `https://localhost/admin` (default: `admin / admin_dev`)
+- Keycloak Admin: `https://localhost/admin` (credentials from your populated `.env`)
 - Grafana: `http://localhost:3001`
 - Prometheus: `http://localhost:9090`
 - Provisioning API: `http://localhost:8081`
@@ -70,6 +78,10 @@ npm run dev
 ```
 
 Vite dev server runs on `http://localhost:5173` and proxies API calls to the backend.
+
+Optional frontend observability env var:
+
+- `VITE_SENTRY_DSN=` (leave blank for local development)
 
 ## Running Tests Locally
 

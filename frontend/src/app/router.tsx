@@ -41,6 +41,9 @@ import TemplateDetailPage from "@/features/templates/TemplateDetailPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import OtaCampaignDetailPage from "@/features/ota/OtaCampaignDetailPage";
 import SettingsHubPage from "@/features/settings/SettingsHubPage";
+import SupportPage from "@/features/support/SupportPage";
+import ReportsPage from "@/features/reports/ReportsPage";
+import BroadcastsPage from "@/features/operator/BroadcastsPage";
 import NotFoundPage from "@/features/NotFoundPage";
 import { useAuth } from "@/services/auth/AuthProvider";
 
@@ -110,7 +113,7 @@ export const router = createBrowserRouter(
             { path: "ota/campaigns", element: <Navigate to="/devices?tab=updates" replace /> },
             { path: "ota/campaigns/:campaignId", element: <OtaCampaignDetailPage /> },
             { path: "ota/firmware", element: <Navigate to="/devices?tab=updates" replace /> },
-            { path: "reports", element: <Navigate to="/analytics?tab=reports" replace /> },
+            { path: "reports", element: <ReportsPage /> },
             { path: "subscription", element: <Navigate to="/settings?tab=billing" replace /> },
             { path: "subscription/renew", element: <RenewalPage /> },
             { path: "notifications", element: <Navigate to="/settings?tab=channels" replace /> },
@@ -127,6 +130,7 @@ export const router = createBrowserRouter(
             { path: "settings/profile", element: <Navigate to="/settings?tab=profile" replace /> },
             { path: "settings/organization", element: <Navigate to="/settings?tab=general" replace /> },
             { path: "settings/carrier", element: <Navigate to="/settings?tab=integrations" replace /> },
+            { path: "support", element: <SupportPage /> },
           ],
         },
         // Operator routes
@@ -152,6 +156,7 @@ export const router = createBrowserRouter(
             { path: "noc", element: <NOCPage /> },
             { path: "audit-log", element: <AuditLogPage /> },
             { path: "settings", element: <SettingsPage /> },
+            { path: "broadcasts", element: <BroadcastsPage /> },
           ],
         },
         // 404 catch-all — must be last

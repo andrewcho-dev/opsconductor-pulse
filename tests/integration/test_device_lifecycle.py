@@ -35,11 +35,10 @@ class TestDeviceLifecycle:
             headers={**headers, "If-Match": etag},
             json={"desired": {"integration_test": True}},
         )
-        # Permission bootstrap can vary by environment; if denied, still consider
-        # the route reachable and correctly protected.
-        assert desired_resp.status_code in (200, 201, 403)
-        if desired_resp.status_code == 403:
-            return
+        assert desired_resp.status_code == 200
+        desired_data = desired_resp.json()
+        assert desired_data.get("device_id") == device_id
+        assert isinstance(desired_data.get("desired_version"), int)
 
         # 4) Verify ETag increments
         new_etag = desired_resp.headers.get("ETag")

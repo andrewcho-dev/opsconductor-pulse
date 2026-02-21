@@ -19,6 +19,7 @@ from workers.ota_worker import run_ota_campaign_tick
 from workers.ota_status_worker import run_ota_status_listener
 from workers.report_worker import run_report_tick
 from shared.logging import trace_id_var
+from shared.config import require_env, optional_env
 from shared.metrics import (
     pulse_processing_duration_seconds,
     pulse_db_pool_size,
@@ -28,14 +29,14 @@ from shared.metrics import (
 configure_logging("ops_worker")
 logger = logging.getLogger(__name__)
 
-PG_HOST = os.getenv("PG_HOST", "iot-postgres")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
-PG_DB = os.getenv("PG_DB", "iotcloud")
-PG_USER = os.getenv("PG_USER", "iot")
-PG_PASS = os.getenv("PG_PASS", "iot_dev")
+PG_HOST = optional_env("PG_HOST", "iot-postgres")
+PG_PORT = int(optional_env("PG_PORT", "5432"))
+PG_DB = optional_env("PG_DB", "iotcloud")
+PG_USER = optional_env("PG_USER", "iot")
+PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
-PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "10"))
+PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
 
 _pool: asyncpg.Pool | None = None
 

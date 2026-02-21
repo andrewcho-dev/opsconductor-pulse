@@ -208,6 +208,7 @@ export function DeviceSensorsPanel({ deviceId }: DeviceSensorsPanelProps) {
               size="icon"
               variant="ghost"
               className="h-7 w-7"
+              aria-label="Edit sensor"
               onClick={() => setEditSensorTarget(row.original)}
             >
               <Pencil className="h-3 w-3" />
@@ -216,6 +217,7 @@ export function DeviceSensorsPanel({ deviceId }: DeviceSensorsPanelProps) {
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-destructive"
+              aria-label="Delete sensor"
               onClick={() => setDeleteSensorTarget(row.original)}
             >
               <Trash2 className="h-3 w-3" />

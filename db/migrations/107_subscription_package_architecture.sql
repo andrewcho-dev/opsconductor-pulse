@@ -30,6 +30,7 @@ DROP TABLE IF EXISTS tenant_subscription CASCADE;
 -- STEP 2: Create account_tiers (per-tenant product definition)
 -- ═══════════════════════════════════════════════════════════════════
 
+-- RLS: EXEMPT - global account tier catalog metadata
 CREATE TABLE account_tiers (
     tier_id             VARCHAR(50)     PRIMARY KEY,
     name                VARCHAR(100)    NOT NULL,
@@ -56,6 +57,7 @@ COMMENT ON COLUMN account_tiers.support IS 'Support definition: level (developer
 -- STEP 3: Create device_plans (per-device product definition)
 -- ═══════════════════════════════════════════════════════════════════
 
+-- RLS: EXEMPT - global device plan catalog metadata
 CREATE TABLE device_plans (
     plan_id             VARCHAR(50)     PRIMARY KEY,
     name                VARCHAR(100)    NOT NULL,

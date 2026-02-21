@@ -32,12 +32,20 @@ except ImportError:
     )
 
 from shared.logging import configure_logging, get_logger
+from shared.config import require_env, optional_env
 
 configure_logging("subscription_worker")
 logger = get_logger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-NOTIFICATION_WEBHOOK_URL = os.getenv("NOTIFICATION_WEBHOOK_URL")
+DATABASE_URL = optional_env("DATABASE_URL", "")
+NOTIFICATION_WEBHOOK_URL = optional_env("NOTIFICATION_WEBHOOK_URL", "")
+SMTP_HOST = optional_env("SMTP_HOST", "")
+SMTP_PORT = int(optional_env("SMTP_PORT", "587"))
+SMTP_USER = optional_env("SMTP_USER", "")
+SMTP_PASSWORD = require_env("SMTP_PASSWORD")
+SMTP_TLS = optional_env("SMTP_TLS", "true").lower() == "true"
+SMTP_FROM = optional_env("SMTP_FROM", "noreply@pulse.local")
+WORKER_INTERVAL_SECONDS = int(optional_env("WORKER_INTERVAL_SECONDS", "3600"))
 NOTIFICATION_DAYS = [90, 60, 30, 14, 7, 1]
 GRACE_PERIOD_DAYS = 14
 
@@ -180,8 +188,7 @@ async def send_expiry_notification_email(
     Send an expiry notification email directly via SMTP.
     Returns True on success, False if SMTP is not configured or send fails.
     """
-    smtp_host = os.environ.get("SMTP_HOST")
-    if not smtp_host:
+    if not SMTP_HOST:
         return False
 
     # Use tenant's billing_email, falling back to contact_email
@@ -189,12 +196,6 @@ async def send_expiry_notification_email(
     if not to_address:
         logger.warning("No email address for tenant %s", tenant.get("tenant_id"))
         return False
-
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
-    use_tls = os.environ.get("SMTP_TLS", "true").lower() == "true"
-    from_address = os.environ.get("SMTP_FROM", "noreply@pulse.local")
 
     now = datetime.now(timezone.utc)
     term_end = subscription.get("term_end")
@@ -228,7 +229,7 @@ async def send_expiry_notification_email(
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = from_address
+    msg["From"] = SMTP_FROM
     msg["To"] = to_address
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
@@ -236,11 +237,11 @@ async def send_expiry_notification_email(
     try:
         await aiosmtplib.send(
             msg,
-            hostname=smtp_host,
-            port=smtp_port,
-            username=smtp_user or None,
-            password=smtp_password or None,
-            use_tls=use_tls,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            username=SMTP_USER or None,
+            password=SMTP_PASSWORD or None,
+            use_tls=SMTP_TLS,
         )
         return True
     except Exception as exc:
@@ -252,13 +253,7 @@ async def send_alert_digest(pool: asyncpg.Pool) -> None:
     """
     Send daily/weekly alert digests to tenant-configured recipients.
     """
-    smtp_host = os.environ.get("SMTP_HOST")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
-    use_tls = os.environ.get("SMTP_TLS", "true").lower() == "true"
-    from_address = os.environ.get("SMTP_FROM", "noreply@pulse.local")
-    if not smtp_host:
+    if not SMTP_HOST:
         return
 
     now = datetime.now(timezone.utc)
@@ -316,18 +311,18 @@ async def send_alert_digest(pool: asyncpg.Pool) -> None:
             )
             msg = MIMEMultipart("alternative")
             msg["Subject"] = f"[OpsConductor] Alert Digest - {total} open alerts"
-            msg["From"] = from_address
+            msg["From"] = SMTP_FROM
             msg["To"] = email
             msg.attach(MIMEText(body, "plain"))
 
             try:
                 await aiosmtplib.send(
                     msg,
-                    hostname=smtp_host,
-                    port=smtp_port,
-                    username=smtp_user or None,
-                    password=smtp_password or None,
-                    use_tls=use_tls,
+                    hostname=SMTP_HOST,
+                    port=SMTP_PORT,
+                    username=SMTP_USER or None,
+                    password=SMTP_PASSWORD or None,
+                    use_tls=SMTP_TLS,
                 )
                 await conn.execute(
                     """
@@ -482,5 +477,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
         asyncio.run(run_once())
     else:
-        interval = int(os.getenv("WORKER_INTERVAL_SECONDS", "3600"))
-        asyncio.run(run_loop(interval))
+        asyncio.run(run_loop(WORKER_INTERVAL_SECONDS))

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFormDirtyGuard } from "@/hooks/use-form-dirty-guard";
 import {
@@ -268,6 +268,29 @@ type AlertRuleFormValues = {
   window_seconds?: number;
 };
 
+function getConditionsRootError(errors: FieldErrors<AlertRuleFormValues>): string | undefined {
+  const value = errors.conditions;
+  if (!value || Array.isArray(value)) {
+    return undefined;
+  }
+  return typeof value.message === "string" ? value.message : undefined;
+}
+
+function getConditionItemError(
+  errors: FieldErrors<AlertRuleFormValues>,
+  index: number
+): string | undefined {
+  const value = errors.conditions;
+  if (!Array.isArray(value) || !value[index]) {
+    return undefined;
+  }
+  return (
+    value[index]?.metric_name?.message?.toString() ??
+    value[index]?.threshold?.message?.toString() ??
+    undefined
+  );
+}
+
 const defaultValues: AlertRuleFormValues = {
   ruleMode: "simple",
   name: "",
@@ -388,6 +411,7 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     defaultValues,
     mode: "onSubmit",
   });
+  const { setValue } = form;
 
   const { handleClose, showConfirm, confirmDiscard, cancelDiscard } = useFormDirtyGuard({
     form,
@@ -430,10 +454,10 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
     const sensors = allSensorsForEdit?.sensors ?? [];
     const match = sensors.find((s: Sensor) => s.sensor_id === rule.sensor_id);
     if (!match) return;
-    form.setValue("sensor_device_id", match.device_id, { shouldDirty: false });
-    form.setValue("sensor_id", match.sensor_id, { shouldDirty: false });
-    form.setValue("metric_name", match.metric_name, { shouldDirty: false });
-  }, [open, isEditing, targetingMode, rule?.sensor_id, sensorDeviceId, allSensorsForEdit, form]);
+    setValue("sensor_device_id", match.device_id, { shouldDirty: false });
+    setValue("sensor_id", match.sensor_id, { shouldDirty: false });
+    setValue("metric_name", match.metric_name, { shouldDirty: false });
+  }, [open, isEditing, targetingMode, rule?.sensor_id, sensorDeviceId, allSensorsForEdit, setValue]);
 
   useEffect(() => {
     if (!open) return;
@@ -1165,9 +1189,9 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                   </div>
                 )}
 
-                {typeof (form.formState.errors as any)?.conditions?.message === "string" && (
+                {typeof getConditionsRootError(form.formState.errors) === "string" && (
                   <div className="text-sm font-medium text-destructive">
-                    {(form.formState.errors as any).conditions.message}
+                    {getConditionsRootError(form.formState.errors)}
                   </div>
                 )}
 
@@ -1187,11 +1211,9 @@ export function AlertRuleDialog({ open, onClose, rule }: AlertRuleDialogProps) {
                       onRemove={removeCondition}
                       canRemove={multiConditions.length > 1}
                     />
-                    {(form.formState.errors as any)?.conditions?.[index] && (
+                    {getConditionItemError(form.formState.errors, index) && (
                       <div className="text-sm text-destructive">
-                        {(form.formState.errors as any).conditions[index]?.metric_name?.message ||
-                          (form.formState.errors as any).conditions[index]?.threshold?.message ||
-                          ""}
+                        {getConditionItemError(form.formState.errors, index)}
                       </div>
                     )}
                   </div>

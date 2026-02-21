@@ -163,10 +163,6 @@ export default function DeviceDetailPage() {
                 .join(" · ") || undefined
             : undefined
         }
-        breadcrumbs={[
-          { label: "Devices", href: "/devices" },
-          { label: device?.device_id ?? "..." },
-        ]}
         action={
           <div className="flex items-center gap-2">
             {device ? (

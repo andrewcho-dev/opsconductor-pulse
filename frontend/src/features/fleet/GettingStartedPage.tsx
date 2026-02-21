@@ -134,7 +134,6 @@ function GettingStartedPage() {
       <PageHeader
         title="Getting Started"
         description="Set up your fleet step by step"
-        breadcrumbs={[{ label: "Fleet" }, { label: "Getting Started" }]}
         action={
           !allComplete ? (
             <Button variant="ghost" size="sm" onClick={handleDismiss}>

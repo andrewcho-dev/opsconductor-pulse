@@ -6,8 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger(__name__)
+
+MQTT_PASSWORD = require_env("MQTT_PASSWORD")
+MQTT_CA_CERT = optional_env("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
+MQTT_TLS_INSECURE = optional_env("MQTT_TLS_INSECURE", "false").lower() == "true"
 
 try:
     import paho.mqtt.client as mqtt
@@ -49,22 +54,19 @@ async def publish_alert(
 
         def _publish_blocking() -> None:
             mqtt_username = os.getenv("MQTT_USERNAME")
-            mqtt_password = os.getenv("MQTT_PASSWORD")
-            mqtt_ca_cert = os.getenv("MQTT_CA_CERT", "/mosquitto/certs/ca.crt")
             client = mqtt.Client()
-            if mqtt_username and mqtt_password:
-                client.username_pw_set(mqtt_username, mqtt_password)
+            if mqtt_username:
+                client.username_pw_set(mqtt_username, MQTT_PASSWORD)
 
             # Enable TLS if CA cert is available
-            if os.path.exists(mqtt_ca_cert):
+            if os.path.exists(MQTT_CA_CERT):
                 import ssl
 
                 client.tls_set(
-                    ca_certs=mqtt_ca_cert,
+                    ca_certs=MQTT_CA_CERT,
                     tls_version=ssl.PROTOCOL_TLSv1_2,
                 )
-                mqtt_tls_insecure = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
-                if mqtt_tls_insecure:
+                if MQTT_TLS_INSECURE:
                     client.tls_insecure_set(True)
             client.connect(host, port, keepalive=timeout)
             client.loop_start()

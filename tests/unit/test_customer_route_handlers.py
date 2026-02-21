@@ -10,6 +10,7 @@ from fastapi import HTTPException
 import app as app_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 import dependencies as dependencies_module
 from routes import customer as customer_routes
 from routes import devices as devices_routes
@@ -111,9 +112,29 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
         client.cookies.set("csrf_token", "csrf")
+        async def _grant(req): permissions_module.permissions_context.set({"*"})
+        app_module.app.dependency_overrides[permissions_module.inject_permissions] = _grant
         yield client
+
+
+@pytest.fixture
+async def redirect_client():
+    """Client that does NOT follow redirects — for testing 302 responses."""
+    transport = httpx.ASGITransport(app=app_module.app)
+    from middleware import permissions as perm_mod
+    async def _grant(req): perm_mod.permissions_context.set({"*"})
+    app_module.app.dependency_overrides[perm_mod.inject_permissions] = _grant
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        follow_redirects=False,
+    ) as c:
+        c.cookies.set("csrf_token", "csrf")
+        yield c
 
 
 async def test_devices_json_format(client, monkeypatch):
@@ -352,42 +373,42 @@ async def test_app_helpers(monkeypatch):
     assert app_module.generate_state()
 
 
-async def test_login_redirects_to_keycloak(client, monkeypatch):
+async def test_login_redirects_to_keycloak(redirect_client, monkeypatch):
     monkeypatch.setenv("KEYCLOAK_PUBLIC_URL", "http://kc.example")
     monkeypatch.setattr(app_module, "generate_pkce_pair", lambda: ("verifier", "challenge"))
     monkeypatch.setattr(app_module, "generate_state", lambda: "state123")
 
-    resp = await client.get("/login")
+    resp = await redirect_client.get("/login")
     assert resp.status_code == 302
     assert "kc.example" in resp.headers["location"]
     assert "code_challenge=challenge" in resp.headers["location"]
 
 
-async def test_callback_missing_code(client):
-    resp = await client.get("/callback")
+async def test_callback_missing_code(redirect_client):
+    resp = await redirect_client.get("/callback")
     assert resp.status_code == 302
     assert resp.headers["location"] == "/?error=missing_code"
 
 
-async def test_callback_state_mismatch(client, monkeypatch):
+async def test_callback_state_mismatch(redirect_client, monkeypatch):
     monkeypatch.setattr(app_module, "validate_token", AsyncMock(return_value={"role": "customer_admin"}))
     cookies = {"oauth_state": "state123", "oauth_verifier": "verifier"}
-    resp = await client.get("/callback?code=abc&state=other", cookies=cookies)
+    resp = await redirect_client.get("/callback?code=abc&state=other", cookies=cookies)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/?error=state_mismatch"
 
 
-async def test_callback_token_exchange_failure(client, monkeypatch):
+async def test_callback_token_exchange_failure(redirect_client, monkeypatch):
     response = SimpleNamespace(status_code=400, text="bad", json=lambda: {})
     cookies = {"oauth_state": "state123", "oauth_verifier": "verifier"}
     monkeypatch.setattr(app_module.httpx, "AsyncClient", lambda *a, **k: _mock_async_client(response))
 
-    resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
+    resp = await redirect_client.get("/callback?code=abc&state=state123", cookies=cookies)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/?error=invalid_code"
 
 
-async def test_callback_success_customer(client, monkeypatch):
+async def test_callback_success_customer(redirect_client, monkeypatch):
     response = SimpleNamespace(
         status_code=200,
         text="ok",
@@ -397,14 +418,14 @@ async def test_callback_success_customer(client, monkeypatch):
     monkeypatch.setattr(app_module.httpx, "AsyncClient", lambda *a, **k: _mock_async_client(response))
     monkeypatch.setattr(app_module, "validate_token", AsyncMock(return_value={"role": "customer_admin"}))
 
-    resp = await client.get("/callback?code=abc&state=state123", cookies=cookies)
+    resp = await redirect_client.get("/callback?code=abc&state=state123", cookies=cookies)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/app/"
 
 
-async def test_logout_redirects_to_keycloak(client, monkeypatch):
+async def test_logout_redirects_to_keycloak(redirect_client, monkeypatch):
     monkeypatch.setenv("KEYCLOAK_PUBLIC_URL", "http://public.example")
-    resp = await client.get("/logout")
+    resp = await redirect_client.get("/logout")
     assert resp.status_code == 302
     assert "public.example" in resp.headers["location"]
 
@@ -450,13 +471,13 @@ async def test_debug_auth_prod_mode(client, monkeypatch):
     assert resp.status_code == 404
 
 
-async def test_root_no_session(client):
-    resp = await client.get("/")
+async def test_root_no_session(redirect_client):
+    resp = await redirect_client.get("/")
     assert resp.status_code == 302
     assert resp.headers["location"] == "/app/"
 
 
-async def test_root_operator_session(client, monkeypatch):
-    resp = await client.get("/")
+async def test_root_operator_session(redirect_client, monkeypatch):
+    resp = await redirect_client.get("/")
     assert resp.status_code == 302
     assert resp.headers["location"] == "/app/"

@@ -12,10 +12,6 @@ export default function SiteDetailPage() {
       <PageHeader
         title={data?.site?.name || "Site"}
         description={data?.site?.location || siteId}
-        breadcrumbs={[
-          { label: "Sites", href: "/sites" },
-          { label: data?.site?.name || siteId },
-        ]}
       />
 
       {error ? (

@@ -1,3 +1,5 @@
+import { logger } from "@/lib/logger";
+
 type Handler = (data: unknown) => void;
 
 export class MessageBus {
@@ -34,7 +36,7 @@ export class MessageBus {
       try {
         handler(data);
       } catch (err) {
-        console.error(`MessageBus handler error on topic "${topic}":`, err);
+        logger.error(`MessageBus handler error on topic "${topic}":`, err);
       }
     });
   }

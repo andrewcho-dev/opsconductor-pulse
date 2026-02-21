@@ -27,7 +27,7 @@ interface ReceivedMessage {
 let msgCounter = 0;
 
 export default function MqttTestClientPage({ embedded }: { embedded?: boolean }) {
-  const [brokerUrl, setBrokerUrl] = useState("ws://localhost:9001/mqtt");
+  const [brokerUrl, setBrokerUrl] = useState("wss://localhost:9001/mqtt");
   const [clientId, setClientId] = useState("");
   const [password, setPassword] = useState("");
   const [connected, setConnected] = useState(false);
@@ -61,6 +61,7 @@ export default function MqttTestClientPage({ embedded }: { embedded?: boolean })
         clientId: clientId || undefined,
         username: clientId || undefined,
         password: password || undefined,
+        rejectUnauthorized: import.meta.env.VITE_MQTT_TLS_INSECURE === "true" ? false : true,
         reconnectPeriod: 0, // no auto-reconnect in test mode
       });
 
@@ -149,7 +150,7 @@ export default function MqttTestClientPage({ embedded }: { embedded?: boolean })
                   id="broker-url"
                   value={brokerUrl}
                   onChange={(e) => setBrokerUrl(e.target.value)}
-                  placeholder="ws://localhost:9001/mqtt"
+                  placeholder="wss://localhost:9001/mqtt"
                   disabled={connected}
                   className="mt-1"
                 />

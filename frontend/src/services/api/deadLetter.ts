@@ -1,5 +1,4 @@
-import keycloak from "@/services/auth/keycloak";
-import { ApiError } from "./client";
+import { ApiError, getAuthHeaders } from "./client";
 
 export interface DeadLetterMessage {
   id: number;
@@ -22,39 +21,6 @@ export interface DeadLetterListResponse {
   total: number;
   limit: number;
   offset: number;
-}
-
-function getCsrfToken(): string | null {
-  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
-  return match ? match[1] : null;
-}
-
-async function getAuthHeaders(method?: string): Promise<Record<string, string>> {
-  if (keycloak.authenticated) {
-    try {
-      await keycloak.updateToken(30);
-    } catch (error) {
-      console.error("Auth token refresh failed:", error);
-      keycloak.login();
-      throw new ApiError(401, "Token expired");
-    }
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (keycloak.token) {
-    headers["Authorization"] = `Bearer ${keycloak.token}`;
-  }
-
-  const csrfToken = getCsrfToken();
-  const upperMethod = method?.toUpperCase();
-  if (csrfToken && upperMethod && ["POST", "PUT", "PATCH", "DELETE"].includes(upperMethod)) {
-    headers["X-CSRF-Token"] = csrfToken;
-  }
-
-  return headers;
 }
 
 async function apiGetJson<T>(path: string): Promise<T> {

@@ -12,10 +12,10 @@ class TestUserLifecycle:
     ):
         headers = {"Authorization": f"Bearer {customer_a_token}"}
         resp = await client.get("/customer/users", headers=headers)
-        # If permissions bootstrap is misconfigured, this can be 403; surface that.
-        assert resp.status_code in (200, 403)
-        if resp.status_code == 200:
-            assert "users" in resp.json()
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "users" in data
+        assert isinstance(data["users"], list)
 
     async def test_operator_cannot_access_customer_users(
         self, client: AsyncClient, operator_token: str

@@ -1,4 +1,5 @@
 import keycloak from "@/services/auth/keycloak";
+import { logger } from "@/lib/logger";
 
 export class ApiError extends Error {
   status: number;
@@ -12,18 +13,27 @@ export class ApiError extends Error {
   }
 }
 
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
+  if (_csrfToken) {
+    return _csrfToken;
+  }
   const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
   return match ? match[1] : null;
 }
 
-async function getAuthHeaders(method?: string): Promise<Record<string, string>> {
+let _csrfToken: string | null = null;
+
+export function storeCsrfToken(token: string): void {
+  _csrfToken = token;
+}
+
+export async function getAuthHeaders(method?: string): Promise<Record<string, string>> {
   // Ensure token is fresh (refresh if < 30s remaining)
   if (keycloak.authenticated) {
     try {
       await keycloak.updateToken(30);
     } catch (error) {
-      console.error("Auth token refresh failed:", error);
+      logger.error("Auth token refresh failed:", error);
       // Token refresh failed — Keycloak will redirect to login
       keycloak.login();
       throw new ApiError(401, "Token expired");
@@ -51,13 +61,17 @@ export async function apiGet<T>(path: string): Promise<T> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(path, { headers });
+    const csrfHeader = res.headers.get("X-CSRF-Token");
+    if (csrfHeader) {
+      storeCsrfToken(csrfHeader);
+    }
 
     if (!res.ok) {
       let body: unknown;
       try {
         body = await res.json();
       } catch (error) {
-        console.error("API GET response parse failed:", error);
+        logger.error("API GET response parse failed:", error);
         body = await res.text();
       }
       throw new ApiError(res.status, `API error: ${res.status}`, body);
@@ -68,7 +82,7 @@ export async function apiGet<T>(path: string): Promise<T> {
     if (error instanceof ApiError) {
       throw error;
     }
-    console.error(`API GET ${path} failed:`, error);
+    logger.error(`API GET ${path} failed:`, error);
     throw new ApiError(0, "Network error");
   }
 }
@@ -81,13 +95,17 @@ export async function apiPost<T>(path: string, data: unknown): Promise<T> {
       headers,
       body: JSON.stringify(data),
     });
+    const csrfHeader = res.headers.get("X-CSRF-Token");
+    if (csrfHeader) {
+      storeCsrfToken(csrfHeader);
+    }
 
     if (!res.ok) {
       let body: unknown;
       try {
         body = await res.json();
       } catch (error) {
-        console.error("API POST response parse failed:", error);
+        logger.error("API POST response parse failed:", error);
         body = await res.text();
       }
       throw new ApiError(res.status, `API error: ${res.status}`, body);
@@ -98,7 +116,7 @@ export async function apiPost<T>(path: string, data: unknown): Promise<T> {
     if (error instanceof ApiError) {
       throw error;
     }
-    console.error(`API POST ${path} failed:`, error);
+    logger.error(`API POST ${path} failed:`, error);
     throw new ApiError(0, "Network error");
   }
 }
@@ -111,13 +129,17 @@ export async function apiPut<T>(path: string, data: unknown): Promise<T> {
       headers,
       body: JSON.stringify(data),
     });
+    const csrfHeader = res.headers.get("X-CSRF-Token");
+    if (csrfHeader) {
+      storeCsrfToken(csrfHeader);
+    }
 
     if (!res.ok) {
       let body: unknown;
       try {
         body = await res.json();
       } catch (error) {
-        console.error("API PUT response parse failed:", error);
+        logger.error("API PUT response parse failed:", error);
         body = await res.text();
       }
       throw new ApiError(res.status, `API error: ${res.status}`, body);
@@ -128,7 +150,7 @@ export async function apiPut<T>(path: string, data: unknown): Promise<T> {
     if (error instanceof ApiError) {
       throw error;
     }
-    console.error(`API PUT ${path} failed:`, error);
+    logger.error(`API PUT ${path} failed:`, error);
     throw new ApiError(0, "Network error");
   }
 }
@@ -141,13 +163,17 @@ export async function apiPatch<T>(path: string, data: unknown): Promise<T> {
       headers,
       body: JSON.stringify(data),
     });
+    const csrfHeader = res.headers.get("X-CSRF-Token");
+    if (csrfHeader) {
+      storeCsrfToken(csrfHeader);
+    }
 
     if (!res.ok) {
       let body: unknown;
       try {
         body = await res.json();
       } catch (error) {
-        console.error("API PATCH response parse failed:", error);
+        logger.error("API PATCH response parse failed:", error);
         body = await res.text();
       }
       throw new ApiError(res.status, `API error: ${res.status}`, body);
@@ -158,7 +184,7 @@ export async function apiPatch<T>(path: string, data: unknown): Promise<T> {
     if (error instanceof ApiError) {
       throw error;
     }
-    console.error(`API PATCH ${path} failed:`, error);
+    logger.error(`API PATCH ${path} failed:`, error);
     throw new ApiError(0, "Network error");
   }
 }
@@ -167,13 +193,17 @@ export async function apiDelete(path: string): Promise<void> {
   try {
     const headers = await getAuthHeaders("DELETE");
     const res = await fetch(path, { method: "DELETE", headers });
+    const csrfHeader = res.headers.get("X-CSRF-Token");
+    if (csrfHeader) {
+      storeCsrfToken(csrfHeader);
+    }
 
     if (!res.ok) {
       let body: unknown;
       try {
         body = await res.json();
       } catch (error) {
-        console.error("API DELETE response parse failed:", error);
+        logger.error("API DELETE response parse failed:", error);
         body = await res.text();
       }
       throw new ApiError(res.status, `API error: ${res.status}`, body);
@@ -182,7 +212,7 @@ export async function apiDelete(path: string): Promise<void> {
     if (error instanceof ApiError) {
       throw error;
     }
-    console.error(`API DELETE ${path} failed:`, error);
+    logger.error(`API DELETE ${path} failed:`, error);
     throw new ApiError(0, "Network error");
   }
 }

@@ -1,16 +1,9 @@
 import type { ReactNode } from "react";
 
-interface BreadcrumbItem {
-  label: string;
-  href?: string;
-}
-
 interface PageHeaderProps {
   title: ReactNode;
   description?: string;
   action?: ReactNode;
-  // Deprecated: breadcrumbs are now derived in AppHeader (Phase 175).
-  breadcrumbs?: BreadcrumbItem[];
 }
 
 export function PageHeader({ title, description, action }: PageHeaderProps) {

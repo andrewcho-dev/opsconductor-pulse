@@ -204,10 +204,20 @@ export default function OperatorCarriersPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => setEditRow(row)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Edit carrier integration"
+                      onClick={() => setEditRow(row)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteRow(row)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Delete carrier integration"
+                      onClick={() => setDeleteRow(row)}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>

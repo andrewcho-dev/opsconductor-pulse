@@ -89,6 +89,7 @@ GRANT USAGE, SELECT ON SEQUENCE device_templates_id_seq TO pulse_operator;
 -- ============================================================
 -- template_metrics
 -- ============================================================
+-- RLS: EXEMPT - no tenant_id column; tenant visibility enforced via device_templates join policies
 CREATE TABLE IF NOT EXISTS template_metrics (
     id              SERIAL PRIMARY KEY,
     template_id     INT NOT NULL REFERENCES device_templates(id) ON DELETE CASCADE,
@@ -154,6 +155,7 @@ GRANT USAGE, SELECT ON SEQUENCE template_metrics_id_seq TO pulse_operator;
 -- ============================================================
 -- template_commands
 -- ============================================================
+-- RLS: EXEMPT - no tenant_id column; tenant visibility enforced via device_templates join policies
 CREATE TABLE IF NOT EXISTS template_commands (
     id                  SERIAL PRIMARY KEY,
     template_id         INT NOT NULL REFERENCES device_templates(id) ON DELETE CASCADE,
@@ -212,6 +214,7 @@ GRANT USAGE, SELECT ON SEQUENCE template_commands_id_seq TO pulse_operator;
 -- ============================================================
 -- template_slots
 -- ============================================================
+-- RLS: EXEMPT - no tenant_id column; tenant visibility enforced via device_templates join policies
 CREATE TABLE IF NOT EXISTS template_slots (
     id                      SERIAL PRIMARY KEY,
     template_id             INT NOT NULL REFERENCES device_templates(id) ON DELETE CASCADE,

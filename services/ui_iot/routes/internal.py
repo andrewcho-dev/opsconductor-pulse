@@ -11,10 +11,11 @@ from pydantic import BaseModel
 
 from db.pool import operator_connection
 from dependencies import get_db_pool
+from shared.config import require_env
 
 logger = logging.getLogger("internal")
 
-INTERNAL_AUTH_SECRET = os.getenv("MQTT_INTERNAL_AUTH_SECRET", "")
+INTERNAL_AUTH_SECRET = require_env("MQTT_INTERNAL_AUTH_SECRET")
 
 router = APIRouter(
     prefix="/api/v1/internal",

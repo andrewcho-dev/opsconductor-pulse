@@ -5,6 +5,7 @@ import { AppHeader } from "./AppHeader";
 import { AppFooter } from "./AppFooter";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { SubscriptionBanner } from "./SubscriptionBanner";
+import { AnnouncementBanner } from "@/components/shared/AnnouncementBanner";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 
@@ -16,6 +17,7 @@ export default function AppShell() {
       <div className="flex h-screen w-full overflow-hidden">
         <AppSidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
+          <AnnouncementBanner />
           <AppHeader />
           <SubscriptionBanner />
           <main className="flex-1 overflow-auto px-6 py-4">

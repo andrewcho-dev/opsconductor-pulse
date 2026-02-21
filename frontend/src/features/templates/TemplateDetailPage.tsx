@@ -602,20 +602,15 @@ export default function TemplateDetailPage() {
   if (!Number.isFinite(id)) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Template" description="Invalid template id" breadcrumbs={[{ label: "Templates", href: "/templates" }, { label: "Template" }]} />
+        <PageHeader title="Template" description="Invalid template id" />
       </div>
     );
   }
 
-  const breadcrumbs = [
-    { label: "Templates", href: "/templates" },
-    { label: template?.name ?? `#${id}` },
-  ];
-
   if (error) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Template" description="Failed to load" breadcrumbs={breadcrumbs} />
+        <PageHeader title="Template" description="Failed to load" />
         <div className="text-destructive">Failed to load template: {getErrorMessage(error)}</div>
       </div>
     );
@@ -624,7 +619,7 @@ export default function TemplateDetailPage() {
   if (isLoading || !template) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Template" description="Loading..." breadcrumbs={breadcrumbs} />
+        <PageHeader title="Template" description="Loading..." />
       </div>
     );
   }
@@ -634,7 +629,6 @@ export default function TemplateDetailPage() {
       <PageHeader
         title={template.name}
         description={`${categoryLabels[template.category] ?? template.category} • ${template.source === "system" ? "System" : "Custom"}`}
-        breadcrumbs={breadcrumbs}
         action={
           <div className="flex items-center gap-2">
             {template.is_locked ? (

@@ -108,3 +108,7 @@ sources:
 phases: [1, 23, 45, ...]
 ---
 ```
+
+## AI-to-AI Dialogue Convention
+
+No file-based relay. Claude outputs instructions directly in chat. User copies them to Cursor. Cursor outputs results directly in chat. User copies them back to Claude.

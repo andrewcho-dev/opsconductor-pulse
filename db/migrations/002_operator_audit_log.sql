@@ -3,6 +3,7 @@
 -- Date: 2026-02-02
 
 -- Operator audit log table
+-- RLS: EXEMPT - operator-only cross-tenant audit stream
 CREATE TABLE IF NOT EXISTS operator_audit_log (
     id BIGSERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,

@@ -1,43 +1,41 @@
-import { useState } from "react";
-import { useLocation, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import type { ComponentType } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
   Home,
+  BarChart2,
+  BrainCircuit,
+  Layers,
+  User,
+  Settings,
+  LifeBuoy,
   LayoutDashboard,
-  Cpu,
   Bell,
   BarChart3,
-  Scale,
-  Shield,
-  ShieldCheck,
-  Activity,
-  Gauge,
+  FileText,
+  Cpu,
+  Zap,
+  Workflow,
+  ChevronsLeft,
+  ChevronsRight,
   Monitor,
-  Server,
-  ScrollText,
-  Settings,
+  Gauge,
   Building2,
   CreditCard,
-  Users,
-  Layers,
+  Shield,
   Radio,
   LayoutGrid,
-  ChevronRight,
-  ChevronDown,
+  Users,
+  ScrollText,
+  Server,
+  Activity,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/services/auth/AuthProvider";
-import { fetchAlerts } from "@/services/api/alerts";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
@@ -45,21 +43,33 @@ import {
   SidebarRail,
   SidebarHeader,
   SidebarFooter,
+  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-type NavItem = {
+type NavChild = {
   label: string;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: ComponentType<{ className?: string }>;
+  badge?: number;
 };
 
-const operatorOverviewNav: NavItem[] = [
+type NavItem = {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  href: string;
+  match: string[];
+  children?: NavChild[];
+};
+
+const operatorOverviewNav: NavChild[] = [
   { label: "Overview", href: "/operator", icon: Monitor },
   { label: "NOC", href: "/operator/noc", icon: Monitor },
   { label: "System Metrics", href: "/operator/system-metrics", icon: Gauge },
 ];
 
-const operatorTenantNav: NavItem[] = [
+const operatorTenantNav: NavChild[] = [
   { label: "Tenants", href: "/operator/tenants", icon: Building2 },
   { label: "Health Matrix", href: "/operator/tenant-matrix", icon: LayoutGrid },
   { label: "Subscriptions", href: "/operator/subscriptions", icon: CreditCard },
@@ -68,133 +78,173 @@ const operatorTenantNav: NavItem[] = [
   { label: "Carrier Integrations", href: "/operator/carriers", icon: Radio },
 ];
 
-const operatorUsersAuditNav: NavItem[] = [
+const operatorUsersAuditNav: NavChild[] = [
   { label: "Users", href: "/operator/users", icon: Users },
   { label: "Audit Log", href: "/operator/audit-log", icon: ScrollText },
 ];
 
-const operatorSystemNav: NavItem[] = [
+const operatorSystemNav: NavChild[] = [
   { label: "All Devices", href: "/operator/devices", icon: Server },
   { label: "System", href: "/operator/system", icon: Activity },
   { label: "Certificates", href: "/operator/certificates", icon: ShieldCheck },
   { label: "Settings", href: "/operator/settings", icon: Settings },
 ];
 
-function readSidebarOpen(key: string, defaultValue: boolean) {
-  const stored = localStorage.getItem(key);
-  if (stored === null) return defaultValue;
-  return stored !== "false";
-}
-
 export function AppSidebar() {
   const location = useLocation();
   const { isOperator, isCustomer } = useAuth();
-  const [operatorOverviewOpen, setOperatorOverviewOpen] = useState(() =>
-    readSidebarOpen("sidebar-operator-overview", true)
-  );
-  const [operatorTenantsOpen, setOperatorTenantsOpen] = useState(() =>
-    readSidebarOpen("sidebar-operator-tenants", true)
-  );
-  const [operatorUsersOpen, setOperatorUsersOpen] = useState(() =>
-    readSidebarOpen("sidebar-operator-users-audit", true)
-  );
-  const [operatorSystemOpen, setOperatorSystemOpen] = useState(() =>
-    readSidebarOpen("sidebar-operator-system", true)
-  );
-  const { data: alertData } = useQuery({
-    queryKey: ["sidebar-alert-count"],
-    queryFn: () => fetchAlerts("OPEN", 1, 0),
-    refetchInterval: 30000,
-    enabled: isCustomer,
-  });
-  const openAlertCount = alertData?.total ?? 0;
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === "collapsed";
 
-  function onToggle(setter: (next: boolean) => void, key: string, next: boolean) {
-    setter(next);
-    localStorage.setItem(key, String(next));
+  const mainNavItems: NavItem[] = [
+    { icon: Home, label: "Home", href: "/home", match: ["/home", "/"] },
+    {
+      icon: BarChart2,
+      label: "Monitoring",
+      href: "/dashboard",
+      match: ["/dashboard", "/alerts"],
+      children: [
+        { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { label: "Alerts", href: "/alerts", icon: Bell },
+      ],
+    },
+    {
+      icon: BrainCircuit,
+      label: "Intelligence",
+      href: "/analytics",
+      match: ["/analytics", "/reports"],
+      children: [
+        { label: "Analytics", href: "/analytics", icon: BarChart3 },
+        { label: "Reports", href: "/reports", icon: FileText },
+      ],
+    },
+    {
+      icon: Layers,
+      label: "Fleet Management",
+      href: "/devices",
+      match: ["/devices"],
+      children: [
+        { label: "Devices", href: "/devices", icon: Cpu },
+      ],
+    },
+    {
+      icon: Workflow,
+      label: "Automation",
+      href: "/rules",
+      match: ["/rules"],
+      children: [
+        { label: "Rules", href: "/rules", icon: Zap },
+      ],
+    },
+    { icon: User, label: "Account", href: "/billing", match: ["/billing"] },
+    { icon: Settings, label: "Settings", href: "/settings", match: ["/settings"] },
+  ];
+
+  const supportNavItems: NavItem[] = [
+    { icon: LifeBuoy, label: "Support", href: "/support", match: ["/support"] },
+  ];
+
+  const pathname = location.pathname || "/";
+
+  function isActive(match: string[]) {
+    return match.some((m) =>
+      m === "/"
+        ? pathname === "/" || pathname === "/home"
+        : pathname === m || pathname.startsWith(m)
+    );
   }
 
-  function isActive(href: string) {
-    if (href === "/home") {
+  function NavButton({
+    item,
+    iconOnly,
+  }: {
+    item: NavItem | NavChild;
+    iconOnly: boolean;
+  }) {
+    const Icon = item.icon;
+    const active = "match" in item ? isActive(item.match) : pathname.startsWith(item.href);
+    const badge = "badge" in item ? item.badge : 0;
+
+    const button = (
+      <SidebarMenuButton
+        asChild
+        isActive={active}
+        className=""
+      >
+        <Link to={item.href} className="flex items-center gap-2">
+          <Icon className="h-4 w-4" />
+          {!iconOnly && <span>{item.label}</span>}
+          {badge ? (
+            <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1">
+              {badge > 99 ? "99+" : badge}
+            </Badge>
+          ) : null}
+        </Link>
+      </SidebarMenuButton>
+    );
+
+    if (iconOnly) {
       return (
-        location.pathname === "/home" ||
-        location.pathname === "/" ||
-        location.pathname === ""
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="w-full">{button}</div>
+          </TooltipTrigger>
+          <TooltipContent side="right">{item.label}</TooltipContent>
+        </Tooltip>
       );
     }
-    if (href === "/dashboard") {
-      return location.pathname === "/dashboard";
-    }
-    if (href === "/updates") {
-      return (
-        location.pathname.startsWith("/updates") ||
-        location.pathname.startsWith("/ota")
-      );
-    }
-    if (href === "/operator") {
-      return location.pathname === "/operator";
-    }
-    return location.pathname.startsWith(href);
+    return button;
   }
 
   function renderNavItem(item: NavItem) {
-    const Icon = item.icon;
-    const active = isActive(item.href);
-    const showAlertBadge = item.href === "/alerts" && openAlertCount > 0;
+    const iconOnly = isCollapsed;
+    const hasChildren = item.children && item.children.length > 0;
+    if (!hasChildren || iconOnly) {
+      return (
+        <SidebarMenuItem key={item.href}>
+          <NavButton item={item} iconOnly={iconOnly} />
+        </SidebarMenuItem>
+      );
+    }
+
     return (
       <SidebarMenuItem key={item.href}>
-        <SidebarMenuButton
-          asChild
-          isActive={active}
-          tooltip={item.label}
-          className={active ? "border-l-2 border-l-primary" : ""}
-        >
-          <Link to={item.href}>
-            {showAlertBadge ? (
-              <div className="flex w-full items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </div>
-                <Badge variant="destructive" className="h-5 min-w-5 px-1">
-                  {openAlertCount > 99 ? "99+" : openAlertCount}
+        <NavButton item={item} iconOnly={false} />
+        {item.children?.map((child) => (
+          <SidebarMenuButton
+            key={child.href}
+            asChild
+            isActive={pathname.startsWith(child.href)}
+            className="ml-6"
+          >
+            <Link to={child.href} className="flex items-center gap-2">
+              <child.icon className="h-4 w-4" />
+              <span>{child.label}</span>
+              {child.badge ? (
+                <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1">
+                  {child.badge > 99 ? "99+" : child.badge}
                 </Badge>
-              </div>
-            ) : (
-              <>
-                <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </>
-            )}
-          </Link>
-        </SidebarMenuButton>
+              ) : null}
+            </Link>
+          </SidebarMenuButton>
+        ))}
       </SidebarMenuItem>
     );
   }
 
-  function renderGroupHeader(label: string, open: boolean, showDot = false) {
-    return (
-      <div className="flex w-full items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span>{label}</span>
-          {showDot && !open && (
-            <span className="ml-1 inline-block h-2 w-2 rounded-full bg-destructive" />
-          )}
-        </div>
-        {open ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        )}
-      </div>
-    );
+  function renderOperatorNav(items: NavChild[]) {
+    return items.map((item) => (
+      <SidebarMenuItem key={item.href}>
+        <NavButton item={item} iconOnly={isCollapsed} />
+      </SidebarMenuItem>
+    ));
   }
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
+      <SidebarHeader className="p-2">
         <Link
-          to={isOperator ? "/operator" : "/dashboard"}
+          to={isOperator ? "/operator" : "/home"}
           className="flex items-center gap-2 no-underline"
         >
           <img
@@ -209,47 +259,18 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="overflow-x-hidden">
         {isCustomer && (
           <>
-            {/* Home — standalone, above sections */}
             <SidebarGroup>
               <SidebarGroupContent>
-                <SidebarMenu>
-                  {renderNavItem({ label: "Home", href: "/home", icon: Home })}
-                </SidebarMenu>
+                <SidebarMenu>{mainNavItems.map(renderNavItem)}</SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Monitoring section */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {renderNavItem({ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard })}
-                  {renderNavItem({ label: "Alerts", href: "/alerts", icon: Bell })}
-                  {renderNavItem({ label: "Analytics", href: "/analytics", icon: BarChart3 })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {/* Fleet section */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Fleet</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {renderNavItem({ label: "Devices", href: "/devices", icon: Cpu })}
-                  {renderNavItem({ label: "Rules", href: "/rules", icon: Scale })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {/* Settings — single link */}
             <SidebarGroup>
               <SidebarGroupContent>
-                <SidebarMenu>
-                  {renderNavItem({ label: "Settings", href: "/settings", icon: Settings })}
-                </SidebarMenu>
+                <SidebarMenu>{supportNavItems.map(renderNavItem)}</SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
           </>
@@ -257,104 +278,44 @@ export function AppSidebar() {
 
         {isOperator && (
           <SidebarGroup>
-            <Collapsible
-              open={operatorOverviewOpen}
-              onOpenChange={(next) =>
-                onToggle(setOperatorOverviewOpen, "sidebar-operator-overview", next)
-              }
-            >
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full">
-                  {renderGroupHeader("Overview", operatorOverviewOpen)}
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {operatorOverviewNav.map((item) => renderNavItem(item))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {renderOperatorNav(operatorOverviewNav)}
+                {renderOperatorNav(operatorTenantNav)}
+                {renderOperatorNav(operatorUsersAuditNav)}
+                {renderOperatorNav(operatorSystemNav)}
+              </SidebarMenu>
+            </SidebarGroupContent>
           </SidebarGroup>
         )}
-
-        {isOperator && (
-          <SidebarGroup>
-            <Collapsible
-              open={operatorTenantsOpen}
-              onOpenChange={(next) =>
-                onToggle(setOperatorTenantsOpen, "sidebar-operator-tenants", next)
-              }
-            >
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full">
-                  {renderGroupHeader("Tenants", operatorTenantsOpen)}
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {operatorTenantNav.map((item) => renderNavItem(item))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarGroup>
-        )}
-
-        {isOperator && (
-          <SidebarGroup>
-            <Collapsible
-              open={operatorUsersOpen}
-              onOpenChange={(next) =>
-                onToggle(setOperatorUsersOpen, "sidebar-operator-users-audit", next)
-              }
-            >
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full">
-                  {renderGroupHeader("Users & Audit", operatorUsersOpen)}
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {operatorUsersAuditNav.map((item) => renderNavItem(item))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarGroup>
-        )}
-
-        {isOperator && (
-          <SidebarGroup>
-            <Collapsible
-              open={operatorSystemOpen}
-              onOpenChange={(next) =>
-                onToggle(setOperatorSystemOpen, "sidebar-operator-system", next)
-              }
-            >
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full">
-                  {renderGroupHeader("System", operatorSystemOpen)}
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {operatorSystemNav.map((item) => renderNavItem(item))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarGroup>
-        )}
-
       </SidebarContent>
 
-      <SidebarFooter className="p-2" />
+      <SidebarFooter className="p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarMenuButton
+                  className="justify-center"
+                  onClick={toggleSidebar}
+                  tooltip={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                >
+                  {isCollapsed ? (
+                    <ChevronsRight className="h-4 w-4" />
+                  ) : (
+                    <ChevronsLeft className="h-4 w-4" />
+                  )}
+                </SidebarMenuButton>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              </TooltipContent>
+            </Tooltip>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
+      <SidebarTrigger className="sr-only" />
     </Sidebar>
   );
 }

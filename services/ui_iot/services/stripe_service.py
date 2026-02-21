@@ -5,15 +5,15 @@ import os
 from typing import Optional
 
 import stripe
+from shared.config import require_env, optional_env
 
 logger = logging.getLogger("pulse.stripe")
 
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_SECRET_KEY = require_env("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = require_env("STRIPE_WEBHOOK_SECRET")
+STRIPE_PUBLISHABLE_KEY = optional_env("STRIPE_PUBLISHABLE_KEY", "")
 
-if STRIPE_SECRET_KEY:
-    stripe.api_key = STRIPE_SECRET_KEY
+stripe.api_key = STRIPE_SECRET_KEY
 
 
 def is_stripe_configured() -> bool:

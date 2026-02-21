@@ -6,6 +6,9 @@ import pytest
 import app as app_module
 from middleware import auth as auth_module
 from routes import users as users_routes
+from middleware import permissions as permissions_module
+import dependencies as dependencies_module
+from tests.conftest import FakePool, FakeConn
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -15,6 +18,7 @@ def _auth_header():
 
 
 def _mock_token(monkeypatch, roles, tenant_id=None):
+    conn = FakeConn()
     token = {
         "sub": "user-1",
         "preferred_username": "tester",
@@ -26,6 +30,23 @@ def _mock_token(monkeypatch, roles, tenant_id=None):
     else:
         token["organization"] = {}
     monkeypatch.setattr(auth_module, "validate_token", AsyncMock(return_value=token))
+    if not conn.fetchrow_results:
+        # permissions middleware does one fetchrow (role), then route fetchrow calls for users.
+        conn.fetchrow_results = [
+            {"id": "role-uuid-system"},
+            {"id": "u2", "username": "member", "tenant_id": tenant_id or "tenant-a"},
+            {"id": "u2", "username": "member", "tenant_id": tenant_id or "tenant-a"},
+        ]
+    # Default single fetchrow fallback should also have id/tenant_id
+    conn.fetchrow_result = {"id": "u2", "username": "member", "tenant_id": tenant_id or "tenant-a"}
+    if not conn.fetchval_results:
+        conn.fetchval_results = [0, 0]
+    # Dependency overrides for DB access paths
+    async def _override_get_db_pool(_request=None):
+        return FakePool(conn)
+    app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
+    app_module.app.state.pool = FakePool(conn)
+    return conn
 
 
 @pytest.fixture
@@ -33,7 +54,14 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    # Provide a fake pool for tenant routes used in this file.
+    fake_pool = FakePool()
+    app_module.app.state.pool = fake_pool
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        follow_redirects=True,
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
 
@@ -132,6 +160,9 @@ async def test_user_management_requires_operator_admin(client, monkeypatch):
 
 async def test_tenant_admin_can_list_tenant_users(client, monkeypatch):
     _mock_token(monkeypatch, ["tenant-admin"], tenant_id="tenant-a")
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
     monkeypatch.setattr(users_routes, "list_users", AsyncMock(return_value=[{"id": "u1", "username": "alice"}]))
     monkeypatch.setattr(users_routes, "format_user_response", lambda _u: {"id": "u1", "username": "alice", "tenant_id": "tenant-a"})
     monkeypatch.setattr(users_routes, "get_user_roles", AsyncMock(return_value=[{"name": "customer"}]))
@@ -153,6 +184,9 @@ async def test_tenant_viewer_cannot_manage_users(client, monkeypatch):
 
 async def test_change_tenant_user_role(client, monkeypatch):
     _mock_token(monkeypatch, ["tenant-admin"], tenant_id="tenant-a")
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
     monkeypatch.setattr(users_routes, "kc_get_user", AsyncMock(return_value={"id": "u2", "username": "member"}))
     monkeypatch.setattr(users_routes, "_is_user_in_tenant", AsyncMock(return_value=True))
     monkeypatch.setattr(users_routes, "get_user_roles", AsyncMock(return_value=[{"name": "customer"}]))

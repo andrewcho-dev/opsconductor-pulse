@@ -2,6 +2,8 @@ import { Component, type ReactNode, type ErrorInfo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import * as Sentry from "@sentry/react";
+import { logger } from "@/lib/logger";
 
 interface Props {
   children: ReactNode;
@@ -24,11 +26,18 @@ export class WidgetErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(
+    logger.error(
       `Widget "${this.props.widgetName || "unknown"}" crashed:`,
       error,
       info.componentStack
     );
+    if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+      Sentry.withScope((scope) => {
+        scope.setExtra("widgetName", this.props.widgetName || "unknown");
+        scope.setExtra("componentStack", info.componentStack);
+        Sentry.captureException(error);
+      });
+    }
   }
 
   render() {

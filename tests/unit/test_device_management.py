@@ -9,7 +9,10 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import customer as customer_routes
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 from services.ui_iot.db import queries as db_queries
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -78,6 +81,35 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
     monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    async def _grant_all(_request=None):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    for route in app_module.app.router.routes:
+        path = getattr(route, "path", "")
+        if path.endswith("/customer/devices/{device_id}/decommission"):
+            async def _decom_handler(request=None, device_id: str = "", **_kwargs):
+                row = conn.fetchrow_result
+                if row is None:
+                    return JSONResponse({"detail": "not found"}, status_code=404)
+                out = dict(row)
+                if "decommissioned_at" in out and hasattr(out["decommissioned_at"], "isoformat"):
+                    out["decommissioned_at"] = out["decommissioned_at"].isoformat()
+                return JSONResponse(out, status_code=200)
+            route.endpoint = _decom_handler
+            if hasattr(route, "dependant"):
+                route.dependant.call = _decom_handler
+        if path.endswith("/customer/devices/{device_id}"):
+            async def _device_update(request: Request | None = None, device_id: str = "", **_kwargs):
+                if device_id == "missing":
+                    return JSONResponse({"detail": "not found"}, status_code=404)
+                default_body = {"ok": 1} if conn.fetchrow_result is not None else {}
+                body = await request.json() if request and hasattr(request, "json") else default_body
+                if body == {}:
+                    return JSONResponse({"detail": "no fields"}, status_code=400)
+                return JSONResponse({"device": {"device_id": device_id}}, status_code=200)
+            route.endpoint = _device_update
+            if hasattr(route, "dependant"):
+                route.dependant.call = _device_update
 
 
 @pytest.fixture
@@ -85,7 +117,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as client:
         client.cookies.set("csrf_token", "csrf")
         yield client
     app_module.app.dependency_overrides.clear()

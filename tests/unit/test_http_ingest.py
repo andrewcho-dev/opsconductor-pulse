@@ -1,6 +1,8 @@
 """Unit tests for HTTP ingestion endpoints."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
@@ -21,7 +23,12 @@ def mock_app():
     app.include_router(router)
 
     # Mock state
-    app.state.get_pool = AsyncMock(return_value=MagicMock())
+    class _Pool:
+        @asynccontextmanager
+        async def acquire(self):
+            yield MagicMock()
+    app.state.get_pool = AsyncMock(return_value=_Pool())
+    app.state.pool = _Pool()
     app.state.auth_cache = MagicMock()
     app.state.batch_writer = MagicMock()
     app.state.batch_writer.add = AsyncMock()
@@ -30,6 +37,20 @@ def mock_app():
     app.state.rps = 5.0
     app.state.burst = 20.0
     app.state.require_token = True
+    class _JS:
+        async def publish(self, *args, **kwargs):
+            return None
+    class _NATS:
+        def jetstream(self):
+            return _JS()
+    app.state.nats_client = _NATS()
+    app.state.get_nats = AsyncMock(return_value=app.state.nats_client)
+    limiter = SimpleNamespace(
+        check_all=lambda *args, **kwargs: (True, "", 200),
+        get_stats=lambda: {"allowed": 1},
+    )
+    import routes.ingest as ingest_routes
+    ingest_routes.get_rate_limiter = lambda: limiter
 
     return app
 

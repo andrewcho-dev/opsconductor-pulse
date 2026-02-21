@@ -1,5 +1,5 @@
 ---
-last-verified: 2026-02-20
+last-verified: 2026-02-21
 sources:
   - frontend/package.json
   - frontend/vite.config.ts
@@ -32,7 +32,7 @@ sources:
   - frontend/src/services/api/templates.ts
   - frontend/src/services/api/types.ts
   - frontend/src/stores/
-phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192]
+phases: [17, 18, 19, 20, 21, 22, 119, 124, 135, 136, 142, 143, 144, 145, 146, 147, 148, 170, 171, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 199, 202, 207, 210, 211]
 ---
 
 # Frontend
@@ -138,16 +138,19 @@ Status colors remain independent of the primary: `--status-online` (green), `--s
 
 Color tokens are defined in `frontend/src/index.css` using CSS custom properties consumed by Tailwind v4's `@theme inline` block.
 
-## Sidebar (Phase 175)
+## Sidebar (Phase 210)
 
-The sidebar uses shadcn/ui's `collapsible="icon"` mode:
+The customer sidebar follows an EMQX-style icon-first design using shadcn/ui `Sidebar` with `collapsible="icon"`:
 
-- Expanded: full-width (16rem) with text labels
-- Collapsed: icon-only strip (3rem) with hover tooltips
-- Toggle: Cmd+B keyboard shortcut, SidebarTrigger button, or SidebarRail drag edge
-- State persists via cookie (`sidebar_state`)
+- Collapsed: ~64px wide, icons only, hover tooltips for labels
+- Expanded: ~220px wide, icons + labels
+- Expand/collapse toggle at the bottom (also Cmd+B or SidebarTrigger)
+- Nav groups (top): Home, Monitoring, Intelligence, Fleet Management, Account, Settings
+- Divider, then Support group (bottom): Support → `/support`
+- Active item styling: left border accent + muted highlight
+- Icon-only mode shows only parent icons; child links appear when expanded
 
-All `SidebarMenuButton` instances must include the `tooltip` prop for accessible icon-mode behavior.
+The operator sidebar keeps its existing routes but uses the same icon/collapse styling and bottom toggle.
 
 ## Header (Phase 175)
 
@@ -248,16 +251,40 @@ Key implementation details:
 - Message buffer capped at 200 messages
 - Import: `import mqtt from "mqtt"` (Vite handles CJS → ESM)
 
-## Navigation Structure (Phase 182)
+MQTT broker URLs for provisioned devices are configured via `VITE_MQTT_BROKER_URL`.
 
-The customer sidebar uses a flat layout with 7 items in 2 section labels:
+## WebSocket Message Validation
 
-- **Home** — Landing page with fleet health KPIs, quick actions, recent alerts, onboarding checklist
-- **Monitoring** — Dashboard, Alerts (inbox only), Analytics (hub)
-- **Fleet** — Devices (hub), Rules (hub)
-- **Settings** — Single link to `/settings` hub page
+- WebSocket payloads are runtime-validated with Zod before dispatching in the message bus.
+- Do not cast parsed websocket payloads directly to TypeScript types without validation.
 
-All sub-page navigation uses tabs — there are no left-nav layouts or button-link rows. Every page that contains sub-pages uses the same hub pattern: `PageHeader` + `TabsList variant="line"` + `useSearchParams`.
+## API Auth Utilities
+
+- CSRF/header auth helpers are centralized in `frontend/src/services/api/client.ts`.
+- Other API modules should import auth helpers from `client.ts` instead of redefining them.
+
+## Frontend Reliability Conventions
+
+- Use `logger` from `@/lib/logger` instead of direct `console.*` calls in app code.
+- Do not include the full `form` object from `react-hook-form` in `useEffect` deps; destructure stable methods (`setValue`, `reset`) and depend on those.
+- For boolean/object values in `localStorage`, use `JSON.stringify` on write and `JSON.parse` on read.
+
+## Navigation Structure (Phase 210)
+
+Customer sidebar (icon-first, collapsible):
+
+- Top: Home, Monitoring, Intelligence, Fleet Management, Account, Settings
+- Bottom: Support
+- Collapsed width ~64px (icons + tooltips), expanded ~220px (icons + labels), toggle at bottom
+
+Operator sidebar keeps existing routes with the same icon/collapse styling and bottom toggle.
+
+## Home Page (Phase 211)
+
+- Two-column layout: main (2/3) + side (1/3)
+- Main: fleet KPIs, quick actions (card tiles), recent alerts, onboarding checklist only when fleet total = 0
+- Side: Documentation links list; News & Updates (broadcasts from `/api/v1/customer/broadcasts`)
+- Broadcasts fetched via `useBroadcasts` hook (`frontend/src/features/home/useBroadcasts.ts`)
 
 ## Settings Hub (Phase 182)
 
@@ -410,6 +437,13 @@ Phase 146 standardizes mutation feedback and error formatting. The goal is zero 
 - Duplicated `formatError()` functions - use `getErrorMessage` from `@/lib/errors`.
 - `window.confirm()` - use `<AlertDialog>` (Phase 145).
 - Inconsistent modal state names (`show`, `isOpen`, `visible`).
+
+## Accessibility (Phase 207)
+
+- Icon-only buttons (`size="icon"`) require an `aria-label` describing the action.
+- Form inputs must have a visible `<Label htmlFor>` or `aria-label` / `aria-labelledby`.
+- Dialogs must include `<DialogTitle>` (and `<DialogDescription>` when helpful); shadcn/Radix dialogs handle focus trapping by default.
+- Dynamic updates (for example, alert counts) should expose a polite `aria-live` status when screen-reader awareness is needed.
 
 ## Dashboard Widget System
 

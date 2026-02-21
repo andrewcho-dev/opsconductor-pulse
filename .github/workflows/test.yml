@@ -341,8 +341,8 @@ jobs:
       - name: Ruff format check
         run: ruff format --check services/
 
-      - name: Type check (non-blocking)
-        run: mypy services/ui_iot --ignore-missing-imports || true
+      - name: Type check
+        run: mypy services/ --ignore-missing-imports
 
   benchmarks:
     name: Performance Benchmarks
@@ -407,13 +407,18 @@ jobs:
         env:
           KEYCLOAK_URL: http://localhost:8180
           TEST_DATABASE_URL: postgresql://iot:iot_dev@localhost:5432/iotcloud_test
-        run: >
-          pytest -m benchmark -v
-          --benchmark-json=benchmark_results.json
-          --benchmark-enable
+        run: |
+          mkdir -p benchmarks
+          pytest -m benchmark --benchmark-json=benchmarks/current.json -q --benchmark-enable
+
+      - name: Compare against baseline
+        run: python scripts/check_benchmark_regression.py benchmarks/baseline.json benchmarks/current.json
 
       - name: Upload benchmark results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: benchmark_results.json
+          path: |
+            benchmarks/current.json
+            benchmarks/baseline.json

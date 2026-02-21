@@ -10,8 +10,11 @@ import app as app_module
 import dependencies as dependencies_module
 from middleware import auth as auth_module
 from middleware import tenant as tenant_module
+from middleware import permissions as permissions_module
 from routes import alerts as alerts_routes
 from routes import customer as customer_routes
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 services_dir = os.path.join(
     os.path.dirname(__file__), "..", "..", "services", "evaluator_iot"
@@ -25,7 +28,17 @@ pytestmark = pytest.mark.unit
 
 
 class FakeConn:
-    pass
+    async def fetchval(self, *_args, **_kwargs):
+        return 0
+
+    async def fetch(self, *_args, **_kwargs):
+        return []
+
+    async def fetchrow(self, *_args, **_kwargs):
+        return None
+
+    async def execute(self, *_args, **_kwargs):
+        return "OK"
 
 
 class FakePool:
@@ -63,7 +76,22 @@ def _mock_customer_deps(monkeypatch, conn, tenant_id="tenant-a"):
         return FakePool(conn)
 
     app_module.app.dependency_overrides[dependencies_module.get_db_pool] = _override_get_db_pool
+    monkeypatch.setattr(customer_routes, "get_db_pool", AsyncMock(return_value=FakePool(conn)))
     monkeypatch.setattr(customer_routes, "tenant_connection", _tenant_connection(conn))
+    app_module.app.state.pool = FakePool(conn)
+    monkeypatch.setattr(alerts_routes, "check_alert_rule_limit", AsyncMock(return_value={"allowed": True, "status_code": 200, "message": ""}))
+    if hasattr(customer_routes, "limiter") and hasattr(customer_routes.limiter, "limit"):
+        def _limit(_rate):
+            def _decorator(func):
+                return func
+            return _decorator
+        monkeypatch.setattr(customer_routes.limiter, "limit", _limit, raising=False)
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
+    async def _grant_all(_request):
+        permissions_module.permissions_context.set({"*"})
+    monkeypatch.setattr(permissions_module, "inject_permissions", _grant_all)
 
 
 @pytest.fixture
@@ -71,7 +99,9 @@ async def client():
     app_module.app.router.on_startup.clear()
     app_module.app.router.on_shutdown.clear()
     transport = httpx.ASGITransport(app=app_module.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
         c.cookies.set("csrf_token", "csrf")
         yield c
     app_module.app.dependency_overrides.clear()

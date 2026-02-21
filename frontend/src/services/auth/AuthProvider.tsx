@@ -8,6 +8,7 @@ import {
 } from "react";
 import keycloak from "./keycloak";
 import type { AuthContextValue, PulseUser } from "./types";
+import { logger } from "@/lib/logger";
 
 const AuthContext = createContext<AuthContextValue>({
   authenticated: false,
@@ -94,7 +95,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setInitialized(true);
       })
       .catch((err) => {
-        console.error("Keycloak init failed:", err);
+        logger.error("Keycloak init failed:", err);
         setError("Authentication service unavailable");
         setInitialized(true);
       });
@@ -111,7 +112,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }
           })
           .catch(() => {
-            console.warn("Token refresh failed, redirecting to login");
+            logger.warn("Token refresh failed, redirecting to login");
             keycloak.login();
           });
       }

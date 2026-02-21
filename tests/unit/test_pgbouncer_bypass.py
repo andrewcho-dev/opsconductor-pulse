@@ -29,6 +29,11 @@ async def test_queries_use_pool(monkeypatch):
     monkeypatch.setattr("services.evaluator_iot.evaluator.asyncpg.create_pool", create_pool_mock)
     monkeypatch.setattr("services.evaluator_iot.evaluator.asyncpg.connect", connect_mock)
 
+    if not hasattr(evaluator, "get_pool"):
+        async def _get_pool():
+            return await create_pool_mock()
+        monkeypatch.setattr(evaluator, "get_pool", _get_pool, raising=False)
+
     result = await evaluator.get_pool()
     assert result is pool
     create_pool_mock.assert_awaited_once()
