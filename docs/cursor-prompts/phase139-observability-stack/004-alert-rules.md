@@ -1,0 +1,130 @@
+# 139-004: Prometheus Alerting Rules
+
+## Task
+Create alerting rules for critical conditions.
+
+## File
+`compose/prometheus/alert_rules.yml`
+
+```yaml
+groups:
+  - name: service_health
+    interval: 15s
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been unreachable for more than 1 minute."
+
+  - name: api_health
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (job) (rate(pulse_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum by (job) (rate(pulse_http_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has > 5% error rate for the last 5 minutes. Current: {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le, job) (rate(pulse_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: "{{ $labels.job }} p95 latency is above 2 seconds for the last 5 minutes. Current: {{ $value | humanizeDuration }}"
+
+  - name: database
+    interval: 30s
+    rules:
+      - alert: DBPoolExhausted
+        expr: pulse_db_pool_free < 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DB pool nearly exhausted on {{ $labels.service }}"
+          description: "{{ $labels.service }} has fewer than 2 free DB connections for 5 minutes. Free: {{ $value }}"
+
+  - name: auth_security
+    interval: 30s
+    rules:
+      - alert: HighAuthFailureRate
+        expr: sum(rate(pulse_auth_failures_total[5m])) * 60 > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "More than 10 auth failures per minute for the last 5 minutes. Could indicate brute force attempt."
+
+  - name: ingestion
+    interval: 30s
+    rules:
+      - alert: IngestQueueBacklog
+        expr: pulse_ingest_queue_depth > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Telemetry ingest queue backlog"
+          description: "Ingest queue depth is {{ $value }}, indicating the ingestion pipeline is falling behind."
+
+  - name: alert_pipeline
+    interval: 30s
+    rules:
+      - alert: EvaluatorErrors
+        expr: rate(pulse_evaluator_evaluation_errors_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alert evaluator experiencing errors"
+          description: "Alert rule evaluation is producing errors at {{ $value }} errors/second."
+
+      - alert: DeliveryFailures
+        expr: rate(pulse_delivery_jobs_failed_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notification delivery failures"
+          description: "Notification delivery is failing on channel type {{ $labels.channel_type }}."
+```
+
+## Update prometheus.yml
+Ensure `compose/prometheus/prometheus.yml` references the rules file:
+```yaml
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+```
+
+This should already be set from 139-001, but verify.
+
+## Verification
+```bash
+docker compose up -d prometheus
+# Check rules are loaded:
+curl http://localhost:9090/api/v1/rules | python3 -m json.tool
+# Should show all rule groups
+
+# Check for any active alerts:
+curl http://localhost:9090/api/v1/alerts | python3 -m json.tool
+```
+
+To test:
+- Stop a service → `ServiceDown` alert should fire within 1 minute
+- Start it back → alert resolves

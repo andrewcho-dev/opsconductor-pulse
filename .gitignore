@@ -39,7 +39,6 @@ __pycache__/
 
 # local artifacts
 dashboard.png
-docs/cursor-prompts/
 
 # Ad-hoc sanity/debug artifacts
 FINAL_SANITY_REPORT.txt

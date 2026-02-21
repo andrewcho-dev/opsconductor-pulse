@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 import { useUIStore } from "@/stores/ui-store";
 import {
@@ -154,7 +155,7 @@ function UserMenu() {
 }
 
 export function AppHeader() {
-  const { isCustomer } = useAuth();
+  const { isCustomer, isOperator } = useAuth();
   const breadcrumbs = useBreadcrumbs();
 
   const { data: alertData } = useQuery({
@@ -167,6 +168,18 @@ export function AppHeader() {
 
   return (
     <header className="flex h-12 items-center gap-2 border-b border-border px-3 bg-card">
+      <Link
+        to={isOperator ? "/operator" : "/home"}
+        className="flex items-center shrink-0"
+        aria-label="Home"
+      >
+        <img
+          src="/app/opsconductor_logo_clean_PROPER.svg"
+          alt="OpsConductor"
+          className="h-7 w-7"
+        />
+      </Link>
+      <Separator orientation="vertical" className="h-5" />
       <nav
         className="flex items-center gap-1 text-sm text-muted-foreground overflow-hidden"
         aria-label="Breadcrumb"

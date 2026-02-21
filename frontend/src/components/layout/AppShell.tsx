@@ -10,24 +10,26 @@ import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 
 export default function AppShell() {
-  useWebSocket(); // Connect WebSocket on mount
+  useWebSocket();
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen w-full overflow-hidden">
-        <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <AnnouncementBanner />
-          <AppHeader />
-          <SubscriptionBanner />
-          <main className="flex-1 overflow-auto px-6 py-4">
-            <Outlet />
-          </main>
-          <AppFooter />
-          <Toaster richColors position="bottom-right" />
+    <div className="flex flex-col h-screen overflow-hidden">
+      <AppHeader />
+      <SidebarProvider>
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <AnnouncementBanner />
+            <SubscriptionBanner />
+            <main className="flex-1 overflow-auto px-6 py-4">
+              <Outlet />
+            </main>
+            <AppFooter />
+            <Toaster richColors position="bottom-right" />
+          </div>
         </div>
-      </div>
-      <CommandPalette />
-    </SidebarProvider>
+        <CommandPalette />
+      </SidebarProvider>
+    </div>
   );
 }

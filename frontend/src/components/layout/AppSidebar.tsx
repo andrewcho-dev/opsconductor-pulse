@@ -41,7 +41,6 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarRail,
-  SidebarHeader,
   SidebarFooter,
   SidebarTrigger,
   useSidebar,
@@ -241,24 +240,7 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-2">
-        <Link
-          to={isOperator ? "/operator" : "/home"}
-          className="flex items-center gap-2 no-underline"
-        >
-          <img
-            src="/app/opsconductor_logo_clean_PROPER.svg"
-            alt="OpsConductor Pulse"
-            className="h-8 w-8 shrink-0"
-          />
-          <div className="group-data-[collapsible=icon]:hidden">
-            <div className="text-sm font-semibold text-sidebar-foreground">OpsConductor</div>
-            <div className="text-sm text-muted-foreground">Pulse</div>
-          </div>
-        </Link>
-      </SidebarHeader>
-
+    <Sidebar collapsible="icon" className="!top-12 !h-[calc(100svh-3rem)]">
       <SidebarContent className="overflow-x-hidden">
         {isCustomer && (
           <>

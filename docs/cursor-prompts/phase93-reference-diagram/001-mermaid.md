@@ -1,0 +1,169 @@
+# Phase 93 — Write Mermaid Diagram Source
+
+## File to create
+`docs/diagrams/reference-architecture.md`
+
+## Content
+
+Create the file with exactly this content:
+
+````markdown
+# OpsConductor-Pulse — Reference Architecture
+
+```mermaid
+flowchart TD
+    %% ── External Actors ──────────────────────────────────────────────
+    subgraph ACTORS["External Actors"]
+        direction LR
+        DEV["🔌 IoT Devices\nSensors · Gateways\nEdge Devices"]
+        BROWSER["🖥️ Browser\nCustomers & Operators\nReact SPA"]
+        EXTNOTIFY["📣 Notification Endpoints\nSlack · PagerDuty\nTeams · Webhooks\nSNMP · Email · MQTT"]
+    end
+
+    %% ── Edge & Identity ──────────────────────────────────────────────
+    subgraph EDGE["Edge & Identity Layer"]
+        direction LR
+        CADDY["🔀 Caddy\nTLS Reverse Proxy\n:80 → :443\nPath-based routing"]
+        KC["🔑 Keycloak\nOIDC Identity Provider\nRealm: pulse\nJWT · PKCE"]
+        MQTT["📡 Mosquitto\nMQTT Broker\n:1883 TCP\n:9001 WebSocket"]
+    end
+
+    %% ── Ingestion ────────────────────────────────────────────────────
+    subgraph INGEST_LAYER["Ingestion Layer"]
+        INGEST["⚡ ingest\nMQTT + HTTP pipeline\nAuth cache · Rate limit\nBatch writes ~20k msg/s\nQuarantine invalid"]
+    end
+
+    %% ── Data ─────────────────────────────────────────────────────────
+    subgraph DATA["Data Layer"]
+        direction LR
+        TSDB["📊 TimescaleDB\ntelemetry hypertable\n90-day retention\n7-day compression\n~20k writes/sec"]
+        PG["🐘 PostgreSQL\ndevice_state · alerts\nescalation_policies\nnotification_channels\noncall_schedules\nsubscriptions · tenants\nreport_runs"]
+        PGB["🔄 PgBouncer\nConnection Pooler"]
+    end
+
+    %% ── Evaluation ───────────────────────────────────────────────────
+    subgraph EVAL["Evaluation Layer"]
+        EVALUATOR["⚖️ evaluator\nState tracking\nNO_HEARTBEAT alerts\nTHRESHOLD alerts\nAlert deduplication"]
+    end
+
+    %% ── Alert Operations ─────────────────────────────────────────────
+    subgraph ALERTOPS["Alert Operations Layer"]
+        direction LR
+        ESC["🪜 Escalation Engine\nescalation_worker\n60s tick\nMulti-level policies\nOn-call resolution"]
+        ONCALL["📅 On-Call Resolver\nRotation layers\nOverride windows\nTimezone-aware"]
+        NOTIF["📨 Notification Router\nSlack · PagerDuty\nTeams · HTTP\nSeverity filter\nThrottle"]
+        LEGACY["📦 Legacy Pipeline\ndispatcher\ndelivery_worker\nWebhook · SNMP\nEmail · MQTT\n5-retry backoff"]
+    end
+
+    %% ── Platform API ─────────────────────────────────────────────────
+    subgraph API["Platform API Layer  (ui service — FastAPI + asyncpg)"]
+        direction TB
+        APIV2["/api/v2/*\nREST + WebSocket\nJWT · RLS\nTelemetry queries\nLive streaming"]
+        CUSTAPI["/customer/*\nDevices · Alerts\nEscalation · Notifications\nOn-Call · Reports\nSubscriptions"]
+        OPAPI["/operator/*\nCross-tenant views\nSystem health\nAudit log\nBYPASSRLS"]
+        WORKERS["Background Workers\nescalation_worker 60s\nreport_worker daily\nmetrics_collector 5s"]
+    end
+
+    %% ── Operator NOC ─────────────────────────────────────────────────
+    subgraph NOC["Operator NOC Dashboard"]
+        direction LR
+        GAUGES["📈 GaugeRow\nFleet online %\nIngest rate\nOpen alerts\nDB connections"]
+        CHARTS["📉 MetricsChartGrid\n4 area charts\nmsg/s · alert rate\ndevice state · jobs"]
+        HEATMAP["🗓️ Alert Heatmap\nDay × Hour volume\nECharts calendar"]
+        FEED["📟 Live Event Feed\nScrolling stream\nPause control\nTV mode (F key)"]
+        MATRIX["🏢 Tenant Matrix\nHealth per tenant\nSparklines\nAlert counts"]
+    end
+
+    %% ── Platform Services ────────────────────────────────────────────
+    subgraph SVCPLATFORM["Platform Services"]
+        direction LR
+        PROVAPI["🏭 provision_api\n:8081\nX-Admin-Key\nDevice registration\nActivation codes"]
+        SUBWORKER["💳 subscription_worker\nTRIAL→ACTIVE\nGRACE→SUSPENDED\nDevice limits"]
+        OPSWORKER["🩺 ops_worker\nHealth polling\nsystem_metrics\nNOC data source"]
+    end
+
+    %% ── Connections ──────────────────────────────────────────────────
+
+    %% Devices → edge
+    DEV -- "MQTT :1883" --> MQTT
+    DEV -- "HTTP POST" --> CADDY
+
+    %% Browser → edge
+    BROWSER -- "HTTPS :443" --> CADDY
+
+    %% Caddy routing
+    CADDY -- "/realms/* /admin/*" --> KC
+    CADDY -- "/app/* /api/* /customer/* /operator/*" --> APIV2
+    CADDY -- "/ingest/*" --> INGEST
+
+    %% MQTT → ingest
+    MQTT --> INGEST
+
+    %% Ingest → data
+    INGEST -- "batch writes" --> TSDB
+    INGEST -- "quarantine" --> PG
+
+    %% PgBouncer
+    PGB --> PG
+    PGB --> TSDB
+
+    %% Evaluation
+    TSDB --> EVALUATOR
+    EVALUATOR -- "device_state" --> PG
+    EVALUATOR -- "alerts" --> PG
+
+    %% Alert ops
+    PG -- "OPEN alerts" --> ESC
+    ESC --> ONCALL
+    ESC --> NOTIF
+    PG --> LEGACY
+
+    %% Notifications out
+    NOTIF --> EXTNOTIFY
+    LEGACY --> EXTNOTIFY
+
+    %% API layer ↔ data
+    APIV2 --> PGB
+    CUSTAPI --> PGB
+    OPAPI --> PGB
+    WORKERS --> PGB
+
+    %% NOC reads from API
+    OPAPI --> GAUGES
+    OPAPI --> CHARTS
+    OPAPI --> HEATMAP
+    OPAPI --> FEED
+    OPAPI --> MATRIX
+
+    %% Platform services → data
+    PROVAPI --> PG
+    SUBWORKER --> PG
+    OPSWORKER -- "system_metrics" --> TSDB
+
+    %% Keycloak ↔ API
+    KC -- "JWKS validation" --> APIV2
+
+    %% Styling
+    classDef actor fill:#1a1a2e,stroke:#e94560,color:#eee
+    classDef infra fill:#16213e,stroke:#0f3460,color:#eee
+    classDef data fill:#0f3460,stroke:#533483,color:#eee
+    classDef api fill:#533483,stroke:#e94560,color:#eee
+    classDef alert fill:#e94560,stroke:#ff6b6b,color:#fff
+    classDef noc fill:#1a472a,stroke:#2d6a4f,color:#eee
+    classDef svc fill:#2d3748,stroke:#4a5568,color:#eee
+
+    class DEV,BROWSER,EXTNOTIFY actor
+    class CADDY,KC,MQTT,INGEST,PGB infra
+    class TSDB,PG data
+    class EVALUATOR alert
+    class ESC,ONCALL,NOTIF,LEGACY alert
+    class APIV2,CUSTAPI,OPAPI,WORKERS api
+    class GAUGES,CHARTS,HEATMAP,FEED,MATRIX noc
+    class PROVAPI,SUBWORKER,OPSWORKER svc
+```
+````
+
+## Verify the file was created
+```bash
+cat docs/diagrams/reference-architecture.md | head -5
+```
