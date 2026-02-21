@@ -240,7 +240,7 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon" className="!top-12 !h-[calc(100svh-3rem)]">
+    <Sidebar collapsible="icon" className="!top-14 !h-[calc(100svh-3.5rem)]">
       <SidebarContent className="overflow-x-hidden">
         {isCustomer && (
           <>

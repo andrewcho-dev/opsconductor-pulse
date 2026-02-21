@@ -2,7 +2,6 @@ import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/services/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 import { useUIStore } from "@/stores/ui-store";
 import {
@@ -68,6 +67,21 @@ function useBreadcrumbs(): { label: string; href?: string }[] {
     carrier: "Carrier Integrations",
     import: "Import",
     wizard: "Wizard",
+    // tab-specific labels
+    overview: "Overview",
+    sensors: "Sensors",
+    telemetry: "Telemetry",
+    commands: "Commands",
+    certificates: "Certificates",
+    uptime: "Uptime",
+    config: "Configuration",
+    security: "Security",
+    members: "Members",
+    webhooks: "Webhooks",
+    noc: "NOC",
+    tenants: "Tenants",
+    subscriptions: "Subscriptions",
+    support: "Support",
   };
 
   const crumbs: { label: string; href?: string }[] = [];
@@ -82,8 +96,18 @@ function useBreadcrumbs(): { label: string; href?: string }[] {
     }
   }
 
-  if (crumbs.length > 0) {
-    delete crumbs[crumbs.length - 1].href;
+  // Append active tab as terminal crumb if ?tab= is present
+  const tab = new URLSearchParams(location.search).get("tab");
+  if (tab) {
+    const tabLabel = labelMap[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
+    // Last path crumb becomes a link (it's now a navigable parent)
+    // Tab crumb becomes the terminal (no href)
+    crumbs.push({ label: tabLabel });
+  } else {
+    // No tab — strip href from last crumb (current page, not navigable)
+    if (crumbs.length > 0) {
+      delete crumbs[crumbs.length - 1].href;
+    }
   }
 
   return crumbs;
@@ -167,7 +191,7 @@ export function AppHeader() {
   const openAlertCount = alertData?.total ?? 0;
 
   return (
-    <header className="flex h-12 items-center gap-2 border-b border-border px-3 bg-card">
+    <header className="flex h-14 items-center gap-2 border-b border-border px-4 bg-card">
       <Link
         to={isOperator ? "/operator" : "/home"}
         className="flex items-center shrink-0"
@@ -179,7 +203,6 @@ export function AppHeader() {
           className="h-7 w-7"
         />
       </Link>
-      <Separator orientation="vertical" className="h-5" />
       <nav
         className="flex items-center gap-1 text-sm text-muted-foreground overflow-hidden"
         aria-label="Breadcrumb"
