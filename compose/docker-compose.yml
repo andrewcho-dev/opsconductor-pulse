@@ -106,6 +106,25 @@ services:
       retries: 3
     restart: unless-stopped
 
+  valkey:
+    image: valkey/valkey:7-alpine
+    container_name: iot-valkey
+    restart: unless-stopped
+    command: >
+      valkey-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
   nats:
     image: nats:2.10-alpine
     container_name: iot-nats
@@ -280,6 +299,13 @@ services:
       NOTIFY_DATABASE_URL: "postgresql://iot:${PG_PASS}@iot-postgres:5432/iotcloud"
       POLL_SECONDS: "5"
       HEARTBEAT_STALE_SECONDS: "30"
+      VALKEY_URL: "redis://iot-valkey:6379"
+      RULE_COOLDOWN_SECONDS: "300"
+      TENANT_BUDGET_MS: "500"
+      EVALUATION_INTERVAL_SECONDS: "60"
+      MIN_EVAL_INTERVAL_SECONDS: "10"
+      EVALUATOR_SHARD_INDEX: "0"
+      EVALUATOR_SHARD_COUNT: "1"
     expose:
       - "8080"
     healthcheck:
@@ -295,6 +321,8 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     restart: unless-stopped
 
   ops_worker:
@@ -740,3 +768,4 @@ volumes:
   mosquitto-passwd:
   prometheus_data:
   grafana_data:
+  valkey_data:

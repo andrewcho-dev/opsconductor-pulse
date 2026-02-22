@@ -9,6 +9,7 @@ from collections import deque
 from aiohttp import web
 from datetime import datetime, timezone
 import asyncpg
+import redis.asyncio as aioredis
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from shared.audit import init_audit_logger, get_audit_logger
 from shared.logging import trace_id_var
@@ -49,15 +50,22 @@ PG_PASS = require_env("PG_PASS")
 DATABASE_URL = os.getenv("DATABASE_URL")
 PG_POOL_MIN = int(optional_env("PG_POOL_MIN", "2"))
 PG_POOL_MAX = int(optional_env("PG_POOL_MAX", "10"))
+VALKEY_URL = optional_env("VALKEY_URL", "redis://localhost:6379")
+RULE_COOLDOWN_SECONDS = int(optional_env("RULE_COOLDOWN_SECONDS", "300"))
 configure_logging("evaluator")
 logger = logging.getLogger("evaluator")
 
 POLL_SECONDS = int(optional_env("POLL_SECONDS", "5"))
 HEARTBEAT_STALE_SECONDS = int(optional_env("HEARTBEAT_STALE_SECONDS", "30"))
+EVALUATION_INTERVAL_SECONDS = int(optional_env("EVALUATION_INTERVAL_SECONDS", "60"))
+MIN_EVAL_INTERVAL_SECONDS = int(optional_env("MIN_EVAL_INTERVAL_SECONDS", "10"))
 OPERATOR_SQL = {"GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
 OPERATOR_SYMBOLS = OPERATOR_SQL
 STATEMENT_TIMEOUT_MS = int(optional_env("EVALUATOR_STATEMENT_TIMEOUT_MS", "10000"))
 LOCK_TIMEOUT_MS = int(optional_env("EVALUATOR_LOCK_TIMEOUT_MS", "5000"))
+TENANT_BUDGET_MS = float(optional_env("TENANT_BUDGET_MS", "500"))
+EVALUATOR_SHARD_INDEX = int(optional_env("EVALUATOR_SHARD_INDEX", "0"))
+EVALUATOR_SHARD_COUNT = int(optional_env("EVALUATOR_SHARD_COUNT", "1"))
 
 _POOL_READY = False
 
@@ -69,6 +77,9 @@ _window_buffers: dict[tuple[str, str], deque] = {}
 _pending_tenants: set[str] = set()
 _notify_event = asyncio.Event()
 NOTIFY_CHANNEL = "telemetry_inserted"
+# Valkey client — initialised in main(), used throughout
+_valkey: "aioredis.Redis | None" = None
+_last_eval_monotonic: float = 0.0
 
 COUNTERS = {
     "rules_evaluated": 0,
@@ -129,6 +140,94 @@ CREATE INDEX IF NOT EXISTS fleet_alert_site_idx ON fleet_alert (site_id, status)
 
 def now_utc():
     return datetime.now(timezone.utc)
+
+
+def _cooldown_key(tenant_id: str, rule_id: str, device_id: str) -> str:
+    return f"cooldown:{tenant_id}:{rule_id}:{device_id}"
+
+
+async def is_rule_on_cooldown(tenant_id: str, rule_id: str, device_id: str) -> bool:
+    """Return True if this rule fired recently and should be skipped."""
+    if _valkey is None or RULE_COOLDOWN_SECONDS <= 0:
+        return False
+    try:
+        key = _cooldown_key(tenant_id, rule_id, device_id)
+        return await _valkey.exists(key) == 1
+    except Exception:
+        # Valkey unavailable — fail open (do not skip evaluation)
+        return False
+
+
+async def set_rule_cooldown(tenant_id: str, rule_id: str, device_id: str) -> None:
+    """Mark this rule as recently fired. Call after a NEW alert is created."""
+    if _valkey is None or RULE_COOLDOWN_SECONDS <= 0:
+        return
+    try:
+        key = _cooldown_key(tenant_id, rule_id, device_id)
+        await _valkey.set(key, "1", ex=RULE_COOLDOWN_SECONDS)
+    except Exception:
+        logger.debug("valkey_cooldown_set_failed", exc_info=True)
+
+
+def _wbuf_key(tenant_id: str, rule_id: str, device_id: str) -> str:
+    return f"wbuf:{tenant_id}:{rule_id}:{device_id}"
+
+
+async def wbuf_append(
+    tenant_id: str,
+    rule_id: str,
+    device_id: str,
+    ts: float,
+    value: float,
+    window_seconds: int,
+) -> list[tuple[float, float]]:
+    """
+    Append (ts, value) to the Valkey window buffer for this rule+device,
+    trim entries older than window_seconds, and return the current buffer.
+
+    Falls back to empty list if Valkey is unavailable.
+    """
+    if _valkey is None:
+        return []
+    key = _wbuf_key(tenant_id, rule_id, device_id)
+    ttl = max(window_seconds * 2, 120)
+    cutoff = ts - window_seconds
+    try:
+        raw = await _valkey.get(key)
+        entries: list[list[float]] = json.loads(raw) if raw else []
+        entries.append([ts, value])
+        entries = [e for e in entries if e[0] >= cutoff]
+        await _valkey.set(key, json.dumps(entries), ex=ttl)
+        return [(e[0], e[1]) for e in entries]
+    except Exception:
+        logger.debug("wbuf_valkey_error", exc_info=True)
+        return []
+
+
+async def wbuf_read(
+    tenant_id: str,
+    rule_id: str,
+    device_id: str,
+    window_seconds: int,
+) -> list[tuple[float, float]]:
+    """
+    Read the current window buffer for this rule+device.
+    Returns list of (timestamp, value) tuples within the window.
+    Falls back to empty list if Valkey is unavailable.
+    """
+    if _valkey is None:
+        return []
+    key = _wbuf_key(tenant_id, rule_id, device_id)
+    cutoff = time.time() - window_seconds
+    try:
+        raw = await _valkey.get(key)
+        if not raw:
+            return []
+        entries = json.loads(raw)
+        return [(e[0], e[1]) for e in entries if e[0] >= cutoff]
+    except Exception:
+        logger.debug("wbuf_valkey_read_error", exc_info=True)
+        return []
 
 
 async def health_handler(request):
@@ -522,23 +621,20 @@ AGGREGATION_FUNCTIONS = {
 }
 
 
-def update_window_buffer(
+async def update_window_buffer(
+    tenant_id: str,
     device_id: str,
     rule_id: str,
     timestamp: float,
     value: float,
     window_seconds: int,
 ) -> None:
-    """Append a data point and evict stale entries."""
-    key = (device_id, rule_id)
-    buf = _window_buffers.setdefault(key, deque())
-    buf.append((timestamp, value))
-    cutoff = timestamp - window_seconds
-    while buf and buf[0][0] < cutoff:
-        buf.popleft()
+    """Append a data point and evict stale entries in Valkey."""
+    await wbuf_append(tenant_id, rule_id, device_id, timestamp, value, window_seconds)
 
 
-def evaluate_window_aggregation(
+async def evaluate_window_aggregation(
+    tenant_id: str,
     device_id: str,
     rule_id: str,
     aggregation: str,
@@ -551,8 +647,7 @@ def evaluate_window_aggregation(
     Returns True if condition is met (alert should fire).
     Returns False if insufficient data or condition not met.
     """
-    key = (device_id, rule_id)
-    buf = _window_buffers.get(key)
+    buf = await wbuf_read(tenant_id, rule_id, device_id, window_seconds)
     if not buf or len(buf) < 2:
         return False  # need at least 2 data points for meaningful aggregation
 
@@ -1033,20 +1128,20 @@ async def fetch_rollup_timescaledb(pg_conn) -> list[dict]:
                 msg_type,
                 metrics
             FROM telemetry
-            WHERE time > now() - INTERVAL '6 hours'
+            WHERE time > now() - INTERVAL '10 minutes'
             ORDER BY tenant_id, device_id, time DESC
         ),
         latest_heartbeat AS (
             SELECT tenant_id, device_id, MAX(time) as last_hb
             FROM telemetry
-            WHERE time > now() - INTERVAL '6 hours'
+            WHERE time > now() - INTERVAL '10 minutes'
               AND msg_type = 'heartbeat'
             GROUP BY tenant_id, device_id
         ),
         latest_telemetry_time AS (
             SELECT tenant_id, device_id, MAX(time) as last_tel
             FROM telemetry
-            WHERE time > now() - INTERVAL '6 hours'
+            WHERE time > now() - INTERVAL '10 minutes'
               AND msg_type = 'telemetry'
             GROUP BY tenant_id, device_id
         )
@@ -1066,7 +1161,10 @@ async def fetch_rollup_timescaledb(pg_conn) -> list[dict]:
             ON dr.tenant_id = lt.tenant_id AND dr.device_id = lt.device_id
         LEFT JOIN latest_telemetry ltel
             ON dr.tenant_id = ltel.tenant_id AND dr.device_id = ltel.device_id
-        """
+        WHERE abs(hashtext(dr.tenant_id)) % $1 = $2
+        """,
+        EVALUATOR_SHARD_COUNT,
+        EVALUATOR_SHARD_INDEX,
     )
 
     results = []
@@ -1206,14 +1304,37 @@ async def main():
 
     async with pool.acquire() as conn:
         await ensure_schema(conn)
+    global _valkey
+    try:
+        _valkey = aioredis.from_url(VALKEY_URL, decode_responses=True)
+        await _valkey.ping()
+        log_event(logger, "valkey_connected", url=VALKEY_URL)
+    except Exception as exc:
+        log_event(
+            logger,
+            "valkey_unavailable",
+            level="WARNING",
+            error=str(exc),
+            note="Cooldown and window state disabled; evaluation continues",
+        )
+        _valkey = None
     global _POOL_READY
     _POOL_READY = True
     await start_health_server()
+    log_event(
+        logger,
+        "shard_config",
+        shard_index=EVALUATOR_SHARD_INDEX,
+        shard_count=EVALUATOR_SHARD_COUNT,
+    )
+    log_event(
+        logger,
+        "evaluation_schedule",
+        interval_seconds=EVALUATION_INTERVAL_SECONDS,
+        min_interval_seconds=MIN_EVAL_INTERVAL_SECONDS,
+    )
     audit = init_audit_logger(pool, "evaluator")
     await audit.start()
-
-    fallback_poll_seconds = int(optional_env("FALLBACK_POLL_SECONDS", str(POLL_SECONDS)))
-    debounce_seconds = float(optional_env("DEBOUNCE_SECONDS", "0.5"))
 
     stop_listener = asyncio.Event()
     listener_task = asyncio.create_task(
@@ -1228,18 +1349,16 @@ async def main():
             try:
                 log_event(logger, "tick_start", tick="evaluator")
                 eval_start = time.monotonic()
-                try:
-                    await asyncio.wait_for(_notify_event.wait(), timeout=fallback_poll_seconds)
-                except asyncio.TimeoutError:
-                    log_event(
-                        logger,
-                        "fallback poll triggered",
-                        level="WARNING",
-                        reason="no notifications",
-                    )
-
                 _notify_event.clear()
-                await asyncio.sleep(debounce_seconds)
+
+                # Sleep until the next scheduled evaluation tick
+                await asyncio.sleep(EVALUATION_INTERVAL_SECONDS)
+
+                # Enforce minimum interval since the last evaluation
+                since_last = time.monotonic() - _last_eval_monotonic
+                if since_last < MIN_EVAL_INTERVAL_SECONDS:
+                    await asyncio.sleep(MIN_EVAL_INTERVAL_SECONDS - since_last)
+
                 _notify_event.clear()
                 _pending_tenants.clear()
 
@@ -1254,243 +1373,256 @@ async def main():
                 tenant_rules_cache = {}
                 tenant_mapping_cache = {}
 
+                rows_by_tenant: dict[str, list] = {}
                 for r in rows:
-                    tenant_id = r["tenant_id"]
-                    device_id = r["device_id"]
-                    site_id = r["site_id"]
-                    registry_status = r["registry_status"]
-                    last_hb = r["last_hb"]
-                    last_tel = r["last_tel"]
-                    last_seen = r["last_seen"]
+                    rows_by_tenant.setdefault(r["tenant_id"], []).append(r)
 
-                    status = "STALE"
-                    if registry_status == "ACTIVE" and last_hb is not None:
-                        age_s = (now_utc() - last_hb).total_seconds()
-                        status = "ONLINE" if age_s <= HEARTBEAT_STALE_SECONDS else "STALE"
+                for tenant_id, tenant_rows in rows_by_tenant.items():
+                    tenant_start = time.monotonic()
+                    try:
+                        for idx, r in enumerate(tenant_rows):
+                            tenant_id = r["tenant_id"]
+                            device_id = r["device_id"]
+                            site_id = r["site_id"]
+                            registry_status = r["registry_status"]
+                            last_hb = r["last_hb"]
+                            last_tel = r["last_tel"]
+                            last_seen = r["last_seen"]
 
-                    state_blob = r.get("metrics", {})
+                            status = "STALE"
+                            if registry_status == "ACTIVE" and last_hb is not None:
+                                age_s = (now_utc() - last_hb).total_seconds()
+                                status = "ONLINE" if age_s <= HEARTBEAT_STALE_SECONDS else "STALE"
 
-                    now_ts = now_utc()
-                    row = await conn.fetchrow(
-                        """
-                        WITH existing AS (
-                            SELECT status
-                            FROM device_state
-                            WHERE tenant_id = $1 AND device_id = $3
-                        )
-                        INSERT INTO device_state
-                          (tenant_id, site_id, device_id, status, last_heartbeat_at, last_telemetry_at, last_seen_at, last_state_change_at, state)
-                        VALUES
-                          ($1,$2,$3,$4,$5,$6,$7,$8, $9::jsonb)
-                        ON CONFLICT (tenant_id, device_id)
-                        DO UPDATE SET
-                          site_id = EXCLUDED.site_id,
-                          last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-                          last_telemetry_at = EXCLUDED.last_telemetry_at,
-                          last_seen_at = EXCLUDED.last_seen_at,
-                          state = CASE
-                            WHEN EXCLUDED.state = '{}'::jsonb THEN device_state.state
-                            ELSE EXCLUDED.state
-                          END,
-                          status = EXCLUDED.status,
-                          last_state_change_at = CASE
-                            WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN $8
-                            ELSE device_state.last_state_change_at
-                          END
-                        RETURNING
-                          (SELECT status FROM existing) AS previous_status,
-                          status AS new_status,
-                          last_state_change_at
-                        """,
-                        tenant_id,
-                        site_id,
-                        device_id,
-                        status,
-                        last_hb,
-                        last_tel,
-                        last_seen,
-                        now_ts,
-                        json.dumps(state_blob),
-                    )
-                    if row:
-                        previous_status = row["previous_status"]
-                        new_status = row["new_status"]
-                        if previous_status and previous_status != new_status:
-                            audit = get_audit_logger()
-                            if audit:
-                                audit.device_state_change(
-                                    tenant_id,
-                                    device_id,
-                                    str(previous_status).lower(),
-                                    str(new_status).lower(),
+                            state_blob = r.get("metrics", {})
+
+                            now_ts = now_utc()
+                            row = await conn.fetchrow(
+                                """
+                                WITH existing AS (
+                                    SELECT status
+                                    FROM device_state
+                                    WHERE tenant_id = $1 AND device_id = $3
                                 )
-
-                            # Log connection events based on ONLINE <-> STALE transitions
-                            if new_status == "ONLINE":
-                                await log_connection_event(
-                                    conn,
-                                    tenant_id,
-                                    device_id,
-                                    "CONNECTED",
-                                    {
-                                        "previous_status": previous_status,
-                                        "trigger": "heartbeat_resumed",
-                                    },
-                                )
-                            elif new_status == "STALE" and previous_status == "ONLINE":
-                                await log_connection_event(
-                                    conn,
-                                    tenant_id,
-                                    device_id,
-                                    "DISCONNECTED",
-                                    {
-                                        "previous_status": previous_status,
-                                        "trigger": "heartbeat_timeout",
-                                        "stale_threshold_seconds": HEARTBEAT_STALE_SECONDS,
-                                    },
-                                )
-
-                        # First time seeing this device (INSERT, not UPDATE)
-                        if previous_status is None and new_status == "ONLINE":
-                            await log_connection_event(
-                                conn,
+                                INSERT INTO device_state
+                                  (tenant_id, site_id, device_id, status, last_heartbeat_at, last_telemetry_at, last_seen_at, last_state_change_at, state)
+                                VALUES
+                                  ($1,$2,$3,$4,$5,$6,$7,$8, $9::jsonb)
+                                ON CONFLICT (tenant_id, device_id)
+                                DO UPDATE SET
+                                  site_id = EXCLUDED.site_id,
+                                  last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+                                  last_telemetry_at = EXCLUDED.last_telemetry_at,
+                                  last_seen_at = EXCLUDED.last_seen_at,
+                                  state = CASE
+                                    WHEN EXCLUDED.state = '{}'::jsonb THEN device_state.state
+                                    ELSE EXCLUDED.state
+                                  END,
+                                  status = EXCLUDED.status,
+                                  last_state_change_at = CASE
+                                    WHEN device_state.status IS DISTINCT FROM EXCLUDED.status THEN $8
+                                    ELSE device_state.last_state_change_at
+                                  END
+                                RETURNING
+                                  (SELECT status FROM existing) AS previous_status,
+                                  status AS new_status,
+                                  last_state_change_at
+                                """,
                                 tenant_id,
+                                site_id,
                                 device_id,
-                                "CONNECTED",
-                                {"previous_status": None, "trigger": "first_seen"},
+                                status,
+                                last_hb,
+                                last_tel,
+                                last_seen,
+                                now_ts,
+                                json.dumps(state_blob),
                             )
+                            if row:
+                                previous_status = row["previous_status"]
+                                new_status = row["new_status"]
+                                if previous_status and previous_status != new_status:
+                                    audit = get_audit_logger()
+                                    if audit:
+                                        audit.device_state_change(
+                                            tenant_id,
+                                            device_id,
+                                            str(previous_status).lower(),
+                                            str(new_status).lower(),
+                                        )
 
-                    fp_nohb = f"NO_HEARTBEAT:{device_id}"
-                    if status == "STALE":
-                        if not await is_in_maintenance(
-                            conn, tenant_id, site_id=site_id, device_type=None
-                        ):
-                            alert_id, inserted = await open_or_update_alert(
-                                conn, tenant_id, site_id, device_id,
-                                "NO_HEARTBEAT", fp_nohb,
-                                4, 0.9,
-                                f"{site_id}: {device_id} heartbeat missing/stale",
-                                {"last_heartbeat_at": str(last_hb) if last_hb else None}
-                            )
-                            if inserted:
-                                audit = get_audit_logger()
-                                if audit:
-                                    audit.alert_created(
+                                    # Log connection events based on ONLINE <-> STALE transitions
+                                    if new_status == "ONLINE":
+                                        await log_connection_event(
+                                            conn,
+                                            tenant_id,
+                                            device_id,
+                                            "CONNECTED",
+                                            {
+                                                "previous_status": previous_status,
+                                                "trigger": "heartbeat_resumed",
+                                            },
+                                        )
+                                    elif new_status == "STALE" and previous_status == "ONLINE":
+                                        await log_connection_event(
+                                            conn,
+                                            tenant_id,
+                                            device_id,
+                                            "DISCONNECTED",
+                                            {
+                                                "previous_status": previous_status,
+                                                "trigger": "heartbeat_timeout",
+                                                "stale_threshold_seconds": HEARTBEAT_STALE_SECONDS,
+                                            },
+                                        )
+
+                                # First time seeing this device (INSERT, not UPDATE)
+                                if previous_status is None and new_status == "ONLINE":
+                                    await log_connection_event(
+                                        conn,
                                         tenant_id,
-                                        str(alert_id),
-                                        "NO_HEARTBEAT",
                                         device_id,
-                                        f"{site_id}: {device_id} heartbeat missing/stale",
+                                        "CONNECTED",
+                                        {"previous_status": None, "trigger": "first_seen"},
                                     )
-                    else:
-                        await close_alert(conn, tenant_id, fp_nohb)
 
-                    # --- Threshold rule evaluation ---
-                    if tenant_id not in tenant_rules_cache:
-                        tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
-                    if tenant_id not in tenant_mapping_cache:
-                        tenant_mapping_cache[tenant_id] = await fetch_metric_mappings(conn, tenant_id)
+                            fp_nohb = f"NO_HEARTBEAT:{device_id}"
+                            if status == "STALE":
+                                if not await is_in_maintenance(
+                                    conn, tenant_id, site_id=site_id, device_type=None
+                                ):
+                                    alert_id, inserted = await open_or_update_alert(
+                                        conn, tenant_id, site_id, device_id,
+                                        "NO_HEARTBEAT", fp_nohb,
+                                        4, 0.9,
+                                        f"{site_id}: {device_id} heartbeat missing/stale",
+                                        {"last_heartbeat_at": str(last_hb) if last_hb else None}
+                                    )
+                                    if inserted:
+                                        audit = get_audit_logger()
+                                        if audit:
+                                            audit.alert_created(
+                                                tenant_id,
+                                                str(alert_id),
+                                                "NO_HEARTBEAT",
+                                                device_id,
+                                                f"{site_id}: {device_id} heartbeat missing/stale",
+                                            )
+                            else:
+                                await close_alert(conn, tenant_id, fp_nohb)
 
-                    rules = tenant_rules_cache[tenant_id]
-                    metrics = r.get("metrics", {})
-                    mappings_by_normalized = tenant_mapping_cache[tenant_id]
-                    latest_metrics_snapshot = dict(metrics)
-                    for normalized_name, mappings in mappings_by_normalized.items():
-                        for mapping in mappings:
-                            raw_value = metrics.get(mapping["raw_metric"])
-                            normalized_value = normalize_value(
-                                raw_value,
-                                mapping["multiplier"],
-                                mapping["offset_value"],
-                            )
-                            if normalized_value is not None:
-                                latest_metrics_snapshot[normalized_name] = normalized_value
-                                break
+                            # --- Threshold rule evaluation ---
+                            if tenant_id not in tenant_rules_cache:
+                                tenant_rules_cache[tenant_id] = await fetch_tenant_rules(conn, tenant_id)
+                            if tenant_id not in tenant_mapping_cache:
+                                tenant_mapping_cache[tenant_id] = await fetch_metric_mappings(conn, tenant_id)
 
-                    device_groups: set[str] = set()
-                    if any(rule.get("group_ids") for rule in rules):
-                        group_rows = await conn.fetch(
-                            """
-                            SELECT group_id
-                            FROM device_group_members
-                            WHERE tenant_id = $1 AND device_id = $2
-                            """,
-                            tenant_id,
-                            device_id,
-                        )
-                        device_groups = {str(row["group_id"]) for row in group_rows}
+                            rules = tenant_rules_cache[tenant_id]
+                            metrics = r.get("metrics", {})
+                            mappings_by_normalized = tenant_mapping_cache[tenant_id]
+                            latest_metrics_snapshot = dict(metrics)
+                            for normalized_name, mappings in mappings_by_normalized.items():
+                                for mapping in mappings:
+                                    raw_value = metrics.get(mapping["raw_metric"])
+                                    normalized_value = normalize_value(
+                                        raw_value,
+                                        mapping["multiplier"],
+                                        mapping["offset_value"],
+                                    )
+                                    if normalized_value is not None:
+                                        latest_metrics_snapshot[normalized_name] = normalized_value
+                                        break
 
-                    for rule in rules:
-                        COUNTERS["rules_evaluated"] += 1
-                        evaluator_rules_evaluated_total.labels(tenant_id=tenant_id).inc()
-                        rule_id = rule["rule_id"]
-                        rule_type = str(rule.get("rule_type") or "threshold").lower()
-                        metric_name = rule["metric_name"]
-                        operator = rule["operator"]
-                        threshold = rule["threshold"]
-                        rule_severity = rule["severity"]
-                        rule_site_ids = rule.get("site_ids")
-
-                        # Site filter: if rule has site_ids, skip devices not in those sites
-                        if rule_site_ids and site_id not in rule_site_ids:
-                            continue
-
-                        if rule.get("group_ids"):
-                            is_member = bool(device_groups.intersection(rule["group_ids"]))
-                            if not is_member:
-                                continue
-
-                        # Single device group scope: if rule has device_group_id,
-                        # only evaluate devices in that group
-                        device_group_id = rule.get("device_group_id")
-                        if device_group_id:
-                            group_members = await resolve_group_members(
-                                conn, tenant_id, device_group_id
-                            )
-                            if device_id not in group_members:
-                                continue
-
-                        fp_rule = f"RULE:{rule_id}:{device_id}"
-                        conditions_json = rule.get("conditions")
-                        if isinstance(conditions_json, str):
-                            try:
-                                conditions_json = json.loads(conditions_json)
-                            except Exception:
-                                logger.debug(
-                                    "rule_conditions_parse_failed",
-                                    extra={"tenant_id": tenant_id, "device_id": device_id, "rule_id": str(rule_id)},
-                                    exc_info=True,
+                            device_groups: set[str] = set()
+                            if any(rule.get("group_ids") for rule in rules):
+                                group_rows = await conn.fetch(
+                                    """
+                                    SELECT group_id
+                                    FROM device_group_members
+                                    WHERE tenant_id = $1 AND device_id = $2
+                                    """,
+                                    tenant_id,
+                                    device_id,
                                 )
-                                conditions_json = {}
+                                device_groups = {str(row["group_id"]) for row in group_rows}
 
-                        if rule_type == "telemetry_gap":
-                            await maybe_process_telemetry_gap_rule(
-                                conn=conn,
-                                tenant_id=tenant_id,
-                                site_id=site_id,
-                                device_id=device_id,
-                                rule=rule,
-                                rule_id=rule_id,
-                                rule_severity=rule_severity,
-                                fingerprint=fp_rule,
-                            )
-                            continue
+                            for rule in rules:
+                                rule_id = str(rule.get("rule_id") or rule.get("id", ""))
 
-                        if rule_type == "window":
-                            aggregation = rule.get("aggregation")
-                            window_seconds = rule.get("window_seconds")
-                            if not aggregation or not window_seconds:
-                                continue
-
-                            # Get the raw metric value from the latest snapshot
-                            raw_value = latest_metrics_snapshot.get(metric_name)
-                            if raw_value is not None:
-                                try:
-                                    numeric_value = float(raw_value)
-                                except (TypeError, ValueError):
+                                # Skip if this rule recently fired for this device
+                                if await is_rule_on_cooldown(tenant_id, rule_id, device_id):
                                     continue
+
+                                COUNTERS["rules_evaluated"] += 1
+                                evaluator_rules_evaluated_total.labels(tenant_id=tenant_id).inc()
+                                rule_type = str(rule.get("rule_type") or "threshold").lower()
+                                metric_name = rule["metric_name"]
+                                operator = rule["operator"]
+                                threshold = rule["threshold"]
+                                rule_severity = rule["severity"]
+                                rule_site_ids = rule.get("site_ids")
+
+                                # Site filter: if rule has site_ids, skip devices not in those sites
+                                if rule_site_ids and site_id not in rule_site_ids:
+                                    continue
+
+                                if rule.get("group_ids"):
+                                    is_member = bool(device_groups.intersection(rule["group_ids"]))
+                                    if not is_member:
+                                        continue
+
+                                # Single device group scope: if rule has device_group_id,
+                                # only evaluate devices in that group
+                                device_group_id = rule.get("device_group_id")
+                                if device_group_id:
+                                    group_members = await resolve_group_members(
+                                        conn, tenant_id, device_group_id
+                                    )
+                                    if device_id not in group_members:
+                                        continue
+
+                                fp_rule = f"RULE:{rule_id}:{device_id}"
+                                conditions_json = rule.get("conditions")
+                                if isinstance(conditions_json, str):
+                                    try:
+                                        conditions_json = json.loads(conditions_json)
+                                    except Exception:
+                                        logger.debug(
+                                            "rule_conditions_parse_failed",
+                                            extra={"tenant_id": tenant_id, "device_id": device_id, "rule_id": str(rule_id)},
+                                            exc_info=True,
+                                        )
+                                        conditions_json = {}
+
+                                if rule_type == "telemetry_gap":
+                                    await maybe_process_telemetry_gap_rule(
+                                        conn=conn,
+                                        tenant_id=tenant_id,
+                                        site_id=site_id,
+                                        device_id=device_id,
+                                        rule=rule,
+                                        rule_id=rule_id,
+                                        rule_severity=rule_severity,
+                                        fingerprint=fp_rule,
+                                    )
+                                    continue
+
+                                if rule_type == "window":
+                                    aggregation = rule.get("aggregation")
+                                    window_seconds = rule.get("window_seconds")
+                                    if not aggregation or not window_seconds:
+                                        continue
+
+                                    # Get the raw metric value from the latest snapshot
+                                    raw_value = latest_metrics_snapshot.get(metric_name)
+                                    if raw_value is not None:
+                                        try:
+                                            numeric_value = float(raw_value)
+                                        except (TypeError, ValueError):
+                                            continue
                                 now_ts_float = time.time()
-                                update_window_buffer(
+                                await update_window_buffer(
+                                    tenant_id,
                                     device_id,
                                     str(rule_id),
                                     now_ts_float,
@@ -1498,7 +1630,8 @@ async def main():
                                     window_seconds,
                                 )
 
-                            fired = evaluate_window_aggregation(
+                            fired = await evaluate_window_aggregation(
+                                tenant_id,
                                 device_id,
                                 str(rule_id),
                                 aggregation,
@@ -1506,226 +1639,234 @@ async def main():
                                 float(threshold),
                                 window_seconds,
                             )
-                            if not fired:
-                                await close_alert(conn, tenant_id, fp_rule)
-                                continue
+                                    if not fired:
+                                        await close_alert(conn, tenant_id, fp_rule)
+                                        continue
 
-                            if await is_silenced(conn, tenant_id, fp_rule):
-                                continue
-                            if await is_in_maintenance(
-                                conn,
-                                tenant_id,
-                                site_id=site_id,
-                                device_type=rule.get("device_type"),
-                            ):
-                                continue
+                                    if await is_silenced(conn, tenant_id, fp_rule):
+                                        continue
+                                    if await is_in_maintenance(
+                                        conn,
+                                        tenant_id,
+                                        site_id=site_id,
+                                        device_type=rule.get("device_type"),
+                                    ):
+                                        continue
 
-                            # Format human-readable summary
-                            window_display = (
-                                f"{window_seconds // 60}m"
-                                if window_seconds >= 60
-                                else f"{window_seconds}s"
-                            )
-                            op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
-                            summary = (
-                                f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
-                                f"{aggregation}({metric_name}) {op_symbol} {threshold} over {window_display}"
-                            )
-                            alert_id, inserted = await deduplicate_or_create_alert(
-                                conn,
-                                tenant_id,
-                                site_id,
-                                device_id,
-                                "WINDOW",
-                                fp_rule,
-                                rule_severity,
-                                1.0,
-                                summary,
-                                {
-                                    "rule_id": rule_id,
-                                    "rule_name": rule["name"],
-                                    "metric_name": metric_name,
-                                    "aggregation": aggregation,
-                                    "window_seconds": window_seconds,
-                                    "operator": operator,
-                                    "threshold": threshold,
-                                },
-                                rule_id=str(rule_id),
-                            )
-                            if inserted:
+                                    # Format human-readable summary
+                                    window_display = (
+                                        f"{window_seconds // 60}m"
+                                        if window_seconds >= 60
+                                        else f"{window_seconds}s"
+                                    )
+                                    op_symbol = OPERATOR_SYMBOLS.get(operator, operator)
+                                    summary = (
+                                        f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
+                                        f"{aggregation}({metric_name}) {op_symbol} {threshold} over {window_display}"
+                                    )
+                                    alert_id, inserted = await deduplicate_or_create_alert(
+                                        conn,
+                                        tenant_id,
+                                        site_id,
+                                        device_id,
+                                        "WINDOW",
+                                        fp_rule,
+                                        rule_severity,
+                                        1.0,
+                                        summary,
+                                        {
+                                            "rule_id": rule_id,
+                                            "rule_name": rule["name"],
+                                            "metric_name": metric_name,
+                                            "aggregation": aggregation,
+                                            "window_seconds": window_seconds,
+                                            "threshold": threshold,
+                                            "operator": operator,
+                                            "conditions": conditions_json,
+                                            "metric_value": raw_value,
+                                        },
+                                    )
+                                    if inserted:
+                                        audit = get_audit_logger()
+                                        if audit:
+                                            audit.alert_created(
+                                                tenant_id,
+                                                str(alert_id),
+                                                "WINDOW",
+                                                device_id,
+                                                summary,
+                                            )
+                                        await set_rule_cooldown(tenant_id, rule_id, device_id)
+                                    continue
+
+                                if rule_type == "anomaly":
+                                    ok, detail_metric, detail_value, detail_operator, detail_threshold = evaluate_anomaly(
+                                        rule,
+                                        latest_metrics_snapshot,
+                                    )
+                                    if not ok:
+                                        await close_alert(conn, tenant_id, fp_rule)
+                                        continue
+
+                                    if await is_silenced(conn, tenant_id, fp_rule):
+                                        continue
+                                    if await is_in_maintenance(
+                                        conn,
+                                        tenant_id,
+                                        site_id=site_id,
+                                        device_type=rule.get("device_type"),
+                                    ):
+                                        continue
+
+                                    summary = (
+                                        f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
+                                        f"{detail_metric} {detail_operator} {detail_threshold}"
+                                    )
+                                    alert_id, inserted = await deduplicate_or_create_alert(
+                                        conn,
+                                        tenant_id,
+                                        site_id,
+                                        device_id,
+                                        "ANOMALY",
+                                        fp_rule,
+                                        rule_severity,
+                                        1.0,
+                                        summary,
+                                        {
+                                            "rule_id": rule_id,
+                                            "rule_name": rule["name"],
+                                            "metric_name": detail_metric,
+                                            "metric_value": detail_value,
+                                            "operator": detail_operator,
+                                            "threshold": detail_threshold,
+                                            "conditions": conditions_json,
+                                        },
+                                    )
+                                    if inserted:
+                                        audit = get_audit_logger()
+                                        if audit:
+                                            audit.alert_created(
+                                                tenant_id,
+                                                str(alert_id),
+                                                "ANOMALY",
+                                                device_id,
+                                                summary,
+                                            )
+                                        await set_rule_cooldown(tenant_id, rule_id, device_id)
+                                    continue
+
+                                if rule_type == "pattern":
+                                    ok, detail_metric, detail_value, detail_operator, detail_threshold, detail_match_mode = (
+                                        evaluate_pattern(
+                                            rule,
+                                            latest_metrics_snapshot,
+                                        )
+                                    )
+                                    if not ok:
+                                        await close_alert(conn, tenant_id, fp_rule)
+                                        continue
+
+                                    if await is_silenced(conn, tenant_id, fp_rule):
+                                        continue
+                                    if await is_in_maintenance(
+                                        conn,
+                                        tenant_id,
+                                        site_id=site_id,
+                                        device_type=rule.get("device_type"),
+                                    ):
+                                        continue
+
+                                    summary = (
+                                        f"{site_id}: {device_id} rule '{rule['name']}' triggered -- "
+                                        f"{detail_metric} {detail_operator} {detail_threshold} ({detail_match_mode})"
+                                    )
+                                    alert_id, inserted = await deduplicate_or_create_alert(
+                                        conn,
+                                        tenant_id,
+                                        site_id,
+                                        device_id,
+                                        "PATTERN",
+                                        fp_rule,
+                                        rule_severity,
+                                        1.0,
+                                        summary,
+                                        {
+                                            "rule_id": rule_id,
+                                            "rule_name": rule["name"],
+                                            "metric_name": detail_metric,
+                                            "metric_value": detail_value,
+                                            "operator": detail_operator,
+                                            "threshold": detail_threshold,
+                                            "match_mode": detail_match_mode,
+                                            "conditions": conditions_json,
+                                        },
+                                        rule_id=str(rule_id),
+                                    )
+                                    audit = get_audit_logger()
+                                    if audit and detail_metric and detail_operator and detail_threshold is not None:
+                                        try:
+                                            metric_value_numeric = float(detail_value) if detail_value is not None else 0.0
+                                        except (TypeError, ValueError):
+                                            metric_value_numeric = 0.0
+                                        try:
+                                            threshold_numeric = float(detail_threshold)
+                                        except (TypeError, ValueError):
+                                            threshold_numeric = 0.0
+                                        audit.rule_triggered(
+                                            tenant_id,
+                                            str(rule_id),
+                                            rule["name"],
+                                            device_id,
+                                            detail_metric,
+                                            metric_value_numeric,
+                                            threshold_numeric,
+                                            detail_operator,
+                                        )
+                                        if inserted:
+                                            log_event(
+                                                logger,
+                                                "alert created",
+                                                tenant_id=tenant_id,
+                                                device_id=device_id,
+                                                alert_type="THRESHOLD",
+                                                alert_id=str(alert_id),
+                                                fingerprint=fp_rule,
+                                            )
+                                            audit.alert_created(
+                                                tenant_id,
+                                                str(alert_id),
+                                                "THRESHOLD",
+                                                device_id,
+                                                summary,
+                                            )
+                                            await set_rule_cooldown(tenant_id, rule_id, device_id)
+
+                            # After processing each device, check wall-clock budget
+                            elapsed_ms = (time.monotonic() - tenant_start) * 1000
+                            if elapsed_ms > TENANT_BUDGET_MS:
                                 log_event(
                                     logger,
-                                    "alert created",
+                                    "tenant_budget_exceeded",
+                                    level="WARNING",
                                     tenant_id=tenant_id,
-                                    device_id=device_id,
-                                    alert_type="WINDOW",
-                                    alert_id=str(alert_id),
+                                    elapsed_ms=round(elapsed_ms, 1),
+                                    devices_processed=idx + 1,
+                                    devices_total=len(tenant_rows),
                                 )
-                            continue
+                                break
 
-                        if rule_type == "anomaly":
-                            cfg = conditions_json or {}
-                            anomaly_metric = cfg.get("metric_name")
-                            if not anomaly_metric:
-                                continue
-                            try:
-                                window_minutes = int(cfg.get("window_minutes", 60))
-                                z_threshold = float(cfg.get("z_threshold", 3.0))
-                                min_samples = int(cfg.get("min_samples", 10))
-                            except (TypeError, ValueError):
-                                continue
-
-                            stats = await compute_rolling_stats(
-                                conn, tenant_id, device_id, anomaly_metric, window_minutes
-                            )
-                            if stats is None or stats["count"] < min_samples or stats["latest"] is None:
-                                continue
-
-                            z_score = compute_z_score(stats["latest"], stats["mean"], stats["stddev"])
-                            if z_score is None or z_score <= z_threshold:
-                                await close_alert(conn, tenant_id, fp_rule)
-                                continue
-
-                            if await is_silenced(conn, tenant_id, fp_rule):
-                                continue
-                            if await is_in_maintenance(
-                                conn,
-                                tenant_id,
-                                site_id=site_id,
-                                device_type=rule.get("device_type"),
-                            ):
-                                continue
-                            summary = (
-                                f"{anomaly_metric} anomaly on {device_id}: "
-                                f"value={stats['latest']:.2f}, mean={stats['mean']:.2f}, "
-                                f"stddev={stats['stddev']:.2f}, z={z_score:.2f}"
-                            )
-                            await deduplicate_or_create_alert(
-                                conn,
-                                tenant_id,
-                                site_id,
-                                device_id,
-                                "ANOMALY",
-                                fp_rule,
-                                rule_severity,
-                                1.0,
-                                summary,
-                                {
-                                    "rule_id": rule_id,
-                                    "rule_name": rule["name"],
-                                    "metric_name": anomaly_metric,
-                                    "z_score": z_score,
-                                    "z_threshold": z_threshold,
-                                    **stats,
-                                },
-                                rule_id=str(rule_id),
-                            )
-                            continue
-
-                        rule_for_eval = dict(rule)
-                        rule_for_eval["conditions"] = conditions_json
-                        fired = await _evaluate_rule_conditions(
-                            conn=conn,
+                    except Exception as exc:
+                        COUNTERS["evaluation_errors"] += 1
+                        evaluator_evaluation_errors_total.inc()
+                        log_event(
+                            logger,
+                            "tenant_evaluation_failed",
+                            level="ERROR",
                             tenant_id=tenant_id,
-                            device_id=device_id,
-                            rule=rule_for_eval,
-                            latest_metrics_snapshot=latest_metrics_snapshot,
-                            mappings_by_normalized=mappings_by_normalized,
+                            error_type=type(exc).__name__,
+                            error=str(exc),
                         )
-                        if not fired:
-                            await close_alert(conn, tenant_id, fp_rule)
-                            continue
-
-                        if await is_silenced(conn, tenant_id, fp_rule):
-                            continue
-                        if await is_in_maintenance(
-                            conn,
-                            tenant_id,
-                            site_id=site_id,
-                            device_type=rule.get("device_type"),
-                        ):
-                            continue
-
-                        active_conditions = conditions_json if isinstance(conditions_json, list) else []
-                        if not active_conditions and metric_name and operator and threshold is not None:
-                            active_conditions = [
-                                {
-                                    "metric_name": metric_name,
-                                    "operator": operator,
-                                    "threshold": threshold,
-                                    "duration_minutes": rule.get("duration_minutes"),
-                                }
-                            ]
-                        first_condition = active_conditions[0] if active_conditions else {}
-                        detail_metric = first_condition.get("metric_name", metric_name)
-                        detail_operator = first_condition.get("operator", operator)
-                        detail_threshold = first_condition.get("threshold", threshold)
-                        detail_value = latest_metrics_snapshot.get(detail_metric) if detail_metric else None
-                        detail_match_mode = str(rule.get("match_mode") or "all")
-
-                        summary = (
-                            f"{site_id}: {device_id} rule '{rule['name']}' triggered "
-                            f"({detail_match_mode})"
-                        )
-                        alert_id, inserted = await deduplicate_or_create_alert(
-                            conn,
-                            tenant_id,
-                            site_id,
-                            device_id,
-                            "THRESHOLD",
-                            fp_rule,
-                            rule_severity,
-                            1.0,
-                            summary,
-                            {
-                                "rule_id": rule_id,
-                                "rule_name": rule["name"],
-                                "metric_name": detail_metric,
-                                "metric_value": detail_value,
-                                "operator": detail_operator,
-                                "threshold": detail_threshold,
-                                "match_mode": detail_match_mode,
-                                "conditions": active_conditions,
-                            },
-                            rule_id=str(rule_id),
-                        )
-                        audit = get_audit_logger()
-                        if audit and detail_metric and detail_operator and detail_threshold is not None:
-                            try:
-                                metric_value_numeric = float(detail_value) if detail_value is not None else 0.0
-                            except (TypeError, ValueError):
-                                metric_value_numeric = 0.0
-                            try:
-                                threshold_numeric = float(detail_threshold)
-                            except (TypeError, ValueError):
-                                threshold_numeric = 0.0
-                            audit.rule_triggered(
-                                tenant_id,
-                                str(rule_id),
-                                rule["name"],
-                                device_id,
-                                detail_metric,
-                                metric_value_numeric,
-                                threshold_numeric,
-                                detail_operator,
-                            )
-                            if inserted:
-                                log_event(
-                                    logger,
-                                    "alert created",
-                                    tenant_id=tenant_id,
-                                    device_id=device_id,
-                                    alert_type="THRESHOLD",
-                                    alert_id=str(alert_id),
-                                    fingerprint=fp_rule,
-                                )
-                                audit.alert_created(
-                                    tenant_id,
-                                    str(alert_id),
-                                    "THRESHOLD",
-                                    device_id,
-                                    summary,
-                                )
+                        continue
 
                 total_rules = sum(len(v) for v in tenant_rules_cache.values())
                 log_event(
@@ -1752,6 +1893,8 @@ async def main():
                     operation="evaluation_cycle",
                 ).observe(eval_duration)
 
+                global _last_eval_monotonic
+                _last_eval_monotonic = time.monotonic()
                 pulse_db_pool_size.labels(service="evaluator").set(pool.get_size())
                 pulse_db_pool_free.labels(service="evaluator").set(pool.get_idle_size())
                 log_event(logger, "tick_done", tick="evaluator")
@@ -1774,6 +1917,8 @@ async def main():
         listener_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await listener_task
+        if _valkey is not None:
+            await _valkey.aclose()
 
 if __name__ == "__main__":
     asyncio.run(main())
